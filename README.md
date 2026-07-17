@@ -1,77 +1,60 @@
-# Food Rescue Trends — Google Trends Dashboard
+# Trends Explorer — Google Trends Dashboard
 
-แดชบอร์ดแบบ static ที่ฝัง **Google Trends embed widgets** เพื่อแสดงเทรนด์การค้นหาของ
-3 คำค้นในประเทศไทย ย้อนหลัง 5 ปี:
+แดชบอร์ดแบบ static (ไฟล์เดียว) ที่ฝัง **Google Trends embed widgets** สำหรับติดตามเทรนด์การค้นหา
+โดยจัดเป็น **แท็บ = กลุ่มคำค้น** และรวมหลายคำในกลุ่มด้วย `+` เป็น **เส้นเดียว** (Google ถ่วงน้ำหนักตาม volume จริงให้เอง)
 
-- `Food Rescue`
-- `Food Surplus`
-- `อาหารส่วนเกิน`
+กลุ่มเริ่มต้น: Food Waste (food waste + food rescue + food surplus + อาหารส่วนเกิน), Net Zero, Biodiversity, Circular Economy
 
-ใช้วิธี embed อย่างเป็นทางการของ Google → **ฟรี ไม่ต้องใช้ API key ไม่ติด CORS ไม่โดน rate limit**
-และรันบน static hosting (เช่น Cloudflare Pages) ได้เลย
+## ฟีเจอร์
 
----
+- 📈 **Interest over time** — รวมคำในกลุ่มเป็นเส้นเดียว (widget จริงของ Google)
+- 🗺️ **Interest by region** + 🔎 **Related queries** (Top/Rising)
+- 🎛️ ฟิลเตอร์ **พื้นที่ (Location)** และ **ช่วงเวลา (Time range)** — เปลี่ยนแล้ว widget โหลดใหม่อัตโนมัติ
+- ✏️ เพิ่ม/ลบคำในกลุ่ม, เพิ่ม/ลบ/เปลี่ยนชื่อแท็บได้ (สูงสุด 8 กลุ่ม)
+- 💾 **จำค่า** อัตโนมัติในเบราว์เซอร์ (localStorage) + 🔗 **แชร์ลิงก์** (ฝัง state ใน URL)
+- 🌙 โหมดมืด/สว่าง
 
-## โครงสร้างไฟล์
+ไม่ต้องใช้ API key ไม่ติด CORS ไม่โดน rate limit — ใช้วิธี embed อย่างเป็นทางการของ Google
+
+## โครงสร้าง
 
 ```
-index.html        โครงหน้า + โหลด embed_loader ของ Google
-assets/app.js     ตั้งค่าคำค้น/พื้นที่/ช่วงเวลา และสั่ง render widget
-assets/style.css  ธีม (รองรับ light/dark) + layout
+index.html   ไฟล์เดียวจบ (HTML + CSS + JS + โหลด embed_loader ของ Google)
 ```
 
-Widget ที่แสดง:
-- **TIMESERIES** — ความสนใจตามช่วงเวลา (เทียบ 3 คำ)
-- **GEO_MAP** — ความสนใจแยกตามจังหวัด
-- **RELATED_QUERIES** — คำค้นที่เกี่ยวข้อง (การ์ดละ 1 คำ)
+## แก้ไขกลุ่ม/คำค้นเริ่มต้น
 
----
-
-## แก้ไขคำค้น / พื้นที่ / ช่วงเวลา
-
-แก้ที่ `CONFIG` ด้านบนของ `assets/app.js` ที่เดียว:
+แก้ที่ตัวแปร `groups` ด้านบนของ `<script>` ใน `index.html`:
 
 ```js
-const CONFIG = {
-  geo: "TH",             // "" = ทั่วโลก
-  time: "today 5-y",     // เช่น "today 12-m", "2020-01-01 2024-12-31"
-  hl: "th",
-  keywords: ["Food Rescue", "Food Surplus", "อาหารส่วนเกิน"],
-};
+let groups = [
+  { name:"Food Waste", keywords:["food waste","food rescue","food surplus","อาหารส่วนเกิน"] },
+  { name:"Net Zero",   keywords:["net zero","carbon neutral","net zero 2050"] },
+  ...
+];
 ```
-
----
 
 ## รันดูในเครื่อง
 
-เปิดผ่านเว็บเซิร์ฟเวอร์ (ไม่ควรเปิดไฟล์ `file://` ตรงๆ เพราะ widget อาจไม่โหลด):
+เปิดผ่านเว็บเซิร์ฟเวอร์ (อย่าเปิด `file://` ตรงๆ):
 
 ```bash
-python3 -m http.server 8080
-# แล้วเปิด http://localhost:8080
+python3 -m http.server 8080   # แล้วเปิด http://localhost:8080
 ```
-
----
 
 ## Deploy ขึ้น Cloudflare Pages
 
-1. เข้า Cloudflare dashboard → **Workers & Pages → Create → Pages**
-2. **Connect to Git** แล้วเลือก repo นี้ + branch ที่ต้องการ
-3. Build settings:
-   - Framework preset: **None**
-   - Build command: *(เว้นว่าง)*
-   - Build output directory: `/` (root)
-4. Deploy → ได้ URL `*.pages.dev` ทุกครั้งที่ push จะ auto-deploy ให้เอง
+1. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git**
+2. เลือก repo นี้ + branch
+3. Framework preset: **None**, Build command: *(เว้นว่าง)*, Build output directory: `/`
+4. Deploy → ได้ URL `*.pages.dev` (auto-deploy ทุกครั้งที่ push)
 
-ไม่มีขั้นตอน build เพราะเป็น static ล้วน
+เป็น static ล้วน ไม่มีขั้นตอน build
 
----
+## หมายเหตุ
 
-## หมายเหตุ / แก้ปัญหา
-
-- ถ้า widget **ไม่แสดง**: ตรวจว่าเปิดผ่าน `https` และไม่มีตัวบล็อกสคริปต์/แอดบล็อก
-- Google อาจอัปเดตเวอร์ชันของ `embed_loader.js` — ปัจจุบันใช้
-  `https://ssl.gstatic.com/trends_nrtr/3603_RC01/embed_loader.js`
-  ถ้าเวอร์ชันนี้เลิกทำงาน ให้เข้า Google Trends → กดปุ่ม **embed (`< >`)** ที่กราฟใดก็ได้
-  แล้วคัดลอกเวอร์ชัน loader ใหม่มาแทนใน `index.html`
-- ค่าดัชนีเป็น **สัดส่วนสัมพัทธ์ 0–100** ไม่ใช่จำนวนการค้นหาจริง
+- ค่าเป็น **สัดส่วนสัมพัทธ์ 0–100** ไม่ใช่จำนวนค้นหาจริง
+- มุมมอง **5 ปี** อาจดูแบนถ้ามีจุดพีคเดียวในอดีต (Google normalize ให้พีค = 100) — ลองย่นช่วงเวลาจะเห็นรายละเอียดมากขึ้น
+- **โหมดมืด** เป็นของกรอบหน้าเว็บ ส่วน widget เป็น UI ของ Google (พื้นขาว)
+- **Related queries** ใช้คำแรกของกลุ่ม (คำเดี่ยว) เพราะคำรวม `+` มักไม่มีข้อมูล
+- ถ้า `embed_loader.js` เวอร์ชันในไฟล์เลิกทำงาน ให้เข้า Google Trends → กดปุ่ม embed (`< >`) แล้วคัดลอกเวอร์ชัน loader ใหม่มาแทน
