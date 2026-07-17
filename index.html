@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Food Rescue Trends — Google Trends Dashboard (TH)</title>
+  <meta name="description" content="แดชบอร์ดติดตามเทรนด์การค้นหา Food Rescue, Food Surplus และอาหารส่วนเกิน ในประเทศไทย ย้อนหลัง 5 ปี ด้วย Google Trends" />
+  <link rel="preconnect" href="https://trends.google.com" />
+  <link rel="preconnect" href="https://ssl.gstatic.com" />
+  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">📈</span>
+        <div>
+          <h1>Food Rescue Trends</h1>
+          <p class="subtitle">แดชบอร์ดเทรนด์การค้นหา Google · ประเทศไทย · ย้อนหลัง 5 ปี</p>
+        </div>
+      </div>
+      <div class="meta-pills" id="meta-pills"><!-- filled by app.js --></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card" aria-labelledby="ts-title">
+      <div class="card-head">
+        <h2 id="ts-title">ความสนใจในการค้นหาตามช่วงเวลา</h2>
+        <p class="card-sub">เปรียบเทียบทั้ง 3 คำค้นในช่วง 5 ปีที่ผ่านมา (ค่า 0–100 = สัดส่วนความนิยมสัมพัทธ์)</p>
+      </div>
+      <div class="widget-frame" id="w-timeseries">
+        <div class="widget-loading">กำลังโหลดข้อมูลจาก Google Trends…</div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="geo-title">
+      <div class="card-head">
+        <h2 id="geo-title">ความสนใจแยกตามจังหวัด</h2>
+        <p class="card-sub">พื้นที่ในประเทศไทยที่ค้นหาคำเหล่านี้มากที่สุด</p>
+      </div>
+      <div class="widget-frame widget-frame--tall" id="w-geo">
+        <div class="widget-loading">กำลังโหลดแผนที่…</div>
+      </div>
+    </section>
+
+    <section aria-labelledby="rq-title">
+      <h2 id="rq-title" class="section-title">คำค้นหาที่เกี่ยวข้อง</h2>
+      <div class="grid" id="related-grid"><!-- filled by app.js --></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>
+        ข้อมูลจาก <a href="https://trends.google.com/trends/explore?date=today%205-y&geo=TH&q=Food%20Rescue,Food%20Surplus,%E0%B8%AD%E0%B8%B2%E0%B8%AB%E0%B8%B2%E0%B8%A3%E0%B8%AA%E0%B9%88%E0%B8%A7%E0%B8%99%E0%B9%80%E0%B8%81%E0%B8%B4%E0%B8%99" target="_blank" rel="noopener">Google Trends</a>
+        · widget ฝังแบบเรียลไทม์ อัปเดตอัตโนมัติเมื่อ Google อัปเดตข้อมูล
+      </p>
+      <p class="hint" id="fallback-hint" hidden>
+        ⚠️ ถ้า widget ไม่แสดง ให้ตรวจว่าเปิดเว็บผ่าน https และไม่มีตัวบล็อกสคริปต์ —
+        หรือดูวิธีอัปเดตเวอร์ชัน loader ใน <code>README.md</code>
+      </p>
+    </div>
+  </footer>
+
+  <!-- Google Trends embed loader (official) -->
+  <script src="https://ssl.gstatic.com/trends_nrtr/3603_RC01/embed_loader.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
