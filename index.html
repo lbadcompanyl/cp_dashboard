@@ -134,6 +134,12 @@
       </section>
     </div>
 
+    <section class="panel">
+      <h3>หัวข้อที่เกี่ยวข้อง (Related topics)</h3>
+      <p class="sub" id="rtSub"></p>
+      <div class="widget-frame widget-frame--tall" id="w-rt"><div class="widget-loading">กำลังโหลด…</div></div>
+    </section>
+
     <div class="note"><span>ℹ️</span><span>แต่ละแท็บรวมคำในกลุ่มด้วย <b>“+”</b> เป็น <b>เส้นเดียว</b> — Google รวมและถ่วงน้ำหนักตาม volume จริงให้เอง. เปลี่ยนพื้นที่/ช่วงเวลาหรือแก้คำแล้ว widget จะโหลดใหม่อัตโนมัติ. โหมดมืดเป็นของหน้าเว็บ ส่วนตัว widget เป็น UI ของ Google (พื้นขาว)</span></div>
   </main>
 
@@ -228,6 +234,7 @@ function updateSubs(){
   el("tsSub").textContent=`${combinedKeyword(g)} · ${geoL} · ${perL}`;
   el("geoSub").textContent=`${g.name} · ${geoL}`;
   el("rqSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
+  el("rtSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
 }
 
 // ---------- Google Trends widgets ----------
@@ -251,6 +258,7 @@ function renderWidgets(){
     ["w-ts","TIMESERIES", combined],
     ["w-geo","GEO_MAP", combined],
     ["w-rq","RELATED_QUERIES", single],
+    ["w-rt","RELATED_TOPICS", single],
   ];
   jobs.forEach(([id,type,cfg])=>{
     const box=el(id); box.innerHTML="";
