@@ -32,8 +32,7 @@
   .hero h1 { margin:0 0 10px; font-size:1.9rem; letter-spacing:-0.02em; }
   .hero p { margin:0; color:var(--muted); font-size:1rem; }
 
-  .grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding-bottom:48px; }
-  @media (max-width:720px){ .grid{ grid-template-columns:1fr; } }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:20px; padding-bottom:48px; }
   .card { display:flex; flex-direction:column; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:26px; text-decoration:none; color:inherit; transition:border-color .15s, transform .15s, box-shadow .15s; }
   .card:hover { border-color:var(--accent); transform:translateY(-3px); box-shadow:0 12px 30px rgba(0,0,0,.18); }
   .card .icon { width:52px; height:52px; border-radius:13px; display:grid; place-items:center; font-size:26px; background:var(--accent-soft); }
@@ -83,6 +82,19 @@
         <li>Interest over time / by region</li>
         <li>Related queries (Top / Rising)</li>
         <li>ฟิลเตอร์พื้นที่ & ช่วงเวลา</li>
+      </ul>
+      <span class="go">เปิดแดชบอร์ด →</span>
+    </a>
+
+    <a class="card" href="sd.html">
+      <div class="icon">🌱</div>
+      <span class="tag">SD</span>
+      <h2>SD Trends</h2>
+      <p>แดชบอร์ด Google Trends สำหรับงานความยั่งยืน (Sustainable Development)</p>
+      <ul>
+        <li>ติดตามเทรนด์หัวข้อด้าน SD</li>
+        <li>พัฒนาในอีก session แล้วรวมที่นี่</li>
+        <li>ไฟล์: sd.html</li>
       </ul>
       <span class="go">เปิดแดชบอร์ด →</span>
     </a>
