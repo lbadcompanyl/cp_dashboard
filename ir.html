@@ -51,12 +51,13 @@
   .field { display:flex; flex-direction:column; gap:4px; }
   .field.grow { flex:1 1 240px; }
   .field label { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; }
-  .field input[type=text], .field input[type=search], .field select {
+  .field input[type=text], .field input[type=search], .field select, .field textarea {
     appearance:none; font-family:inherit; font-size:0.9rem; color:var(--ink); background:var(--surface);
     border:1px solid var(--border); border-radius:9px; padding:9px 12px; width:100%;
   }
+  .field textarea { resize:vertical; line-height:1.4; min-height:42px; }
   .field select { padding-right:34px; cursor:pointer; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; background-size:16px; }
-  .field input:focus-visible, .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
 
   .config { border-top:1px solid var(--border); padding-top:14px; display:none; flex-direction:column; gap:14px; }
   .config.open { display:flex; }
@@ -158,10 +159,10 @@
 
       <div class="cfg-block">
         <h4>🟢 Google Alert — หมวดที่ 1</h4>
-        <p class="hint">สร้างที่ <a href="https://www.google.com/alerts" target="_blank" rel="noopener">google.com/alerts</a> → ตั้ง <b>Deliver to = RSS feed</b> → คลิกไอคอน RSS แล้วคัดลอก URL (ขึ้นต้นด้วย <code>https://www.google.com/alerts/feeds/…</code>) มาวางด้านล่าง</p>
+        <p class="hint">สร้างที่ <a href="https://www.google.com/alerts" target="_blank" rel="noopener">google.com/alerts</a> → ตั้ง <b>Deliver to = RSS feed</b> → คลิกไอคอน RSS แล้วคัดลอก URL (ขึ้นต้นด้วย <code>https://www.google.com/alerts/feeds/…</code>). ใส่ได้ <b>หลายฟีด</b> — พิมพ์ทีละ URL <b>ขึ้นบรรทัดใหม่</b> จะรวมข่าวเข้าหมวดเดียวกัน</p>
         <div class="cfg-row">
-          <div class="field"><label>ชื่อหมวด</label><input type="text" id="a0name" placeholder="เช่น พลังงานสะอาด"></div>
-          <div class="field grow"><label>RSS URL ของ Alert</label><input type="text" id="a0url" placeholder="https://www.google.com/alerts/feeds/…"></div>
+          <div class="field"><label>ชื่อหมวด</label><input type="text" id="a0name" placeholder="เช่น CP"></div>
+          <div class="field grow"><label>RSS URL (หลายฟีดขึ้นบรรทัดใหม่)</label><textarea id="a0url" rows="2" placeholder="https://www.google.com/alerts/feeds/…"></textarea></div>
         </div>
       </div>
 
@@ -169,7 +170,7 @@
         <h4>🟢 Google Alert — หมวดที่ 2</h4>
         <div class="cfg-row">
           <div class="field"><label>ชื่อหมวด</label><input type="text" id="a1name" placeholder="เช่น ยานยนต์ไฟฟ้า"></div>
-          <div class="field grow"><label>RSS URL ของ Alert</label><input type="text" id="a1url" placeholder="https://www.google.com/alerts/feeds/…"></div>
+          <div class="field grow"><label>RSS URL (หลายฟีดขึ้นบรรทัดใหม่)</label><textarea id="a1url" rows="2" placeholder="https://www.google.com/alerts/feeds/…"></textarea></div>
         </div>
       </div>
 
@@ -210,11 +211,14 @@ const escapeHtml = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;"
 // ---------- default config ----------
 const DEFAULTS = {
   alerts: [
-    { name:"หมวดที่ 1", url:"" },
-    { name:"หมวดที่ 2", url:"" },
+    { name:"CP", urls:[
+      "https://www.google.com/alerts/feeds/09603683942017157714/11443863203205870260",
+      "https://www.google.com/alerts/feeds/09603683942017157714/5523361181985541471",
+    ] },
+    { name:"หมวดที่ 2", urls:[] },
   ],
   news: { q:"เทคโนโลยี", hl:"th", gl:"TH" },
-  sort:"new", auto:0, active:0,
+  sort:"new", auto:1800, active:0,
 };
 let cfg = JSON.parse(JSON.stringify(DEFAULTS));
 const state = { q:"", loading:false, error:"", lastUpdated:null };
@@ -231,7 +235,11 @@ function applySnapshot(d){
   if(!d || typeof d!=="object") return false;
   if(d.c){
     if(Array.isArray(d.c.alerts) && d.c.alerts.length>=2){
-      cfg.alerts = d.c.alerts.slice(0,2).map((a,i)=>({ name:String(a.name||DEFAULTS.alerts[i].name), url:String(a.url||"") }));
+      cfg.alerts = d.c.alerts.slice(0,2).map((a,i)=>({
+        name:String(a.name||DEFAULTS.alerts[i].name),
+        urls: Array.isArray(a.urls) ? a.urls.map(String).map(s=>s.trim()).filter(Boolean)
+             : (a.url ? [String(a.url).trim()].filter(Boolean) : []),   // backward-compat: old single-url format
+      }));
     }
     if(d.c.news){ cfg.news = { q:String(d.c.news.q||""), hl:String(d.c.news.hl||"th"), gl:String(d.c.news.gl||"TH") }; }
     if(["new","old","src"].includes(d.c.sort)) cfg.sort=d.c.sort;
@@ -324,18 +332,25 @@ function parseFeed(xmlText, sourceIdx, sourceName){
 }
 
 async function loadSource(idx){
-  let url, name;
-  if(idx < 2){ url = cfg.alerts[idx].url.trim(); name = cfg.alerts[idx].name || ("หมวด "+(idx+1)); }
-  else { url = cfg.news.q.trim() ? googleNewsUrl(cfg.news) : ""; name = "Google News"; }
-  if(!url){ itemsBySource[idx] = []; return { idx, ok:true, empty:true }; }
-  try{
-    const txt = await fetchText(url);
-    itemsBySource[idx] = parseFeed(txt, idx, name);
-    return { idx, ok:true, count:itemsBySource[idx].length };
-  }catch(e){
-    itemsBySource[idx] = [];
-    return { idx, ok:false, error:e.message };
+  let urls, name;
+  if(idx < 2){ urls = (cfg.alerts[idx].urls||[]).map(u=>u.trim()).filter(Boolean); name = cfg.alerts[idx].name || ("หมวด "+(idx+1)); }
+  else { urls = cfg.news.q.trim() ? [googleNewsUrl(cfg.news)] : []; name = "Google News"; }
+  if(!urls.length){ itemsBySource[idx] = []; return { idx, ok:true, empty:true }; }
+  // fetch every feed in this source; tolerate partial failures
+  const settled = await Promise.all(urls.map(async u => {
+    try{ return { ok:true, items:parseFeed(await fetchText(u), idx, name) }; }
+    catch(e){ return { ok:false, items:[], error:e.message }; }
+  }));
+  // merge + dedupe by link (same article can appear in multiple alert feeds)
+  const seen = new Set(), merged = [];
+  for(const it of settled.flatMap(s=>s.items)){
+    const k = it.link || it.title;
+    if(!seen.has(k)){ seen.add(k); merged.push(it); }
   }
+  itemsBySource[idx] = merged;
+  const anyOk = settled.some(s=>s.ok);
+  return anyOk ? { idx, ok:true, count:merged.length }
+               : { idx, ok:false, error:(settled[0]&&settled[0].error)||"failed" };
 }
 
 async function loadAll(){
@@ -430,7 +445,7 @@ function renderCards(){
 }
 function emptyState(){
   // Active tab is an unconfigured alert?
-  if(cfg.active<2 && !cfg.alerts[cfg.active].url.trim()){
+  if(cfg.active<2 && !(cfg.alerts[cfg.active].urls||[]).length){
     return `<div class="empty"><div class="big">🔔</div>
       <p><b>ยังไม่ได้ตั้งค่า Google Alert หมวดนี้</b></p>
       <p>ไปที่ google.com/alerts สร้าง Alert แบบ <b>RSS feed</b> แล้วนำ URL มาวางในหน้าตั้งค่า</p>
@@ -453,9 +468,9 @@ function setStatus(kind, text){
 // ---------- config panel ----------
 function fillConfigInputs(){
   el("a0name").value = cfg.alerts[0].name;
-  el("a0url").value  = cfg.alerts[0].url;
+  el("a0url").value  = (cfg.alerts[0].urls||[]).join("\n");
   el("a1name").value = cfg.alerts[1].name;
-  el("a1url").value  = cfg.alerts[1].url;
+  el("a1url").value  = (cfg.alerts[1].urls||[]).join("\n");
   el("gnq").value    = cfg.news.q;
   el("gnhl").innerHTML = Object.entries(HLS).map(([k,v])=>`<option value="${k}" ${k===cfg.news.hl?"selected":""}>${v}</option>`).join("");
   el("gngl").innerHTML = Object.entries(GLS).map(([k,v])=>`<option value="${k}" ${k===cfg.news.gl?"selected":""}>${v}</option>`).join("");
@@ -463,8 +478,9 @@ function fillConfigInputs(){
   el("auto").value = String(cfg.auto);
 }
 function readConfigInputs(){
-  cfg.alerts[0] = { name:el("a0name").value.trim() || "หมวด 1", url:el("a0url").value.trim() };
-  cfg.alerts[1] = { name:el("a1name").value.trim() || "หมวด 2", url:el("a1url").value.trim() };
+  const parseUrls = v => String(v||"").split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
+  cfg.alerts[0] = { name:el("a0name").value.trim() || "หมวด 1", urls:parseUrls(el("a0url").value) };
+  cfg.alerts[1] = { name:el("a1name").value.trim() || "หมวด 2", urls:parseUrls(el("a1url").value) };
   cfg.news = { q:el("gnq").value.trim(), hl:el("gnhl").value, gl:el("gngl").value };
 }
 function openConfig(){ el("config").classList.add("open"); el("config").scrollIntoView({behavior:"smooth",block:"nearest"}); }
