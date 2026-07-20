@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IR News Monitor</title>
+  <link rel="stylesheet" href="./styles.css?v=1" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📰</span>
+      <div>
+        <h1>IR News Monitor</h1>
+        <p class="sub" id="updated">กำลังโหลด…</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a href="/" class="refresh" style="text-decoration:none" title="กลับหน้าหลัก">🏠 หน้าหลัก</a>
+      <button id="refresh" class="refresh" title="ดึงข้อมูลใหม่">🔄 รีเฟรช</button>
+    </div>
+  </header>
+
+  <main class="board" id="board">
+    <!-- 3 panels: News · Alert 1 · Alert 2 -->
+    <section class="panel" data-source="news">
+      <div class="phead">
+        <span class="ptitle"><span class="dot news"></span>📰 News</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <input type="search" class="kw" placeholder="🔎 ค้นคำในแผงนี้…" data-kw />
+        <select class="rc" data-rc>
+          <option value="all">ทุกช่วงเวลา</option>
+          <option value="24">24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="72">3 วัน</option>
+          <option value="168">7 วัน</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+
+    <section class="panel" data-source="alert1">
+      <div class="phead">
+        <span class="ptitle"><span class="dot alert"></span>🔔 Google Alert 1</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <input type="search" class="kw" placeholder="🔎 ค้นคำในแผงนี้…" data-kw />
+        <select class="rc" data-rc>
+          <option value="all">ทุกช่วงเวลา</option>
+          <option value="24">24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="72">3 วัน</option>
+          <option value="168">7 วัน</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+
+    <section class="panel" data-source="alert2">
+      <div class="phead">
+        <span class="ptitle"><span class="dot alert"></span>🔔 Google Alert 2</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <input type="search" class="kw" placeholder="🔎 ค้นคำในแผงนี้…" data-kw />
+        <select class="rc" data-rc>
+          <option value="all">ทุกช่วงเวลา</option>
+          <option value="24">24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="72">3 วัน</option>
+          <option value="168">7 วัน</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+  </main>
+
+  <script src="./app.js?v=1"></script>
+</body>
+</html>
