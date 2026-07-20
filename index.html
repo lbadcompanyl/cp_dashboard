@@ -274,23 +274,27 @@ function configFor(keyword){
 }
 function firstKeyword(g){ return g.keywords.map(k=>k.trim()).filter(Boolean)[0] || g.name; }
 
+let widgetGen = 0;
 function renderWidgets(){
   renderNews();   // ข่าว (ไม่พึ่ง Google Trends loader)
   if(!(window.trends && window.trends.embed && window.trends.embed.renderExploreWidgetTo)){ return; }
   const g=activeGroup();
-  // กราฟ + แผนที่: ใช้คำรวม "+" (Google ถ่วงน้ำหนักให้)
-  const combined = configFor(combinedKeyword(g));
-  // Related queries: ใช้คำแรก (คำเดี่ยว) เพราะคำรวม "+" มักไม่มีข้อมูล
-  const single = configFor(firstKeyword(g));
+  const combined = configFor(combinedKeyword(g));            // กราฟ + แผนที่: คำรวม "+"
+  const single = configFor(firstKeyword(g));                 // related queries: คำเดี่ยว
   const jobs = [
     ["w-ts","TIMESERIES", combined],
     ["w-geo","GEO_MAP", combined],
     ["w-rq","RELATED_QUERIES", single],
   ];
-  jobs.forEach(([id,type,cfg])=>{
-    const box=el(id); box.innerHTML="";
-    try{ window.trends.embed.renderExploreWidgetTo(box, type, cfg.common, cfg.opts); }
-    catch(err){ box.innerHTML='<div class="widget-loading">โหลด widget ไม่สำเร็จ</div>'; }
+  const gen = ++widgetGen;
+  // ทยอยโหลดทีละตัว (หน่วง 450ms) เพื่อลดโอกาสโดน Google rate-limit ("Oops!")
+  jobs.forEach(([id,type,cfg],i)=>{
+    setTimeout(()=>{
+      if(gen!==widgetGen) return;   // มีการเปลี่ยนแท็บ/ฟิลเตอร์แล้ว ยกเลิก
+      const box=el(id); box.innerHTML="";
+      try{ window.trends.embed.renderExploreWidgetTo(box, type, cfg.common, cfg.opts); }
+      catch(err){ box.innerHTML='<div class="widget-loading">โหลด widget ไม่สำเร็จ</div>'; }
+    }, i*450);
   });
 }
 // ---------- Related news (Google News RSS, custom-rendered) ----------
