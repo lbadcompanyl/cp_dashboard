@@ -19,19 +19,28 @@ export async function onRequestGet(context) {
   try {
     const res = await fetch(target, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; cp-dashboard/1.0; +https://pages.dev)",
+        // Real browser UA — Google serves the RSS to browser-like clients but
+        // returns a "We're sorry / automated queries" page to bot-looking UAs.
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
         "Accept-Language": "th,en;q=0.8",
       },
-      cf: { cacheTtl: 180, cacheEverything: true },
+      cf: { cacheTtl: 300, cacheEverything: true },
     });
     const body = await res.text();
+    // Detect Google's bot block ("We're sorry… automated queries") or any
+    // non-feed HTML, so the client falls back to another proxy instead of
+    // treating the block page as an (empty) feed.
+    const looksLikeFeed = /<(rss|feed|item|entry)\b/i.test(body);
+    if (!res.ok || !looksLikeFeed) {
+      return json(502, { error: "upstream did not return a feed", status: res.status, blocked: /we('|&#39;)re sorry|unusual traffic|automated queries/i.test(body) });
+    }
     return new Response(body, {
-      status: res.ok ? 200 : res.status,
+      status: 200,
       headers: {
         "content-type": res.headers.get("content-type") || "application/xml; charset=utf-8",
         "access-control-allow-origin": "*",
-        "cache-control": "public, max-age=180",
+        "cache-control": "public, max-age=300",
       },
     });
   } catch (e) {
