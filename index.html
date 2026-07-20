@@ -81,10 +81,14 @@
   .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
 
   .news-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; }
-  .news-list li { padding:11px 2px; border-bottom:1px solid var(--border); }
-  .news-list a { color:var(--ink); text-decoration:none; font-size:0.9rem; line-height:1.4; }
-  .news-list a:hover { color:var(--accent); text-decoration:underline; }
-  .news-meta { font-size:0.74rem; color:var(--muted); margin-top:4px; }
+  .news-list li { display:flex; gap:13px; align-items:flex-start; padding:12px 2px; border-bottom:1px solid var(--border); }
+  .news-list li:hover { background:var(--surface-2); }
+  .news-thumb { width:76px; height:56px; object-fit:cover; border-radius:8px; flex:none; background:var(--surface-2); }
+  .news-avatar { width:46px; height:46px; border-radius:11px; flex:none; display:grid; place-items:center; color:#fff; font-weight:700; font-size:1.15rem; }
+  .news-body { min-width:0; flex:1; }
+  .news-list a { display:block; color:var(--ink); text-decoration:none; font-size:0.9rem; line-height:1.42; font-weight:500; }
+  .news-list a:hover { color:var(--accent); }
+  .news-meta { font-size:0.74rem; color:var(--muted); margin-top:5px; }
   .news-more { display:inline-block; margin-top:14px; color:var(--accent); font-size:0.82rem; text-decoration:none; }
   .news-more:hover { text-decoration:underline; }
   .news-loading { padding:22px; color:var(--muted); font-size:0.9rem; text-align:center; }
@@ -307,10 +311,26 @@ async function fetchRawXml(url){
   }
   throw new Error("proxies failed");
 }
-function newsListHTML(items, gnLink){
-  return '<ul class="news-list">'+items.map(it=>
-    `<li><a href="${escapeHtml(it.link)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${it.meta?`<div class="news-meta">${escapeHtml(it.meta)}</div>`:""}</li>`
-  ).join("")+'</ul><a class="news-more" href="'+escapeHtml(gnLink)+'" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>';
+function sourceFromTitle(title){
+  const i=title.lastIndexOf(" - ");
+  return i>0 ? { name:title.slice(i+3).trim(), clean:title.slice(0,i).trim() } : { name:"", clean:title };
+}
+function avatarColor(s){ let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; const hues=[210,150,340,35,175,20,265,300]; return `hsl(${hues[h%hues.length]} 52% 46%)`; }
+function newsItemHTML(it){
+  const s=sourceFromTitle(it.title);
+  const src=s.name || it.source || "";
+  const initial=escapeHtml((src||s.clean||"?").trim().charAt(0).toUpperCase());
+  const avatar=`<span class="news-avatar" style="background:${avatarColor(src||s.clean)}">${initial}</span>`;
+  const img = it.thumbnail
+    ? `<img class="news-thumb" src="${escapeHtml(it.thumbnail)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+    : avatar;
+  const meta=[src, it.metaTime].filter(Boolean).join(" · ");
+  return `<li>${img}<div class="news-body"><a href="${escapeHtml(it.link)}" target="_blank" rel="noopener">${escapeHtml(s.clean)}</a>${meta?`<div class="news-meta">${escapeHtml(meta)}</div>`:""}</div></li>`;
+}
+function newsListWrap(items, gnLink){
+  items.sort((a,b)=>{ const ta=Date.parse(a.pub)||0, tb=Date.parse(b.pub)||0; return tb-ta; });   // ล่าสุดก่อน
+  items.forEach(it=>{ it.metaTime=relTime(it.pub); });
+  return '<ul class="news-list">'+items.map(newsItemHTML).join("")+'</ul><a class="news-more" href="'+escapeHtml(gnLink)+'" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>';
 }
 async function renderNews(){
   const g=activeGroup();
@@ -326,7 +346,8 @@ async function renderNews(){
     if(token!==newsToken) return;
     const j=JSON.parse(txt);
     if(j && j.status==="ok" && j.items && j.items.length){
-      box.innerHTML=newsListHTML(j.items.slice(0,10).map(x=>({ title:x.title, link:x.link, meta:relTime(x.pubDate) })), gnLink);
+      const items=j.items.slice(0,12).map(x=>({ title:x.title||"", link:x.link||gnLink, source:x.author||"", pub:x.pubDate, thumbnail:(x.thumbnail || (x.enclosure&&x.enclosure.link) || "") }));
+      box.innerHTML=newsListWrap(items, gnLink);
       return;
     }
   }catch(e){}
@@ -335,12 +356,14 @@ async function renderNews(){
   try{
     const txt=await fetchRawXml(rss);
     if(token!==newsToken) return;
-    const items=[...new DOMParser().parseFromString(txt,"text/xml").querySelectorAll("item")].slice(0,10).map(it=>{
-      const src=(it.getElementsByTagName("source")[0]||{}).textContent||"";
-      const date=(it.querySelector("pubDate")||{}).textContent||"";
-      return { title:(it.querySelector("title")||{}).textContent||"", link:(it.querySelector("link")||{}).textContent||gnLink, meta:[src,date?relTime(date):""].filter(Boolean).join(" · ") };
-    });
-    if(items.length){ box.innerHTML=newsListHTML(items, gnLink); return; }
+    const items=[...new DOMParser().parseFromString(txt,"text/xml").querySelectorAll("item")].slice(0,12).map(it=>({
+      title:(it.querySelector("title")||{}).textContent||"",
+      link:(it.querySelector("link")||{}).textContent||gnLink,
+      source:(it.getElementsByTagName("source")[0]||{}).textContent||"",
+      pub:(it.querySelector("pubDate")||{}).textContent||"",
+      thumbnail:""
+    }));
+    if(items.length){ box.innerHTML=newsListWrap(items, gnLink); return; }
   }catch(e){}
   if(token===newsToken) box.innerHTML=newsFallback(gnLink);
 }
