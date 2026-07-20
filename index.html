@@ -80,6 +80,15 @@
   .widget-frame iframe { width:100% !important; min-height:440px; border:0; display:block; }
   .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
 
+  .news-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; }
+  .news-list li { padding:11px 2px; border-bottom:1px solid var(--border); }
+  .news-list a { color:var(--ink); text-decoration:none; font-size:0.9rem; line-height:1.4; }
+  .news-list a:hover { color:var(--accent); text-decoration:underline; }
+  .news-meta { font-size:0.74rem; color:var(--muted); margin-top:4px; }
+  .news-more { display:inline-block; margin-top:14px; color:var(--accent); font-size:0.82rem; text-decoration:none; }
+  .news-more:hover { text-decoration:underline; }
+  .news-loading { padding:22px; color:var(--muted); font-size:0.9rem; text-align:center; }
+
   .note { display:flex; gap:10px; align-items:flex-start; background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:11px 14px; font-size:0.8rem; color:var(--ink-2); }
   .note b { color:var(--ink); }
   .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--plane); padding:10px 18px; border-radius:999px; font-size:0.85rem; opacity:0; transition:all .2s; pointer-events:none; z-index:99; }
@@ -135,9 +144,9 @@
     </div>
 
     <section class="panel">
-      <h3>หัวข้อที่เกี่ยวข้อง (Related topics)</h3>
-      <p class="sub" id="rtSub"></p>
-      <div class="widget-frame widget-frame--tall" id="w-rt"><div class="widget-loading">กำลังโหลด…</div></div>
+      <h3>ข่าวที่เกี่ยวข้อง (Related news)</h3>
+      <p class="sub" id="rnSub"></p>
+      <div id="news"><div class="news-loading">กำลังโหลดข่าว…</div></div>
     </section>
 
     <div class="note"><span>ℹ️</span><span>แต่ละแท็บรวมคำในกลุ่มด้วย <b>“+”</b> เป็น <b>เส้นเดียว</b> — Google รวมและถ่วงน้ำหนักตาม volume จริงให้เอง. เปลี่ยนพื้นที่/ช่วงเวลาหรือแก้คำแล้ว widget จะโหลดใหม่อัตโนมัติ. โหมดมืดเป็นของหน้าเว็บ ส่วนตัว widget เป็น UI ของ Google (พื้นขาว)</span></div>
@@ -234,7 +243,7 @@ function updateSubs(){
   el("tsSub").textContent=`${combinedKeyword(g)} · ${geoL} · ${perL}`;
   el("geoSub").textContent=`${g.name} · ${geoL}`;
   el("rqSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
-  el("rtSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
+  el("rnSub").textContent=`${combinedKeyword(g)} · ${geoL}`;
 }
 
 // ---------- Google Trends widgets ----------
@@ -248,6 +257,7 @@ function configFor(keyword){
 function firstKeyword(g){ return g.keywords.map(k=>k.trim()).filter(Boolean)[0] || g.name; }
 
 function renderWidgets(){
+  renderNews();   // ข่าว (ไม่พึ่ง Google Trends loader)
   if(!(window.trends && window.trends.embed && window.trends.embed.renderExploreWidgetTo)){ return; }
   const g=activeGroup();
   // กราฟ + แผนที่: ใช้คำรวม "+" (Google ถ่วงน้ำหนักให้)
@@ -258,7 +268,6 @@ function renderWidgets(){
     ["w-ts","TIMESERIES", combined],
     ["w-geo","GEO_MAP", combined],
     ["w-rq","RELATED_QUERIES", single],
-    ["w-rt","RELATED_TOPICS", single],
   ];
   jobs.forEach(([id,type,cfg])=>{
     const box=el(id); box.innerHTML="";
@@ -266,6 +275,35 @@ function renderWidgets(){
     catch(err){ box.innerHTML='<div class="widget-loading">โหลด widget ไม่สำเร็จ</div>'; }
   });
 }
+// ---------- Related news (Google News RSS, custom-rendered) ----------
+let newsToken = 0;
+function newsLocale(){ return state.geo==="TH" ? {hl:"th",gl:"TH",ceid:"TH:th"} : {hl:"en-US",gl:"US",ceid:"US:en"}; }
+function relTime(d){ try{ const diff=(Date.now()-new Date(d).getTime())/1000; if(diff<3600) return Math.max(1,Math.floor(diff/60))+" นาทีที่แล้ว"; if(diff<86400) return Math.floor(diff/3600)+" ชม.ที่แล้ว"; return Math.floor(diff/86400)+" วันก่อน"; }catch(e){ return ""; } }
+function renderNews(){
+  const g=activeGroup();
+  const q=g.keywords.map(k=>k.trim()).filter(Boolean).join(" OR ") || g.name;
+  const loc=newsLocale();
+  const rss=`https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=${loc.hl}&gl=${loc.gl}&ceid=${loc.ceid}`;
+  const gnLink=`https://news.google.com/search?q=${encodeURIComponent(q)}&hl=${loc.hl}&gl=${loc.gl}&ceid=${loc.ceid}`;
+  const proxied=`https://api.allorigins.win/raw?url=${encodeURIComponent(rss)}`;
+  const box=el("news"); box.innerHTML='<div class="news-loading">กำลังโหลดข่าว…</div>';
+  const token=++newsToken;
+  fetch(proxied).then(r=>r.text()).then(txt=>{
+    if(token!==newsToken) return;
+    const items=[...new DOMParser().parseFromString(txt,"text/xml").querySelectorAll("item")].slice(0,10);
+    if(!items.length){ box.innerHTML=newsFallback(gnLink); return; }
+    box.innerHTML='<ul class="news-list">'+items.map(it=>{
+      const title=(it.querySelector("title")||{}).textContent||"";
+      const link=(it.querySelector("link")||{}).textContent||gnLink;
+      const src=(it.getElementsByTagName("source")[0]||{}).textContent||"";
+      const date=(it.querySelector("pubDate")||{}).textContent||"";
+      const meta=[src, date?relTime(date):""].filter(Boolean).join(" · ");
+      return `<li><a href="${escapeHtml(link)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${meta?`<div class="news-meta">${escapeHtml(meta)}</div>`:""}</li>`;
+    }).join("")+'</ul><a class="news-more" href="'+escapeHtml(gnLink)+'" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>';
+  }).catch(()=>{ if(token===newsToken) box.innerHTML=newsFallback(gnLink); });
+}
+function newsFallback(link){ return '<div class="news-loading">โหลดข่าวอัตโนมัติไม่สำเร็จ · <a href="'+escapeHtml(link)+'" target="_blank" rel="noopener" style="color:var(--accent)">เปิดใน Google News →</a></div>'; }
+
 function waitForTrends(cb,tries=0){
   if(window.trends && window.trends.embed && window.trends.embed.renderExploreWidgetTo){ cb(); return; }
   if(tries>60){ document.querySelectorAll(".widget-loading").forEach(n=>n.textContent="โหลด Google Trends ไม่สำเร็จ (ตรวจการเชื่อมต่อ/ตัวบล็อกสคริปต์)"); return; }
