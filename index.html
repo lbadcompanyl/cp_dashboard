@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trends Explorer — Live (Google Trends embed)</title>
+<link rel="preconnect" href="https://trends.google.com" />
+<link rel="preconnect" href="https://ssl.gstatic.com" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
+<style>
+  :root {
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232322;
+    --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --border:rgba(255,255,255,0.10); --accent:#3987e5; --accent-soft:#1a2436;
+    --down:#e66767; --radius:12px;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --plane:#f9f9f7; --surface:#fcfcfb; --surface-2:#f3f3ef;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --border:rgba(11,11,11,0.10); --accent:#2a78d6; --accent-soft:#eaf1fe;
+    --down:#d03b3b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI","Sarabun","Noto Sans Thai",Roboto,sans-serif; background:var(--plane); color:var(--ink); line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1180px; margin:0 auto; padding:0 20px; }
+
+  .appbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .logo { display:flex; align-items:center; gap:10px; font-weight:650; font-size:1.05rem; }
+  .logo-mark { width:26px; height:26px; border-radius:7px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:15px; }
+  .logo small { display:block; font-weight:400; font-size:0.72rem; color:var(--muted); }
+  .appbar-actions { display:flex; gap:8px; }
+  .btn { border:1px solid var(--border); background:var(--surface); color:var(--ink-2); border-radius:999px; padding:7px 14px; font-size:0.82rem; cursor:pointer; display:inline-flex; align-items:center; gap:7px; font-family:inherit; }
+  .btn:hover { background:var(--surface-2); }
+  .btn.primary { background:var(--accent); color:#fff; border-color:transparent; }
+
+  .tabs { display:flex; gap:4px; margin-top:16px; flex-wrap:wrap; align-items:center; }
+  .tab { border:1px solid transparent; background:transparent; color:var(--ink-2); padding:9px 16px; border-radius:10px 10px 0 0; font-size:0.9rem; cursor:pointer; font-family:inherit; position:relative; top:1px; display:inline-flex; align-items:center; gap:7px; }
+  .tab:hover { background:var(--surface-2); }
+  .tab[aria-selected="true"] { background:var(--surface); color:var(--ink); font-weight:600; border-color:var(--border); border-bottom-color:var(--surface); }
+  .tab .tdot { width:9px; height:9px; border-radius:50%; background:var(--accent); }
+  .add-tab { border:1px dashed var(--border); background:transparent; color:var(--muted); border-radius:9px; padding:8px 12px; font-size:0.85rem; cursor:pointer; font-family:inherit; }
+  .add-tab:hover { background:var(--surface-2); color:var(--ink-2); }
+  .add-tab:disabled { opacity:.45; cursor:not-allowed; }
+
+  .toolbar { background:var(--surface); border:1px solid var(--border); border-radius:0 var(--radius) var(--radius) var(--radius); padding:16px; display:flex; flex-direction:column; gap:14px; }
+  .grp-editor { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+  .grp-name { font-weight:700; font-size:1rem; border:none; border-bottom:2px solid transparent; background:transparent; color:var(--ink); min-width:120px; max-width:240px; font-family:inherit; padding:2px 0; }
+  .grp-name:focus-visible { outline:none; border-bottom-color:var(--accent); }
+  .grp-del { border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:1.1rem; padding:2px 8px; border-radius:6px; }
+  .grp-del:hover { background:var(--surface-2); color:var(--down); }
+  .grp-del:disabled { opacity:.35; cursor:not-allowed; }
+  .kw-label { font-size:0.78rem; color:var(--muted); }
+  .grp-kws { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .kw { display:inline-flex; align-items:center; gap:4px; background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:4px 6px 4px 12px; font-size:0.82rem; }
+  .kw button { border:none; background:transparent; color:var(--muted); cursor:pointer; font-size:0.95rem; line-height:1; padding:0 3px; border-radius:50%; }
+  .kw button:hover { color:var(--down); }
+  .grp-add { border:1px dashed var(--border); background:transparent; border-radius:999px; padding:5px 12px; font-size:0.82rem; color:var(--ink-2); min-width:130px; font-family:inherit; }
+  .grp-add:focus-visible { outline:2px solid var(--accent); }
+  .combine-eq { font-size:0.75rem; color:var(--muted); background:var(--accent-soft); border-radius:8px; padding:5px 10px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .combine-eq b { color:var(--accent); }
+
+  .filters { display:flex; flex-wrap:wrap; gap:10px; border-top:1px solid var(--border); padding-top:14px; }
+  .field { display:flex; flex-direction:column; gap:4px; min-width:170px; }
+  .field label { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; }
+  .field select { appearance:none; font-family:inherit; font-size:0.9rem; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:9px; padding:9px 34px 9px 12px; cursor:pointer; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; background-size:16px; }
+  .field select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+
+  main { display:grid; gap:18px; padding:22px 0 20px; }
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; }
+  .panel h2,.panel h3 { margin:0 0 4px; } .panel h2 { font-size:1.02rem; } .panel h3 { font-size:0.98rem; }
+  .panel .sub { margin:0 0 12px; font-size:0.78rem; color:var(--muted); }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:860px){ .two-col{ grid-template-columns:1fr; } }
+
+  /* Google embed sits here — keep it on a light card so its own UI reads well */
+  .widget-frame { position:relative; background:#fff; border-radius:10px; min-height:450px; padding:6px; overflow:visible; }
+  .widget-frame--tall { min-height:500px; }
+  .widget-frame iframe { width:100% !important; min-height:440px; border:0; display:block; }
+  .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
+
+  .note { display:flex; gap:10px; align-items:flex-start; background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:11px 14px; font-size:0.8rem; color:var(--ink-2); }
+  .note b { color:var(--ink); }
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--plane); padding:10px 18px; border-radius:999px; font-size:0.85rem; opacity:0; transition:all .2s; pointer-events:none; z-index:99; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  footer.foot { padding:20px 0 40px; color:var(--muted); font-size:0.78rem; border-top:1px solid var(--border); }
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="appbar">
+    <div class="logo"><span class="logo-mark">📈</span><span>Trends Explorer<small>ข้อมูลจริงจาก Google Trends (embed)</small></span></div>
+    <div class="appbar-actions">
+      <button class="btn primary" id="shareBtn" type="button">🔗 แชร์ลิงก์</button>
+      <button class="btn" id="themeBtn" type="button"><span id="themeIcon">☀️</span><span id="themeLabel">โหมดสว่าง</span></button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs" role="tablist" aria-label="กลุ่มคำค้น"></div>
+
+  <div class="toolbar">
+    <div class="grp-editor">
+      <input class="grp-name" id="grpName" aria-label="ชื่อกลุ่ม">
+      <button class="grp-del" id="grpDel" type="button" aria-label="ลบกลุ่มนี้">×</button>
+      <span class="kw-label">คำค้นในกลุ่ม:</span>
+      <div class="grp-kws" id="grpKws"></div>
+    </div>
+    <div class="combine-eq" id="combineEq"></div>
+    <div class="filters">
+      <div class="field"><label for="geo">พื้นที่ (Location)</label><select id="geo"></select></div>
+      <div class="field"><label for="period">ช่วงเวลา (Time range)</label><select id="period"></select></div>
+    </div>
+  </div>
+
+  <main>
+    <section class="panel">
+      <h2>ความสนใจตามช่วงเวลา</h2>
+      <p class="sub" id="tsSub"></p>
+      <div class="widget-frame" id="w-ts"><div class="widget-loading">กำลังโหลดจาก Google Trends…</div></div>
+    </section>
+
+    <div class="two-col">
+      <section class="panel">
+        <h3>ความสนใจแยกตามพื้นที่</h3>
+        <p class="sub" id="geoSub"></p>
+        <div class="widget-frame widget-frame--tall" id="w-geo"><div class="widget-loading">กำลังโหลดแผนที่…</div></div>
+      </section>
+      <section class="panel">
+        <h3>คำค้นหาที่เกี่ยวข้อง (ยอดนิยม / มาแรง)</h3>
+        <p class="sub" id="rqSub"></p>
+        <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading">กำลังโหลด…</div></div>
+      </section>
+    </div>
+
+    <div class="note"><span>ℹ️</span><span>แต่ละแท็บรวมคำในกลุ่มด้วย <b>“+”</b> เป็น <b>เส้นเดียว</b> — Google รวมและถ่วงน้ำหนักตาม volume จริงให้เอง. เปลี่ยนพื้นที่/ช่วงเวลาหรือแก้คำแล้ว widget จะโหลดใหม่อัตโนมัติ. โหมดมืดเป็นของหน้าเว็บ ส่วนตัว widget เป็น UI ของ Google (พื้นขาว)</span></div>
+  </main>
+
+  <footer class="foot">Trends Explorer · ข้อมูลจริงผ่าน Google Trends embed · สถานะกลุ่มถูกจำไว้ในเบราว์เซอร์ + ฝังในลิงก์แชร์</footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Google Trends official embed loader -->
+<script src="https://ssl.gstatic.com/trends_nrtr/3603_RC01/embed_loader.js"></script>
+<script>
+const MAX_GROUPS = 8;
+let groups = [
+  { name:"Food Waste",       keywords:["food waste","food rescue","food surplus","อาหารส่วนเกิน"] },
+  { name:"Net Zero",         keywords:["net zero","carbon neutral","net zero 2050"] },
+  { name:"Biodiversity",     keywords:["biodiversity","ecosystem","species loss"] },
+  { name:"Circular Economy", keywords:["circular economy","recycling","upcycling"] },
+];
+const DEFAULT_GROUPS = JSON.parse(JSON.stringify(groups));
+const state = { geo:"", period:"5y", active:0 };   // เริ่มที่ "ทั่วโลก" เพื่อพิสูจน์ว่ากราฟ render เต็ม (สลับเป็นไทยได้)
+
+const GEOS = {
+  "":   "ทั่วโลก (Worldwide)",
+  "TH": "ประเทศไทย",
+  "US": "สหรัฐอเมริกา",
+  "SG": "สิงคโปร์",
+  "GB": "สหราชอาณาจักร",
+};
+const PERIODS = {
+  "1m":  { label:"30 วันที่ผ่านมา", t:"today 1-m" },
+  "3m":  { label:"90 วันที่ผ่านมา", t:"today 3-m" },
+  "12m": { label:"12 เดือนที่ผ่านมา", t:"today 12-m" },
+  "5y":  { label:"5 ปีที่ผ่านมา", t:"today 5-y" },
+  "all": { label:"ตั้งแต่ปี 2004", t:"all" },
+};
+const GUEST_PATH = "https://trends.google.com:443/trends/embed/";
+
+const el = id => document.getElementById(id);
+const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const activeGroup = () => groups[state.active];
+const combinedKeyword = g => g.keywords.map(k=>k.trim()).filter(Boolean).join(" + ") || g.name;
+
+// ---------- persistence: URL (shareable) + localStorage (per-browser) ----------
+const STORE_KEY = "trendsLiveV2";
+function snapshot(){ return { g:groups.map(x=>({n:x.name,k:x.keywords})), geo:state.geo, per:state.period, act:state.active }; }
+function applySnapshot(d){
+  if(!d||!Array.isArray(d.g)||!d.g.length) return false;
+  groups = d.g.map(x=>({ name:String(x.n||"กลุ่ม"), keywords:Array.isArray(x.k)?x.k.map(String):[] }));
+  if(d.geo in GEOS) state.geo=d.geo;
+  if(d.per in PERIODS) state.period=d.per;
+  state.active = Math.min(Math.max(0, d.act|0), groups.length-1);
+  return true;
+}
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(snapshot())); }catch(e){}
+  try{ history.replaceState(null,"","#"+encodeURIComponent(JSON.stringify(snapshot()))); }catch(e){}
+}
+function loadFromURL(){ try{ const h=location.hash.replace(/^#/,""); if(!h) return false; return applySnapshot(JSON.parse(decodeURIComponent(h))); }catch(e){ return false; } }
+function loadFromStore(){ try{ const raw=localStorage.getItem(STORE_KEY); if(!raw) return false; return applySnapshot(JSON.parse(raw)); }catch(e){ return false; } }
+
+// ---------- UI ----------
+function renderTabs(){
+  const t=el("tabs");
+  t.innerHTML = groups.map((g,i)=>`<button class="tab" role="tab" data-i="${i}" aria-selected="${i===state.active}"><span class="tdot"></span>${escapeHtml(g.name)}</button>`).join("")
+    + `<button class="add-tab" id="addTab" type="button" ${groups.length>=MAX_GROUPS?"disabled":""}>＋ เพิ่มกลุ่ม</button>`
+    + `<button class="add-tab" id="resetBtn" type="button" title="กลับค่าเริ่มต้น">↺ รีเซ็ต</button>`;
+  t.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ state.active=+b.dataset.i; refresh(); });
+  el("addTab").onclick=()=>{ if(groups.length>=MAX_GROUPS) return; groups.push({ name:"กลุ่ม "+(groups.length+1), keywords:["keyword"] }); state.active=groups.length-1; refresh(); };
+  el("resetBtn").onclick=()=>{ if(!confirm("กลับเป็นค่าเริ่มต้น?")) return; groups=JSON.parse(JSON.stringify(DEFAULT_GROUPS)); state.active=0; state.geo=""; state.period="5y"; fillSelects(); refresh(); };
+}
+function renderEditor(){
+  const g=activeGroup();
+  el("grpName").value=g.name;
+  el("grpDel").disabled=groups.length<=1;
+  el("grpKws").innerHTML = g.keywords.map((kw,ki)=>`<span class="kw">${escapeHtml(kw)}<button data-k="${ki}" aria-label="ลบคำ">×</button></span>`).join("")
+    + `<input class="grp-add" id="grpAdd" placeholder="+ เพิ่มคำค้น" aria-label="เพิ่มคำค้น">`;
+  el("grpKws").querySelectorAll(".kw button").forEach(btn=>btn.onclick=()=>{ g.keywords.splice(+btn.dataset.k,1); renderEditor(); renderWidgets(); save(); });
+  el("grpAdd").onkeydown=e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v){ g.keywords.push(v); renderEditor(); renderWidgets(); save(); const a=el("grpAdd"); if(a) a.focus(); } } };
+  el("combineEq").innerHTML = `คำค้นที่ส่งให้ Google: <b>${escapeHtml(combinedKeyword(g))}</b>`;
+}
+el("grpName").oninput=e=>{ activeGroup().name=e.target.value; renderTabs(); updateSubs(); save(); };
+el("grpDel").onclick=()=>{ if(groups.length<=1) return; groups.splice(state.active,1); if(state.active>=groups.length) state.active=groups.length-1; refresh(); };
+
+function fillSelects(){
+  el("geo").innerHTML=Object.entries(GEOS).map(([k,v])=>`<option value="${k}" ${k===state.geo?"selected":""}>${v}</option>`).join("");
+  el("period").innerHTML=Object.entries(PERIODS).map(([k,p])=>`<option value="${k}" ${k===state.period?"selected":""}>${p.label}</option>`).join("");
+  el("geo").onchange=e=>{ state.geo=e.target.value; renderWidgets(); updateSubs(); save(); };
+  el("period").onchange=e=>{ state.period=e.target.value; renderWidgets(); updateSubs(); save(); };
+}
+function updateSubs(){
+  const g=activeGroup(), geoL=GEOS[state.geo], perL=PERIODS[state.period].label;
+  el("tsSub").textContent=`${combinedKeyword(g)} · ${geoL} · ${perL}`;
+  el("geoSub").textContent=`${g.name} · ${geoL}`;
+  el("rqSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
+}
+
+// ---------- Google Trends widgets ----------
+function configFor(keyword){
+  const time = PERIODS[state.period].t;
+  return {
+    common: { comparisonItem:[{ keyword, geo:state.geo, time }], category:0, property:"" },
+    opts:   { exploreQuery:`date=${time}&geo=${state.geo}&q=${encodeURIComponent(keyword)}&hl=th`, guestPath:GUEST_PATH },
+  };
+}
+function firstKeyword(g){ return g.keywords.map(k=>k.trim()).filter(Boolean)[0] || g.name; }
+
+function renderWidgets(){
+  if(!(window.trends && window.trends.embed && window.trends.embed.renderExploreWidgetTo)){ return; }
+  const g=activeGroup();
+  // กราฟ + แผนที่: ใช้คำรวม "+" (Google ถ่วงน้ำหนักให้)
+  const combined = configFor(combinedKeyword(g));
+  // Related queries: ใช้คำแรก (คำเดี่ยว) เพราะคำรวม "+" มักไม่มีข้อมูล
+  const single = configFor(firstKeyword(g));
+  const jobs = [
+    ["w-ts","TIMESERIES", combined],
+    ["w-geo","GEO_MAP", combined],
+    ["w-rq","RELATED_QUERIES", single],
+  ];
+  jobs.forEach(([id,type,cfg])=>{
+    const box=el(id); box.innerHTML="";
+    try{ window.trends.embed.renderExploreWidgetTo(box, type, cfg.common, cfg.opts); }
+    catch(err){ box.innerHTML='<div class="widget-loading">โหลด widget ไม่สำเร็จ</div>'; }
+  });
+}
+function waitForTrends(cb,tries=0){
+  if(window.trends && window.trends.embed && window.trends.embed.renderExploreWidgetTo){ cb(); return; }
+  if(tries>60){ document.querySelectorAll(".widget-loading").forEach(n=>n.textContent="โหลด Google Trends ไม่สำเร็จ (ตรวจการเชื่อมต่อ/ตัวบล็อกสคริปต์)"); return; }
+  setTimeout(()=>waitForTrends(cb,tries+1),250);
+}
+
+function refresh(){ renderTabs(); renderEditor(); updateSubs(); renderWidgets(); save(); }
+
+// ---------- share / theme ----------
+function toast(msg){ const t=el("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); }
+el("shareBtn").onclick=async()=>{
+  save();
+  const url=location.href;
+  try{ await navigator.clipboard.writeText(url); toast("คัดลอกลิงก์แชร์แล้ว ✓"); }
+  catch(e){ prompt("คัดลอกลิงก์นี้เพื่อแชร์:", url); }
+};
+function setTheme(m){ if(m==="light") document.documentElement.setAttribute("data-theme","light"); else document.documentElement.removeAttribute("data-theme"); el("themeIcon").textContent=m==="dark"?"☀️":"🌙"; el("themeLabel").textContent=m==="dark"?"โหมดสว่าง":"โหมดมืด"; }
+el("themeBtn").onclick=()=>{ setTheme(document.documentElement.getAttribute("data-theme")==="light"?"dark":"light"); };
+
+// ---------- boot ----------
+loadFromURL() || loadFromStore();   // URL ก่อน (แชร์) แล้วค่อย localStorage
+fillSelects();
+setTheme("dark");
+renderTabs(); renderEditor(); updateSubs();
+waitForTrends(renderWidgets);
+save();
+</script>
+</body>
+</html>
