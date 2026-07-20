@@ -287,14 +287,15 @@ function renderWidgets(){
     ["w-rq","RELATED_QUERIES", single],
   ];
   const gen = ++widgetGen;
-  // ทยอยโหลดทีละตัว (หน่วง 450ms) เพื่อลดโอกาสโดน Google rate-limit ("Oops!")
+  // ทยอยโหลด: กราฟ→แผนที่→related (หน่วงมากขึ้น) เพื่อลดโอกาสโดน Google rate-limit ("Oops!")
+  const delays = [0, 800, 1900];
   jobs.forEach(([id,type,cfg],i)=>{
     setTimeout(()=>{
-      if(gen!==widgetGen) return;   // มีการเปลี่ยนแท็บ/ฟิลเตอร์แล้ว ยกเลิก
+      if(gen!==widgetGen) return;   // เปลี่ยนแท็บ/ฟิลเตอร์แล้ว → ยกเลิก
       const box=el(id); box.innerHTML="";
       try{ window.trends.embed.renderExploreWidgetTo(box, type, cfg.common, cfg.opts); }
       catch(err){ box.innerHTML='<div class="widget-loading">โหลด widget ไม่สำเร็จ</div>'; }
-    }, i*450);
+    }, delays[i]||0);
   });
 }
 // ---------- Related news (Google News RSS, custom-rendered) ----------
