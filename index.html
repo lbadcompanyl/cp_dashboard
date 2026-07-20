@@ -180,10 +180,21 @@ const GEOS = {
 const PERIODS = {
   "1m":  { label:"30 วันที่ผ่านมา", t:"today 1-m" },
   "3m":  { label:"90 วันที่ผ่านมา", t:"today 3-m" },
+  "6m":  { label:"6 เดือนที่ผ่านมา", months:6 },
   "12m": { label:"12 เดือนที่ผ่านมา", t:"today 12-m" },
+  "3y":  { label:"3 ปีที่ผ่านมา", years:3 },
   "5y":  { label:"5 ปีที่ผ่านมา", t:"today 5-y" },
   "all": { label:"ตั้งแต่ปี 2004", t:"all" },
 };
+// พวกที่ไม่มี preset (6 เดือน/3 ปี) คำนวณเป็นช่วงวันที่ "YYYY-MM-DD YYYY-MM-DD"
+function fmtDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function timeString(key){
+  const p=PERIODS[key]; if(p.t) return p.t;
+  const start=new Date(), end=new Date();
+  if(p.months) start.setMonth(start.getMonth()-p.months);
+  if(p.years)  start.setFullYear(start.getFullYear()-p.years);
+  return fmtDate(start)+" "+fmtDate(end);
+}
 const GUEST_PATH = "https://trends.google.com:443/trends/embed/";
 
 const el = id => document.getElementById(id);
@@ -248,7 +259,7 @@ function updateSubs(){
 
 // ---------- Google Trends widgets ----------
 function configFor(keyword){
-  const time = PERIODS[state.period].t;
+  const time = timeString(state.period);
   return {
     common: { comparisonItem:[{ keyword, geo:state.geo, time }], category:0, property:"" },
     opts:   { exploreQuery:`date=${time}&geo=${state.geo}&q=${encodeURIComponent(keyword)}&hl=th`, guestPath:GUEST_PATH },
@@ -279,16 +290,34 @@ function renderWidgets(){
 let newsToken = 0;
 function newsLocale(){ return state.geo==="TH" ? {hl:"th",gl:"TH",ceid:"TH:th"} : {hl:"en-US",gl:"US",ceid:"US:en"}; }
 function relTime(d){ try{ const diff=(Date.now()-new Date(d).getTime())/1000; if(diff<3600) return Math.max(1,Math.floor(diff/60))+" นาทีที่แล้ว"; if(diff<86400) return Math.floor(diff/3600)+" ชม.ที่แล้ว"; return Math.floor(diff/86400)+" วันก่อน"; }catch(e){ return ""; } }
-function renderNews(){
+// ลองตัวกลาง (CORS proxy) ไล่ทีละตัว เพราะ Google News บล็อกการดึงตรงจากเบราว์เซอร์
+const NEWS_PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
+];
+async function fetchViaProxies(url){
+  for(const build of NEWS_PROXIES){
+    try{
+      const res = await fetch(build(url), { cache:"no-store" });
+      if(!res.ok) continue;
+      const txt = await res.text();
+      if(txt && txt.indexOf("<item") > -1) return txt;
+    }catch(e){ /* ลองตัวถัดไป */ }
+  }
+  throw new Error("all proxies failed");
+}
+async function renderNews(){
   const g=activeGroup();
   const q=g.keywords.map(k=>k.trim()).filter(Boolean).join(" OR ") || g.name;
   const loc=newsLocale();
   const rss=`https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=${loc.hl}&gl=${loc.gl}&ceid=${loc.ceid}`;
   const gnLink=`https://news.google.com/search?q=${encodeURIComponent(q)}&hl=${loc.hl}&gl=${loc.gl}&ceid=${loc.ceid}`;
-  const proxied=`https://api.allorigins.win/raw?url=${encodeURIComponent(rss)}`;
   const box=el("news"); box.innerHTML='<div class="news-loading">กำลังโหลดข่าว…</div>';
   const token=++newsToken;
-  fetch(proxied).then(r=>r.text()).then(txt=>{
+  try{
+    const txt = await fetchViaProxies(rss);
     if(token!==newsToken) return;
     const items=[...new DOMParser().parseFromString(txt,"text/xml").querySelectorAll("item")].slice(0,10);
     if(!items.length){ box.innerHTML=newsFallback(gnLink); return; }
@@ -300,7 +329,9 @@ function renderNews(){
       const meta=[src, date?relTime(date):""].filter(Boolean).join(" · ");
       return `<li><a href="${escapeHtml(link)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${meta?`<div class="news-meta">${escapeHtml(meta)}</div>`:""}</li>`;
     }).join("")+'</ul><a class="news-more" href="'+escapeHtml(gnLink)+'" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>';
-  }).catch(()=>{ if(token===newsToken) box.innerHTML=newsFallback(gnLink); });
+  }catch(e){
+    if(token===newsToken) box.innerHTML=newsFallback(gnLink);
+  }
 }
 function newsFallback(link){ return '<div class="news-loading">โหลดข่าวอัตโนมัติไม่สำเร็จ · <a href="'+escapeHtml(link)+'" target="_blank" rel="noopener" style="color:var(--accent)">เปิดใน Google News →</a></div>'; }
 
