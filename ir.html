@@ -230,9 +230,10 @@ const GLS = { "TH":"ไทย", "US":"United States", "GB":"United Kingdom", "SG
 
 // ---------- persistence: URL + localStorage ----------
 const STORE_KEY = "newsMonitorV1";
-function snapshot(){ return { c:cfg, q:state.q }; }
+const SNAP_VERSION = 2;   // bump when defaults change so stale saved state is ignored
+function snapshot(){ return { v:SNAP_VERSION, c:cfg, q:state.q }; }
 function applySnapshot(d){
-  if(!d || typeof d!=="object") return false;
+  if(!d || typeof d!=="object" || d.v!==SNAP_VERSION) return false;   // ignore pre-v2 state → new CP defaults apply
   if(d.c){
     if(Array.isArray(d.c.alerts) && d.c.alerts.length>=2){
       cfg.alerts = d.c.alerts.slice(0,2).map((a,i)=>({
