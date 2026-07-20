@@ -1,0 +1,55 @@
+// GET /api/trend/trending?geo=TH&hours=24
+// เทรนด์แบบ "Trending Now" (search volume + % + เวลาเริ่ม) เลือกช่วง 4/24/48/168 ชม.
+// ถ้า API ใหม่พัง -> fallback กลับไป RSS คำฮิตรายวัน
+
+import { parseTrends } from "./_lib/parser.js";
+import { fetchTrendingNow } from "./_lib/trends.js";
+
+const VALID_HOURS = [4, 24, 48, 168];
+
+export async function onRequest(context) {
+  const url = new URL(context.request.url);
+  const geo = (url.searchParams.get("geo") || "TH").toUpperCase().slice(0, 5);
+  const hoursRaw = Number(url.searchParams.get("hours"));
+  const hours = VALID_HOURS.includes(hoursRaw) ? hoursRaw : 24;
+
+  const cache = caches.default;
+  const key = new Request(url.origin + `/api/trend/trending?geo=${geo}&hours=${hours}&v=2`, { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) return browserCopy(hit);
+
+  const out = { geo, hours, items: [], error: null, source: "trendingnow" };
+  try {
+    out.items = await fetchTrendingNow(geo, hours);
+    if (out.items.length === 0) throw new Error("empty result");
+  } catch (e) {
+    // fallback: RSS คำฮิตวันนี้ (ไม่มี volume/%/hours แต่ยังใช้งานได้)
+    try {
+      const r = await fetch(`https://trends.google.com/trending/rss?geo=${geo}`, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; TrendDashboard/1.0)" },
+      });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      out.items = parseTrends(await r.text());
+      out.source = "rss-fallback";
+      out.error = "trendingnow ล้มเหลว: " + String(e.message || e);
+    } catch (e2) {
+      out.error = String(e2.message || e2);
+    }
+  }
+
+  const edge = new Response(JSON.stringify(out), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=600",
+    },
+  });
+  // cache เฉพาะตอนมีข้อมูลจริง — ถ้าดึงไม่ได้เลย อย่าเก็บไว้ ให้รอบหน้าลองใหม่
+  if (out.items.length > 0) context.waitUntil(cache.put(key, edge.clone()));
+  return browserCopy(edge);
+}
+
+function browserCopy(resp) {
+  const h = new Headers(resp.headers);
+  h.set("cache-control", "no-store");
+  return new Response(resp.body, { status: resp.status, headers: h });
+}
