@@ -290,23 +290,27 @@ function renderWidgets(){
 let newsToken = 0;
 function newsLocale(){ return state.geo==="TH" ? {hl:"th",gl:"TH",ceid:"TH:th"} : {hl:"en-US",gl:"US",ceid:"US:en"}; }
 function relTime(d){ try{ const diff=(Date.now()-new Date(d).getTime())/1000; if(diff<3600) return Math.max(1,Math.floor(diff/60))+" นาทีที่แล้ว"; if(diff<86400) return Math.floor(diff/3600)+" ชม.ที่แล้ว"; return Math.floor(diff/86400)+" วันก่อน"; }catch(e){ return ""; } }
-// ลองตัวกลาง (CORS proxy) ไล่ทีละตัว เพราะ Google News บล็อกการดึงตรงจากเบราว์เซอร์
+// fetch พร้อม timeout (กันค้าง)
+async function fetchText(url, ms){
+  const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(), ms||7000);
+  try{ const r=await fetch(url,{signal:ctrl.signal,cache:"no-store"}); if(!r.ok) throw new Error("http "+r.status); return await r.text(); }
+  finally{ clearTimeout(timer); }
+}
+// ตัวกลาง (CORS proxy) สำรอง — Google News บล็อกการดึงตรงจากเบราว์เซอร์
 const NEWS_PROXIES = [
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
   u => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}`,
-  u => `https://thingproxy.freeboard.io/fetch/${u}`,
 ];
-async function fetchViaProxies(url){
+async function fetchRawXml(url){
   for(const build of NEWS_PROXIES){
-    try{
-      const res = await fetch(build(url), { cache:"no-store" });
-      if(!res.ok) continue;
-      const txt = await res.text();
-      if(txt && txt.indexOf("<item") > -1) return txt;
-    }catch(e){ /* ลองตัวถัดไป */ }
+    try{ const txt=await fetchText(build(url),6000); if(txt && txt.indexOf("<item")>-1) return txt; }catch(e){}
   }
-  throw new Error("all proxies failed");
+  throw new Error("proxies failed");
+}
+function newsListHTML(items, gnLink){
+  return '<ul class="news-list">'+items.map(it=>
+    `<li><a href="${escapeHtml(it.link)}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>${it.meta?`<div class="news-meta">${escapeHtml(it.meta)}</div>`:""}</li>`
+  ).join("")+'</ul><a class="news-more" href="'+escapeHtml(gnLink)+'" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>';
 }
 async function renderNews(){
   const g=activeGroup();
@@ -316,22 +320,29 @@ async function renderNews(){
   const gnLink=`https://news.google.com/search?q=${encodeURIComponent(q)}&hl=${loc.hl}&gl=${loc.gl}&ceid=${loc.ceid}`;
   const box=el("news"); box.innerHTML='<div class="news-loading">กำลังโหลดข่าว…</div>';
   const token=++newsToken;
+  // 1) rss2json (JSON + CORS โดยตรง มักเสถียรกว่า)
   try{
-    const txt = await fetchViaProxies(rss);
+    const txt=await fetchText(`https://api.rss2json.com/v1/api.json?count=10&rss_url=${encodeURIComponent(rss)}`, 8000);
     if(token!==newsToken) return;
-    const items=[...new DOMParser().parseFromString(txt,"text/xml").querySelectorAll("item")].slice(0,10);
-    if(!items.length){ box.innerHTML=newsFallback(gnLink); return; }
-    box.innerHTML='<ul class="news-list">'+items.map(it=>{
-      const title=(it.querySelector("title")||{}).textContent||"";
-      const link=(it.querySelector("link")||{}).textContent||gnLink;
+    const j=JSON.parse(txt);
+    if(j && j.status==="ok" && j.items && j.items.length){
+      box.innerHTML=newsListHTML(j.items.slice(0,10).map(x=>({ title:x.title, link:x.link, meta:relTime(x.pubDate) })), gnLink);
+      return;
+    }
+  }catch(e){}
+  if(token!==newsToken) return;
+  // 2) ตัวกลาง + XML (สำรอง)
+  try{
+    const txt=await fetchRawXml(rss);
+    if(token!==newsToken) return;
+    const items=[...new DOMParser().parseFromString(txt,"text/xml").querySelectorAll("item")].slice(0,10).map(it=>{
       const src=(it.getElementsByTagName("source")[0]||{}).textContent||"";
       const date=(it.querySelector("pubDate")||{}).textContent||"";
-      const meta=[src, date?relTime(date):""].filter(Boolean).join(" · ");
-      return `<li><a href="${escapeHtml(link)}" target="_blank" rel="noopener">${escapeHtml(title)}</a>${meta?`<div class="news-meta">${escapeHtml(meta)}</div>`:""}</li>`;
-    }).join("")+'</ul><a class="news-more" href="'+escapeHtml(gnLink)+'" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>';
-  }catch(e){
-    if(token===newsToken) box.innerHTML=newsFallback(gnLink);
-  }
+      return { title:(it.querySelector("title")||{}).textContent||"", link:(it.querySelector("link")||{}).textContent||gnLink, meta:[src,date?relTime(date):""].filter(Boolean).join(" · ") };
+    });
+    if(items.length){ box.innerHTML=newsListHTML(items, gnLink); return; }
+  }catch(e){}
+  if(token===newsToken) box.innerHTML=newsFallback(gnLink);
 }
 function newsFallback(link){ return '<div class="news-loading">โหลดข่าวอัตโนมัติไม่สำเร็จ · <a href="'+escapeHtml(link)+'" target="_blank" rel="noopener" style="color:var(--accent)">เปิดใน Google News →</a></div>'; }
 
