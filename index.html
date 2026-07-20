@@ -200,6 +200,9 @@ function timeString(key){
   return fmtDate(start)+" "+fmtDate(end);
 }
 const GUEST_PATH = "https://trends.google.com:443/trends/embed/";
+// (ออปชัน) วาง URL ของ Cloudflare Worker ตรงนี้เพื่อให้ข่าวเสถียร 100% เช่น "https://news.xxx.workers.dev"
+// ถ้าเว้นว่างไว้ จะใช้บริการฟรี (rss2json/proxy) ซึ่งอาจล่มเป็นบางครั้ง
+const NEWS_API = "";
 
 const el = id => document.getElementById(id);
 const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -340,6 +343,19 @@ async function renderNews(){
   const gnLink=`https://news.google.com/search?q=${encodeURIComponent(q)}&hl=${loc.hl}&gl=${loc.gl}&ceid=${loc.ceid}`;
   const box=el("news"); box.innerHTML='<div class="news-loading">กำลังโหลดข่าว…</div>';
   const token=++newsToken;
+  // 0) Cloudflare Worker ของเราเอง (ถ้าตั้งค่า NEWS_API) — เสถียรสุด
+  if(NEWS_API){
+    try{
+      const txt=await fetchText(`${NEWS_API}?q=${encodeURIComponent(q)}&hl=${loc.hl}&gl=${loc.gl}&ceid=${encodeURIComponent(loc.ceid)}`, 8000);
+      if(token!==newsToken) return;
+      const j=JSON.parse(txt);
+      if(j && j.items && j.items.length){
+        box.innerHTML=newsListWrap(j.items.slice(0,12).map(x=>({ title:x.title||"", link:x.link||gnLink, source:x.source||"", pub:x.pubDate, thumbnail:x.thumbnail||"" })), gnLink);
+        return;
+      }
+    }catch(e){}
+    if(token!==newsToken) return;
+  }
   // 1) rss2json (JSON + CORS โดยตรง มักเสถียรกว่า)
   try{
     const txt=await fetchText(`https://api.rss2json.com/v1/api.json?count=10&rss_url=${encodeURIComponent(rss)}`, 8000);
