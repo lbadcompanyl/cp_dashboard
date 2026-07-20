@@ -1,38 +1,51 @@
-# Trends Explorer — Google Trends Dashboard
+# News Monitor — Google Alerts + Google News Dashboard
 
-แดชบอร์ดแบบ static (ไฟล์เดียว) ที่ฝัง **Google Trends embed widgets** สำหรับติดตามเทรนด์การค้นหา
-โดยจัดเป็น **แท็บ = กลุ่มคำค้น** และรวมหลายคำในกลุ่มด้วย `+` เป็น **เส้นเดียว** (Google ถ่วงน้ำหนักตาม volume จริงให้เอง)
+แดชบอร์ดแบบ static (ไฟล์เดียว) ที่ดึงข่าว **สด** จากฟีด RSS ของ Google โดยไม่ต้องใช้ API key
+ต่อ **Google Alerts 2 ตัว** (แยกเป็น 2 หมวด) + **Google News** (ค้นหาข่าวตามคำค้น)
 
-กลุ่มเริ่มต้น: Food Waste (food waste + food rescue + food surplus + อาหารส่วนเกิน), Net Zero, Biodiversity, Circular Economy
+> ปรับปรุงจากเวอร์ชันเดิมที่ต่อ Google Trends — เปลี่ยนมาใช้ **Google Alerts + Google News** แทน
 
 ## ฟีเจอร์
 
-- 📈 **Interest over time** — รวมคำในกลุ่มเป็นเส้นเดียว (widget จริงของ Google)
-- 🗺️ **Interest by region** + 🔎 **Related queries** (Top/Rising)
-- 🎛️ ฟิลเตอร์ **พื้นที่ (Location)** และ **ช่วงเวลา (Time range)** — เปลี่ยนแล้ว widget โหลดใหม่อัตโนมัติ
-- ✏️ เพิ่ม/ลบคำในกลุ่ม, เพิ่ม/ลบ/เปลี่ยนชื่อแท็บได้ (สูงสุด 8 กลุ่ม)
+- 📰 **การ์ดข่าว** — หัวข้อ (ลิงก์), แหล่งข่าว, เวลาแบบสัมพัทธ์ (เช่น "2 ชม.ที่แล้ว"), และสรุปย่อ
+- 🗂️ **แท็บหมวด** — Alert 1 · Alert 2 · Google News · ทั้งหมด (พร้อมตัวนับจำนวนข่าว)
+- 🔎 **ค้นหา/กรอง** ในหัวข้อข่าวที่โหลดมา + เรียงลำดับ (ใหม่สุด / เก่าสุด / ตามแหล่ง)
+- 🔄 **รีเฟรชอัตโนมัติ** (5 / 10 / 30 นาที) หรือรีเฟรชเอง
+- ⚙️ **หน้าตั้งค่าแหล่งข่าว** — วาง URL ฟีดของ Google Alert และตั้งคำค้น/ภาษา/ประเทศของ Google News
 - 💾 **จำค่า** อัตโนมัติในเบราว์เซอร์ (localStorage) + 🔗 **แชร์ลิงก์** (ฝัง state ใน URL)
 - 🌙 โหมดมืด/สว่าง
 
-ไม่ต้องใช้ API key ไม่ติด CORS ไม่โดน rate limit — ใช้วิธี embed อย่างเป็นทางการของ Google
+ไม่ต้องใช้ API key — ดึงจากฟีด RSS โดยตรงผ่าน **public CORS proxy** (มีตัวสำรองหลายตัว)
 
 ## โครงสร้าง
 
 ```
-index.html   ไฟล์เดียวจบ (HTML + CSS + JS + โหลด embed_loader ของ Google)
+index.html   ไฟล์เดียวจบ (HTML + CSS + JS)
 ```
 
-## แก้ไขกลุ่ม/คำค้นเริ่มต้น
+## วิธีต่อ Google Alert (สำคัญ)
 
-แก้ที่ตัวแปร `groups` ด้านบนของ `<script>` ใน `index.html`:
+ฟีด Google Alert เป็น URL **ส่วนตัวของคุณ** ต้องสร้างเองแล้วนำมาวางในหน้าตั้งค่า:
 
-```js
-let groups = [
-  { name:"Food Waste", keywords:["food waste","food rescue","food surplus","อาหารส่วนเกิน"] },
-  { name:"Net Zero",   keywords:["net zero","carbon neutral","net zero 2050"] },
-  ...
-];
-```
+1. เข้า [google.com/alerts](https://www.google.com/alerts)
+2. พิมพ์หัวข้อที่อยากติดตาม → กด **Show options**
+3. ตั้ง **Deliver to = RSS feed** แล้วกด **Create Alert**
+4. คลิกไอคอน **RSS** ข้าง Alert ที่สร้าง → คัดลอก URL (ขึ้นต้นด้วย `https://www.google.com/alerts/feeds/…`)
+5. เปิดแดชบอร์ด → ปุ่ม **⚙️ ตั้งค่าแหล่งข่าว** → วาง URL ลงช่อง Alert หมวดที่ 1 / หมวดที่ 2 → **บันทึกและโหลดใหม่**
+
+ทำซ้ำอีกหัวข้อสำหรับหมวดที่ 2 เพื่อ **แยกหมวด** ตามต้องการ
+
+## Google News
+
+ไม่ต้องตั้งค่าอะไรเพิ่ม — แค่ใส่ **คำค้น** + เลือกภาษา/ประเทศ ในหน้าตั้งค่า
+(ระบบสร้างฟีด `https://news.google.com/rss/search?q=…` ให้อัตโนมัติ)
+
+## หมายเหตุทางเทคนิค
+
+- ฟีด RSS ของ Google **ไม่เปิด CORS** จึงต้องดึงผ่าน public proxy — โค้ดลองหลายตัวตามลำดับ:
+  `allorigins.win` → `corsproxy.io` → `codetabs.com` (ถ้าตัวหนึ่งล่ม ใช้ตัวถัดไป)
+- รองรับทั้ง **Atom** (Google Alerts) และ **RSS 2.0** (Google News) ในตัวแยกฟีดเดียว
+- ลิงก์ของ Google Alert ถูกห่อด้วย redirect `google.com/url?...&url=<จริง>` — โค้ดจะแกะ URL จริงออกให้
 
 ## รันดูในเครื่อง
 
@@ -50,11 +63,3 @@ python3 -m http.server 8080   # แล้วเปิด http://localhost:8080
 4. Deploy → ได้ URL `*.pages.dev` (auto-deploy ทุกครั้งที่ push)
 
 เป็น static ล้วน ไม่มีขั้นตอน build
-
-## หมายเหตุ
-
-- ค่าเป็น **สัดส่วนสัมพัทธ์ 0–100** ไม่ใช่จำนวนค้นหาจริง
-- มุมมอง **5 ปี** อาจดูแบนถ้ามีจุดพีคเดียวในอดีต (Google normalize ให้พีค = 100) — ลองย่นช่วงเวลาจะเห็นรายละเอียดมากขึ้น
-- **โหมดมืด** เป็นของกรอบหน้าเว็บ ส่วน widget เป็น UI ของ Google (พื้นขาว)
-- **Related queries** ใช้คำแรกของกลุ่ม (คำเดี่ยว) เพราะคำรวม `+` มักไม่มีข้อมูล
-- ถ้า `embed_loader.js` เวอร์ชันในไฟล์เลิกทำงาน ให้เข้า Google Trends → กดปุ่ม embed (`< >`) แล้วคัดลอกเวอร์ชัน loader ใหม่มาแทน
