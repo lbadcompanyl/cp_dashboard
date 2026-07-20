@@ -260,6 +260,7 @@ function loadFromStore(){ try{ const raw=localStorage.getItem(STORE_KEY); if(!ra
 
 // ---------- feed fetching (via CORS proxies with fallback) ----------
 const PROXIES = [
+  u => "/api/feed?url=" + encodeURIComponent(u),   // same-origin Cloudflare Pages Function (stable) — 404s off Cloudflare, then falls back
   u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
   u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
   u => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
