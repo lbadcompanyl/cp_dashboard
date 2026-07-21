@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "3"; // เพิ่มเลขนี้เมื่อเปลี่ยน logic parsing เพื่อล้าง edge cache เก่า
+const CACHE_VER = "4"; // เพิ่มเลขนี้เมื่อเปลี่ยน config/parsing เพื่อล้าง edge cache เก่า
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -79,8 +79,8 @@ async function buildAndStore(cache, cacheKey) {
     },
   });
 
-  // เก็บเฉพาะตอนสำเร็จหมด — ถ้ามีฟีดพัง อย่าเก็บ error ไว้
-  if (errors.length === 0) await cache.put(cacheKey, resp.clone());
+  // เก็บ cache ตราบใดที่ได้ข่าวมาบ้าง (ทนฟีดพังบางเจ้า) — จะรีเฟรชเบื้องหลังเองตาม SWR
+  if (Object.values(sources).some((s) => s.items.length > 0)) await cache.put(cacheKey, resp.clone());
   return resp;
 }
 
