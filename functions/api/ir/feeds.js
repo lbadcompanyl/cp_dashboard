@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "1";
+const CACHE_VER = "2"; // bump: parser now strips <b> and unwraps links for alert1/alert2
 const SOURCES = ["news", "alert1", "alert2"];
 const LABELS = { news: "News", alert1: "Google Alert 1", alert2: "Google Alert 2" };
 

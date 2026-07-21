@@ -68,8 +68,8 @@ export function parseGeneric(xml, source) {
     // หมายเหตุ: ฟีดข่าวตรงจากสำนักข่าว — sourceLabel มาจาก label ใน config (ตั้งใน feeds.js)
     // เก็บ title/snippet ตามจริง (ไม่ตัดอะไร)
 
-    if (source === "alert") {
-      // Google Alert: title/snippet มี <b> ไฮไลต์คำ — ตัด tag ออก
+    if (source.startsWith("alert")) {
+      // Google Alert (alert / alert1 / alert2): title มี <b> ไฮไลต์คำ — ตัด tag ออก
       title = stripTags(title);
       // ลิงก์เป็น google.com/url?...&url=<ลิงก์จริง> — แกะออกให้ตรง
       const m = link.match(/[?&]url=([^&]+)/);
