@@ -29,8 +29,11 @@ export default [
   { id: "news-bbc",         source: "news", label: "BBC World",       url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
   { id: "news-verge",       source: "news", label: "The Verge",       url: "https://www.theverge.com/rss/index.xml" },
 
-  // 🔔 Alert 1 — Google Alert หมวดที่ 1
+  // 🔔 Alert 1 — แบรนด์ CP (รวม 2 ฟีด: "cp" + "ซีพี" ไว้คอลัมน์เดียว)
   { id: "alert1-cp",   source: "alert1", label: '"cp" -tower', url: "https://www.google.com/alerts/feeds/09603683942017157714/11443863203205870260" },
-  // 🔔 Alert 2 — Google Alert หมวดที่ 2
-  { id: "alert2-ซีพี", source: "alert2", label: '"ซีพี"',      url: "https://www.google.com/alerts/feeds/09603683942017157714/5523361181985541471" },
+  { id: "alert1-ซีพี", source: "alert1", label: '"ซีพี"',      url: "https://www.google.com/alerts/feeds/09603683942017157714/5523361181985541471" },
+
+  // 🔔 Alert 2 — อุตสาหกรรมปศุสัตว์/อาหาร/การค้า/คู่แข่ง (query รวม ไทย+อังกฤษ)
+  // ราคาหมู/ไก่/ไข่/กุ้ง · ปศุสัตว์ · หมูเถื่อน · อาหารสัตว์ · โรคระบาด (ASF/หวัดนก) · ภาษี/ส่งออก · เบทาโกร/Cargill
+  { id: "alert2-agri", source: "alert2", label: "ปศุสัตว์ · อาหาร · การค้า", url: "https://www.google.com/alerts/feeds/09603683942017157714/7091931631874504592" },
 ];

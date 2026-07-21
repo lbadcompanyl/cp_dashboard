@@ -8,9 +8,9 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "8"; // bump: MGR store feed Thai PBS dead feeds + resolve relative links
+const CACHE_VER = "9"; // bump: Alert1 = CP+ซีพี รวมคอลัมน์, Alert2 = ปศุสัตว์/อาหาร/การค้า
 const SOURCES = ["news", "alert1", "alert2"];
-const LABELS = { news: "News", alert1: "Google Alert 1", alert2: "Google Alert 2" };
+const LABELS = { news: "News", alert1: "CP / ซีพี", alert2: "ปศุสัตว์ · อาหาร · การค้า" };
 
 export async function onRequest(context) {
   const cache = caches.default;
