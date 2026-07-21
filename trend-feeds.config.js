@@ -13,6 +13,16 @@ export default [
   { id: "news-prachatai",   source: "news", label: "ประชาไท",         url: "https://prachatai.com/rss.xml" },
   { id: "news-blognone",    source: "news", label: "Blognone",        url: "https://www.blognone.com/atom.xml" },
   { id: "news-workpoint",   source: "news", label: "Workpoint Today", url: "https://workpointtoday.com/feed/" },
+  // 🔎 PROBE: ลอง URL หลายแบบของ ผู้จัดการ/Thai PBS/PPTV — เก็บตัวที่ไม่ 404 แล้วลบที่เหลือ
+  { id: "news-mgr1",     source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/rss/onlinesection/breakingnews.xml" },
+  { id: "news-mgr2",     source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/rss/onlinesection/all.xml" },
+  { id: "news-mgr3",     source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/rss.xml" },
+  { id: "news-thaipbs1", source: "news", label: "Thai PBS",  url: "https://news.thaipbs.or.th/rss/news" },
+  { id: "news-thaipbs2", source: "news", label: "Thai PBS",  url: "https://news.thaipbs.or.th/rss" },
+  { id: "news-thaipbs3", source: "news", label: "Thai PBS",  url: "https://www.thaipbs.or.th/news/rss" },
+  { id: "news-pptv1",    source: "news", label: "PPTV HD36", url: "https://www.pptvhd36.com/rss/news" },
+  { id: "news-pptv2",    source: "news", label: "PPTV HD36", url: "https://www.pptvhd36.com/feed" },
+  { id: "news-pptv3",    source: "news", label: "PPTV HD36", url: "https://www.pptvhd36.com/rss.xml" },
   // ธุรกิจ/การเงิน (สำคัญกับ IR/CP)
   { id: "news-bangkokbiz",  source: "news", label: "กรุงเทพธุรกิจ",    url: "https://www.bangkokbiznews.com/rss" },
   { id: "news-prachachat",  source: "news", label: "ประชาชาติธุรกิจ",  url: "https://www.prachachat.net/feed" },

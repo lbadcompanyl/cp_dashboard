@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "5"; // เพิ่มเลขนี้เมื่อเปลี่ยน config/parsing เพื่อล้าง edge cache เก่า
+const CACHE_VER = "6"; // เพิ่มเลขนี้เมื่อเปลี่ยน config/parsing เพื่อล้าง edge cache เก่า
 
 export async function onRequest(context) {
   const cache = caches.default;
