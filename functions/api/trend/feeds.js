@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "4"; // เพิ่มเลขนี้เมื่อเปลี่ยน config/parsing เพื่อล้าง edge cache เก่า
+const CACHE_VER = "5"; // เพิ่มเลขนี้เมื่อเปลี่ยน config/parsing เพื่อล้าง edge cache เก่า
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -49,7 +49,11 @@ async function buildAndStore(cache, cacheKey) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         const xml = await res.text();
         const items = f.source === "trends" ? parseTrends(xml) : parseGeneric(xml, f.source);
-        for (const it of items) if (!it.sourceLabel) it.sourceLabel = f.label;
+        for (const it of items) {
+          if (!it.sourceLabel) it.sourceLabel = f.label;
+          // some feeds (e.g. Workpoint) give relative links — resolve against the feed URL
+          if (it.link && it.link.startsWith("/")) { try { it.link = new URL(it.link, f.url).href; } catch {} }
+        }
         (sources[f.source] || (sources[f.source] = { label: f.label, items: [] })).items.push(...items);
       } catch (e) {
         errors.push({ id: f.id, source: f.source, label: f.label, message: String(e.message || e) });

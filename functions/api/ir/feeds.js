@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "3"; // bump: expanded news feed list
+const CACHE_VER = "4"; // bump: pruned dead feeds + resolve relative links
 const SOURCES = ["news", "alert1", "alert2"];
 const LABELS = { news: "News", alert1: "Google Alert 1", alert2: "Google Alert 2" };
 
@@ -42,7 +42,11 @@ async function buildAndStore(cache, cacheKey) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         const xml = await res.text();
         const items = parseGeneric(xml, f.source);
-        for (const it of items) if (!it.sourceLabel) it.sourceLabel = f.label;
+        for (const it of items) {
+          if (!it.sourceLabel) it.sourceLabel = f.label;
+          // some feeds (e.g. Workpoint) give relative links — resolve against the feed URL
+          if (it.link && it.link.startsWith("/")) { try { it.link = new URL(it.link, f.url).href; } catch {} }
+        }
         sources[f.source].items.push(...items);
       } catch (e) {
         errors.push({ id: f.id, source: f.source, label: f.label, message: String(e.message || e) });
