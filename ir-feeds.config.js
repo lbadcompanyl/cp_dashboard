@@ -14,7 +14,12 @@ export default [
   { id: "news-blognone",    source: "news", label: "Blognone",        url: "https://www.blognone.com/atom.xml" },
   { id: "news-workpoint",   source: "news", label: "Workpoint Today", url: "https://workpointtoday.com/feed/" },
   { id: "news-thaipbs",  source: "news", label: "Thai PBS",  url: "https://news.thaipbs.or.th/rss/news" },
-  // หมายเหตุ: ผู้จัดการ (mgronline) และ PPTV (pptvhd36) ไม่มี RSS ที่ดึงได้ (ลองหลาย URL แล้ว 404 หมด)
+  // ผู้จัดการ (MGR) — pattern /{section}/rss/index.xml (ยืนยันจาก view-source) — ตัด section ที่ 404 ออกภายหลัง
+  { id: "news-mgr-politics", source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/politics/rss/index.xml" },
+  { id: "news-mgr-business", source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/business/rss/index.xml" },
+  { id: "news-mgr-stock",    source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/stockmarket/rss/index.xml" },
+  { id: "news-mgr-around",   source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/around/rss/index.xml" },
+  // PPTV (pptvhd36) ยังไม่พบ RSS (ลอง view-source หา application/rss+xml ได้เหมือน MGR)
   // ธุรกิจ/การเงิน (สำคัญกับ IR/CP)
   { id: "news-bangkokbiz",  source: "news", label: "กรุงเทพธุรกิจ",    url: "https://www.bangkokbiznews.com/rss" },
   { id: "news-prachachat",  source: "news", label: "ประชาชาติธุรกิจ",  url: "https://www.prachachat.net/feed" },
