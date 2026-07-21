@@ -33,9 +33,17 @@
   .hero p { margin:0; color:var(--muted); font-size:1rem; }
 
   .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:20px; padding-bottom:48px; }
-  .card { display:flex; flex-direction:column; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:26px; text-decoration:none; color:inherit; transition:border-color .15s, transform .15s, box-shadow .15s; }
+  .card { position:relative; display:flex; flex-direction:column; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:26px; text-decoration:none; color:inherit; transition:border-color .15s, transform .15s, box-shadow .15s; }
   .card:hover { border-color:var(--accent); transform:translateY(-3px); box-shadow:0 12px 30px rgba(0,0,0,.18); }
-  .card .icon { width:52px; height:52px; border-radius:13px; display:grid; place-items:center; font-size:26px; background:var(--accent-soft); }
+  .card .icon { width:52px; height:52px; border-radius:13px; display:grid; place-items:center; font-size:26px; background:var(--accent-soft); position:relative; }
+  .card .icon .wip-corner { position:absolute; right:-6px; bottom:-6px; font-size:18px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+
+  /* under-construction cards */
+  .card.wip { border-style:dashed; }
+  .card.wip:hover { border-color:#e6a935; }
+  .card.wip .icon { background:rgba(230,169,53,.15); }
+  .wip-badge { position:absolute; top:14px; right:14px; display:inline-flex; align-items:center; gap:5px; font-size:0.64rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:#e6a935; background:rgba(230,169,53,.14); border:1px solid rgba(230,169,53,.4); border-radius:999px; padding:4px 10px; }
+  :root[data-theme="light"] .wip-badge { color:#9a6a00; }
   .card h2 { margin:0; font-size:1.2rem; }
   .card .tag { align-self:flex-start; font-size:0.7rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--accent); background:var(--accent-soft); border-radius:999px; padding:3px 11px; }
   .card p { margin:0; color:var(--ink-2); font-size:0.9rem; flex:1; }
@@ -73,8 +81,9 @@
       <span class="go">เปิดแดชบอร์ด →</span>
     </a>
 
-    <a class="card" href="ir/">
-      <div class="icon">📰</div>
+    <a class="card wip" href="ir/">
+      <span class="wip-badge">🚧 Under Construction</span>
+      <div class="icon">📊<span class="wip-corner">🚧</span></div>
       <span class="tag">IR</span>
       <h2>IR News Monitor</h2>
       <p>ติดตามสื่อสำหรับงานนักลงทุนสัมพันธ์ (IR) แบบ 3 คอลัมน์ — News + Google Alert 2 หมวด</p>
@@ -86,15 +95,16 @@
       <span class="go">เปิดแดชบอร์ด →</span>
     </a>
 
-    <a class="card" href="sd.html">
-      <div class="icon">🌱</div>
+    <a class="card wip" href="sd.html">
+      <span class="wip-badge">🚧 Under Construction</span>
+      <div class="icon">🌱<span class="wip-corner">🚧</span></div>
       <span class="tag">SD</span>
       <h2>SD Trends</h2>
       <p>แดชบอร์ด Google Trends สำหรับงานความยั่งยืน (Sustainable Development)</p>
       <ul>
         <li>ติดตามเทรนด์หัวข้อด้าน SD</li>
-        <li>พัฒนาในอีก session แล้วรวมที่นี่</li>
-        <li>ไฟล์: sd.html</li>
+        <li>ค้นหา / กรองพื้นที่ &amp; ช่วงเวลา</li>
+        <li>กำลังพัฒนาเพิ่มเติม</li>
       </ul>
       <span class="go">เปิดแดชบอร์ด →</span>
     </a>
