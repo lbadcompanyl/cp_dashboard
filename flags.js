@@ -352,11 +352,11 @@
   function injectCss() {
     const css = `
     .card{position:relative}
-    .flag-btn{position:absolute;top:7px;right:7px;z-index:3;border:1px solid rgba(255,255,255,.35);background:rgba(20,20,20,.62);color:#fff;height:26px;border-radius:8px;font-size:12px;line-height:1;cursor:pointer;opacity:.95;transition:opacity .12s,background .12s,transform .1s;display:inline-flex;align-items:center;gap:5px;padding:0 9px;font-family:inherit;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.3)}
-    .flag-btn::after{content:"ตัด"}
-    .flag-btn:hover{opacity:1;background:#c0392b;border-color:#c0392b;transform:scale(1.06)}
-    :root[data-theme="light"] .flag-btn{background:rgba(255,255,255,.9);color:#c0392b;border-color:rgba(192,57,43,.5)}
-    :root[data-theme="light"] .flag-btn:hover{background:#c0392b;color:#fff}
+    .flag-btn{position:absolute;top:6px;right:6px;z-index:3;border:1px solid rgba(160,160,160,.32);background:rgba(40,40,40,.42);color:#fff;width:25px;height:25px;border-radius:7px;font-size:12px;line-height:1;cursor:pointer;opacity:.55;transition:opacity .12s,background .12s;display:grid;place-items:center;padding:0}
+    .card:hover .flag-btn{opacity:.9}
+    .flag-btn:hover{opacity:1;background:#c0392b;border-color:#c0392b}
+    :root[data-theme="light"] .flag-btn{background:rgba(255,255,255,.72);color:#666;border-color:rgba(0,0,0,.15)}
+    :root[data-theme="light"] .flag-btn:hover{background:#c0392b;color:#fff;border-color:#c0392b}
     .flg-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:10000;font-family:inherit;max-width:92vw}
     .flg-toast button{background:none;border:none;color:#7db3ff;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap}
     .flg-fabwrap{position:fixed;right:16px;bottom:16px;z-index:9997;display:flex;flex-direction:column;gap:10px;align-items:flex-end}
