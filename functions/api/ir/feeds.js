@@ -13,19 +13,38 @@ const SOURCES = ["news", "alert1", "alert2"];
 const LABELS = { news: "News", alert1: "CP / ซีพี", alert2: "ปศุสัตว์ · อาหาร · การค้า" };
 
 export async function onRequest(context) {
+  const url = new URL(context.request.url);
   const cache = caches.default;
-  const cacheKey = new Request(
-    new URL(context.request.url).origin + "/api/ir/feeds?v=" + CACHE_VER,
-    { method: "GET" }
-  );
+  const cacheKey = new Request(url.origin + "/api/ir/feeds?v=" + CACHE_VER, { method: "GET" });
 
-  const hit = await cache.match(cacheKey);
-  if (hit) {
-    const age = Date.now() - Number(hit.headers.get("x-cached-at") || 0);
+  let resp = await cache.match(cacheKey);
+  if (resp) {
+    const age = Date.now() - Number(resp.headers.get("x-cached-at") || 0);
     if (age > FRESH_MS) context.waitUntil(buildAndStore(cache, cacheKey));
-    return browserCopy(hit);
+  } else {
+    resp = await buildAndStore(cache, cacheKey);
   }
-  return browserCopy(await buildAndStore(cache, cacheKey));
+
+  // มุมมองอ่านง่ายสำหรับเช็คฟีดพัง — เปิด /api/ir/feeds?errors
+  if (url.searchParams.has("errors")) {
+    let txt;
+    try {
+      const j = JSON.parse(await resp.clone().text());
+      const s = j.sources || {};
+      txt =
+        `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
+        `จำนวนข่าว: news=${(s.news?.items || []).length}  alert1=${(s.alert1?.items || []).length}  alert2=${(s.alert2?.items || []).length}\n` +
+        `อัปเดต: ${j.generatedAt || "-"}\n\n` +
+        ((j.errors || []).length
+          ? (j.errors || []).map((e) => `✗ ${e.label}  [${e.source}/${e.id}]  →  ${e.message}`).join("\n")
+          : "✓ ทุกฟีดโหลดได้หมด");
+    } catch (e) {
+      txt = "อ่าน errors ไม่ได้: " + String(e);
+    }
+    return new Response(txt, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  }
+
+  return browserCopy(resp);
 }
 
 async function buildAndStore(cache, cacheKey) {
