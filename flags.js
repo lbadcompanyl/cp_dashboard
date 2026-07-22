@@ -5,6 +5,7 @@
   "use strict";
   const LS_HIDDEN = "flgHidden.v1"; // { [link]: 1 }
   const LS_RECS = "flgRecs.v1"; // [{ link, title, source, label, host, ts }]
+  const LS_KW = "flgKw.v1"; // { [source]: [term, ...] } — คำที่กำลังจะเพิ่มใน Alert
   const THRESH = 3; // host/คำ ซ้ำถึงเกณฑ์นี้ → แนะนำตัด (จุดแดง)
   const MIN_LIST = 2; // แสดงในรายการเมื่อซ้ำ ≥ นี้
 
@@ -22,7 +23,13 @@
 
   let hidden = load(LS_HIDDEN, {});
   let records = load(LS_RECS, []);
+  let kwStore = load(LS_KW, {});
   let onChange = () => {};
+
+  // ประกอบ terms → OR string (ครอบ "..." อัตโนมัติถ้ามีเว้นวรรค)
+  function buildKw(terms) {
+    return (terms || []).map((t) => (/\s/.test(t) ? `"${t}"` : t)).join(" OR ");
+  }
 
   function host(link) {
     try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; }
@@ -122,7 +129,8 @@
   function hideToast() { if (toastEl) toastEl.style.display = "none"; }
 
   // ---------- FAB + panel ----------
-  let fab, mask, panel;
+  let fab, mask, panel, kwPanel;
+  function closeAll() { closePanel(); closeKw(); }
   function ensureUi() {
     if (fab) return;
     fab = document.createElement("button");
@@ -133,14 +141,78 @@
 
     mask = document.createElement("div");
     mask.className = "flg-mask";
-    mask.addEventListener("click", closePanel);
+    mask.addEventListener("click", closeAll);
     document.body.appendChild(mask);
 
     panel = document.createElement("div");
     panel.className = "flg-panel";
     document.body.appendChild(panel);
 
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
+    kwPanel = document.createElement("div");
+    kwPanel.className = "flg-panel";
+    document.body.appendChild(kwPanel);
+
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
+  }
+
+  // ---------- ปุ่ม "เพิ่มคำค้น" ในคอลัมน์ Alert ----------
+  function injectKwButtons() {
+    $$(".panel").forEach((p) => {
+      const s = p.dataset.source || "";
+      if (!s.startsWith("alert")) return;
+      const filters = $(".filters", p);
+      if (!filters || $(".flg-kw-btn", filters)) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "flg-kw-btn";
+      btn.textContent = "➕ เพิ่มคำค้น";
+      btn.title = "สร้างคำค้นเพิ่มสำหรับ Alert นี้ → คัดลอกไปแปะใน Google Alert";
+      btn.addEventListener("click", () => openKw(s));
+      filters.appendChild(btn);
+    });
+  }
+
+  function openKw(source) {
+    ensureUi();
+    closePanel();
+    const terms = kwStore[source] || [];
+    kwPanel.dataset.source = source;
+    kwPanel.innerHTML = `
+      <div class="flg-head"><b>➕ เพิ่มคำค้น · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
+      <p class="flg-note">พิมพ์คำ → ประกอบเป็น OR string → คัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
+      <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
+      <div class="flg-rows flg-kwchips">${terms.length ? terms.map((t, i) => `<span class="flg-kwchip">${esc(t)}<button type="button" data-rm="${i}" title="ลบ">✕</button></span>`).join("") : '<span class="flg-thin">ยังไม่มีคำ — พิมพ์ด้านบน</span>'}</div>
+      <div class="flg-sub">คำค้นที่ประกอบได้ <span class="flg-hint">(แก้ได้)</span>:</div>
+      <div class="flg-ex"><textarea id="flgkwta" rows="2" placeholder='เช่น "ราคาหมู" OR สุกร'>${esc(buildKw(terms))}</textarea><button type="button" class="flg-copy" data-kwcopy>📋 คัดลอก</button></div>
+      <div class="flg-actions"><a href="https://www.google.com/alerts" target="_blank" rel="noopener">🔗 เปิด Google Alerts → แก้ query → Update</a><button type="button" class="flg-clear" data-kwclear>ล้างคำทั้งหมด</button></div>`;
+    kwPanel.classList.add("open");
+    kwPanel.style.display = "block";
+    mask.style.display = "block";
+
+    const field = $(".flg-kwfield", kwPanel);
+    const doAdd = () => {
+      const v = field.value.trim();
+      if (!v) return;
+      const arr = kwStore[source] || (kwStore[source] = []);
+      if (!arr.includes(v)) arr.push(v);
+      save(LS_KW, kwStore);
+      openKw(source);
+    };
+    field.focus();
+    $(".flg-kwadd", kwPanel).addEventListener("click", doAdd);
+    field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+    $$("[data-rm]", kwPanel).forEach((b) =>
+      b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(LS_KW, kwStore); openKw(source); })
+    );
+    $("[data-kwclose]", kwPanel).addEventListener("click", closeKw);
+    $("[data-kwcopy]", kwPanel).addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
+    $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(LS_KW, kwStore); openKw(source); });
+  }
+  function closeKw() {
+    if (!kwPanel) return;
+    kwPanel.classList.remove("open");
+    kwPanel.style.display = "none";
+    if (panel && !panel.classList.contains("open")) mask.style.display = "none";
   }
   function refresh() {
     ensureUi();
@@ -152,6 +224,7 @@
   }
   function openPanel() {
     ensureUi();
+    closeKw();
     const srcs = sources();
     let html = `<div class="flg-head"><b>🚩 คำแนะนำตัดข่าว</b><button type="button" class="flg-x" data-close>✕</button></div>
       <p class="flg-note">flag = ซ่อนที่นี่ + สรุปคำที่ควรตัด แล้ว <u>คุณ</u> เอา exclusion ไปแปะใน Google Alert (กด Update) — Google ไม่มี API เทรนตรง วิธีนี้ได้ผลจริงสุด</p>`;
@@ -209,7 +282,7 @@
     if (!panel) return;
     panel.classList.remove("open");
     panel.style.display = "none";
-    mask.style.display = "none";
+    if (kwPanel && !kwPanel.classList.contains("open")) mask.style.display = "none";
   }
   function copy(text, btn) {
     const done = () => { const o = btn.textContent; btn.textContent = "✓ คัดลอกแล้ว"; setTimeout(() => (btn.textContent = o), 1500); };
@@ -265,6 +338,15 @@
     .flg-actions{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px}
     .flg-actions a{color:#6fb0ff;text-decoration:none}
     .flg-clear{background:none;border:1px solid rgba(150,150,150,.3);color:inherit;border-radius:7px;padding:3px 9px;cursor:pointer;font-size:11px;font-family:inherit;opacity:.8}
+    .flg-kw-btn{border:1px solid rgba(150,150,150,.35);background:transparent;color:inherit;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+    .flg-kw-btn:hover{border-color:#2a78d6}
+    .flg-kwin{display:flex;gap:8px;margin:2px 0 10px}
+    .flg-kwfield{flex:1;min-width:0;background:rgba(150,150,150,.12);color:inherit;border:1px solid rgba(150,150,150,.25);border-radius:8px;padding:9px;font-family:inherit;font-size:13px}
+    .flg-kwadd{border:none;background:#2a78d6;color:#fff;border-radius:8px;padding:0 15px;cursor:pointer;font-family:inherit;font-size:13px;white-space:nowrap}
+    .flg-kwchips{margin-bottom:4px}
+    .flg-kwchip{background:rgba(42,120,214,.18);border:1px solid rgba(42,120,214,.4);border-radius:7px;padding:3px 6px 3px 9px;font-size:12px;display:inline-flex;gap:7px;align-items:center}
+    .flg-kwchip button{background:none;border:none;color:inherit;cursor:pointer;opacity:.55;font-size:11px;padding:0;line-height:1}
+    .flg-kwchip button:hover{opacity:1}
     `;
     const st = document.createElement("style");
     st.textContent = css;
@@ -276,6 +358,8 @@
     init(opts = {}) {
       onChange = opts.onChange || (() => {});
       injectCss();
+      ensureUi();
+      injectKwButtons();
       document.addEventListener("click", (e) => {
         const b = e.target.closest(".flag-btn");
         if (b) { e.preventDefault(); e.stopPropagation(); flag(b); }
