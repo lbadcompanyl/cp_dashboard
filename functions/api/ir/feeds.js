@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "11"; // bump: Alert1 = CP+ซีพี รวมคอลัมน์, Alert2 = ปศุสัตว์/อาหาร/การค้า
+const CACHE_VER = "12"; // bump: Alert1 = CP+ซีพี รวมคอลัมน์, Alert2 = ปศุสัตว์/อาหาร/การค้า
 const SOURCES = ["news", "alert1", "alert2"];
 const LABELS = { news: "News", alert1: "CP / ซีพี", alert2: "ปศุสัตว์ · อาหาร · การค้า" };
 
@@ -44,6 +44,7 @@ async function buildAndStore(cache, cacheKey) {
         const items = parseGeneric(xml, f.source);
         for (const it of items) {
           if (!it.sourceLabel) it.sourceLabel = f.label;
+          it.group = f.group || "gen"; // biz | intl | gen — สำหรับแยกช่องบน/ล่าง
           // some feeds (e.g. Workpoint) give relative links — resolve against the feed URL
           if (it.link && it.link.startsWith("/")) { try { it.link = new URL(it.link, f.url).href; } catch {} }
         }
