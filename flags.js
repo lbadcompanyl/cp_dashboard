@@ -42,6 +42,44 @@
     return (terms || []).map((t) => (/\s/.test(t) ? `"${t}"` : t)).join(" OR ");
   }
 
+  // ---------- server sync (Cloudflare KV) — ถ้า bind แล้วจะ sync ข้ามเครื่อง ----------
+  const API = "/api/flags";
+  let serverOn = false; // เป็น true เมื่อ /api/flags ตอบว่า configured (bind KV แล้ว)
+  const apiUrl = () => API + "?scope=" + encodeURIComponent(SCOPE);
+  function rebuildHidden() {
+    hidden = {};
+    records.forEach((r) => { if (r.link) hidden[r.link] = 1; });
+  }
+  function adoptServer(d) {
+    serverOn = true;
+    records = Array.isArray(d.records) ? d.records : [];
+    kwStore = d.kw && typeof d.kw === "object" ? d.kw : {};
+    rebuildHidden();
+    save(key(LS_RECS), records);
+    save(key(LS_KW), kwStore);
+    save(key(LS_HIDDEN), hidden);
+    onChange();
+    refresh();
+  }
+  async function syncPull() {
+    try {
+      const d = await (await fetch(apiUrl(), { cache: "no-store" })).json();
+      if (d && d.configured) adoptServer(d);
+      else serverOn = false;
+    } catch { serverOn = false; }
+  }
+  async function pushOp(op) {
+    if (!serverOn) return; // ยังไม่ได้ bind KV → อยู่ local อย่างเดียว
+    try {
+      const d = await (await fetch(apiUrl(), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(op),
+      })).json();
+      if (d && d.configured) adoptServer(d);
+    } catch { /* ออฟไลน์ → คงค่า local ไว้ รอ pull รอบหน้า */ }
+  }
+
   function host(link) {
     try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; }
   }
@@ -103,17 +141,20 @@
     toast(`ซ่อนแล้ว ✓ · flag คอลัมน์นี้ ${analyze(rec.source).count} ใบ`, true);
     onChange();
     refresh();
+    pushOp({ op: "flag", rec });
   }
   function undoLast() {
     if (!lastFlag) return;
-    delete hidden[lastFlag.link];
-    records = records.filter((r) => !(r.link === lastFlag.link && r.ts === lastFlag.ts));
+    const link = lastFlag.link;
+    delete hidden[link];
+    records = records.filter((r) => !(r.link === link && r.ts === lastFlag.ts));
     save(key(LS_HIDDEN), hidden);
     save(key(LS_RECS), records);
     lastFlag = null;
     hideToast();
     onChange();
     refresh();
+    pushOp({ op: "unflag", link });
   }
   function restoreItem(link) {
     delete hidden[link];
@@ -122,6 +163,7 @@
     save(key(LS_RECS), records);
     onChange();
     refresh(); // re-render panel ถ้าเปิดอยู่
+    pushOp({ op: "unflag", link });
   }
   function clearSource(source) {
     const gone = records.filter((r) => r.source === source);
@@ -132,6 +174,7 @@
     onChange();
     refresh();
     openPanel(); // rerender panel
+    pushOp({ op: "clearSource", source });
   }
 
   // ---------- toast ----------
@@ -217,7 +260,7 @@
       : "";
     kwPanel.dataset.source = source;
     kwPanel.innerHTML = `
-      <div class="flg-head"><b>➕ เพิ่มคำค้น${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
+      <div class="flg-head"><b>➕ เพิ่มคำค้น${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
       ${tabs}
       <p class="flg-note">พิมพ์คำ → ประกอบเป็น OR string → คัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
       <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
@@ -236,18 +279,19 @@
       const arr = kwStore[source] || (kwStore[source] = []);
       if (!arr.includes(v)) arr.push(v);
       save(key(LS_KW), kwStore);
+      pushOp({ op: "setKw", source, terms: kwStore[source] });
       openKw(source);
     };
     field.focus();
     $(".flg-kwadd", kwPanel).addEventListener("click", doAdd);
     field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
     $$("[data-rm]", kwPanel).forEach((b) =>
-      b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(key(LS_KW), kwStore); openKw(source); })
+      b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: kwStore[source] }); openKw(source); })
     );
     $$("[data-tab]", kwPanel).forEach((b) => b.addEventListener("click", () => openKw(b.dataset.tab)));
     $("[data-kwclose]", kwPanel).addEventListener("click", closeKw);
     $("[data-kwcopy]", kwPanel).addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
-    $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(key(LS_KW), kwStore); openKw(source); });
+    $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: [] }); openKw(source); });
   }
   function closeKw() {
     if (!kwPanel) return;
@@ -263,13 +307,16 @@
     fab.innerHTML = `🚩 คำแนะนำตัดข่าว <b>${total}</b>${totalReady() ? ' <span class="fdot"></span>' : ""}`;
     kwFab.style.display = alertSources().length ? "inline-flex" : "none";
     injectKwButtons();
-    if (panel.classList.contains("open")) openPanel(); // live-update ถ้าเปิดอยู่
+    // live-update panel ที่เปิดอยู่ — แต่ไม่ทับถ้ากำลังพิมพ์/แก้อยู่ในนั้น
+    if (panel.classList.contains("open") && !panel.contains(document.activeElement)) openPanel();
+    if (kwPanel && kwPanel.classList.contains("open") && !kwPanel.contains(document.activeElement))
+      openKw(kwPanel.dataset.source);
   }
   function openPanel() {
     ensureUi();
     closeKw();
     const srcs = sources();
-    let html = `<div class="flg-head"><b>🚩 คำแนะนำตัดข่าว${scopeName() ? " · " + scopeName() : ""}</b><button type="button" class="flg-x" data-close>✕</button></div>
+    let html = `<div class="flg-head"><b>🚩 คำแนะนำตัดข่าว${scopeName() ? " · " + scopeName() : ""}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-close>✕</button></div>
       <p class="flg-note">flag = ซ่อนที่นี่ + สรุปคำที่ควรตัด แล้ว <u>คุณ</u> เอา exclusion ไปแปะใน Google Alert (กด Update) — Google ไม่มี API เทรนตรง วิธีนี้ได้ผลจริงสุด</p>`;
 
     if (!srcs.length) {
@@ -372,6 +419,7 @@
     :root[data-theme="light"] .flg-panel{background:#fff;color:#1a1a1a;border-color:rgba(0,0,0,.12)}
     .flg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
     .flg-head b{font-size:15px}
+    .flg-sync{font-size:10px;font-weight:600;color:#3fb56a;border:1px solid rgba(63,181,106,.4);border-radius:999px;padding:1px 7px;margin-left:6px;vertical-align:middle}
     .flg-x{background:none;border:none;color:inherit;font-size:16px;cursor:pointer;opacity:.6}
     .flg-note{margin:0 0 12px;font-size:11px;opacity:.7;line-height:1.45}
     .flg-empty,.flg-thin{opacity:.6;font-size:12px;padding:6px 0}
@@ -436,6 +484,10 @@
         if (b) { e.preventDefault(); e.stopPropagation(); flag(b); }
       });
       refresh();
+      // sync กับ server (ถ้า bind KV) — ดึงตอนเปิด, ทุก 25 วิ, และตอนกลับมาโฟกัสแท็บ
+      syncPull();
+      setInterval(syncPull, 25000);
+      window.addEventListener("focus", syncPull);
     },
     isHidden(link) { return !!hidden[link]; },
     button(item, source) {
