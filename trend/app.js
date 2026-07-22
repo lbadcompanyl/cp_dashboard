@@ -28,6 +28,10 @@ function timeAgo(iso) {
 function escapeHtml(s = "") {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
+// แปลง marker .. (จาก <b> ของ Google Alert) → <mark> ไฮไลต์ (ใช้หลัง escapeHtml แล้ว)
+function hl(s = "") {
+  return s.replace(/([\s\S]*?)/g, '<mark class="hl">$1</mark>').replace(/[]/g, "");
+}
 
 function withinRecency(iso, hours) {
   if (hours === "all") return true;
@@ -220,8 +224,8 @@ function renderPanel(panel) {
       (it) => `<a class="card" href="${escapeHtml(it.link)}" target="_blank" rel="noopener">
         ${window.Flags ? Flags.button(it, source) : ""}
         ${it.sourceLabel ? `<div class="src">${escapeHtml(it.sourceLabel)}</div>` : ""}
-        <div class="ttl">${escapeHtml(it.title)}</div>
-        ${it.snippet ? `<div class="snip">${escapeHtml(it.snippet)}</div>` : ""}
+        <div class="ttl">${hl(escapeHtml(it.title))}</div>
+        ${it.snippet ? `<div class="snip">${hl(escapeHtml(it.snippet))}</div>` : ""}
         <div class="meta">${timeAgo(it.publishedAt)}</div>
       </a>`
     )

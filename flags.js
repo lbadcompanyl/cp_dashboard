@@ -18,6 +18,9 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (s = "") =>
     String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  // ตัด marker ไฮไลต์ (จาก <b> ของ Google Alert) ออก — ใช้ตอนเก็บ record / โชว์ใน panel
+  const MARK_RE = new RegExp("[" + String.fromCharCode(1, 2) + "]", "g");
+  const stripMarks = (s) => String(s == null ? "" : s).replace(MARK_RE, "");
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
@@ -331,7 +334,7 @@
       html += `<div class="flg-sub">🗞 ข่าวที่ flag <span class="flg-hint">(＋ ตัดเว็บ · ↩ เอากลับ)</span></div>
         <div class="flg-items">` +
         a.items.slice().reverse().map((r) => `<div class="flg-item">
-          <div class="flg-item-main"><div class="flg-item-ttl">${esc(r.title || "(ไม่มีหัวข้อ)")}</div>${r.host ? `<div class="flg-item-host">🌐 ${esc(r.host)}</div>` : ""}</div>
+          <div class="flg-item-main"><div class="flg-item-ttl">${esc(stripMarks(r.title) || "(ไม่มีหัวข้อ)")}</div>${r.host ? `<div class="flg-item-host">🌐 ${esc(r.host)}</div>` : ""}</div>
           ${r.host ? `<button type="button" class="flg-mini" data-ta="${esc(taId)}" data-add="-site:${esc(r.host)}" title="เติม -site:${esc(r.host)} ลงกล่อง">＋ ตัดเว็บ</button>` : ""}
           <button type="button" class="flg-mini ghost" data-restore="${esc(r.link)}" title="เอาข่าวนี้กลับ">↩</button>
         </div>`).join("") + `</div>`;
@@ -405,6 +408,8 @@
     @media(hover:none){.flag-btn{opacity:.45}}
     :root[data-theme="light"] .flag-btn{background:rgba(255,255,255,.8);color:#888;border-color:rgba(0,0,0,.12)}
     :root[data-theme="light"] .flag-btn:hover{background:#c0392b;color:#fff;border-color:#c0392b}
+    .card mark.hl{background:rgba(255,213,74,.32);color:inherit;border-radius:3px;padding:0 1px}
+    :root[data-theme="light"] .card mark.hl{background:rgba(250,204,21,.55)}
     .flg-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:10000;font-family:inherit;max-width:92vw}
     .flg-toast button{background:none;border:none;color:#7db3ff;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap}
     .flg-fabwrap{position:fixed;right:16px;bottom:16px;z-index:9997;display:flex;flex-direction:column;gap:10px;align-items:flex-end}
@@ -494,7 +499,7 @@
     button(item, source) {
       // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม
       if (!source || !source.startsWith("alert")) return "";
-      return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(item.title || "")}" data-label="${esc(item.sourceLabel || "")}">⚑</button>`;
+      return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(stripMarks(item.title))}" data-label="${esc(item.sourceLabel || "")}">⚑</button>`;
     },
     refresh,
   };

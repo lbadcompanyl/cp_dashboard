@@ -16,6 +16,14 @@ function stripTags(html = "") {
   return decode(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
+// แปลง <b>..</b> (Google Alert ครอบคำที่ match) เป็น marker \u0001..\u0002 แล้วตัด tag อื่นทิ้ง
+// marker ผ่าน JSON/escapeHtml ได้ปลอดภัย ฝั่ง client ค่อยแปลงเป็น <mark> ไฮไลต์
+function markBold(html = "") {
+  const marked = html.replace(/<b\b[^>]*>/gi, "\u0001").replace(/<\/b\s*>/gi, "\u0002");
+  return stripTags(marked);
+}
+const stripMarks = (s = "") => s.replace(/[\u0001\u0002]/g, "");
+
 // ตรวจข้อความ "พัง" (mojibake) — เช่น snippet PDF ราชกิจจานุเบกษาที่ Google ดึงมาเพี้ยน
 // สัญญาณ: มี  / สัญลักษณ์แปลก (@ % ^ | <> ฯลฯ) เยอะ / อัตราตัวอักษรจริงต่ำ
 function symbolNoise(s = "") {
@@ -78,17 +86,15 @@ export function parseGeneric(xml, source) {
       tagText(b, "published") ||
       tagText(b, "updated") ||
       tagText(b, "dc:date");
-    let snippet = stripTags(
-      tagText(b, "description") || tagText(b, "summary") || tagText(b, "content")
-    );
+    const isAlert = source.startsWith("alert");
+    const rawDesc = tagText(b, "description") || tagText(b, "summary") || tagText(b, "content");
+    // alert: เก็บ <b> เป็น marker เพื่อไฮไลต์ · news: ตัด tag ตามปกติ
+    let snippet = isAlert ? markBold(rawDesc) : stripTags(rawDesc);
     let sourceLabel = "";
 
-    // หมายเหตุ: ฟีดข่าวตรงจากสำนักข่าว — sourceLabel มาจาก label ใน config (ตั้งใน feeds.js)
-    // เก็บ title/snippet ตามจริง (ไม่ตัดอะไร)
-
-    if (source.startsWith("alert")) {
-      // Google Alert (alert / alert1 / alert2): title มี <b> ไฮไลต์คำ — ตัด tag ออก
-      title = stripTags(title);
+    if (isAlert) {
+      // Google Alert (alert / alert1 / alert2): title มี <b> ครอบคำที่ match → เก็บเป็น marker
+      title = markBold(title);
       // ลิงก์เป็น google.com/url?...&url=<ลิงก์จริง> — แกะออกให้ตรง
       const m = link.match(/[?&]url=([^&]+)/);
       if (m) {
@@ -100,8 +106,8 @@ export function parseGeneric(xml, source) {
       }
     }
 
-    if (isGarbled(title)) continue; // ทิ้งข่าวที่หัวข้อพัง (mojibake)
-    if (isGarbled(snippet)) snippet = ""; // หัวข้อดีแต่ snippet พัง → ตัด snippet ทิ้ง
+    if (isGarbled(stripMarks(title))) continue; // ทิ้งข่าวที่หัวข้อพัง (mojibake)
+    if (isGarbled(stripMarks(snippet))) snippet = ""; // หัวข้อดีแต่ snippet พัง → ตัด snippet ทิ้ง
 
     items.push({
       id: hash(link || title),
