@@ -104,6 +104,14 @@
     onChange();
     refresh();
   }
+  function restoreItem(link) {
+    delete hidden[link];
+    records = records.filter((r) => r.link !== link);
+    save(LS_HIDDEN, hidden);
+    save(LS_RECS, records);
+    onChange();
+    refresh(); // re-render panel ถ้าเปิดอยู่
+  }
   function clearSource(source) {
     const gone = records.filter((r) => r.source === source);
     gone.forEach((r) => delete hidden[r.link]);
@@ -261,6 +269,14 @@
       const taId = "flgta_" + source.replace(/[^a-z0-9]/gi, "");
       html += `<div class="flg-sec">
         <div class="flg-sec-h">${esc(labelOf(source))} <span class="flg-cnt">${a.count} ใบ</span></div>`;
+      // รายการข่าวที่ flag — เห็นทันทีว่าข่าวไหน/เว็บอะไร กดตัดเว็บได้เลย (แม้ใบเดียว)
+      html += `<div class="flg-sub">🗞 ข่าวที่ flag <span class="flg-hint">(＋ ตัดเว็บ · ↩ เอากลับ)</span></div>
+        <div class="flg-items">` +
+        a.items.slice().reverse().map((r) => `<div class="flg-item">
+          <div class="flg-item-main"><div class="flg-item-ttl">${esc(r.title || "(ไม่มีหัวข้อ)")}</div>${r.host ? `<div class="flg-item-host">🌐 ${esc(r.host)}</div>` : ""}</div>
+          ${r.host ? `<button type="button" class="flg-mini" data-ta="${esc(taId)}" data-add="-site:${esc(r.host)}" title="เติม -site:${esc(r.host)} ลงกล่อง">＋ ตัดเว็บ</button>` : ""}
+          <button type="button" class="flg-mini ghost" data-restore="${esc(r.link)}" title="เอาข่าวนี้กลับ">↩</button>
+        </div>`).join("") + `</div>`;
       if (a.byHost.length) {
         html += `<div class="flg-sub">🌐 ตามเว็บ <span class="flg-hint">(ปลอดภัย — กดเพื่อเพิ่ม)</span></div><div class="flg-rows">` +
           a.byHost.map((x) => `<button type="button" class="flg-chip-add" data-ta="${esc(taId)}" data-add="-site:${esc(x.k)}"><code>${esc(x.k)}</code><b>×${x.c}</b> +</button>`).join("") + `</div>`;
@@ -284,7 +300,7 @@
     panel.style.display = "block";
 
     $("[data-close]", panel)?.addEventListener("click", closePanel);
-    $$(".flg-chip-add", panel).forEach((b) =>
+    $$("[data-add]", panel).forEach((b) =>
       b.addEventListener("click", () => {
         const ta = panel.querySelector("#" + b.dataset.ta);
         if (!ta) return;
@@ -294,6 +310,7 @@
         b.classList.add("added");
       })
     );
+    $$("[data-restore]", panel).forEach((b) => b.addEventListener("click", () => restoreItem(b.dataset.restore)));
     $$(".flg-copy", panel).forEach((b) =>
       b.addEventListener("click", () => {
         const ta = panel.querySelector("#" + b.dataset.ta);
@@ -361,6 +378,15 @@
     .flg-chip-add.added{opacity:.4}
     .flg-chip-add code{font-size:11px}
     .flg-chip-add b{color:#e8a;font-weight:700}
+    .flg-items{display:flex;flex-direction:column;gap:6px;margin:2px 0 10px;max-height:210px;overflow:auto}
+    .flg-item{display:flex;gap:8px;align-items:center;background:rgba(150,150,150,.10);border-radius:8px;padding:6px 8px}
+    .flg-item-main{flex:1;min-width:0}
+    .flg-item-ttl{font-size:12px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    .flg-item-host{font-size:10.5px;opacity:.6;margin-top:2px}
+    .flg-mini{border:1px solid rgba(150,150,150,.3);background:transparent;color:inherit;border-radius:7px;padding:4px 8px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap}
+    .flg-mini:hover{border-color:#c0392b}
+    .flg-mini.ghost{opacity:.6;padding:4px 7px}
+    .flg-mini.ghost:hover{opacity:1;border-color:#2a78d6}
     .flg-ex{display:flex;gap:8px;align-items:stretch;margin-top:4px}
     .flg-ex textarea{flex:1;resize:none;background:rgba(150,150,150,.12);color:inherit;border:1px solid rgba(150,150,150,.25);border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
     .flg-copy{border:none;background:#2a78d6;color:#fff;border-radius:8px;padding:0 12px;cursor:pointer;font-size:12px;font-family:inherit;white-space:nowrap}
