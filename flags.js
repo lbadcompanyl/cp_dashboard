@@ -439,6 +439,8 @@
     },
     isHidden(link) { return !!hidden[link]; },
     button(item, source) {
+      // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม
+      if (!source || !source.startsWith("alert")) return "";
       return `<button type="button" class="flag-btn" title="🚩 ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(item.title || "")}" data-label="${esc(item.sourceLabel || "")}">🚩</button>`;
     },
     refresh,
