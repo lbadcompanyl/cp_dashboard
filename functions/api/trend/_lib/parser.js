@@ -16,6 +16,24 @@ function stripTags(html = "") {
   return decode(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
+// ตรวจข้อความ "พัง" (mojibake) — เช่น snippet PDF ราชกิจจานุเบกษาที่ Google ดึงมาเพี้ยน
+// สัญญาณ: มี  / สัญลักษณ์แปลก (@ % ^ | <> ฯลฯ) เยอะ / อัตราตัวอักษรจริงต่ำ
+function symbolNoise(s = "") {
+  return (s.match(/[@%^~|<>{}\\№¤§±]/g) || []).length;
+}
+function isGarbled(s = "") {
+  const t = s.trim();
+  if (t.length < 6) return false;
+  if (/�/.test(t)) return true; //  = ตัวอักษรเสีย
+  const noSpace = t.replace(/\s+/g, "");
+  if (!noSpace) return false;
+  const letters = (t.match(/[A-Za-z฀-๿]/g) || []).length;
+  const ratio = letters / noSpace.length;
+  if (symbolNoise(t) >= 3) return true; // สัญลักษณ์แปลก ≥3 ตัว
+  if (ratio < 0.45 && noSpace.length >= 8) return true; // ตัวอักษรจริงน้อยกว่าครึ่ง
+  return false;
+}
+
 function blocks(xml, tag) {
   const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, "g");
   const out = [];
@@ -81,6 +99,9 @@ export function parseGeneric(xml, source) {
         }
       }
     }
+
+    if (isGarbled(title)) continue; // ทิ้งข่าวที่หัวข้อพัง (mojibake)
+    if (isGarbled(snippet)) snippet = ""; // หัวข้อดีแต่ snippet พัง → ตัด snippet ทิ้ง
 
     items.push({
       id: hash(link || title),
