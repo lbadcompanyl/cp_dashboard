@@ -55,6 +55,7 @@ async function load() {
 // ---------- render ----------
 function renderAll() {
   $$(".panel").forEach(renderPanel);
+  if (window.Flags) Flags.refresh();
 }
 
 function renderPanel(panel) {
@@ -64,6 +65,7 @@ function renderPanel(panel) {
   const kw = f.kw.trim().toLowerCase();
 
   const items = bucket.items.filter((it) => {
+    if (window.Flags && Flags.isHidden(it.link)) return false;
     if (!withinRecency(it.publishedAt, f.rc)) return false;
     if (kw) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
@@ -83,6 +85,7 @@ function renderPanel(panel) {
   list.innerHTML = items
     .map(
       (it) => `<a class="card" href="${escapeHtml(it.link)}" target="_blank" rel="noopener">
+        ${window.Flags ? Flags.button(it, source) : ""}
         ${it.sourceLabel ? `<div class="src">${escapeHtml(it.sourceLabel)}</div>` : ""}
         <div class="ttl">${escapeHtml(it.title)}</div>
         ${it.snippet ? `<div class="snip">${escapeHtml(it.snippet)}</div>` : ""}
@@ -147,5 +150,6 @@ function wire() {
   $("#refresh").addEventListener("click", load);
 }
 
+if (window.Flags) Flags.init({ onChange: renderAll });
 wire();
 load();
