@@ -399,10 +399,11 @@
   function injectCss() {
     const css = `
     .card{position:relative}
-    .flag-btn{position:absolute;top:6px;right:6px;z-index:3;border:1px solid rgba(160,160,160,.32);background:rgba(40,40,40,.42);color:#fff;width:25px;height:25px;border-radius:7px;font-size:12px;line-height:1;cursor:pointer;opacity:.55;transition:opacity .12s,background .12s;display:grid;place-items:center;padding:0}
-    .card:hover .flag-btn{opacity:.9}
+    .flag-btn{position:absolute;top:6px;right:6px;z-index:3;border:1px solid rgba(160,160,160,.28);background:rgba(30,30,30,.5);color:#fff;width:23px;height:23px;border-radius:6px;font-size:13px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s,background .12s;display:grid;place-items:center;padding:0}
+    .card:hover .flag-btn{opacity:.8}
     .flag-btn:hover{opacity:1;background:#c0392b;border-color:#c0392b}
-    :root[data-theme="light"] .flag-btn{background:rgba(255,255,255,.72);color:#666;border-color:rgba(0,0,0,.15)}
+    @media(hover:none){.flag-btn{opacity:.45}}
+    :root[data-theme="light"] .flag-btn{background:rgba(255,255,255,.8);color:#888;border-color:rgba(0,0,0,.12)}
     :root[data-theme="light"] .flag-btn:hover{background:#c0392b;color:#fff;border-color:#c0392b}
     .flg-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:10000;font-family:inherit;max-width:92vw}
     .flg-toast button{background:none;border:none;color:#7db3ff;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap}
@@ -493,7 +494,7 @@
     button(item, source) {
       // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม
       if (!source || !source.startsWith("alert")) return "";
-      return `<button type="button" class="flag-btn" title="🚩 ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(item.title || "")}" data-label="${esc(item.sourceLabel || "")}">🚩</button>`;
+      return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(item.title || "")}" data-label="${esc(item.sourceLabel || "")}">⚑</button>`;
     },
     refresh,
   };
