@@ -21,10 +21,21 @@
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-  let hidden = load(LS_HIDDEN, {});
-  let records = load(LS_RECS, []);
-  let kwStore = load(LS_KW, {});
+  let hidden = {};
+  let records = [];
+  let kwStore = {};
   let onChange = () => {};
+
+  // แยกที่เก็บต่อหน้า (IR ≠ PR) แม้อยู่โดเมนเดียวกัน — กันข้อมูล flag ปนกัน
+  let SCOPE = "root";
+  const key = (base) => base + ":" + SCOPE;
+  function deriveScope() {
+    const p = (location.pathname || "").toLowerCase();
+    if (p.includes("/ir")) return "ir";
+    if (p.includes("/trend")) return "pr";
+    return "root";
+  }
+  const scopeName = () => (SCOPE === "ir" ? "IR" : SCOPE === "pr" ? "PR" : "");
 
   // ประกอบ terms → OR string (ครอบ "..." อัตโนมัติถ้ามีเว้นวรรค)
   function buildKw(terms) {
@@ -86,8 +97,8 @@
     };
     hidden[link] = 1;
     records.push(rec);
-    save(LS_HIDDEN, hidden);
-    save(LS_RECS, records);
+    save(key(LS_HIDDEN), hidden);
+    save(key(LS_RECS), records);
     lastFlag = rec;
     toast(`ซ่อนแล้ว ✓ · flag คอลัมน์นี้ ${analyze(rec.source).count} ใบ`, true);
     onChange();
@@ -97,8 +108,8 @@
     if (!lastFlag) return;
     delete hidden[lastFlag.link];
     records = records.filter((r) => !(r.link === lastFlag.link && r.ts === lastFlag.ts));
-    save(LS_HIDDEN, hidden);
-    save(LS_RECS, records);
+    save(key(LS_HIDDEN), hidden);
+    save(key(LS_RECS), records);
     lastFlag = null;
     hideToast();
     onChange();
@@ -107,8 +118,8 @@
   function restoreItem(link) {
     delete hidden[link];
     records = records.filter((r) => r.link !== link);
-    save(LS_HIDDEN, hidden);
-    save(LS_RECS, records);
+    save(key(LS_HIDDEN), hidden);
+    save(key(LS_RECS), records);
     onChange();
     refresh(); // re-render panel ถ้าเปิดอยู่
   }
@@ -116,8 +127,8 @@
     const gone = records.filter((r) => r.source === source);
     gone.forEach((r) => delete hidden[r.link]);
     records = records.filter((r) => r.source !== source);
-    save(LS_HIDDEN, hidden);
-    save(LS_RECS, records);
+    save(key(LS_HIDDEN), hidden);
+    save(key(LS_RECS), records);
     onChange();
     refresh();
     openPanel(); // rerender panel
@@ -206,7 +217,7 @@
       : "";
     kwPanel.dataset.source = source;
     kwPanel.innerHTML = `
-      <div class="flg-head"><b>➕ เพิ่มคำค้น · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
+      <div class="flg-head"><b>➕ เพิ่มคำค้น${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
       ${tabs}
       <p class="flg-note">พิมพ์คำ → ประกอบเป็น OR string → คัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
       <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
@@ -224,19 +235,19 @@
       if (!v) return;
       const arr = kwStore[source] || (kwStore[source] = []);
       if (!arr.includes(v)) arr.push(v);
-      save(LS_KW, kwStore);
+      save(key(LS_KW), kwStore);
       openKw(source);
     };
     field.focus();
     $(".flg-kwadd", kwPanel).addEventListener("click", doAdd);
     field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
     $$("[data-rm]", kwPanel).forEach((b) =>
-      b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(LS_KW, kwStore); openKw(source); })
+      b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(key(LS_KW), kwStore); openKw(source); })
     );
     $$("[data-tab]", kwPanel).forEach((b) => b.addEventListener("click", () => openKw(b.dataset.tab)));
     $("[data-kwclose]", kwPanel).addEventListener("click", closeKw);
     $("[data-kwcopy]", kwPanel).addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
-    $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(LS_KW, kwStore); openKw(source); });
+    $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(key(LS_KW), kwStore); openKw(source); });
   }
   function closeKw() {
     if (!kwPanel) return;
@@ -258,7 +269,7 @@
     ensureUi();
     closeKw();
     const srcs = sources();
-    let html = `<div class="flg-head"><b>🚩 คำแนะนำตัดข่าว</b><button type="button" class="flg-x" data-close>✕</button></div>
+    let html = `<div class="flg-head"><b>🚩 คำแนะนำตัดข่าว${scopeName() ? " · " + scopeName() : ""}</b><button type="button" class="flg-x" data-close>✕</button></div>
       <p class="flg-note">flag = ซ่อนที่นี่ + สรุปคำที่ควรตัด แล้ว <u>คุณ</u> เอา exclusion ไปแปะใน Google Alert (กด Update) — Google ไม่มี API เทรนตรง วิธีนี้ได้ผลจริงสุด</p>`;
 
     if (!srcs.length) {
@@ -341,10 +352,11 @@
   function injectCss() {
     const css = `
     .card{position:relative}
-    .flag-btn{position:absolute;top:6px;right:6px;z-index:3;border:none;background:rgba(0,0,0,.28);color:#fff;width:24px;height:24px;border-radius:7px;font-size:12px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s,background .12s;display:grid;place-items:center;padding:0}
-    .card:hover .flag-btn{opacity:.5}
-    .flag-btn:hover{opacity:1;background:#c0392b}
-    @media(hover:none){.flag-btn{opacity:.4}}
+    .flag-btn{position:absolute;top:7px;right:7px;z-index:3;border:1px solid rgba(255,255,255,.35);background:rgba(20,20,20,.62);color:#fff;height:26px;border-radius:8px;font-size:12px;line-height:1;cursor:pointer;opacity:.95;transition:opacity .12s,background .12s,transform .1s;display:inline-flex;align-items:center;gap:5px;padding:0 9px;font-family:inherit;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+    .flag-btn::after{content:"ตัด"}
+    .flag-btn:hover{opacity:1;background:#c0392b;border-color:#c0392b;transform:scale(1.06)}
+    :root[data-theme="light"] .flag-btn{background:rgba(255,255,255,.9);color:#c0392b;border-color:rgba(192,57,43,.5)}
+    :root[data-theme="light"] .flag-btn:hover{background:#c0392b;color:#fff}
     .flg-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:10000;font-family:inherit;max-width:92vw}
     .flg-toast button{background:none;border:none;color:#7db3ff;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap}
     .flg-fabwrap{position:fixed;right:16px;bottom:16px;z-index:9997;display:flex;flex-direction:column;gap:10px;align-items:flex-end}
@@ -412,6 +424,10 @@
   const Flags = {
     init(opts = {}) {
       onChange = opts.onChange || (() => {});
+      SCOPE = opts.scope || deriveScope();
+      hidden = load(key(LS_HIDDEN), {});
+      records = load(key(LS_RECS), []);
+      kwStore = load(key(LS_KW), {});
       injectCss();
       ensureUi();
       injectKwButtons();
