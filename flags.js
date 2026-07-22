@@ -63,6 +63,9 @@
   function sources() {
     return [...new Set(records.map((r) => r.source))];
   }
+  function alertSources() {
+    return $$(".panel[data-source]").map((p) => p.dataset.source).filter((s) => s.startsWith("alert"));
+  }
   function labelOf(source) {
     const p = $(`.panel[data-source="${source}"] .ptitle`);
     return p ? p.textContent.trim() : source;
@@ -129,15 +132,26 @@
   function hideToast() { if (toastEl) toastEl.style.display = "none"; }
 
   // ---------- FAB + panel ----------
-  let fab, mask, panel, kwPanel;
+  let fab, kwFab, fabWrap, mask, panel, kwPanel;
   function closeAll() { closePanel(); closeKw(); }
   function ensureUi() {
-    if (fab) return;
+    if (fabWrap) return;
+    fabWrap = document.createElement("div");
+    fabWrap.className = "flg-fabwrap";
+    document.body.appendChild(fabWrap);
+
+    kwFab = document.createElement("button");
+    kwFab.type = "button";
+    kwFab.className = "flg-fab kw";
+    kwFab.innerHTML = "➕ เพิ่มคำค้น";
+    kwFab.addEventListener("click", () => openKw());
+    fabWrap.appendChild(kwFab);
+
     fab = document.createElement("button");
     fab.className = "flg-fab";
     fab.type = "button";
     fab.addEventListener("click", () => openPanel());
-    document.body.appendChild(fab);
+    fabWrap.appendChild(fab);
 
     mask = document.createElement("div");
     mask.className = "flg-mask";
@@ -175,10 +189,17 @@
   function openKw(source) {
     ensureUi();
     closePanel();
+    const alerts = alertSources();
+    if (!source) source = alerts[0];
+    if (!source) return;
     const terms = kwStore[source] || [];
+    const tabs = alerts.length > 1
+      ? `<div class="flg-kwtabs">${alerts.map((s) => `<button type="button" class="flg-kwtab${s === source ? " on" : ""}" data-tab="${esc(s)}">${esc(labelOf(s))}</button>`).join("")}</div>`
+      : "";
     kwPanel.dataset.source = source;
     kwPanel.innerHTML = `
       <div class="flg-head"><b>➕ เพิ่มคำค้น · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
+      ${tabs}
       <p class="flg-note">พิมพ์คำ → ประกอบเป็น OR string → คัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
       <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
       <div class="flg-rows flg-kwchips">${terms.length ? terms.map((t, i) => `<span class="flg-kwchip">${esc(t)}<button type="button" data-rm="${i}" title="ลบ">✕</button></span>`).join("") : '<span class="flg-thin">ยังไม่มีคำ — พิมพ์ด้านบน</span>'}</div>
@@ -204,6 +225,7 @@
     $$("[data-rm]", kwPanel).forEach((b) =>
       b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(LS_KW, kwStore); openKw(source); })
     );
+    $$("[data-tab]", kwPanel).forEach((b) => b.addEventListener("click", () => openKw(b.dataset.tab)));
     $("[data-kwclose]", kwPanel).addEventListener("click", closeKw);
     $("[data-kwcopy]", kwPanel).addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
     $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(LS_KW, kwStore); openKw(source); });
@@ -220,6 +242,8 @@
     fab.style.display = total > 0 ? "inline-flex" : "none";
     fab.classList.toggle("ready", totalReady());
     fab.innerHTML = `🚩 คำแนะนำตัดข่าว <b>${total}</b>${totalReady() ? ' <span class="fdot"></span>' : ""}`;
+    kwFab.style.display = alertSources().length ? "inline-flex" : "none";
+    injectKwButtons();
     if (panel.classList.contains("open")) openPanel(); // live-update ถ้าเปิดอยู่
   }
   function openPanel() {
@@ -306,8 +330,13 @@
     @media(hover:none){.flag-btn{opacity:.4}}
     .flg-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:10000;font-family:inherit;max-width:92vw}
     .flg-toast button{background:none;border:none;color:#7db3ff;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap}
-    .flg-fab{position:fixed;right:16px;bottom:16px;z-index:9997;border:none;background:#c0392b;color:#fff;border-radius:999px;padding:11px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.3);font-family:inherit;display:none;align-items:center;gap:8px}
+    .flg-fabwrap{position:fixed;right:16px;bottom:16px;z-index:9997;display:flex;flex-direction:column;gap:10px;align-items:flex-end}
+    .flg-fab{border:none;background:#c0392b;color:#fff;border-radius:999px;padding:11px 16px;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.3);font-family:inherit;display:none;align-items:center;gap:8px}
+    .flg-fab.kw{background:#2a78d6}
     .flg-fab b{font-weight:800}
+    .flg-kwtabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+    .flg-kwtab{border:1px solid rgba(150,150,150,.3);background:transparent;color:inherit;border-radius:999px;padding:4px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+    .flg-kwtab.on{background:#2a78d6;color:#fff;border-color:#2a78d6}
     .flg-fab .fdot,.flg-cnt .fdot{width:8px;height:8px;border-radius:50%;background:#ffd27a;display:inline-block}
     .flg-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;display:none}
     .flg-panel{position:fixed;right:16px;bottom:70px;width:min(430px,94vw);max-height:74vh;overflow:auto;background:#16181d;color:#eee;border:1px solid rgba(150,150,150,.22);border-radius:14px;z-index:9999;display:none;padding:16px;box-shadow:0 16px 48px rgba(0,0,0,.45);font-family:inherit;font-size:13px;line-height:1.5}
