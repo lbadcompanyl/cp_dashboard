@@ -26,7 +26,7 @@ const CAT_KW = {
 };
 const CAT_KEYS = Object.keys(CAT_KW);
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // ตัวที่ยัง active (3.1-8b ถูก deprecated) + parser ยืดหยุ่นรับได้
-const MAX_AI_ITEMS = 40; // จำกัดต่อ build (กันเกินโควตา/CPU)
+const MAX_AI_ITEMS = 80; // จำกัดต่อ build (เร่งเคลียร์ backlog — 4 batch/รอบ)
 const AI_BATCH = 20; // รวมหัวข้อต่อ 1 call
 
 function keywordHits(it) {
