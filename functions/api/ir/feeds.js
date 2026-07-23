@@ -25,7 +25,7 @@ const CAT_KW = {
   energy: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"],
 };
 const CAT_KEYS = Object.keys(CAT_KW);
-const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเล็ก จัดหมวดพอ ใช้ neuron น้อย
+const AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"; // เข้าใจไทย + ทำตามฟอร์แมตดีกว่า 3B
 const MAX_AI_ITEMS = 40; // จำกัดต่อ build (กันเกินโควตา/CPU)
 const AI_BATCH = 20; // รวมหัวข้อต่อ 1 call
 
@@ -37,13 +37,20 @@ function keywordHits(it) {
 async function classifyBatch(env, titles) {
   const list = titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
   const prompt =
-    "จัดหมวดข่าวแต่ละหัวข้อเป็นรหัสเดียว: econ (เศรษฐกิจ/ธุรกิจ/หุ้น), agri (เกษตร/ปศุสัตว์/อาหาร), pol (การเมือง/นโยบาย), energy (พลังงาน), other (อื่นๆ). " +
-    'ตอบเป็น JSON array ของรหัสเรียงตามลำดับเท่านั้น ห้ามมีข้อความอื่น เช่น ["econ","agri"]\n\nหัวข้อ:\n' + list;
-  const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 220 });
+    "Classify each Thai/English news headline into ONE category code:\n" +
+    "econ = economy/business/stocks/finance/trade\n" +
+    "agri = agriculture/livestock/farming/food\n" +
+    "pol = politics/government/policy/law\n" +
+    "energy = oil/gas/electricity/energy\n" +
+    "other = none of the above\n" +
+    "Reply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
+    list;
+  const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 300 });
   const text = String((out && (out.response || out.result)) || "");
-  const m = text.match(/\[[\s\S]*\]/);
-  if (!m) throw new Error("no json");
-  return JSON.parse(m[0]).map((c) => (CAT_KEYS.includes(c) ? c : "other"));
+  // parse แบบยืดหยุ่น: ดึงรหัสหมวดตามลำดับที่โผล่ ไม่บังคับ JSON
+  const found = (text.toLowerCase().match(/econ|agri|pol|energy|other/g) || []);
+  if (!found.length) throw new Error("no cats: " + text.slice(0, 80));
+  return found.map((c) => (CAT_KEYS.includes(c) ? c : "other"));
 }
 
 async function enrichCategories(env, sources, prevCat, allowAI, diag) {
