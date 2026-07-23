@@ -74,15 +74,17 @@ export async function onRequest(context) {
   const cache = caches.default;
   const cacheKey = new Request(url.origin + "/api/ir/feeds?v=" + CACHE_VER, { method: "GET" });
 
-  let resp = await cache.match(cacheKey);
+  // ?rebuild = บังคับ build สดพร้อมเรียก AI ทันที (สำหรับทดสอบ/เร่งจัดหมวด)
+  const wantRebuild = url.searchParams.has("rebuild");
+  let resp = wantRebuild ? null : await cache.match(cacheKey);
   if (resp) {
     const age = Date.now() - Number(resp.headers.get("x-cached-at") || 0);
     // รีเฟรชเบื้องหลัง + เปิด AI จัดหมวด (ไม่บล็อกผู้ใช้)
     if (age > FRESH_MS) context.waitUntil(buildAndStore(cache, cacheKey, context.env, true));
   } else {
-    // cold cache — build สด (ไม่เรียก AI เพื่อให้เร็ว) + กัน exception ไม่ให้ worker crash (1101)
+    // cold: build สด (AI เฉพาะเมื่อ ?rebuild) + กัน exception ไม่ให้ worker crash (1101)
     try {
-      resp = await buildAndStore(cache, cacheKey, context.env, false);
+      resp = await buildAndStore(cache, cacheKey, context.env, wantRebuild);
     } catch (e) {
       resp = new Response(
         JSON.stringify({ generatedAt: new Date().toISOString(), sources: {}, errors: [{ id: "_build", source: "_", label: "build failed", message: String((e && e.message) || e) }] }),
