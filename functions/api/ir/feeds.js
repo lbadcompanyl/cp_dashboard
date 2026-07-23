@@ -12,6 +12,11 @@ const CACHE_VER = "22"; // bump: หมวด crisis (วิกฤติ/ภั�
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
+// เก็บสะสม alert ปศุสัตว์ (alert2) ลง KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google
+const ARCHIVE_SRC = "alert2";
+const ARCHIVE_KEY = "ir:alert2archive";
+const ARCHIVE_DAYS = 10; // คงไว้กี่วัน
+const ARCHIVE_MAX = 400; // เพดานจำนวนที่เก็บ (คุมขนาด KV)
 const SOURCES = ["newsth", "newsintl", "alert1", "alert2"];
 const LABELS = { newsth: "🇹🇭 ในประเทศ", newsintl: "🌏 ต่างประเทศ", alert1: "CP / ซีพี", alert2: "ปศุสัตว์ · อาหาร · การค้า" };
 // ฟีด source "news" แยกไป newsth/newsintl ตาม region
@@ -86,6 +91,28 @@ async function enrichCategories(env, sources, prevCat, allowAI, diag) {
   }
 }
 
+// สะสม alert2 ลง KV: merge ของสด+ของเก่า, ตัดซ้ำด้วย link, คงเฉพาะ ARCHIVE_DAYS วัน
+async function mergeAlertArchive(env, sources, diag) {
+  const kv = env && env.FLAGS_KV;
+  diag.archived = false;
+  if (!kv || !sources[ARCHIVE_SRC]) return; // ไม่มี KV → ใช้เฉพาะที่ดึงสด (หน้าไม่พัง)
+  const cutoff = Date.now() - ARCHIVE_DAYS * 86400000;
+  let old = [];
+  try {
+    const raw = await kv.get(ARCHIVE_KEY);
+    if (raw) old = JSON.parse(raw) || [];
+  } catch {}
+  const byLink = new Map();
+  for (const it of old) if (it && it.link) byLink.set(it.link, it);
+  for (const it of sources[ARCHIVE_SRC].items) if (it && it.link) byLink.set(it.link, it); // ของสดทับของเก่า
+  const merged = [...byLink.values()]
+    .filter((it) => { const t = new Date(it.publishedAt).getTime(); return isNaN(t) || t >= cutoff; })
+    .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
+    .slice(0, ARCHIVE_MAX);
+  sources[ARCHIVE_SRC].items = merged;
+  try { await kv.put(ARCHIVE_KEY, JSON.stringify(merged)); diag.archived = true; diag.count = merged.length; } catch (e) { diag.err = String((e && e.message) || e).slice(0, 120); }
+}
+
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   const cache = caches.default;
@@ -147,6 +174,7 @@ export async function onRequest(context) {
         `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
         `จำนวนข่าว: ในประเทศ=${(s.newsth?.items || []).length}  ต่างประเทศ=${(s.newsintl?.items || []).length}  CP=${(s.alert1?.items || []).length}  ปศุสัตว์=${(s.alert2?.items || []).length}\n` +
         `จัดหมวดด้วย AI: ${byAI} ข่าว (ที่เหลือใช้ keyword)\n` +
+        `คลัง alert ปศุสัตว์ (KV, ${ARCHIVE_DAYS} วัน): ${JSON.stringify(j.archive || {})}\n` +
         `AI debug: ${JSON.stringify(j.ai || {})}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
@@ -221,6 +249,10 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   const aiDiag = {};
   try { await enrichCategories(env, sources, prevCat, allowAI, aiDiag); } catch (e) { aiDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
+  // สะสม alert2 (ปศุสัตว์) ลง KV ให้เก็บได้ ARCHIVE_DAYS วัน แม้หลุดจากฟีด Google แล้ว
+  const arDiag = {};
+  try { await mergeAlertArchive(env, sources, arDiag); } catch (e) { arDiag.fatal = String((e && e.message) || e).slice(0, 200); }
+
   // ถ้ารอบนี้บาง source ดึงได้ 0 (Google Alert ส่งว่างชั่วคราว) → คงของเดิมไว้
   if (pj) {
     for (const key of SOURCES) {
@@ -231,7 +263,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
