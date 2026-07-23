@@ -9,10 +9,11 @@ const MAX_RECORDS = 2000; // กันโตไม่จำกัด
 const H = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: H });
 
-const kvKey = (scope) => "flags:" + scope;
+// prefix ตาม environment (ตั้ง APP_ENV=dev ที่ Preview) → dev/prod แยก flag/keyword ไม่ปนกัน
+const kvKey = (env, scope) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : "") + "flags:" + scope;
 
 async function readState(env, scope) {
-  const raw = await env.FLAGS_KV.get(kvKey(scope));
+  const raw = await env.FLAGS_KV.get(kvKey(env, scope));
   if (!raw) return { records: [], kw: {} };
   try {
     const o = JSON.parse(raw);
@@ -67,7 +68,7 @@ export async function onRequest(context) {
     let body = {};
     try { body = await request.json(); } catch {}
     const s = applyOp(await readState(env, scope), body);
-    await env.FLAGS_KV.put(kvKey(scope), JSON.stringify(s));
+    await env.FLAGS_KV.put(kvKey(env, scope), JSON.stringify(s));
     return json({ configured: true, ...s });
   }
 

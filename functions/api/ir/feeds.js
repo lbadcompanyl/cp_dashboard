@@ -14,6 +14,8 @@ const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
 // เก็บสะสมข่าว/alert ลง KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด — รวมทุกคอลัมน์ใน key เดียว (1 read/write ต่อ build)
 const ARCHIVE_KEY = "ir:archive";
+// prefix key ตาม environment (ตั้ง APP_ENV=dev ที่ Preview) → dev/prod ใช้คลังแยกกัน ไม่ทับข้อมูลผู้ใช้จริง
+const envPrefix = (env) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : "");
 const ARCHIVE_CFG = {
   alert2:   { days: 10, max: 400 }, // ปศุสัตว์
   newsth:   { days: 2,  max: 500 }, // ในประเทศ
@@ -99,8 +101,9 @@ async function mergeArchives(env, sources, diag) {
   diag.enabled = !!kv;
   if (!kv) return; // ไม่มี KV → ใช้เฉพาะที่ดึงสด (หน้าไม่พัง)
   const now = Date.now();
+  const key = envPrefix(env) + ARCHIVE_KEY;
   let store = {};
-  try { const raw = await kv.get(ARCHIVE_KEY); if (raw) store = JSON.parse(raw) || {}; } catch {}
+  try { const raw = await kv.get(key); if (raw) store = JSON.parse(raw) || {}; } catch {}
   const out = {};
   for (const src of Object.keys(ARCHIVE_CFG)) {
     if (!sources[src]) continue;
@@ -117,7 +120,7 @@ async function mergeArchives(env, sources, diag) {
     out[src] = merged;
     diag[src] = merged.length;
   }
-  try { await kv.put(ARCHIVE_KEY, JSON.stringify(out)); diag.saved = true; } catch (e) { diag.err = String((e && e.message) || e).slice(0, 120); }
+  try { await kv.put(key, JSON.stringify(out)); diag.saved = true; diag.env = env.APP_ENV || "prod"; } catch (e) { diag.err = String((e && e.message) || e).slice(0, 120); }
 }
 
 export async function onRequest(context) {
