@@ -27,7 +27,6 @@ export default [
 
   // ── 🌏 ต่างประเทศ (intl) ──
   { id: "news-bbc",         source: "news", group: "intl", region: "intl", label: "BBC World",      url: "https://feeds.bbci.co.uk/news/world/rss.xml" },
-  { id: "news-cnn",         source: "news", group: "intl", region: "intl", label: "CNN World",      url: "http://rss.cnn.com/rss/edition_world.rss" },
   { id: "news-guardian",    source: "news", group: "intl", region: "intl", label: "Guardian World", url: "https://www.theguardian.com/world/rss" },
   { id: "news-nyt",         source: "news", group: "intl", region: "intl", label: "NYT World",      url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml" },
   { id: "news-aljazeera",   source: "news", group: "intl", region: "intl", label: "Al Jazeera",     url: "https://www.aljazeera.com/xml/rss/all.xml" },
