@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "21"; // bump: หมวดใหม่ (retail/intl แทน energy) + ไฮไลต์ [[hl]] token
+const CACHE_VER = "22"; // bump: หมวด crisis (วิกฤติ/ภัยพิบัติ) แทน intl
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -22,7 +22,7 @@ const CAT_KW = {
   econ:   ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"],
   agri:   ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","อาหารสัตว์","เกษตร","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","livestock","pork","poultry","agri","farm","food","shrimp","crop","harvest"],
   retail: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale"],
-  intl:   ["ต่างประเทศ","ทรัมป์","จีน","สหรัฐ","สงคราม","ความขัดแย้ง","การค้าโลก","กำแพงภาษี","ยูเครน","อาเซียน","ระหว่างประเทศ","ภูมิรัฐศาสตร์","trump","china","united states","war","global","geopolitic","ukraine","asean","nato"],
+  crisis: ["โรคระบาด","ระบาด","อหิวาต์","ไข้หวัดนก","asf","โควิด","แผ่นดินไหว","น้ำท่วม","ภัยแล้ง","พายุ","ไฟไหม้","ไฟป่า","สึนามิ","ดินถล่ม","ภัยพิบัติ","อุบัติเหตุ","ฉุกเฉิน","วิกฤต","ภัยธรรมชาติ","disease","outbreak","pandemic","epidemic","earthquake","quake","flood","drought","storm","typhoon","wildfire","tsunami","disaster","emergency","crisis"],
   pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"],
 };
 const CAT_KEYS = Object.keys(CAT_KW);
@@ -42,7 +42,7 @@ async function classifyBatch(env, titles) {
     "econ = economy/business/stocks/finance/GDP/investment\n" +
     "agri = agriculture/livestock/farming/food production\n" +
     "retail = retail/wholesale/consumer/e-commerce/shopping\n" +
-    "intl = international affairs/geopolitics/foreign countries/global trade/war\n" +
+    "crisis = disease outbreak/earthquake/flood/storm/natural disaster/accident/emergency\n" +
     "pol = domestic politics/government/policy/law\n" +
     "other = none of the above\n" +
     "Reply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
@@ -51,8 +51,8 @@ async function classifyBatch(env, titles) {
   const text = String((out && (out.response || out.result)) || "");
   // parse แบบยืดหยุ่น: ดึงรหัสหมวดตามลำดับที่โผล่ ไม่บังคับ JSON (รับคำเต็มด้วย)
   const norm = (w) =>
-    w === "international" ? "intl" : (w === "politics" || w === "political") ? "pol" : (w === "economy" ? "econ" : w);
-  const found = (text.toLowerCase().match(/econ(?:omy)?|agri|retail|international|intl|politics|political|pol|other/g) || [])
+    w === "disaster" ? "crisis" : (w === "politics" || w === "political") ? "pol" : (w === "economy" ? "econ" : w);
+  const found = (text.toLowerCase().match(/econ(?:omy)?|agri|retail|crisis|disaster|politics|political|pol|other/g) || [])
     .map(norm);
   if (!found.length) throw new Error("no cats: " + text.slice(0, 80));
   return found.map((c) => (CAT_KEYS.includes(c) ? c : "other"));
