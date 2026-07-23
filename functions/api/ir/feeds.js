@@ -97,9 +97,11 @@ export async function onRequest(context) {
     try {
       const j = JSON.parse(await resp.clone().text());
       const s = j.sources || {};
+      const byAI = ["newsth", "newsintl"].reduce((n, k) => n + (s[k]?.items || []).filter((x) => x.byAI).length, 0);
       txt =
         `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
         `จำนวนข่าว: ในประเทศ=${(s.newsth?.items || []).length}  ต่างประเทศ=${(s.newsintl?.items || []).length}  CP=${(s.alert1?.items || []).length}  ปศุสัตว์=${(s.alert2?.items || []).length}\n` +
+        `จัดหมวดด้วย AI: ${byAI} ข่าว (ที่เหลือใช้ keyword)\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
           ? (j.errors || []).map((e) => `✗ ${e.label}  [${e.source}/${e.id}]  →  ${e.message}`).join("\n")
