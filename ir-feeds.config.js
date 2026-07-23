@@ -31,6 +31,13 @@ export default [
   { id: "news-nyt",         source: "news", group: "intl", region: "intl", label: "NYT World",      url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml" },
   { id: "news-aljazeera",   source: "news", group: "intl", region: "intl", label: "Al Jazeera",     url: "https://www.aljazeera.com/xml/rss/all.xml" },
   { id: "news-dw",          source: "news", group: "intl", region: "intl", label: "DW",             url: "https://rss.dw.com/rdf/rss-en-world" },
+  { id: "news-nbc",         source: "news", group: "intl", region: "intl", label: "NBC News",      url: "https://feeds.nbcnews.com/nbcnews/public/world" },
+  { id: "news-abc",         source: "news", group: "intl", region: "intl", label: "ABC News",      url: "https://feeds.abcnews.com/abcnews/internationalheadlines" },
+  { id: "news-cbs",         source: "news", group: "intl", region: "intl", label: "CBS News",      url: "https://www.cbsnews.com/latest/rss/world" },
+  { id: "news-sky",         source: "news", group: "intl", region: "intl", label: "Sky News",      url: "https://feeds.skynews.com/feeds/rss/world.xml" },
+  { id: "news-independent", source: "news", group: "intl", region: "intl", label: "The Independent", url: "https://www.independent.co.uk/news/world/rss" },
+  { id: "news-france24",    source: "news", group: "intl", region: "intl", label: "France 24",     url: "https://www.france24.com/en/rss" },
+  { id: "news-scmp",        source: "news", group: "intl", region: "intl", label: "SCMP (เอเชีย)",  url: "https://www.scmp.com/rss/91/feed" },
 
   // 🔔 Alert 1 — แบรนด์ CP (รวม 2 ฟีด: "cp" + "ซีพี")
   { id: "alert1-cp",   source: "alert1", label: '"cp" -tower', url: "https://www.google.com/alerts/feeds/09603683942017157714/11443863203205870260" },

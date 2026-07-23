@@ -86,17 +86,25 @@ export async function onRequest(context) {
   const cache = caches.default;
   const cacheKey = new Request(url.origin + "/api/ir/feeds?v=" + CACHE_VER, { method: "GET" });
 
-  // ?probe = ยิงฟีด alert สด ๆ แล้วรายงานว่า Cloudflare เห็นอะไร (debug ฟีดว่าง)
+  // ?probe = ยิงฟีดสด ๆ (alert + CNN candidates) แล้วโชว์ status + หัวข้อตัวอย่าง (debug)
   if (url.searchParams.has("probe")) {
-    const targets = feeds.filter((f) => f.source === "alert1" || f.source === "alert2");
+    const cnn = [
+      { label: "CNN topstories", source: "test", url: "http://rss.cnn.com/rss/cnn_topstories.rss" },
+      { label: "CNN world",      source: "test", url: "http://rss.cnn.com/rss/cnn_world.rss" },
+      { label: "CNN edition",    source: "test", url: "http://rss.cnn.com/rss/edition.rss" },
+    ];
+    const targets = [...feeds.filter((f) => f.source === "alert1" || f.source === "alert2"), ...cnn];
     const lines = [];
     for (const f of targets) {
       try {
         const r = await fetchWithTimeout(f.url, FETCH_TIMEOUT);
         const t = await r.text();
-        const entries = (t.match(/<entry\b/g) || []).length;
-        lines.push(`● ${f.label} [${f.source}]  HTTP ${r.status} · ${t.length} bytes · <entry>=${entries}`);
-        lines.push("   head: " + t.slice(0, 220).replace(/\s+/g, " "));
+        const nItem = (t.match(/<(item|entry)\b/g) || []).length;
+        const titles = (t.match(/<title[^>]*>([\s\S]*?)<\/title>/g) || [])
+          .map((x) => x.replace(/<[^>]+>/g, "").replace(/<!\[CDATA\[|\]\]>/g, "").trim())
+          .filter(Boolean);
+        lines.push(`● ${f.label} [${f.source}]  HTTP ${r.status} · ${t.length}b · items=${nItem}`);
+        lines.push("   ตัวอย่างหัวข้อ: " + (titles.slice(1, 4).join("  |  ").slice(0, 200) || "(ไม่มี)"));
       } catch (e) {
         lines.push(`● ${f.label} [${f.source}]  ERROR: ${String((e && e.message) || e)}`);
       }
