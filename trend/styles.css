@@ -292,10 +292,10 @@ body {
 }
 .bd-chip:hover { border-color: var(--trends); color: var(--trends); }
 
-/* ไฮไลต์คำที่ match ในข่าว Alert = ตัวหนา (ไม่ใช่พื้น/กรอบ) — บังคับทับ default <mark> */
+/* ไฮไลต์คำที่ match ในข่าว Alert = สีน้ำเงิน+ตัวหนา (ไม่ใช่พื้น/กรอบ) — บังคับทับ default <mark> */
 .card mark.hl, mark.hl {
   background: transparent !important;
-  color: inherit !important;
+  color: var(--alert) !important;
   font-weight: 700;
   padding: 0;
   border: 0;

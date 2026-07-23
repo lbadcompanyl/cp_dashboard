@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "20"; // bump: ลดฟีดเหลือ ~24 + harden กัน worker crash (1101)
+const CACHE_VER = "21"; // bump: หมวดใหม่ (retail/intl แทน energy) + ไฮไลต์ [[hl]] token
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -19,10 +19,11 @@ const targetSource = (f) => (f.source === "news" ? (f.region === "intl" ? "newsi
 
 // ---------- จัดหมวดข่าว: keyword-first + LLM (Workers AI) สำหรับที่กำกวม ----------
 const CAT_KW = {
-  econ:   ["หุ้น","เศรษฐกิจ","ธุรกิจ","ลงทุน","เงินบาท","ส่งออก","นำเข้า","กำไร","ตลาดหุ้น","ดอกเบี้ย","เงินเฟ้อ","จีดีพี","ปันผล","แบงก์","ธนาคาร","stock","econom","market","invest","trade","inflation","finance","earnings","bank"],
-  agri:   ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","เกษตร","อาหารสัตว์","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","livestock","agri","farm","pork","poultry","crop","harvest","food"],
-  pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","govern","policy","election","parliament","minister","tariff","cabinet"],
-  energy: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"],
+  econ:   ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"],
+  agri:   ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","อาหารสัตว์","เกษตร","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","livestock","pork","poultry","agri","farm","food","shrimp","crop","harvest"],
+  retail: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale"],
+  intl:   ["ต่างประเทศ","ทรัมป์","จีน","สหรัฐ","สงคราม","ความขัดแย้ง","การค้าโลก","กำแพงภาษี","ยูเครน","อาเซียน","ระหว่างประเทศ","ภูมิรัฐศาสตร์","trump","china","united states","war","global","geopolitic","ukraine","asean","nato"],
+  pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"],
 };
 const CAT_KEYS = Object.keys(CAT_KW);
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // ตัวที่ยัง active (3.1-8b ถูก deprecated) + parser ยืดหยุ่นรับได้
@@ -38,17 +39,21 @@ async function classifyBatch(env, titles) {
   const list = titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
   const prompt =
     "Classify each Thai/English news headline into ONE category code:\n" +
-    "econ = economy/business/stocks/finance/trade\n" +
-    "agri = agriculture/livestock/farming/food\n" +
-    "pol = politics/government/policy/law\n" +
-    "energy = oil/gas/electricity/energy\n" +
+    "econ = economy/business/stocks/finance/GDP/investment\n" +
+    "agri = agriculture/livestock/farming/food production\n" +
+    "retail = retail/wholesale/consumer/e-commerce/shopping\n" +
+    "intl = international affairs/geopolitics/foreign countries/global trade/war\n" +
+    "pol = domestic politics/government/policy/law\n" +
     "other = none of the above\n" +
     "Reply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
     list;
   const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 300 });
   const text = String((out && (out.response || out.result)) || "");
-  // parse แบบยืดหยุ่น: ดึงรหัสหมวดตามลำดับที่โผล่ ไม่บังคับ JSON
-  const found = (text.toLowerCase().match(/econ|agri|pol|energy|other/g) || []);
+  // parse แบบยืดหยุ่น: ดึงรหัสหมวดตามลำดับที่โผล่ ไม่บังคับ JSON (รับคำเต็มด้วย)
+  const norm = (w) =>
+    w === "international" ? "intl" : (w === "politics" || w === "political") ? "pol" : (w === "economy" ? "econ" : w);
+  const found = (text.toLowerCase().match(/econ(?:omy)?|agri|retail|international|intl|politics|political|pol|other/g) || [])
+    .map(norm);
   if (!found.length) throw new Error("no cats: " + text.slice(0, 80));
   return found.map((c) => (CAT_KEYS.includes(c) ? c : "other"));
 }

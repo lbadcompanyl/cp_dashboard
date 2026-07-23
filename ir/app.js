@@ -11,10 +11,11 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 // หมวดข่าว (กรองด้วยคีย์เวิร์ดในหัวข้อ/สรุป — ไทย+อังกฤษ) สำหรับคอลัมน์ข่าว
 const CATS = [
-  { key: "econ",   label: "💰 เศรษฐกิจ", kw: ["หุ้น","เศรษฐกิจ","ธุรกิจ","ลงทุน","เงินบาท","ส่งออก","นำเข้า","กำไร","ตลาดหุ้น","ดอกเบี้ย","เงินเฟ้อ","จีดีพี","ปันผล","แบงก์","ธนาคาร","stock","econom","market","invest","trade","inflation","finance","earnings","bank"] },
-  { key: "agri",   label: "🐷 เกษตร/อาหาร", kw: ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","เกษตร","อาหารสัตว์","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","livestock","agri","farm","pork","poultry","crop","harvest","food"] },
-  { key: "pol",    label: "🏛️ การเมือง", kw: ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","govern","policy","election","parliament","minister","tariff","cabinet"] },
-  { key: "energy", label: "⚡ พลังงาน", kw: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"] },
+  { key: "econ",   label: "💰 เศรษฐกิจ", kw: ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"] },
+  { key: "agri",   label: "🍗 อาหาร/เกษตร", kw: ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","อาหารสัตว์","เกษตร","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","livestock","pork","poultry","agri","farm","food","shrimp","crop","harvest"] },
+  { key: "retail", label: "🛒 ค้าปลีก/ผู้บริโภค", kw: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale"] },
+  { key: "intl",   label: "🌏 ต่างประเทศ", kw: ["ต่างประเทศ","ทรัมป์","จีน","สหรัฐ","สงคราม","ความขัดแย้ง","การค้าโลก","กำแพงภาษี","ยูเครน","อาเซียน","ระหว่างประเทศ","ภูมิรัฐศาสตร์","trump","china","united states","war","global","geopolitic","ukraine","asean","nato"] },
+  { key: "pol",    label: "🏛️ นโยบาย", kw: ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"] },
 ];
 const CAT_MAP = Object.fromEntries(CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
 
