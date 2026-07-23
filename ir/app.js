@@ -58,7 +58,7 @@ function escapeHtml(s = "") {
 }
 // แปลง marker \u0001..\u0002 (จาก <b> ของ Google Alert) → <mark> ไฮไลต์ (ใช้หลัง escapeHtml แล้ว)
 function hl(s = "") {
-  return s.replace(/\u0001([\s\S]*?)\u0002/g, '<mark class="hl">$1</mark>').replace(/[\u0001\u0002]/g, "");
+  return s.replace(/\[\[hl\]\]([\s\S]*?)\[\[\/hl\]\]/g, '<mark class="hl">$1</mark>').replace(/\[\[\/?hl\]\]/g, "").replace(/[\u0001\u0002]/g, "");
 }
 function withinRecency(iso, hours) {
   if (hours === "all") return true;

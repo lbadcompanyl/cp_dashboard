@@ -19,10 +19,10 @@ function stripTags(html = "") {
 // แปลง <b>..</b> (Google Alert ครอบคำที่ match) เป็น marker \u0001..\u0002 แล้วตัด tag อื่นทิ้ง
 // marker ผ่าน JSON/escapeHtml ได้ปลอดภัย ฝั่ง client ค่อยแปลงเป็น <mark> ไฮไลต์
 function markBold(html = "") {
-  const marked = html.replace(/<b\b[^>]*>/gi, "\u0001").replace(/<\/b\s*>/gi, "\u0002");
+  const marked = html.replace(/<b\b[^>]*>/gi, "[[hl]]").replace(/<\/b\s*>/gi, "[[/hl]]");
   return stripTags(marked);
 }
-const stripMarks = (s = "") => s.replace(/[\u0001\u0002]/g, "");
+const stripMarks = (s = "") => s.replace(/\[\[\/?hl\]\]|[\u0001\u0002]/g, "");
 
 // ตรวจข้อความ "พัง" (mojibake) — เช่น snippet PDF ราชกิจจานุเบกษาที่ Google ดึงมาเพี้ยน
 // สัญญาณ: มี  / สัญลักษณ์แปลก (@ % ^ | <> ฯลฯ) เยอะ / อัตราตัวอักษรจริงต่ำ

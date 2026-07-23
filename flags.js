@@ -20,7 +20,7 @@
     String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   // ตัด marker ไฮไลต์ (จาก <b> ของ Google Alert) ออก — ใช้ตอนเก็บ record / โชว์ใน panel
   const MARK_RE = new RegExp("[" + String.fromCharCode(1, 2) + "]", "g");
-  const stripMarks = (s) => String(s == null ? "" : s).replace(MARK_RE, "");
+  const stripMarks = (s) => String(s == null ? "" : s).replace(/\[\[\/?hl\]\]/g, "").replace(MARK_RE, "");
   const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 

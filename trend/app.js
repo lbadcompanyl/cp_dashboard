@@ -28,9 +28,9 @@ function timeAgo(iso) {
 function escapeHtml(s = "") {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
-// แปลง marker .. (จาก <b> ของ Google Alert) → <mark> ไฮไลต์ (ใช้หลัง escapeHtml แล้ว)
+// แปลง marker [[hl]]..[[/hl]] (จาก <b> ของ Google Alert) → <mark> ไฮไลต์ (ใช้หลัง escapeHtml แล้ว)
 function hl(s = "") {
-  return s.replace(/([\s\S]*?)/g, '<mark class="hl">$1</mark>').replace(/[]/g, "");
+  return s.replace(/\[\[hl\]\]([\s\S]*?)\[\[\/hl\]\]/g, '<mark class="hl">$1</mark>').replace(/\[\[\/?hl\]\]/g, "").replace(/[\u0001\u0002]/g, "");
 }
 
 function withinRecency(iso, hours) {
