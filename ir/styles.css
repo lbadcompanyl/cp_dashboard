@@ -63,16 +63,15 @@ body {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
   padding: 16px 20px 40px;
-  max-width: 1400px;
+  max-width: 1680px;
   margin: 0 auto;
   align-items: start;
 }
-@media (max-width: 900px) {
-  .board { grid-template-columns: 1fr; }
-}
+@media (max-width: 1200px) { .board { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px)  { .board { grid-template-columns: 1fr; } }
 
 .panel {
   background: var(--surface);
@@ -100,8 +99,8 @@ body {
 .dot.news { background: var(--news); }
 .dot.alert { background: var(--alert); }
 .dot.trends { background: var(--trends); }
-.panel[data-source="news"] .phead { border-bottom-color: var(--news); }
-.panel[data-source="alert"] .phead { border-bottom-color: var(--alert); }
+.panel[data-source^="news"] .phead { border-bottom-color: var(--news); }
+.panel[data-source^="alert"] .phead { border-bottom-color: var(--alert); }
 .panel[data-source="trends"] .phead { border-bottom-color: var(--trends); }
 
 .pcount {
@@ -149,7 +148,7 @@ body {
 .card:hover { border-color: var(--alert); }
 .card:active { transform: scale(.995); }
 .card .src { font-size: 11px; font-weight: 700; color: var(--alert); margin-bottom: 3px; }
-.panel[data-source="news"] .card .src { color: var(--news); }
+.panel[data-source^="news"] .card .src { color: var(--news); }
 .panel[data-source="trends"] .card .src { color: var(--trends); }
 .card .ttl { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
 .card .snip { font-size: 12px; color: var(--muted); margin-bottom: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -292,17 +291,3 @@ body {
 }
 .bd-chip:hover { border-color: var(--trends); color: var(--trends); }
 
-/* News: 2 ช่องเลื่อนแยกกัน — 🇹🇭 ในประเทศ / 🌏 ต่างประเทศ */
-.panel[data-source="news"] .list { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
-.newsgroup { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.subhead {
-  display: flex; justify-content: space-between; align-items: center;
-  background: var(--surface);
-  padding: 9px 12px 7px;
-  font-size: 12px; font-weight: 800; letter-spacing: .01em;
-  border-bottom: 1px solid var(--border); flex: none;
-}
-.subhead .sc { font-weight: 600; opacity: .6; font-size: 11px; }
-.subpane { overflow-y: auto; min-height: 0; padding: 8px; }
-.subpane.dom { flex: 1.7; }
-.subpane.intl { flex: 1; border-top: 2px solid var(--border); }

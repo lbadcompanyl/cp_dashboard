@@ -8,12 +8,14 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "19"; // bump: ลดฟีดเหลือ ~24 + harden กัน worker crash (1101)
+const CACHE_VER = "20"; // bump: ลดฟีดเหลือ ~24 + harden กัน worker crash (1101)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
-const SOURCES = ["news", "alert1", "alert2"];
-const LABELS = { news: "News", alert1: "CP / ซีพี", alert2: "ปศุสัตว์ · อาหาร · การค้า" };
+const SOURCES = ["newsth", "newsintl", "alert1", "alert2"];
+const LABELS = { newsth: "🇹🇭 ในประเทศ", newsintl: "🌏 ต่างประเทศ", alert1: "CP / ซีพี", alert2: "ปศุสัตว์ · อาหาร · การค้า" };
+// ฟีด source "news" แยกไป newsth/newsintl ตาม region
+const targetSource = (f) => (f.source === "news" ? (f.region === "intl" ? "newsintl" : "newsth") : f.source);
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -44,7 +46,7 @@ export async function onRequest(context) {
       const s = j.sources || {};
       txt =
         `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
-        `จำนวนข่าว: news=${(s.news?.items || []).length}  alert1=${(s.alert1?.items || []).length}  alert2=${(s.alert2?.items || []).length}\n` +
+        `จำนวนข่าว: ในประเทศ=${(s.newsth?.items || []).length}  ต่างประเทศ=${(s.newsintl?.items || []).length}  CP=${(s.alert1?.items || []).length}  ปศุสัตว์=${(s.alert2?.items || []).length}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
           ? (j.errors || []).map((e) => `✗ ${e.label}  [${e.source}/${e.id}]  →  ${e.message}`).join("\n")
@@ -61,11 +63,12 @@ export async function onRequest(context) {
 async function buildAndStore(cache, cacheKey) {
   const sources = {};
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
-  for (const f of feeds) if (sources[f.source]) sources[f.source].feedCount++;
+  for (const f of feeds) { const t = targetSource(f); if (sources[t]) sources[t].feedCount++; }
   const errors = [];
 
   await mapPool(feeds, POOL, async (f) => {
-    if (!sources[f.source]) return;
+    const target = targetSource(f);
+    if (!sources[target]) return;
     try {
       const res = await fetchWithTimeout(f.url, FETCH_TIMEOUT);
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -75,11 +78,11 @@ async function buildAndStore(cache, cacheKey) {
       for (const it of items) {
         if (!it.sourceLabel) it.sourceLabel = f.label;
         it.group = f.group || "gen"; // biz | intl | gen
-        it.region = f.region || "th"; // th | intl — แยกช่อง ในประเทศ/ต่างประเทศ
+        it.region = f.region || "th"; // th | intl
         // some feeds (e.g. Workpoint) give relative links — resolve against the feed URL
         if (it.link && it.link.startsWith("/")) { try { it.link = new URL(it.link, f.url).href; } catch {} }
       }
-      sources[f.source].items.push(...items);
+      sources[target].items.push(...items);
     } catch (e) {
       errors.push({ id: f.id, source: f.source, label: f.label, message: String(e.message || e) });
     }

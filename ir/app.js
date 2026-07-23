@@ -86,18 +86,6 @@ function renderPanel(panel) {
     return;
   }
 
-  // คอลัมน์ News: 2 ช่องเลื่อนแยกกัน — บน 🇹🇭 ในประเทศ / ล่าง 🌏 ต่างประเทศ
-  if (source === "news") {
-    const th = items.filter((it) => it.region !== "intl");
-    const intl = items.filter((it) => it.region === "intl");
-    list.innerHTML =
-      `<div class="newsgroup">` +
-      newsPane("🇹🇭 ในประเทศ", th, source, "dom") +
-      newsPane("🌏 ต่างประเทศ", intl, source, "intl") +
-      `</div>`;
-    return;
-  }
-
   list.innerHTML = items.map((it) => cardHtml(it, source)).join("");
 }
 
@@ -111,14 +99,6 @@ function cardHtml(it, source) {
   </a>`;
 }
 
-function newsPane(title, arr, source, cls) {
-  return (
-    `<div class="subhead"><span>${title}</span><span class="sc">${arr.length}</span></div>` +
-    `<div class="subpane ${cls}">` +
-    (arr.length ? arr.map((it) => cardHtml(it, source)).join("") : `<div class="state">ไม่มีข่าว</div>`) +
-    `</div>`
-  );
-}
 
 function setCount(panel, source, n) {
   const errs = (state.data?.errors || []).filter((e) => e.source === source);
