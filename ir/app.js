@@ -17,11 +17,29 @@ const CATS = [
   { key: "energy", label: "⚡ พลังงาน", kw: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"] },
 ];
 const CAT_MAP = Object.fromEntries(CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
-// หมวดของข่าว: ใช้ค่าจาก server (it.cat — keyword/AI) ถ้ามี, ไม่งั้นคำนวณ keyword ฝั่ง client
-function catOf(it) {
-  if (it.cat) return it.cat;
+
+// หมวดย่อยของ Alert 2 (ปศุสัตว์/อาหาร/การค้า) — กรอง keyword ฝั่ง client
+const ALERT2_CATS = [
+  { key: "price",   label: "💰 ราคา/ต้นทุน",    kw: ["ราคาหมู","ราคาสุกร","ราคาไก่","ราคาไข่","ราคากุ้ง","ราคาอาหารสัตว์","ต้นทุน","ราคาข้าวโพด","กากถั่วเหลือง","ปลาป่น","หน้าฟาร์ม","price"] },
+  { key: "disease", label: "🦠 โรคระบาด",       kw: ["อหิวาต์","asf","ไข้หวัดนก","h5n1","โรคระบาด","โรคกุ้ง","กุ้งตาย","กักกันโรค","ปิดฟาร์ม","swine fever","avian influenza","bird flu","foot and mouth"] },
+  { key: "trade",   label: "🚢 นำเข้า-ส่งออก",   kw: ["เถื่อน","ลักลอบ","นำเข้า","ส่งออก","โควตา","ภาษี","สงครามการค้า","import","export","ban","iuu","ประมงผิดกฎหมาย"] },
+  { key: "policy",  label: "🏛️ นโยบาย/ราชการ",  kw: ["กรม","กระทรวง","รมว","มาตรการ","ตรึงราคา","ควบคุมราคา","แทรกแซง","ประกันรายได้","สหกรณ์","สภาเกษตรกร","ช่วยเหลือเกษตรกร"] },
+  { key: "company", label: "🏢 บริษัท/สมาคม",    kw: ["เบทาโกร","ไทยยูเนี่ยน","ไทยฟู้ดส์","betagro","thai union","gfpt","cargill","brf","jbs","สมาคม"] },
+  { key: "risk",    label: "🌦️ ภัย/ความปลอดภัย", kw: ["น้ำท่วม","ภัยแล้ง","เอลนีโญ","ลานีญา","ภัยพิบัติ","เรียกคืน","ปนเปื้อน","สวัสดิภาพสัตว์","ไก่ไร้กรง","cage free","ยาปฏิชีวนะ","แรงงาน"] },
+];
+const ALERT2_MAP = Object.fromEntries(ALERT2_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+
+function catsForSource(source) {
+  if (source === "alert2") return ALERT2_CATS;
+  if (source === "newsth" || source === "newsintl") return CATS;
+  return null;
+}
+// หมวดของ item: news ใช้ it.cat (AI/keyword จาก server) ถ้ามี; alert2 ใช้ keyword ฝั่ง client
+function catOf(it, source) {
+  const map = source === "alert2" ? ALERT2_MAP : CAT_MAP;
+  if (source !== "alert2" && it.cat) return it.cat;
   const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
-  for (const key of Object.keys(CAT_MAP)) if (CAT_MAP[key].some((k) => hay.includes(k))) return key;
+  for (const key of Object.keys(map)) if (map[key].some((k) => hay.includes(k))) return key;
   return "other";
 }
 
@@ -91,7 +109,7 @@ function renderPanel(panel) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
       if (!hay.includes(kw)) return false;
     }
-    if (f.cat && catOf(it) !== f.cat) return false;
+    if (f.cat && catOf(it, source) !== f.cat) return false;
     return true;
   });
 
@@ -176,12 +194,13 @@ function wire() {
 // ชิพหมวดข่าว — ใส่เฉพาะคอลัมน์ข่าว (ในประเทศ/ต่างประเทศ)
 function injectCats(panel) {
   const source = panel.dataset.source;
-  if (source !== "newsth" && source !== "newsintl") return;
+  const cats = catsForSource(source);
+  if (!cats) return;
   const row = document.createElement("div");
   row.className = "cats";
   row.innerHTML =
     `<button type="button" class="cat on" data-cat="">ทั้งหมด</button>` +
-    CATS.map((c) => `<button type="button" class="cat" data-cat="${c.key}">${c.label}</button>`).join("");
+    cats.map((c) => `<button type="button" class="cat" data-cat="${c.key}">${c.label}</button>`).join("");
   $(".filters", panel).after(row);
   row.addEventListener("click", (e) => {
     const b = e.target.closest(".cat");
