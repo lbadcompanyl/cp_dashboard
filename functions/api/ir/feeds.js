@@ -86,6 +86,24 @@ export async function onRequest(context) {
   const cache = caches.default;
   const cacheKey = new Request(url.origin + "/api/ir/feeds?v=" + CACHE_VER, { method: "GET" });
 
+  // ?probe = ยิงฟีด alert สด ๆ แล้วรายงานว่า Cloudflare เห็นอะไร (debug ฟีดว่าง)
+  if (url.searchParams.has("probe")) {
+    const targets = feeds.filter((f) => f.source === "alert1" || f.source === "alert2");
+    const lines = [];
+    for (const f of targets) {
+      try {
+        const r = await fetchWithTimeout(f.url, FETCH_TIMEOUT);
+        const t = await r.text();
+        const entries = (t.match(/<entry\b/g) || []).length;
+        lines.push(`● ${f.label} [${f.source}]  HTTP ${r.status} · ${t.length} bytes · <entry>=${entries}`);
+        lines.push("   head: " + t.slice(0, 220).replace(/\s+/g, " "));
+      } catch (e) {
+        lines.push(`● ${f.label} [${f.source}]  ERROR: ${String((e && e.message) || e)}`);
+      }
+    }
+    return new Response(lines.join("\n"), { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  }
+
   // ?rebuild = บังคับ build สดพร้อมเรียก AI ทันที (สำหรับทดสอบ/เร่งจัดหมวด)
   const wantRebuild = url.searchParams.has("rebuild");
   let resp = wantRebuild ? null : await cache.match(cacheKey);
