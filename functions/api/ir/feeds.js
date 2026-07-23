@@ -25,7 +25,7 @@ const CAT_KW = {
   energy: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"],
 };
 const CAT_KEYS = Object.keys(CAT_KW);
-const AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"; // เข้าใจไทย + ทำตามฟอร์แมตดีกว่า 3B
+const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // ตัวที่ยัง active (3.1-8b ถูก deprecated) + parser ยืดหยุ่นรับได้
 const MAX_AI_ITEMS = 40; // จำกัดต่อ build (กันเกินโควตา/CPU)
 const AI_BATCH = 20; // รวมหัวข้อต่อ 1 call
 
