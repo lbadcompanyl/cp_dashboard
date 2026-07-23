@@ -86,17 +86,34 @@ function renderPanel(panel) {
     return;
   }
 
-  list.innerHTML = items
-    .map(
-      (it) => `<a class="card" href="${escapeHtml(it.link)}" target="_blank" rel="noopener">
-        ${window.Flags ? Flags.button(it, source) : ""}
-        ${it.sourceLabel ? `<div class="src">${escapeHtml(it.sourceLabel)}</div>` : ""}
-        <div class="ttl">${hl(escapeHtml(it.title))}</div>
-        ${it.snippet ? `<div class="snip">${hl(escapeHtml(it.snippet))}</div>` : ""}
-        <div class="meta">${timeAgo(it.publishedAt)}</div>
-      </a>`
-    )
-    .join("");
+  // คอลัมน์ News: แยก 2 ช่องซ้อน — บน 🇹🇭 ในประเทศ / ล่าง 🌏 ต่างประเทศ
+  if (source === "news") {
+    const th = items.filter((it) => it.region !== "intl");
+    const intl = items.filter((it) => it.region === "intl");
+    list.innerHTML =
+      newsSection("🇹🇭 ในประเทศ", th, source) + newsSection("🌏 ต่างประเทศ", intl, source);
+    return;
+  }
+
+  list.innerHTML = items.map((it) => cardHtml(it, source)).join("");
+}
+
+function cardHtml(it, source) {
+  return `<a class="card" href="${escapeHtml(it.link)}" target="_blank" rel="noopener">
+    ${window.Flags ? Flags.button(it, source) : ""}
+    ${it.sourceLabel ? `<div class="src">${escapeHtml(it.sourceLabel)}</div>` : ""}
+    <div class="ttl">${hl(escapeHtml(it.title))}</div>
+    ${it.snippet ? `<div class="snip">${hl(escapeHtml(it.snippet))}</div>` : ""}
+    <div class="meta">${timeAgo(it.publishedAt)}</div>
+  </a>`;
+}
+
+function newsSection(title, arr, source) {
+  if (!arr.length) return "";
+  return (
+    `<div class="subhead"><span>${title}</span><span class="sc">${arr.length}</span></div>` +
+    arr.map((it) => cardHtml(it, source)).join("")
+  );
 }
 
 function setCount(panel, source, n) {

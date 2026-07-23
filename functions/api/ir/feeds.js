@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "18"; // bump: ลดฟีดเหลือ ~24 + harden กัน worker crash (1101)
+const CACHE_VER = "19"; // bump: ลดฟีดเหลือ ~24 + harden กัน worker crash (1101)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -74,7 +74,8 @@ async function buildAndStore(cache, cacheKey) {
       const items = parseGeneric(xml, f.source).slice(0, MAX_PER_FEED);
       for (const it of items) {
         if (!it.sourceLabel) it.sourceLabel = f.label;
-        it.group = f.group || "gen"; // biz | intl | gen — สำหรับแยกช่องบน/ล่าง
+        it.group = f.group || "gen"; // biz | intl | gen
+        it.region = f.region || "th"; // th | intl — แยกช่อง ในประเทศ/ต่างประเทศ
         // some feeds (e.g. Workpoint) give relative links — resolve against the feed URL
         if (it.link && it.link.startsWith("/")) { try { it.link = new URL(it.link, f.url).href; } catch {} }
       }

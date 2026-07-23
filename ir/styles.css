@@ -291,3 +291,15 @@ body {
   border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px;
 }
 .bd-chip:hover { border-color: var(--trends); color: var(--trends); }
+
+/* หัวข้อย่อยแบ่งช่องใน News: 🇹🇭 ในประเทศ / 🌏 ต่างประเทศ */
+.subhead {
+  display: flex; justify-content: space-between; align-items: center;
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface);
+  padding: 8px 6px 6px; margin: 4px 0 6px;
+  font-size: 12px; font-weight: 800; letter-spacing: .01em;
+  border-bottom: 1px solid var(--border);
+}
+.subhead:first-child { margin-top: 0; }
+.subhead .sc { font-weight: 600; opacity: .6; font-size: 11px; }
