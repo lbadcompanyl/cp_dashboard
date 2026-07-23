@@ -98,6 +98,20 @@ async function buildAndStore(cache, cacheKey) {
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
   }
 
+  // ถ้ารอบนี้บาง source ดึงได้ 0 (เช่น Google Alert ส่งว่างชั่วคราว) → คงของเดิมใน cache ไว้
+  try {
+    const prev = await cache.match(cacheKey);
+    if (prev) {
+      const pj = JSON.parse(await prev.clone().text());
+      for (const key of SOURCES) {
+        if (sources[key].items.length === 0 && pj.sources?.[key]?.items?.length) {
+          sources[key].items = pj.sources[key].items;
+          sources[key].stale = true;
+        }
+      }
+    }
+  } catch {}
+
   const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors });
   const resp = new Response(body, {
     headers: {

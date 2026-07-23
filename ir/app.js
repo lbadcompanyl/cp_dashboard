@@ -86,12 +86,15 @@ function renderPanel(panel) {
     return;
   }
 
-  // คอลัมน์ News: แยก 2 ช่องซ้อน — บน 🇹🇭 ในประเทศ / ล่าง 🌏 ต่างประเทศ
+  // คอลัมน์ News: 2 ช่องเลื่อนแยกกัน — บน 🇹🇭 ในประเทศ / ล่าง 🌏 ต่างประเทศ
   if (source === "news") {
     const th = items.filter((it) => it.region !== "intl");
     const intl = items.filter((it) => it.region === "intl");
     list.innerHTML =
-      newsSection("🇹🇭 ในประเทศ", th, source) + newsSection("🌏 ต่างประเทศ", intl, source);
+      `<div class="newsgroup">` +
+      newsPane("🇹🇭 ในประเทศ", th, source, "dom") +
+      newsPane("🌏 ต่างประเทศ", intl, source, "intl") +
+      `</div>`;
     return;
   }
 
@@ -108,11 +111,12 @@ function cardHtml(it, source) {
   </a>`;
 }
 
-function newsSection(title, arr, source) {
-  if (!arr.length) return "";
+function newsPane(title, arr, source, cls) {
   return (
     `<div class="subhead"><span>${title}</span><span class="sc">${arr.length}</span></div>` +
-    arr.map((it) => cardHtml(it, source)).join("")
+    `<div class="subpane ${cls}">` +
+    (arr.length ? arr.map((it) => cardHtml(it, source)).join("") : `<div class="state">ไม่มีข่าว</div>`) +
+    `</div>`
   );
 }
 

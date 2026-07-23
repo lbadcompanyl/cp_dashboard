@@ -292,14 +292,17 @@ body {
 }
 .bd-chip:hover { border-color: var(--trends); color: var(--trends); }
 
-/* หัวข้อย่อยแบ่งช่องใน News: 🇹🇭 ในประเทศ / 🌏 ต่างประเทศ */
+/* News: 2 ช่องเลื่อนแยกกัน — 🇹🇭 ในประเทศ / 🌏 ต่างประเทศ */
+.panel[data-source="news"] .list { overflow: hidden; display: flex; flex-direction: column; padding: 0; }
+.newsgroup { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .subhead {
   display: flex; justify-content: space-between; align-items: center;
-  position: sticky; top: 0; z-index: 2;
   background: var(--surface);
-  padding: 8px 6px 6px; margin: 4px 0 6px;
+  padding: 9px 12px 7px;
   font-size: 12px; font-weight: 800; letter-spacing: .01em;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); flex: none;
 }
-.subhead:first-child { margin-top: 0; }
 .subhead .sc { font-weight: 600; opacity: .6; font-size: 11px; }
+.subpane { overflow-y: auto; min-height: 0; padding: 8px; }
+.subpane.dom { flex: 1.7; }
+.subpane.intl { flex: 1; border-top: 2px solid var(--border); }
