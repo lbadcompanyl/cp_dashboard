@@ -21,7 +21,6 @@ export default [
   { id: "news-thansettakij",source: "news", group: "biz", label: "ฐานเศรษฐกิจ",      url: "https://www.thansettakij.com/feed" },
   { id: "news-posttoday",   source: "news", group: "biz", label: "โพสต์ทูเดย์",      url: "https://www.posttoday.com/rss" },
   { id: "news-kaohoon",     source: "news", group: "biz", label: "ข่าวหุ้น",         url: "https://www.kaohoon.com/feed" },
-  { id: "news-longtunman",  source: "news", group: "biz", label: "ลงทุนแมน",        url: "https://www.longtunman.com/feed" },
   { id: "news-moneybuffalo",source: "news", group: "biz", label: "Money Buffalo",   url: "https://www.moneybuffalo.in.th/feed" },
   { id: "news-cnbc",        source: "news", group: "biz", label: "CNBC",            url: "https://www.cnbc.com/id/10001147/device/rss/rss.html" },
   { id: "news-bbcbiz",      source: "news", group: "biz", label: "BBC Business",    url: "https://feeds.bbci.co.uk/news/business/rss.xml" },
