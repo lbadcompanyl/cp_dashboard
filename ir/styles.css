@@ -291,3 +291,13 @@ body {
 }
 .bd-chip:hover { border-color: var(--trends); color: var(--trends); }
 
+
+/* ชิพหมวดข่าว (filter แยกหมวด) ในคอลัมน์ข่าว */
+.cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+.cat {
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  border-radius: 20px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+  font-family: inherit; white-space: nowrap; transition: background .12s, color .12s;
+}
+.cat:hover { border-color: var(--news); }
+.cat.on { background: var(--news); color: #fff; border-color: var(--news); }

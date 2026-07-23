@@ -9,6 +9,15 @@ const state = {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// หมวดข่าว (กรองด้วยคีย์เวิร์ดในหัวข้อ/สรุป — ไทย+อังกฤษ) สำหรับคอลัมน์ข่าว
+const CATS = [
+  { key: "econ",   label: "💰 เศรษฐกิจ", kw: ["หุ้น","เศรษฐกิจ","ธุรกิจ","ลงทุน","เงินบาท","ส่งออก","นำเข้า","กำไร","ตลาดหุ้น","ดอกเบี้ย","เงินเฟ้อ","จีดีพี","ปันผล","แบงก์","ธนาคาร","stock","econom","market","invest","trade","inflation","finance","earnings","bank"] },
+  { key: "agri",   label: "🐷 เกษตร/อาหาร", kw: ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","เกษตร","อาหารสัตว์","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","livestock","agri","farm","pork","poultry","crop","harvest","food"] },
+  { key: "pol",    label: "🏛️ การเมือง", kw: ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","govern","policy","election","parliament","minister","tariff","cabinet"] },
+  { key: "energy", label: "⚡ พลังงาน", kw: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"] },
+];
+const CAT_MAP = Object.fromEntries(CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+
 // ---------- utils ----------
 function timeAgo(iso) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -68,12 +77,17 @@ function renderPanel(panel) {
   const f = state.filters[source] || { kw: "", rc: "all" };
   const kw = f.kw.trim().toLowerCase();
 
+  const catKws = f.cat ? CAT_MAP[f.cat] : null;
   const items = bucket.items.filter((it) => {
     if (window.Flags && Flags.isHidden(it.link)) return false;
     if (!withinRecency(it.publishedAt, f.rc)) return false;
     if (kw) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
       if (!hay.includes(kw)) return false;
+    }
+    if (catKws) {
+      const hay = (it.title + " " + it.snippet).toLowerCase();
+      if (!catKws.some((k) => hay.includes(k))) return false;
     }
     return true;
   });
@@ -138,7 +152,7 @@ function emptyState(source, bucket, filtered) {
 function wire() {
   $$(".panel").forEach((panel) => {
     const source = panel.dataset.source;
-    state.filters[source] = { kw: "", rc: "all" };
+    state.filters[source] = { kw: "", rc: "all", cat: null };
     const kwEl = $("[data-kw]", panel);
     if (kwEl)
       kwEl.addEventListener("input", (e) => {
@@ -151,8 +165,28 @@ function wire() {
         state.filters[source].rc = e.target.value;
         renderPanel(panel);
       });
+    injectCats(panel);
   });
   $("#refresh").addEventListener("click", load);
+}
+
+// ชิพหมวดข่าว — ใส่เฉพาะคอลัมน์ข่าว (ในประเทศ/ต่างประเทศ)
+function injectCats(panel) {
+  const source = panel.dataset.source;
+  if (source !== "newsth" && source !== "newsintl") return;
+  const row = document.createElement("div");
+  row.className = "cats";
+  row.innerHTML =
+    `<button type="button" class="cat on" data-cat="">ทั้งหมด</button>` +
+    CATS.map((c) => `<button type="button" class="cat" data-cat="${c.key}">${c.label}</button>`).join("");
+  $(".filters", panel).after(row);
+  row.addEventListener("click", (e) => {
+    const b = e.target.closest(".cat");
+    if (!b) return;
+    state.filters[source].cat = b.dataset.cat || null;
+    $$(".cat", row).forEach((x) => x.classList.toggle("on", x === b));
+    renderPanel(panel);
+  });
 }
 
 if (window.Flags) Flags.init({ onChange: renderAll });
