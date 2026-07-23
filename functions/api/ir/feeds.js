@@ -17,6 +17,58 @@ const LABELS = { newsth: "🇹🇭 ในประเทศ", newsintl: "🌏 �
 // ฟีด source "news" แยกไป newsth/newsintl ตาม region
 const targetSource = (f) => (f.source === "news" ? (f.region === "intl" ? "newsintl" : "newsth") : f.source);
 
+// ---------- จัดหมวดข่าว: keyword-first + LLM (Workers AI) สำหรับที่กำกวม ----------
+const CAT_KW = {
+  econ:   ["หุ้น","เศรษฐกิจ","ธุรกิจ","ลงทุน","เงินบาท","ส่งออก","นำเข้า","กำไร","ตลาดหุ้น","ดอกเบี้ย","เงินเฟ้อ","จีดีพี","ปันผล","แบงก์","ธนาคาร","stock","econom","market","invest","trade","inflation","finance","earnings","bank"],
+  agri:   ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","เกษตร","อาหารสัตว์","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","livestock","agri","farm","pork","poultry","crop","harvest","food"],
+  pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","govern","policy","election","parliament","minister","tariff","cabinet"],
+  energy: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"],
+};
+const CAT_KEYS = Object.keys(CAT_KW);
+const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเล็ก จัดหมวดพอ ใช้ neuron น้อย
+const MAX_AI_ITEMS = 40; // จำกัดต่อ build (กันเกินโควตา/CPU)
+const AI_BATCH = 20; // รวมหัวข้อต่อ 1 call
+
+function keywordHits(it) {
+  const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  return CAT_KEYS.filter((k) => CAT_KW[k].some((w) => hay.includes(w)));
+}
+
+async function classifyBatch(env, titles) {
+  const list = titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  const prompt =
+    "จัดหมวดข่าวแต่ละหัวข้อเป็นรหัสเดียว: econ (เศรษฐกิจ/ธุรกิจ/หุ้น), agri (เกษตร/ปศุสัตว์/อาหาร), pol (การเมือง/นโยบาย), energy (พลังงาน), other (อื่นๆ). " +
+    'ตอบเป็น JSON array ของรหัสเรียงตามลำดับเท่านั้น ห้ามมีข้อความอื่น เช่น ["econ","agri"]\n\nหัวข้อ:\n' + list;
+  const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 220 });
+  const text = String((out && (out.response || out.result)) || "");
+  const m = text.match(/\[[\s\S]*\]/);
+  if (!m) throw new Error("no json");
+  return JSON.parse(m[0]).map((c) => (CAT_KEYS.includes(c) ? c : "other"));
+}
+
+async function enrichCategories(env, sources, prevCat, allowAI) {
+  const toAI = [];
+  for (const s of ["newsth", "newsintl"]) {
+    for (const it of (sources[s]?.items || [])) {
+      const cached = prevCat[it.link];
+      if (cached) { it.cat = cached; it.byAI = true; continue; } // เคยจัดด้วย AI แล้ว
+      const hits = keywordHits(it);
+      if (hits.length === 1) { it.cat = hits[0]; it.byAI = false; continue; } // keyword มั่นใจ
+      it.cat = hits[0] || "other"; it.byAI = false; // provisional
+      toAI.push(it); // 0 หรือ ≥2 หมวด → ส่ง AI ตัดสิน
+    }
+  }
+  if (!allowAI || !env || !env.AI || !toAI.length) return;
+  const batch = toAI.slice(0, MAX_AI_ITEMS); // ล่าสุดก่อน (feed เรียงเวลาแล้ว)
+  for (let i = 0; i < batch.length; i += AI_BATCH) {
+    const chunk = batch.slice(i, i + AI_BATCH);
+    try {
+      const cats = await classifyBatch(env, chunk.map((x) => x.title));
+      chunk.forEach((it, j) => { if (cats[j]) { it.cat = cats[j]; it.byAI = true; } });
+    } catch { /* คงค่า keyword provisional ไว้ */ }
+  }
+}
+
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   const cache = caches.default;
@@ -25,11 +77,12 @@ export async function onRequest(context) {
   let resp = await cache.match(cacheKey);
   if (resp) {
     const age = Date.now() - Number(resp.headers.get("x-cached-at") || 0);
-    if (age > FRESH_MS) context.waitUntil(buildAndStore(cache, cacheKey));
+    // รีเฟรชเบื้องหลัง + เปิด AI จัดหมวด (ไม่บล็อกผู้ใช้)
+    if (age > FRESH_MS) context.waitUntil(buildAndStore(cache, cacheKey, context.env, true));
   } else {
-    // cold cache — build สด แต่กัน exception ไม่ให้ worker crash (1101)
+    // cold cache — build สด (ไม่เรียก AI เพื่อให้เร็ว) + กัน exception ไม่ให้ worker crash (1101)
     try {
-      resp = await buildAndStore(cache, cacheKey);
+      resp = await buildAndStore(cache, cacheKey, context.env, false);
     } catch (e) {
       resp = new Response(
         JSON.stringify({ generatedAt: new Date().toISOString(), sources: {}, errors: [{ id: "_build", source: "_", label: "build failed", message: String((e && e.message) || e) }] }),
@@ -60,7 +113,7 @@ export async function onRequest(context) {
   return browserCopy(resp);
 }
 
-async function buildAndStore(cache, cacheKey) {
+async function buildAndStore(cache, cacheKey, env, allowAI) {
   const sources = {};
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
   for (const f of feeds) { const t = targetSource(f); if (sources[t]) sources[t].feedCount++; }
@@ -101,19 +154,33 @@ async function buildAndStore(cache, cacheKey) {
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
   }
 
-  // ถ้ารอบนี้บาง source ดึงได้ 0 (เช่น Google Alert ส่งว่างชั่วคราว) → คงของเดิมใน cache ไว้
+  // อ่าน cache เก่า 1 ครั้ง — ใช้ทั้ง reuse หมวดจาก AI + คงของเดิมถ้า source ว่าง
+  let pj = null;
   try {
     const prev = await cache.match(cacheKey);
-    if (prev) {
-      const pj = JSON.parse(await prev.clone().text());
-      for (const key of SOURCES) {
-        if (sources[key].items.length === 0 && pj.sources?.[key]?.items?.length) {
-          sources[key].items = pj.sources[key].items;
-          sources[key].stale = true;
-        }
+    if (prev) pj = JSON.parse(await prev.clone().text());
+  } catch {}
+
+  // reuse หมวดที่ AI เคยจัดไว้ (byAI) — ข่าวเดิมไม่ต้องเรียก AI ซ้ำ
+  const prevCat = {};
+  if (pj) {
+    for (const s of ["newsth", "newsintl"]) {
+      for (const it of (pj.sources?.[s]?.items || [])) {
+        if (it.byAI && it.link && it.cat) prevCat[it.link] = it.cat;
       }
     }
-  } catch {}
+  }
+  try { await enrichCategories(env, sources, prevCat, allowAI); } catch {}
+
+  // ถ้ารอบนี้บาง source ดึงได้ 0 (Google Alert ส่งว่างชั่วคราว) → คงของเดิมไว้
+  if (pj) {
+    for (const key of SOURCES) {
+      if (sources[key].items.length === 0 && pj.sources?.[key]?.items?.length) {
+        sources[key].items = pj.sources[key].items;
+        sources[key].stale = true;
+      }
+    }
+  }
 
   const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors });
   const resp = new Response(body, {

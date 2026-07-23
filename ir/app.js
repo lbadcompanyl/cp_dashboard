@@ -17,6 +17,13 @@ const CATS = [
   { key: "energy", label: "⚡ พลังงาน", kw: ["น้ำมัน","ก๊าซ","ไฟฟ้า","พลังงาน","โซลาร์","ถ่านหิน","ค่าไฟ","oil","gas","energy","power","fuel","electric","solar"] },
 ];
 const CAT_MAP = Object.fromEntries(CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+// หมวดของข่าว: ใช้ค่าจาก server (it.cat — keyword/AI) ถ้ามี, ไม่งั้นคำนวณ keyword ฝั่ง client
+function catOf(it) {
+  if (it.cat) return it.cat;
+  const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  for (const key of Object.keys(CAT_MAP)) if (CAT_MAP[key].some((k) => hay.includes(k))) return key;
+  return "other";
+}
 
 // ---------- utils ----------
 function timeAgo(iso) {
@@ -77,7 +84,6 @@ function renderPanel(panel) {
   const f = state.filters[source] || { kw: "", rc: "all" };
   const kw = f.kw.trim().toLowerCase();
 
-  const catKws = f.cat ? CAT_MAP[f.cat] : null;
   const items = bucket.items.filter((it) => {
     if (window.Flags && Flags.isHidden(it.link)) return false;
     if (!withinRecency(it.publishedAt, f.rc)) return false;
@@ -85,10 +91,7 @@ function renderPanel(panel) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
       if (!hay.includes(kw)) return false;
     }
-    if (catKws) {
-      const hay = (it.title + " " + it.snippet).toLowerCase();
-      if (!catKws.some((k) => hay.includes(k))) return false;
-    }
+    if (f.cat && catOf(it) !== f.cat) return false;
     return true;
   });
 
