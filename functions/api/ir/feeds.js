@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "23"; // bump: ขยาย keyword ทุกหมวด + ชื่อในเครือ CP/คู่แข่ง
+const CACHE_VER = "22"; // bump: หมวด crisis (วิกฤติ/ภัยพิบัติ) แทน intl
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -19,11 +19,11 @@ const targetSource = (f) => (f.source === "news" ? (f.region === "intl" ? "newsi
 
 // ---------- จัดหมวดข่าว: keyword-first + LLM (Workers AI) สำหรับที่กำกวม ----------
 const CAT_KW = {
-  econ:   ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","บาทอ่อน","บาทแข็ง","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","การค้า","ลงทุน","กำไร","รายได้","ยอดขาย","ตลาดหุ้น","ตลาดหลักทรัพย์","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","revenue","profit","dividend","baht","bank"],
-  agri:   ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","สัตว์ปีก","อาหารสัตว์","เกษตร","ข้าว","ข้าวโพด","มันสำปะหลัง","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","แปรรูปอาหาร","ซีพีเอฟ","เบทาโกร","ไทยฟู้ดส์","ไทยยูเนี่ยน","livestock","pork","poultry","agri","farm","food","feed","shrimp","crop","harvest","cpf","betagro","gfpt"],
-  retail: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","เซเว่น","แม็คโคร","โลตัส","ซีพี ออลล์","ซีพี แอ็กซ์ตร้า","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale","7-eleven","makro","lotus's","cp all","cp axtra"],
-  crisis: ["โรคระบาด","ระบาด","อหิวาต์","ไข้หวัดนก","asf","โควิด","แผ่นดินไหว","น้ำท่วม","ภัยแล้ง","พายุ","ไฟไหม้","ไฟป่า","สึนามิ","ดินถล่ม","ภัยพิบัติ","อุบัติเหตุ","ฉุกเฉิน","วิกฤต","ภัยธรรมชาติ","ปนเปื้อน","เรียกคืนสินค้า","กักตัว","ล็อกดาวน์","disease","outbreak","pandemic","epidemic","earthquake","quake","flood","drought","storm","typhoon","wildfire","tsunami","disaster","emergency","crisis","recall","contaminat","lockdown","quarantine"],
-  pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","กระทรวงพาณิชย์","กระทรวงเกษตร","ควบคุมราคา","อุดหนุน","ราชกิจจา","govern","policy","election","parliament","minister","cabinet","regulation","tax","law","subsidy","ministry"],
+  econ:   ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"],
+  agri:   ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","อาหารสัตว์","เกษตร","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","livestock","pork","poultry","agri","farm","food","shrimp","crop","harvest"],
+  retail: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale"],
+  crisis: ["โรคระบาด","ระบาด","อหิวาต์","ไข้หวัดนก","asf","โควิด","แผ่นดินไหว","น้ำท่วม","ภัยแล้ง","พายุ","ไฟไหม้","ไฟป่า","สึนามิ","ดินถล่ม","ภัยพิบัติ","อุบัติเหตุ","ฉุกเฉิน","วิกฤต","ภัยธรรมชาติ","disease","outbreak","pandemic","epidemic","earthquake","quake","flood","drought","storm","typhoon","wildfire","tsunami","disaster","emergency","crisis"],
+  pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"],
 };
 const CAT_KEYS = Object.keys(CAT_KW);
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // ตัวที่ยัง active (3.1-8b ถูก deprecated) + parser ยืดหยุ่นรับได้
