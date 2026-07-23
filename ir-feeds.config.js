@@ -38,6 +38,10 @@ export default [
   { id: "news-independent", source: "news", group: "intl", region: "intl", label: "The Independent", url: "https://www.independent.co.uk/news/world/rss" },
   { id: "news-france24",    source: "news", group: "intl", region: "intl", label: "France 24",     url: "https://www.france24.com/en/rss" },
   { id: "news-scmp",        source: "news", group: "intl", region: "intl", label: "SCMP (เอเชีย)",  url: "https://www.scmp.com/rss/91/feed" },
+  { id: "news-nhk",         source: "news", group: "intl", region: "intl", label: "NHK World",     url: "https://www3.nhk.or.jp/nhkworld/en/news/rss/all.xml" },
+  { id: "news-time",        source: "news", group: "intl", region: "intl", label: "Time",          url: "https://time.com/feed/" },
+  { id: "news-telegraph",   source: "news", group: "intl", region: "intl", label: "The Telegraph", url: "https://www.telegraph.co.uk/news/rss.xml" },
+  { id: "news-straits",     source: "news", group: "intl", region: "intl", label: "Straits Times", url: "https://www.straitstimes.com/news/world/rss.xml" },
 
   // 🔔 Alert 1 — แบรนด์ CP (รวม 2 ฟีด: "cp" + "ซีพี")
   { id: "alert1-cp",   source: "alert1", label: '"cp" -tower', url: "https://www.google.com/alerts/feeds/09603683942017157714/11443863203205870260" },
