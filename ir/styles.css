@@ -309,3 +309,13 @@ body {
 }
 .ptag.news { background: var(--news); }
 .ptag.alert { background: var(--alert); }
+
+/* ไฮไลต์คำที่ match ในข่าว Alert = ตัวหนา (ไม่ใช่พื้น/กรอบ) — บังคับทับ default <mark> */
+.card mark.hl, mark.hl {
+  background: transparent !important;
+  color: inherit !important;
+  font-weight: 700;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
