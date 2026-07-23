@@ -46,7 +46,7 @@ async function classifyBatch(env, titles) {
   return JSON.parse(m[0]).map((c) => (CAT_KEYS.includes(c) ? c : "other"));
 }
 
-async function enrichCategories(env, sources, prevCat, allowAI) {
+async function enrichCategories(env, sources, prevCat, allowAI, diag) {
   const toAI = [];
   for (const s of ["newsth", "newsintl"]) {
     for (const it of (sources[s]?.items || [])) {
@@ -58,14 +58,19 @@ async function enrichCategories(env, sources, prevCat, allowAI) {
       toAI.push(it); // 0 หรือ ≥2 หมวด → ส่ง AI ตัดสิน
     }
   }
+  diag.bound = !!(env && env.AI);
+  diag.allowAI = !!allowAI;
+  diag.candidates = toAI.length;
+  diag.sent = 0; diag.ok = 0;
   if (!allowAI || !env || !env.AI || !toAI.length) return;
   const batch = toAI.slice(0, MAX_AI_ITEMS); // ล่าสุดก่อน (feed เรียงเวลาแล้ว)
   for (let i = 0; i < batch.length; i += AI_BATCH) {
     const chunk = batch.slice(i, i + AI_BATCH);
+    diag.sent += chunk.length;
     try {
       const cats = await classifyBatch(env, chunk.map((x) => x.title));
-      chunk.forEach((it, j) => { if (cats[j]) { it.cat = cats[j]; it.byAI = true; } });
-    } catch { /* คงค่า keyword provisional ไว้ */ }
+      chunk.forEach((it, j) => { if (cats[j]) { it.cat = cats[j]; it.byAI = true; diag.ok++; } });
+    } catch (e) { diag.err = String((e && e.message) || e).slice(0, 200); } // คงค่า keyword provisional ไว้
   }
 }
 
@@ -104,6 +109,7 @@ export async function onRequest(context) {
         `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
         `จำนวนข่าว: ในประเทศ=${(s.newsth?.items || []).length}  ต่างประเทศ=${(s.newsintl?.items || []).length}  CP=${(s.alert1?.items || []).length}  ปศุสัตว์=${(s.alert2?.items || []).length}\n` +
         `จัดหมวดด้วย AI: ${byAI} ข่าว (ที่เหลือใช้ keyword)\n` +
+        `AI debug: ${JSON.stringify(j.ai || {})}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
           ? (j.errors || []).map((e) => `✗ ${e.label}  [${e.source}/${e.id}]  →  ${e.message}`).join("\n")
@@ -174,7 +180,8 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       }
     }
   }
-  try { await enrichCategories(env, sources, prevCat, allowAI); } catch {}
+  const aiDiag = {};
+  try { await enrichCategories(env, sources, prevCat, allowAI, aiDiag); } catch (e) { aiDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
   // ถ้ารอบนี้บาง source ดึงได้ 0 (Google Alert ส่งว่างชั่วคราว) → คงของเดิมไว้
   if (pj) {
@@ -186,7 +193,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
