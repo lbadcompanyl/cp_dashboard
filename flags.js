@@ -336,11 +336,11 @@
     });
     const words = Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b));
     catPicker.innerHTML =
-      `<div class="flg-head"><b>🔤 คำที่จับตอนนี้ · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-catclose>✕</button></div>` +
+      `<div class="flg-head"><b>🔤 keyword ที่ track อยู่ · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-catclose>✕</button></div>` +
       (words.length
-        ? `<div class="flg-matchnote">คำที่ Google กำลัง match ในผลตอนนี้ · ${words.length} คำ</div>
-           <div class="flg-matchwrap">${words.map((w) => `<span class="flg-mchip">${esc(w)}<b>${count[w]}</b></span>`).join("")}</div>`
-        : `<div class="flg-matchnote">ยังไม่มีคำ match ในคอลัมน์นี้ตอนนี้<br><span style="font-size:11px;opacity:.7">(ข่าวอาจยังไม่โหลด หรือฟีดว่าง)</span></div>`);
+        ? `<div class="flg-matchnote">keyword ที่กำลังถูกจับในผลตอนนี้</div>
+           <div class="flg-matchwrap">${words.map((w) => `<span class="flg-mchip">${esc(w)}</span>`).join("")}</div>`
+        : `<div class="flg-matchnote">ยังไม่มี keyword ถูกจับในคอลัมน์นี้ตอนนี้<br><span style="font-size:11px;opacity:.7">(ข่าวอาจยังไม่โหลด หรือฟีดว่าง)</span></div>`);
     catPicker.classList.add("open");
     mask.style.display = "block";
     catPicker.style.display = "block";
@@ -577,8 +577,7 @@
     .flg-view-btn:hover{border-color:#2a78d6;color:#2a78d6}
     .flg-matchnote{font-size:12px;opacity:.75;margin:2px 0 10px;line-height:1.4}
     .flg-matchwrap{display:flex;flex-wrap:wrap;gap:6px;max-height:52vh;overflow:auto}
-    .flg-mchip{background:rgba(42,120,214,.15);border:1px solid rgba(42,120,214,.35);border-radius:20px;padding:3px 6px 3px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center}
-    .flg-mchip b{opacity:.6;font-weight:700;font-size:11px}
+    .flg-mchip{background:rgba(42,120,214,.15);border:1px solid rgba(42,120,214,.35);border-radius:20px;padding:4px 11px;font-size:12px;display:inline-flex;align-items:center}
     .flg-kwin{display:flex;gap:8px;margin:2px 0 10px}
     .flg-kwfield{flex:1;min-width:0;background:rgba(150,150,150,.12);color:inherit;border:1px solid rgba(150,150,150,.25);border-radius:8px;padding:9px;font-family:inherit;font-size:13px}
     .flg-kwadd{border:none;background:#2a78d6;color:#fff;border-radius:8px;padding:0 15px;cursor:pointer;font-family:inherit;font-size:13px;white-space:nowrap}
