@@ -469,8 +469,7 @@
     .flg-kwchip button:hover{opacity:1}
     @media (max-width:640px){
       .flg-kw-btn{display:none}
-      .flg-fab-label{display:none}
-      .flg-fab{padding:12px;font-size:17px;border-radius:999px;line-height:1}
+      .flg-fab{padding:8px 13px;font-size:12px}
       .flg-fab b{font-size:12px}
       .flg-fabwrap{right:12px;bottom:12px;gap:8px}
     }
