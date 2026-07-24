@@ -190,6 +190,32 @@ function wire() {
     injectCats(panel);
   });
   $("#refresh").addEventListener("click", load);
+  setupSwipeDots();
+}
+
+// จุดบอกตำแหน่ง carousel มือถือ — คลิกเลื่อนไปคอลัมน์นั้น + ไฮไลต์ตามที่ปัด
+function setupSwipeDots() {
+  const dotsEl = $("#swipeDots");
+  const board = $("#board");
+  const panels = $$(".panel");
+  if (!dotsEl || !board || !panels.length) return;
+  dotsEl.innerHTML = panels.map((_, i) => `<span class="dot${i === 0 ? " on" : ""}" data-i="${i}"></span>`).join("");
+  const dots = $$(".dot", dotsEl);
+  dots.forEach((d, i) =>
+    d.addEventListener("click", () => panels[i].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }))
+  );
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting && e.intersectionRatio >= 0.5) {
+          const i = panels.indexOf(e.target);
+          dots.forEach((d, j) => d.classList.toggle("on", j === i));
+        }
+      }
+    },
+    { root: board, threshold: 0.5 }
+  );
+  panels.forEach((p) => io.observe(p));
 }
 
 // ชิพหมวดข่าว — ใส่เฉพาะคอลัมน์ข่าว (ในประเทศ/ต่างประเทศ)

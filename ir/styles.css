@@ -71,7 +71,6 @@ body {
   align-items: start;
 }
 @media (max-width: 1200px) { .board { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 640px)  { .board { grid-template-columns: 1fr; } }
 
 .panel {
   background: var(--surface);
@@ -83,8 +82,46 @@ body {
   max-height: calc(100vh - 120px);
   overflow: hidden;
 }
-@media (max-width: 900px) {
+@media (max-width: 900px) and (min-width: 641px) {
   .panel { max-height: 70vh; }
+}
+
+/* ---- มือถือ: ปัดซ้าย-ขวาสลับคอลัมน์ (carousel snap) ---- */
+@media (max-width: 640px) {
+  .board {
+    display: flex;
+    grid-template-columns: none;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 12px;
+    padding: 10px 14px 14px;
+    scroll-padding: 0 14px;
+    height: calc(100dvh - 150px);
+  }
+  .board::-webkit-scrollbar { display: none; }
+  .panel {
+    flex: 0 0 90%;
+    scroll-snap-align: center;
+    max-height: none;
+    height: 100%;
+  }
+}
+
+/* จุดบอกตำแหน่ง carousel — เฉพาะมือถือ */
+.swipe-dots { display: none; }
+@media (max-width: 640px) {
+  .swipe-dots {
+    display: flex; justify-content: center; align-items: center; gap: 7px;
+    padding: 8px 0 2px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .swipe-dots .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--border); transition: width .2s, background .2s; cursor: pointer;
+  }
+  .swipe-dots .dot.on { background: var(--alert); width: 20px; border-radius: 4px; }
 }
 
 .phead {
