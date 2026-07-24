@@ -307,20 +307,21 @@
       mask.style.display = "none";
   }
 
-  // ---------- ปุ่ม "ดู keyword" ในคอลัมน์ ปศุสัตว์ (alert2) เท่านั้น ----------
+  // ---------- ปุ่ม "ดู keyword" ในหัวคอลัมน์ ปศุสัตว์ (alert2) เท่านั้น ----------
   function injectKwButtons() {
     $$(".panel").forEach((p) => {
       const s = p.dataset.source || "";
       if (s !== "alert2") return; // เฉพาะ alert 2
-      const filters = $(".filters", p);
-      if (!filters || $(".flg-view-btn", filters)) return;
+      const phead = $(".phead", p);
+      if (!phead || $(".flg-view-btn", phead)) return;
       const vbtn = document.createElement("button");
       vbtn.type = "button";
       vbtn.className = "flg-view-btn";
       vbtn.textContent = "🔤 ดู keyword";
       vbtn.title = "ดูคำที่ Google กำลัง match ในผลตอนนี้ (แสดงเป็นคำ ๆ ไม่ใช่ query)";
       vbtn.addEventListener("click", () => showMatched(s));
-      filters.appendChild(vbtn);
+      const count = $("[data-count]", phead);
+      if (count) phead.insertBefore(vbtn, count); else phead.appendChild(vbtn); // วางที่ช่องว่างข้างชื่อ
     });
   }
 
@@ -572,8 +573,8 @@
     .flg-clear{background:none;border:1px solid rgba(150,150,150,.3);color:inherit;border-radius:7px;padding:3px 9px;cursor:pointer;font-size:11px;font-family:inherit;opacity:.8}
     .flg-kw-btn{border:1px solid rgba(150,150,150,.35);background:transparent;color:inherit;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
     .flg-kw-btn:hover{border-color:#2a78d6}
-    .flg-view-btn{border:1px solid rgba(150,150,150,.35);background:transparent;color:inherit;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
-    .flg-view-btn:hover{border-color:#2a78d6}
+    .flg-view-btn{margin-left:auto;margin-right:7px;border:1px solid rgba(150,150,150,.35);background:transparent;color:inherit;border-radius:7px;padding:3px 8px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:1.5}
+    .flg-view-btn:hover{border-color:#2a78d6;color:#2a78d6}
     .flg-matchnote{font-size:12px;opacity:.75;margin:2px 0 10px;line-height:1.4}
     .flg-matchwrap{display:flex;flex-wrap:wrap;gap:6px;max-height:52vh;overflow:auto}
     .flg-mchip{background:rgba(42,120,214,.15);border:1px solid rgba(42,120,214,.35);border-radius:20px;padding:3px 6px 3px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center}
