@@ -32,6 +32,19 @@
   let kwStore = {};
   let catStore = {}; // { link: catKey } override หมวดโดยผู้ใช้
   let catList = []; // [{ key, label }] หมวดที่เลือกได้ (ส่งมาจาก app.js ตอน init)
+  let keywordsBySource = {}; // { source: [keyword, ...] } รายการคำที่ตั้งไว้ใน Alert (แกะจาก query)
+
+  // แกะ Google Alert query → คำ ๆ (ตัด OR / "" / () / -exclude ออก) + ตัดซ้ำ
+  function kwFromQuery(q) {
+    const seen = new Set(), out = [];
+    const push = (w) => { const k = w.toLowerCase(); if (w && !seen.has(k)) { seen.add(k); out.push(w); } };
+    (Array.isArray(q) ? q : [q]).forEach((raw) => {
+      if (!raw) return;
+      String(raw).replace(/-"[^"]*"/g, " ").replace(/(^|\s)-\S+/g, " ") // ตัด -exclude
+        .split(/\s+OR\s+/i).forEach((s) => push(s.replace(/["()]/g, "").trim()));
+    });
+    return out;
+  }
   let onChange = () => {};
 
   // แยกที่เก็บต่อหน้า (IR ≠ PR) แม้อยู่โดเมนเดียวกัน — กันข้อมูล flag ปนกัน
@@ -243,7 +256,7 @@
     kwFab = document.createElement("button");
     kwFab.type = "button";
     kwFab.className = "flg-fab kw";
-    kwFab.innerHTML = '➕<span class="flg-fab-label"> เพิ่มคำค้น</span>';
+    kwFab.innerHTML = '➕<span class="flg-fab-label"> เพิ่ม keyword</span>';
     kwFab.addEventListener("click", () => openKw());
     fabWrap.appendChild(kwFab);
 
@@ -325,22 +338,16 @@
     });
   }
 
-  // แสดง "คำที่จับตอนนี้" — รวมคำที่ไฮไลต์ (Google match) ในการ์ดของคอลัมน์นั้น เป็นคำ ๆ
+  // แสดง "keyword ที่ track อยู่" — รายการคำที่ตั้งไว้ใน Alert (แกะจาก query แล้ว) เป็นคำ ๆ
   function showMatched(source) {
     ensureUi();
-    const marks = $$(`.panel[data-source="${source}"] [data-list] mark.hl`);
-    const count = {};
-    marks.forEach((m) => {
-      const w = (m.textContent || "").trim().toLowerCase();
-      if (w && w.length <= 40) count[w] = (count[w] || 0) + 1;
-    });
-    const words = Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b));
+    const words = keywordsBySource[source] || [];
     catPicker.innerHTML =
       `<div class="flg-head"><b>🔤 keyword ที่ track อยู่ · ${esc(labelOf(source))}</b><button type="button" class="flg-x" data-catclose>✕</button></div>` +
       (words.length
-        ? `<div class="flg-matchnote">keyword ที่กำลังถูกจับในผลตอนนี้</div>
+        ? `<div class="flg-matchnote">keyword ที่ตั้งไว้ใน Alert นี้</div>
            <div class="flg-matchwrap">${words.map((w) => `<span class="flg-mchip">${esc(w)}</span>`).join("")}</div>`
-        : `<div class="flg-matchnote">ยังไม่มี keyword ถูกจับในคอลัมน์นี้ตอนนี้<br><span style="font-size:11px;opacity:.7">(ข่าวอาจยังไม่โหลด หรือฟีดว่าง)</span></div>`);
+        : `<div class="flg-matchnote">ยังไม่ได้ตั้งรายการ keyword สำหรับ Alert นี้</div>`);
     catPicker.classList.add("open");
     mask.style.display = "block";
     catPicker.style.display = "block";
@@ -359,7 +366,7 @@
       : "";
     kwPanel.dataset.source = source;
     kwPanel.innerHTML = `
-      <div class="flg-head"><b>➕ เพิ่มคำค้น${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
+      <div class="flg-head"><b>➕ เพิ่ม keyword${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
       ${tabs}
       <p class="flg-note">พิมพ์คำ → ประกอบเป็น OR string → คัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
       <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
@@ -625,6 +632,7 @@
     },
     isHidden(link) { return !!hidden[link]; },
     getCat,
+    setKeywords(map) { keywordsBySource = {}; for (const k of Object.keys(map || {})) keywordsBySource[k] = kwFromQuery(map[k]); },
     button(item, source) {
       // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม
       if (!source || !source.startsWith("alert")) return "";
