@@ -446,6 +446,27 @@ function setupSwipeDots() {
     { root: board, threshold: 0.5 }
   );
   panels.forEach((p) => io.observe(p));
+
+  // ลูกศร ‹ › บอกให้ปัด (มือถือ) — กดเลื่อนได้ + ซ่อนเมื่อสุดทาง
+  let arrows = $("#swipeArrows");
+  if (!arrows) {
+    arrows = document.createElement("div");
+    arrows.id = "swipeArrows";
+    arrows.innerHTML =
+      '<button type="button" class="swipe-arrow left" aria-label="ก่อนหน้า">‹</button>' +
+      '<button type="button" class="swipe-arrow right" aria-label="ถัดไป">›</button>';
+    document.body.appendChild(arrows);
+  }
+  const la = $(".left", arrows), ra = $(".right", arrows);
+  const step = (d) => board.scrollBy({ left: d * (panels[0].getBoundingClientRect().width + 10), behavior: "smooth" });
+  la.onclick = () => step(-1);
+  ra.onclick = () => step(1);
+  const upd = () => {
+    la.classList.toggle("hide", board.scrollLeft <= 4);
+    ra.classList.toggle("hide", board.scrollLeft + board.clientWidth >= board.scrollWidth - 4);
+  };
+  board.addEventListener("scroll", upd, { passive: true });
+  upd();
 }
 
 if (window.Flags) {
