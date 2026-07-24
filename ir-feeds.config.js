@@ -31,7 +31,11 @@ export default [
   { id: "news-nyt",         source: "news", group: "intl", region: "intl", label: "NYT World",      url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml" },
   { id: "news-aljazeera",   source: "news", group: "intl", region: "intl", label: "Al Jazeera",     url: "https://www.aljazeera.com/xml/rss/all.xml" },
   { id: "news-dw",          source: "news", group: "intl", region: "intl", label: "DW",             url: "https://rss.dw.com/rdf/rss-en-world" },
-  // NBC/ABC/CBS/Sky/Independent — ตัดชั่วคราวเพื่อไม่ให้เกินเพดาน 50 subrequest ของ free plan (re-add เมื่ออัป Workers Paid)
+  { id: "news-nbc",         source: "news", group: "intl", region: "intl", label: "NBC News",      url: "https://feeds.nbcnews.com/nbcnews/public/world" },
+  { id: "news-abc",         source: "news", group: "intl", region: "intl", label: "ABC News",      url: "https://feeds.abcnews.com/abcnews/internationalheadlines" },
+  { id: "news-cbs",         source: "news", group: "intl", region: "intl", label: "CBS News",      url: "https://www.cbsnews.com/latest/rss/world" },
+  { id: "news-sky",         source: "news", group: "intl", region: "intl", label: "Sky News",      url: "https://feeds.skynews.com/feeds/rss/world.xml" },
+  { id: "news-independent", source: "news", group: "intl", region: "intl", label: "The Independent", url: "https://www.independent.co.uk/news/world/rss" },
   { id: "news-france24",    source: "news", group: "intl", region: "intl", label: "France 24",     url: "https://www.france24.com/en/rss" },
   { id: "news-scmp",        source: "news", group: "intl", region: "intl", label: "SCMP (เอเชีย)",  url: "https://www.scmp.com/rss/91/feed" },
   { id: "news-nhk",         source: "news", group: "intl", region: "intl", label: "NHK World",     url: "https://www3.nhk.or.jp/nhkworld/en/news/rss/all.xml" },
