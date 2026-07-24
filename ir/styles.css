@@ -390,3 +390,12 @@ body {
   .swipe-arrow.right { right: 0; border-radius: 10px 0 0 10px; }
   .swipe-arrow.hide { opacity: 0; pointer-events: none; }
 }
+
+/* ลูกศรขยับเบา ๆ บอกให้ปัด (มือถือ) */
+@media (max-width: 640px) {
+  @keyframes swNudgeR { 0%,100%{transform:translateY(-50%) translateX(0)} 50%{transform:translateY(-50%) translateX(4px)} }
+  @keyframes swNudgeL { 0%,100%{transform:translateY(-50%) translateX(0)} 50%{transform:translateY(-50%) translateX(-4px)} }
+  .swipe-arrow.right { animation: swNudgeR 1.3s ease-in-out infinite; }
+  .swipe-arrow.left  { animation: swNudgeL 1.3s ease-in-out infinite; }
+  .swipe-arrow.hide { animation: none; }
+}
