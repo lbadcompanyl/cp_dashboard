@@ -117,8 +117,9 @@ body {
   /* ยุบ chrome บนมือถือให้เหลือพื้นที่อ่านข่าวมากขึ้น */
   .phead { padding: 9px 12px; }
   .filters { padding: 8px 12px; gap: 6px; }
-  .cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 12px; }
+  .cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 5px 10px; gap: 5px; }
   .cats::-webkit-scrollbar { display: none; }
+  .cat { padding: 2px 8px; font-size: 10.5px; }
   .list { padding: 6px; }
   .card { padding: 9px 11px; margin-bottom: 6px; }
 }
