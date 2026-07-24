@@ -307,25 +307,17 @@
       mask.style.display = "none";
   }
 
-  // ---------- ปุ่ม "เพิ่มคำค้น" ในคอลัมน์ Alert ----------
+  // ---------- ปุ่ม "ดู keyword" ในคอลัมน์ ปศุสัตว์ (alert2) เท่านั้น ----------
   function injectKwButtons() {
     $$(".panel").forEach((p) => {
       const s = p.dataset.source || "";
-      if (!s.startsWith("alert")) return;
+      if (s !== "alert2") return; // เฉพาะ alert 2
       const filters = $(".filters", p);
-      if (!filters || $(".flg-kw-btn", filters)) return;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "flg-kw-btn";
-      btn.textContent = "➕ เพิ่มคำค้น";
-      btn.title = "สร้างคำค้นเพิ่มสำหรับ Alert นี้ → คัดลอกไปแปะใน Google Alert";
-      btn.addEventListener("click", () => openKw(s));
-      filters.appendChild(btn);
-
+      if (!filters || $(".flg-view-btn", filters)) return;
       const vbtn = document.createElement("button");
       vbtn.type = "button";
       vbtn.className = "flg-view-btn";
-      vbtn.textContent = "🔤 คำที่จับ";
+      vbtn.textContent = "🔤 ดู keyword";
       vbtn.title = "ดูคำที่ Google กำลัง match ในผลตอนนี้ (แสดงเป็นคำ ๆ ไม่ใช่ query)";
       vbtn.addEventListener("click", () => showMatched(s));
       filters.appendChild(vbtn);
