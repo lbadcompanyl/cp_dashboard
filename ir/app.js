@@ -67,25 +67,57 @@ function withinRecency(iso, hours) {
 }
 
 // ---------- data ----------
+const MAX_RENDER = 100; // การ์ดสูงสุดต่อคอลัมน์ (กรองบนข้อมูลเต็ม แต่เรนเดอร์เท่านี้ = ลื่นขึ้น)
+const SNAP_KEY = "ir_feeds_snapshot"; // แคชล่าสุดใน localStorage → เปิดมาเห็นทันที
+
+function saveSnapshot(data) {
+  try {
+    const trimmed = { generatedAt: data.generatedAt, sources: {}, errors: data.errors || [] };
+    for (const k of Object.keys(data.sources || {})) {
+      trimmed.sources[k] = { ...data.sources[k], items: (data.sources[k].items || []).slice(0, MAX_RENDER) };
+    }
+    localStorage.setItem(SNAP_KEY, JSON.stringify(trimmed));
+  } catch {}
+}
+function loadSnapshot() {
+  try { const s = localStorage.getItem(SNAP_KEY); return s ? JSON.parse(s) : null; } catch { return null; }
+}
+
 async function load() {
   const btn = $("#refresh");
   btn.disabled = true;
-  $("#updated").textContent = "กำลังโหลด…";
-  $$(".panel").forEach((p) => {
-    $("[data-list]", p).innerHTML = `<div class="state skeleton">กำลังดึงข้อมูล…</div>`;
-  });
+
+  // เปิดมาเห็นข่าวเดิมทันที (จาก localStorage) แทนหน้าจอโหลดเปล่า ๆ
+  const snap = loadSnapshot();
+  if (snap && !state.data) {
+    state.data = snap;
+    renderAll();
+    $("#updated").textContent = "กำลังอัปเดต…";
+  } else if (!state.data) {
+    $("#updated").textContent = "กำลังโหลด…";
+    $$(".panel").forEach((p) => {
+      $("[data-list]", p).innerHTML = `<div class="state skeleton">กำลังดึงข้อมูล…</div>`;
+    });
+  } else {
+    $("#updated").textContent = "กำลังอัปเดต…";
+  }
 
   try {
     const feeds = await fetch("/api/ir/feeds").then((r) => r.json());
     state.data = feeds;
+    saveSnapshot(feeds);
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
     renderAll();
   } catch (e) {
-    $("#updated").textContent = "โหลดไม่สำเร็จ";
-    $$(".panel").forEach((p) => {
-      $("[data-list]", p).innerHTML = `<div class="state error">ดึงข้อมูลไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
-    });
+    if (state.data) {
+      $("#updated").textContent = "อัปเดตไม่สำเร็จ (ใช้ข้อมูลล่าสุด)";
+    } else {
+      $("#updated").textContent = "โหลดไม่สำเร็จ";
+      $$(".panel").forEach((p) => {
+        $("[data-list]", p).innerHTML = `<div class="state error">ดึงข้อมูลไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+      });
+    }
   } finally {
     btn.disabled = false;
   }
@@ -122,7 +154,11 @@ function renderPanel(panel) {
     return;
   }
 
-  list.innerHTML = items.map((it) => cardHtml(it, source)).join("");
+  list.innerHTML = items.slice(0, MAX_RENDER).map((it) => cardHtml(it, source)).join("");
+  if (items.length > MAX_RENDER) {
+    list.insertAdjacentHTML("beforeend",
+      `<div class="state" style="padding:14px">แสดง ${MAX_RENDER} จาก ${items.length} — พิมพ์ค้นหา/เลือกหมวดเพื่อกรองให้แคบลง</div>`);
+  }
 }
 
 function cardHtml(it, source) {
