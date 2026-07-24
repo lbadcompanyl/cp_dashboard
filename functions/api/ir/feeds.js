@@ -12,6 +12,7 @@ const CACHE_VER = "24"; // bump: แตก alert2 เป็น 5 ฟีดตา
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
+const RESPONSE_MAX = 150; // ส่งให้ browser ไม่เกินนี้ต่อคอลัมน์ (client เรนเดอร์ 100; KV เก็บครบไว้ buffer) = payload เล็ก โหลดไว
 // เก็บสะสมข่าว/alert ลง KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด — รวมทุกคอลัมน์ใน key เดียว (1 read/write ต่อ build)
 const ARCHIVE_KEY = "ir:archive";
 // prefix key ตาม environment (ตั้ง APP_ENV=dev ที่ Preview) → dev/prod ใช้คลังแยกกัน ไม่ทับข้อมูลผู้ใช้จริง
@@ -307,6 +308,11 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
         sources[key].stale = true;
       }
     }
+  }
+
+  // ส่งให้ browser ไม่เกิน RESPONSE_MAX/คอลัมน์ (KV/archive ยังเก็บครบไว้) → payload เล็ก โหลดไว โดยเฉพาะปศุสัตว์
+  for (const key of SOURCES) {
+    if (sources[key]?.items?.length > RESPONSE_MAX) sources[key].items = sources[key].items.slice(0, RESPONSE_MAX);
   }
 
   const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut });
