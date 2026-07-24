@@ -95,18 +95,25 @@ body {
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    gap: 12px;
-    padding: 10px 14px 14px;
-    scroll-padding: 0 14px;
-    height: calc(100dvh - 150px);
+    gap: 10px;
+    padding: 8px 8px 10px;
+    scroll-padding: 0 8px;
+    height: calc(100dvh - 96px);
   }
   .board::-webkit-scrollbar { display: none; }
   .panel {
-    flex: 0 0 90%;
+    flex: 0 0 100%;
     scroll-snap-align: center;
     max-height: none;
     height: 100%;
   }
+  /* ยุบ chrome บนมือถือให้เหลือพื้นที่อ่านข่าวมากขึ้น */
+  .phead { padding: 9px 12px; }
+  .filters { padding: 8px 12px; gap: 6px; }
+  .cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 6px 12px; }
+  .cats::-webkit-scrollbar { display: none; }
+  .list { padding: 6px; }
+  .card { padding: 9px 11px; margin-bottom: 6px; }
 }
 
 /* จุดบอกตำแหน่ง carousel — เฉพาะมือถือ */
