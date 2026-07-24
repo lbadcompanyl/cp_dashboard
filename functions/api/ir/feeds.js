@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "22"; // bump: หมวด crisis (วิกฤติ/ภัยพิบัติ) แทน intl
+const CACHE_VER = "24"; // bump: แตก alert2 เป็น 5 ฟีดตามธีม + ตัวกรองบริบท (ตัด noise หมู/ไก่ลอย)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -36,6 +36,25 @@ const CAT_KW = {
   pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"],
 };
 const CAT_KEYS = Object.keys(CAT_KW);
+
+// ตัวกรองบริบท alert2: ข่าวปศุสัตว์ต้องมี "คำบริบทอุตสาหกรรม" อย่างน้อย 1 คำ
+// ไม่งั้นเป็นข่าวอาหาร/อาชญากรรมที่แค่มีคำว่า หมู/ไก่/ไข่ ลอย ๆ (Google ตัดคำไทยหลุด phrase) → ทิ้ง
+const ALERT2_ANCHORS = [
+  "ราคา","ต้นทุน","ฟาร์ม","เลี้ยง","ปศุสัตว์","สุกร","สัตว์ปีก","ประมง","เกษตร","เกษตรกร",
+  "ส่งออก","นำเข้า","เถื่อน","ลักลอบ","โควตา","ภาษี","อาหารสัตว์","วัตถุดิบ","ข้าวโพด","ถั่วเหลือง",
+  "ปลาป่น","ชำแหละ","เขียง","หน้าฟาร์ม","แปรรูป","โรค","ระบาด","อหิวาต์","หวัดนก","asf","h5n1","prrs",
+  "วัคซีน","ปนเปื้อน","เรียกคืน","กักกัน","ทำลายซาก","กรม","กระทรวง","รมว","สมาคม","สหกรณ์","สภาเกษตร",
+  "ตรึงราคา","ควบคุมราคา","ประกันรายได้","แทรกแซง","เยียวยา","บอร์ด","สวัสดิภาพ","ไร้กรง",
+  "ภัยแล้ง","เอลนีโญ","ลานีญา","พื้นที่การเกษตร",
+  "เบทาโกร","betagro","ไทยฟู้ดส์","ไทยยูเนี่ยน","thai union","gfpt","tfg","tgm","cargill","brf","jbs",
+  "แหลมทอง","ลีพัฒนา","บางกอกแร้นช์","ซันฟีด","new hope","tyson","muyuan","wh group","smithfield",
+  "price","export","import","poultry","pork","shrimp","swine","farm","livestock","feed","disease",
+  "influenza","swine fever","bird flu","tariff","quota","cage free","iuu","food export",
+];
+function alert2Relevant(it) {
+  const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  return ALERT2_ANCHORS.some((w) => hay.includes(w));
+}
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // ตัวที่ยัง active (3.1-8b ถูก deprecated) + parser ยืดหยุ่นรับได้
 const MAX_AI_ITEMS = 80; // จำกัดต่อ build (เร่งเคลียร์ backlog — 4 batch/รอบ)
 const AI_BATCH = 20; // รวมหัวข้อต่อ 1 call
@@ -187,6 +206,7 @@ export async function onRequest(context) {
         `จัดหมวดด้วย AI: ${byAI} ข่าว (ที่เหลือใช้ keyword)\n` +
         `คลังเก็บสะสม (KV — ในปท./ตปท. 2วัน, CP/ปศุสัตว์ 10วัน): ${JSON.stringify(j.archive || {})}\n` +
         `ฟีด Alert รอบ build ล่าสุด (สดจาก Google): ${JSON.stringify(j.alerts || [])}\n` +
+        `ตัด noise ปศุสัตว์ (ไม่มีบริบทอุตสาหกรรม): ${j.alert2Cut ?? "-"} ข่าว\n` +
         `AI debug: ${JSON.stringify(j.ai || {})}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
@@ -248,6 +268,14 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
   }
 
+  // ตัด noise คอลัมน์ปศุสัตว์: ต้องมีบริบทอุตสาหกรรม ≥1 คำ (กันข่าวอาหาร/อาชญากรรมที่แค่มี หมู/ไก่)
+  let alert2Cut = 0;
+  if (sources.alert2) {
+    const before = sources.alert2.items.length;
+    sources.alert2.items = sources.alert2.items.filter(alert2Relevant);
+    alert2Cut = before - sources.alert2.items.length;
+  }
+
   // อ่าน cache เก่า 1 ครั้ง — ใช้ทั้ง reuse หมวดจาก AI + คงของเดิมถ้า source ว่าง
   let pj = null;
   try {
@@ -281,7 +309,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",

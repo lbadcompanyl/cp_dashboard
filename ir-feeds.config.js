@@ -47,6 +47,12 @@ export default [
   { id: "alert1-cp",   source: "alert1", label: '"cp" -tower', url: "https://www.google.com/alerts/feeds/09603683942017157714/11443863203205870260" },
   { id: "alert1-ซีพี", source: "alert1", label: '"ซีพี"',      url: "https://www.google.com/alerts/feeds/09603683942017157714/5523361181985541471" },
 
-  // 🔔 Alert 2 — ปศุสัตว์/อาหาร/การค้า/คู่แข่ง (ไทย+อังกฤษ)
-  { id: "alert2-agri", source: "alert2", label: "ปศุสัตว์ · อาหาร · การค้า", url: "https://www.google.com/alerts/feeds/09603683942017157714/7091931631874504592" },
+  // 🔔 Alert 2 — ปศุสัตว์/อาหาร/การค้า/คู่แข่ง (แตกเป็น 5 ธีม + คงตัวรวมเดิมไว้ชั่วคราว = zero-downtime)
+  { id: "alert2-price",      source: "alert2", label: "💰 ราคา/ต้นทุน",         url: "https://www.google.com/alerts/feeds/09603683942017157714/7545615057373180736" },
+  { id: "alert2-disease",    source: "alert2", label: "🦠 โรค/ความปลอดภัย/ภัย",  url: "https://www.google.com/alerts/feeds/09603683942017157714/7239149673425678438" },
+  { id: "alert2-trade",      source: "alert2", label: "🚢 นำเข้า-ส่งออก",        url: "https://www.google.com/alerts/feeds/09603683942017157714/11197748313585066566" },
+  { id: "alert2-policy",     source: "alert2", label: "🏛️ นโยบาย/ราชการ",        url: "https://www.google.com/alerts/feeds/09603683942017157714/7239149673425678661" },
+  { id: "alert2-competitor", source: "alert2", label: "🏢 คู่แข่ง/ต่างประเทศ",    url: "https://www.google.com/alerts/feeds/09603683942017157714/11197748313585067722" },
+  // ตัวรวมเดิม (giant query) — ลบออกได้เมื่อ 5 ตัวบนไหลครบ ~1-2 วัน
+  { id: "alert2-agri",       source: "alert2", label: "ปศุสัตว์ · อาหาร · การค้า", url: "https://www.google.com/alerts/feeds/09603683942017157714/7091931631874504592" },
 ];
