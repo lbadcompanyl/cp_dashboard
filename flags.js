@@ -208,7 +208,7 @@
     kwFab = document.createElement("button");
     kwFab.type = "button";
     kwFab.className = "flg-fab kw";
-    kwFab.innerHTML = "➕ เพิ่มคำค้น";
+    kwFab.innerHTML = '➕<span class="flg-fab-label"> เพิ่มคำค้น</span>';
     kwFab.addEventListener("click", () => openKw());
     fabWrap.appendChild(kwFab);
 
@@ -307,7 +307,7 @@
     const total = records.length;
     fab.style.display = total > 0 ? "inline-flex" : "none";
     fab.classList.toggle("ready", totalReady());
-    fab.innerHTML = `🚩 คำแนะนำตัดข่าว <b>${total}</b>${totalReady() ? ' <span class="fdot"></span>' : ""}`;
+    fab.innerHTML = `🚩<span class="flg-fab-label"> คำแนะนำตัดข่าว</span> <b>${total}</b>${totalReady() ? ' <span class="fdot"></span>' : ""}`;
     kwFab.style.display = alertSources().length ? "inline-flex" : "none";
     injectKwButtons();
     // live-update panel ที่เปิดอยู่ — แต่ไม่ทับถ้ากำลังพิมพ์/แก้อยู่ในนั้น
@@ -467,6 +467,13 @@
     .flg-kwchip{background:rgba(42,120,214,.18);border:1px solid rgba(42,120,214,.4);border-radius:7px;padding:3px 6px 3px 9px;font-size:12px;display:inline-flex;gap:7px;align-items:center}
     .flg-kwchip button{background:none;border:none;color:inherit;cursor:pointer;opacity:.55;font-size:11px;padding:0;line-height:1}
     .flg-kwchip button:hover{opacity:1}
+    @media (max-width:640px){
+      .flg-kw-btn{display:none}
+      .flg-fab-label{display:none}
+      .flg-fab{padding:12px;font-size:17px;border-radius:999px;line-height:1}
+      .flg-fab b{font-size:12px}
+      .flg-fabwrap{right:12px;bottom:12px;gap:8px}
+    }
     `;
     const st = document.createElement("style");
     st.textContent = css;
