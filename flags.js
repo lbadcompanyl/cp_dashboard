@@ -330,9 +330,11 @@
     fab.innerHTML = `🚩<span class="flg-fab-label"> คำแนะนำตัดข่าว</span> <b>${total}</b>${totalReady() ? ' <span class="fdot"></span>' : ""}`;
     kwFab.style.display = alertSources().length ? "inline-flex" : "none";
     injectKwButtons();
-    // live-update panel ที่เปิดอยู่ — แต่ไม่ทับถ้ากำลังพิมพ์/แก้อยู่ในนั้น
-    if (panel.classList.contains("open") && !panel.contains(document.activeElement)) openPanel();
-    if (kwPanel && kwPanel.classList.contains("open") && !kwPanel.contains(document.activeElement))
+    // live-update panel ที่เปิดอยู่ — แต่ไม่ทับ "เฉพาะตอนกำลังพิมพ์" ในช่อง input/textarea (ปุ่มที่ได้ focus ไม่นับ)
+    const ae = document.activeElement;
+    const typingIn = (el) => ae && el && el.contains(ae) && /^(TEXTAREA|INPUT)$/.test(ae.tagName || "");
+    if (panel.classList.contains("open") && !typingIn(panel)) openPanel();
+    if (kwPanel && kwPanel.classList.contains("open") && !typingIn(kwPanel))
       openKw(kwPanel.dataset.source);
   }
   function openPanel() {
