@@ -14,15 +14,16 @@ const kvKey = (env, scope) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : 
 
 async function readState(env, scope) {
   const raw = await env.FLAGS_KV.get(kvKey(env, scope));
-  if (!raw) return { records: [], kw: {} };
+  if (!raw) return { records: [], kw: {}, dismissed: [] };
   try {
     const o = JSON.parse(raw);
     return {
       records: Array.isArray(o.records) ? o.records : [],
       kw: o.kw && typeof o.kw === "object" ? o.kw : {},
+      dismissed: Array.isArray(o.dismissed) ? o.dismissed : [],
     };
   } catch {
-    return { records: [], kw: {} };
+    return { records: [], kw: {}, dismissed: [] };
   }
 }
 
@@ -34,7 +35,18 @@ function applyOp(s, body) {
       }
       break;
     case "unflag":
-      if (body.link) s.records = s.records.filter((r) => r.link !== body.link);
+      if (body.link) {
+        s.records = s.records.filter((r) => r.link !== body.link);
+        s.dismissed = (s.dismissed || []).filter((l) => l !== body.link);
+      }
+      break;
+    case "dismiss": // ลบออกจากรายการ แต่ยังซ่อนข่าว
+      if (body.link) {
+        s.records = s.records.filter((r) => r.link !== body.link);
+        s.dismissed = s.dismissed || [];
+        if (!s.dismissed.includes(body.link)) s.dismissed.push(body.link);
+        if (s.dismissed.length > 3000) s.dismissed = s.dismissed.slice(-3000);
+      }
       break;
     case "clearSource":
       if (body.source) s.records = s.records.filter((r) => r.source !== body.source);

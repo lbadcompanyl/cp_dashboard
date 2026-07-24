@@ -6,6 +6,7 @@
   const LS_HIDDEN = "flgHidden.v1"; // { [link]: 1 }
   const LS_RECS = "flgRecs.v1"; // [{ link, title, source, label, host, ts }]
   const LS_KW = "flgKw.v1"; // { [source]: [term, ...] } — คำที่กำลังจะเพิ่มใน Alert
+  const LS_DISM = "flgDism.v1"; // [link, ...] — ลบออกจากรายการแล้ว แต่ยังซ่อนข่าวไว้
   const THRESH = 3; // host/คำ ซ้ำถึงเกณฑ์นี้ → แนะนำตัด (จุดแดง)
   const MIN_LIST = 2; // แสดงในรายการเมื่อซ้ำ ≥ นี้
 
@@ -26,6 +27,7 @@
 
   let hidden = {};
   let records = [];
+  let dismissed = [];
   let kwStore = {};
   let onChange = () => {};
 
@@ -52,13 +54,16 @@
   function rebuildHidden() {
     hidden = {};
     records.forEach((r) => { if (r.link) hidden[r.link] = 1; });
+    dismissed.forEach((l) => { if (l) hidden[l] = 1; }); // ลบจากรายการแล้วแต่ยังต้องซ่อน
   }
   function adoptServer(d) {
     serverOn = true;
     records = Array.isArray(d.records) ? d.records : [];
+    dismissed = Array.isArray(d.dismissed) ? d.dismissed : [];
     kwStore = d.kw && typeof d.kw === "object" ? d.kw : {};
     rebuildHidden();
     save(key(LS_RECS), records);
+    save(key(LS_DISM), dismissed);
     save(key(LS_KW), kwStore);
     save(key(LS_HIDDEN), hidden);
     onChange();
@@ -162,11 +167,26 @@
   function restoreItem(link) {
     delete hidden[link];
     records = records.filter((r) => r.link !== link);
+    dismissed = dismissed.filter((l) => l !== link);
     save(key(LS_HIDDEN), hidden);
     save(key(LS_RECS), records);
+    save(key(LS_DISM), dismissed);
     onChange();
     refresh(); // re-render panel ถ้าเปิดอยู่
     pushOp({ op: "unflag", link });
+  }
+  // ลบออกจากรายการคำแนะนำ แต่ยังซ่อนข่าวไว้ (ไม่เอากลับเข้า feed)
+  function dismissItem(link) {
+    records = records.filter((r) => r.link !== link);
+    if (!dismissed.includes(link)) dismissed.push(link);
+    if (dismissed.length > 3000) dismissed = dismissed.slice(-3000);
+    hidden[link] = 1; // คงการซ่อนไว้
+    save(key(LS_RECS), records);
+    save(key(LS_DISM), dismissed);
+    save(key(LS_HIDDEN), hidden);
+    onChange();
+    refresh();
+    pushOp({ op: "dismiss", link });
   }
   function clearSource(source) {
     const gone = records.filter((r) => r.source === source);
@@ -331,12 +351,13 @@
       html += `<div class="flg-sec">
         <div class="flg-sec-h">${esc(labelOf(source))} <span class="flg-cnt">${a.count} ใบ</span></div>`;
       // รายการข่าวที่ flag — เห็นทันทีว่าข่าวไหน/เว็บอะไร กดตัดเว็บได้เลย (แม้ใบเดียว)
-      html += `<div class="flg-sub">🗞 ข่าวที่ flag <span class="flg-hint">(＋ ตัดเว็บ · ↩ เอากลับ)</span></div>
+      html += `<div class="flg-sub">🗞 ข่าวที่ flag <span class="flg-hint">(＋ ตัดเว็บ · ↩ เอากลับ · 🗑 ลบออกจากรายการ)</span></div>
         <div class="flg-items">` +
         a.items.slice().reverse().map((r) => `<div class="flg-item">
           <div class="flg-item-main"><div class="flg-item-ttl">${esc(stripMarks(r.title) || "(ไม่มีหัวข้อ)")}</div>${r.host ? `<div class="flg-item-host">🌐 ${esc(r.host)}</div>` : ""}</div>
           ${r.host ? `<button type="button" class="flg-mini" data-ta="${esc(taId)}" data-add="-site:${esc(r.host)}" title="เติม -site:${esc(r.host)} ลงกล่อง">＋ ตัดเว็บ</button>` : ""}
-          <button type="button" class="flg-mini ghost" data-restore="${esc(r.link)}" title="เอาข่าวนี้กลับ">↩</button>
+          <button type="button" class="flg-mini ghost" data-restore="${esc(r.link)}" title="เอาข่าวนี้กลับเข้า feed">↩</button>
+          <button type="button" class="flg-mini ghost" data-dismiss="${esc(r.link)}" title="ลบออกจากรายการนี้ (ยังซ่อนข่าวไว้ ไม่เอากลับ)">🗑</button>
         </div>`).join("") + `</div>`;
       if (a.byHost.length) {
         html += `<div class="flg-sub">🌐 ตามเว็บ <span class="flg-hint">(ปลอดภัย — กดเพื่อเพิ่ม)</span></div><div class="flg-rows">` +
@@ -372,6 +393,7 @@
       })
     );
     $$("[data-restore]", panel).forEach((b) => b.addEventListener("click", () => restoreItem(b.dataset.restore)));
+    $$("[data-dismiss]", panel).forEach((b) => b.addEventListener("click", () => dismissItem(b.dataset.dismiss)));
     $$(".flg-copy", panel).forEach((b) =>
       b.addEventListener("click", () => {
         const ta = panel.querySelector("#" + b.dataset.ta);
@@ -484,9 +506,10 @@
     init(opts = {}) {
       onChange = opts.onChange || (() => {});
       SCOPE = opts.scope || deriveScope();
-      hidden = load(key(LS_HIDDEN), {});
       records = load(key(LS_RECS), []);
+      dismissed = load(key(LS_DISM), []);
       kwStore = load(key(LS_KW), {});
+      rebuildHidden(); // สร้าง hidden จาก records + dismissed ให้ตรงกันเสมอ
       injectCss();
       ensureUi();
       injectKwButtons();
