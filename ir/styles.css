@@ -109,7 +109,7 @@ body {
   .brand { gap: 8px; }
   .refresh { padding: 6px 9px; font-size: 12px; }
   .panel {
-    flex: 0 0 100%;
+    flex: 0 0 92%;
     scroll-snap-align: center;
     max-height: none;
     height: 100%;
