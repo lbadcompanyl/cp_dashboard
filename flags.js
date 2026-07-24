@@ -284,7 +284,8 @@
        <div class="flg-catopts">
          <button type="button" class="flg-catopt${cur ? "" : " on"}" data-setcat="">↩ อัตโนมัติ (AI/keyword)</button>` +
       catList.map((c) => `<button type="button" class="flg-catopt${cur === c.key ? " on" : ""}" data-setcat="${esc(c.key)}">${esc(c.label)}</button>`).join("") +
-      `</div>`;
+      `<button type="button" class="flg-catopt${cur === "other" ? " on" : ""}" data-setcat="other">🗃 ทั่วไป (ไม่เข้าหมวด)</button>
+       </div>`;
     catPicker.dataset.link = link;
     catPicker.dataset.title = title || "";
     catPicker.classList.add("open");
