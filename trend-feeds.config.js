@@ -31,17 +31,20 @@ export default [
 
   // 🔥 Google Trends — ไม่ต้องตั้งค่าที่นี่ (แผง Trends ดึงจาก /api/trend/trending, /api/trend/related)
 
-  // 🔔 Google Alert — วิธีเพิ่ม: google.com/alerts → แก้ alert → Deliver to: RSS feed → คัดลอก URL มาวาง
+  // 🔔 Alert 1 — แบรนด์ CP · วิธีเพิ่ม: google.com/alerts → Deliver to: RSS feed → คัดลอก URL มาวาง
   {
-    id: "alert-cp",
-    source: "alert",
+    id: "alert1-cp",
+    source: "alert1",
     label: '"cp" -tower',
     url: "https://www.google.com/alerts/feeds/09603683942017157714/11443863203205870260",
   },
   {
-    id: "alert-ซีพี",
-    source: "alert",
+    id: "alert1-ซีพี",
+    source: "alert1",
     label: '"ซีพี"',
     url: "https://www.google.com/alerts/feeds/09603683942017157714/5523361181985541471",
   },
+
+  // 🔔 Alert 2 — (รอหัวข้อ) วาง Google Alert RSS URL ที่นี่ แล้วตั้ง source: "alert2"
+  // { id: "alert2-xxx", source: "alert2", label: "หัวข้อ", url: "https://www.google.com/alerts/feeds/..." },
 ];

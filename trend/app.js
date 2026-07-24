@@ -370,7 +370,7 @@ function setCount(panel, source, n) {
 function emptyState(source, bucket, filtered) {
   if (filtered && bucket.items.length > 0)
     return `<div class="state">ไม่พบรายการที่ตรงกับตัวกรอง</div>`;
-  if (source === "alert") {
+  if (source.startsWith("alert")) {
     if (bucket.feedCount > 0) {
       // มีฟีดแล้วแต่ยังไม่มีข่าวเข้าเงื่อนไข
       return `<div class="state">

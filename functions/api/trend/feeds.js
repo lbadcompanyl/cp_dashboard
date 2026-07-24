@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "11"; // เพิ่มเลขนี้เมื่อเปลี่ยน config/parsing เพื่อล้าง edge cache เก่า
+const CACHE_VER = "12"; // แยก alert → alert1 + เพิ่มคอลัมน์ alert2
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -36,7 +36,8 @@ export async function onRequest(context) {
 async function buildAndStore(cache, cacheKey) {
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
-    alert: { label: "Google Alert", items: [], feedCount: 0 },
+    alert1: { label: "Alert 1 · CP", items: [], feedCount: 0 },
+    alert2: { label: "Alert 2", items: [], feedCount: 0 },
     trends: { label: "Google Trends", items: [], feedCount: 0 },
   };
   for (const f of feeds) if (sources[f.source]) sources[f.source].feedCount++;
@@ -75,15 +76,16 @@ async function buildAndStore(cache, cacheKey) {
   }
 
   // Google Alert ส่งว่างชั่วคราว (ฟีดรีเซ็ตหลังแก้ query / โดน throttle) → คงชุดเดิมจาก cache กันแผงว่าง
-  if (sources.alert.items.length === 0) {
-    try {
-      const prev = await cache.match(cacheKey);
-      if (prev) {
-        const pj = JSON.parse(await prev.clone().text());
-        if (pj.sources?.alert?.items?.length) { sources.alert.items = pj.sources.alert.items; sources.alert.stale = true; }
+  try {
+    const prev = await cache.match(cacheKey);
+    const pj = prev ? JSON.parse(await prev.clone().text()) : null;
+    for (const k of ["alert1", "alert2"]) {
+      if (sources[k].items.length === 0 && pj?.sources?.[k]?.items?.length) {
+        sources[k].items = pj.sources[k].items;
+        sources[k].stale = true;
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
   const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors });
   const resp = new Response(body, {
