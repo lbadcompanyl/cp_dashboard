@@ -63,6 +63,13 @@ function keywordHits(it) {
   const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
   return CAT_KEYS.filter((k) => CAT_KW[k].some((w) => hay.includes(w)));
 }
+// คำสั้นกำกวมที่มักโผล่ในชื่อ/สถานที่/เมนู (เช่น "วัดไก่เตี้ย") → อย่าเชื่อถ้าเจอคำเดียว
+const AMBIG_KW = new Set(["ไก่", "หมู", "ไข่", "เนื้อ", "ปลา", "ข้าว", "นก", "กุ้ง"]);
+// มั่นใจว่าเข้าหมวดจริง = มีคำบริบท "ไม่กำกวม" ของหมวดนั้นอย่างน้อย 1 คำ
+function confidentHit(it, cat) {
+  const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  return CAT_KW[cat].some((w) => !AMBIG_KW.has(w) && hay.includes(w));
+}
 
 async function classifyBatch(env, titles, examples) {
   const list = titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
@@ -75,7 +82,9 @@ async function classifyBatch(env, titles, examples) {
     "retail = retail/wholesale/consumer/e-commerce/shopping\n" +
     "crisis = disease outbreak/earthquake/flood/storm/natural disaster/accident/emergency\n" +
     "pol = domestic politics/government/policy/law\n" +
-    "other = none of the above\n" +
+    "other = none of the above (religion, crime, entertainment, obituary, general)\n" +
+    "Judge by the MAIN topic. A word appearing only inside a name or place " +
+    "(e.g. a temple named วัดไก่เตี้ย) does NOT put it in a category — use other.\n" +
     (ex ? "\nThe user corrected these before — follow the same judgement:\n" + ex + "\n" : "") +
     "\nReply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
     list;
@@ -100,9 +109,10 @@ async function enrichCategories(env, sources, prevCat, allowAI, diag, userCats, 
       const cached = prevCat[it.link];
       if (cached) { it.cat = cached; it.byAI = true; continue; } // เคยจัดด้วย AI แล้ว
       const hits = keywordHits(it);
-      if (hits.length === 1) { it.cat = hits[0]; it.byAI = false; continue; } // keyword มั่นใจ
+      // เชื่อ keyword ทันทีเฉพาะเมื่อ match 1 หมวด "แบบมั่นใจ" (มีคำบริบทไม่กำกวม)
+      if (hits.length === 1 && confidentHit(it, hits[0])) { it.cat = hits[0]; it.byAI = false; continue; }
       it.cat = hits[0] || "other"; it.byAI = false; // provisional
-      toAI.push(it); // 0 หรือ ≥2 หมวด → ส่ง AI ตัดสิน
+      toAI.push(it); // 0 / กำกวม / ≥2 หมวด → ส่ง AI ตัดสิน (อาจตีกลับเป็น other)
     }
   }
   diag.bound = !!(env && env.AI);
