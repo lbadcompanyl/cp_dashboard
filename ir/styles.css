@@ -98,9 +98,16 @@ body {
     gap: 10px;
     padding: 8px 8px 10px;
     scroll-padding: 0 8px;
-    height: calc(100dvh - 96px);
+    height: calc(100dvh - 78px);
   }
   .board::-webkit-scrollbar { display: none; }
+  /* ย่อ topbar บนมือถือ */
+  .topbar { padding: 7px 12px; }
+  .logo { font-size: 19px; }
+  .topbar h1 { font-size: 15px; }
+  .sub { font-size: 10px; }
+  .brand { gap: 8px; }
+  .refresh { padding: 6px 9px; font-size: 12px; }
   .panel {
     flex: 0 0 100%;
     scroll-snap-align: center;
