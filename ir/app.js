@@ -37,6 +37,11 @@ function catsForSource(source) {
 }
 // หมวดของ item: news ใช้ it.cat (AI/keyword จาก server) ถ้ามี; alert2 ใช้ keyword ฝั่ง client
 function catOf(it, source) {
+  // ผู้ใช้จัดหมวดเอง (override) มาก่อนเสมอ — เฉพาะคอลัมน์ข่าว
+  if (window.Flags && source.indexOf("news") === 0) {
+    const o = Flags.getCat(it.link);
+    if (o) return o;
+  }
   const map = source === "alert2" ? ALERT2_MAP : CAT_MAP;
   if (source !== "alert2" && it.cat) return it.cat;
   const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
@@ -164,6 +169,7 @@ function renderPanel(panel) {
 function cardHtml(it, source) {
   return `<a class="card" href="${escapeHtml(it.link)}" target="_blank" rel="noopener">
     ${window.Flags ? Flags.button(it, source) : ""}
+    ${window.Flags ? Flags.catButton(it, source) : ""}
     ${it.sourceLabel ? `<div class="src">${escapeHtml(it.sourceLabel)}</div>` : ""}
     <div class="ttl">${hl(escapeHtml(it.title))}</div>
     ${it.snippet ? `<div class="snip">${hl(escapeHtml(it.snippet))}</div>` : ""}
@@ -274,6 +280,6 @@ function injectCats(panel) {
   });
 }
 
-if (window.Flags) Flags.init({ onChange: renderAll });
+if (window.Flags) Flags.init({ onChange: renderAll, cats: CATS });
 wire();
 load();

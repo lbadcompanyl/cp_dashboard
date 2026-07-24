@@ -5,6 +5,7 @@
 
 const SCOPES = new Set(["ir", "pr", "root"]);
 const MAX_RECORDS = 2000; // กันโตไม่จำกัด
+const MAX_CATLOG = 40; // ตัวอย่างแก้หมวดล่าสุด (ใช้เป็น few-shot ให้ AI)
 
 const H = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: H });
@@ -14,16 +15,18 @@ const kvKey = (env, scope) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : 
 
 async function readState(env, scope) {
   const raw = await env.FLAGS_KV.get(kvKey(env, scope));
-  if (!raw) return { records: [], kw: {}, dismissed: [] };
+  if (!raw) return { records: [], kw: {}, dismissed: [], cats: {}, catlog: [] };
   try {
     const o = JSON.parse(raw);
     return {
       records: Array.isArray(o.records) ? o.records : [],
       kw: o.kw && typeof o.kw === "object" ? o.kw : {},
       dismissed: Array.isArray(o.dismissed) ? o.dismissed : [],
+      cats: o.cats && typeof o.cats === "object" ? o.cats : {}, // { link: catKey } — ผู้ใช้แก้หมวดเอง
+      catlog: Array.isArray(o.catlog) ? o.catlog : [], // [{ t:title, c:cat }] ตัวอย่างล่าสุด → few-shot
     };
   } catch {
-    return { records: [], kw: {}, dismissed: [] };
+    return { records: [], kw: {}, dismissed: [], cats: {}, catlog: [] };
   }
 }
 
@@ -55,6 +58,23 @@ function applyOp(s, body) {
       if (body.source) {
         s.kw = s.kw || {};
         s.kw[body.source] = Array.isArray(body.terms) ? body.terms.slice(0, 200) : [];
+      }
+      break;
+    case "setCat": // ผู้ใช้จัดหมวดข่าวเอง (override) + เก็บ log ไว้สอน AI
+      if (body.link) {
+        s.cats = s.cats || {};
+        if (body.cat) {
+          s.cats[body.link] = body.cat;
+          s.catlog = s.catlog || [];
+          const t = String(body.title || "").slice(0, 160);
+          if (t) {
+            s.catlog = s.catlog.filter((e) => e.t !== t); // กันซ้ำ
+            s.catlog.push({ t, c: body.cat });
+            if (s.catlog.length > MAX_CATLOG) s.catlog = s.catlog.slice(-MAX_CATLOG);
+          }
+        } else {
+          delete s.cats[body.link]; // ล้าง = กลับไปอัตโนมัติ
+        }
       }
       break;
   }

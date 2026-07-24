@@ -64,8 +64,10 @@ function keywordHits(it) {
   return CAT_KEYS.filter((k) => CAT_KW[k].some((w) => hay.includes(w)));
 }
 
-async function classifyBatch(env, titles) {
+async function classifyBatch(env, titles, examples) {
   const list = titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  // few-shot จากที่ผู้ใช้แก้หมวดเอง → สอน AI ให้ตรงใจครั้งหน้า
+  const ex = (examples || []).slice(-8).map((e) => `- "${String(e.t).slice(0, 120)}" => ${e.c}`).join("\n");
   const prompt =
     "Classify each Thai/English news headline into ONE category code:\n" +
     "econ = economy/business/stocks/finance/GDP/investment\n" +
@@ -74,7 +76,8 @@ async function classifyBatch(env, titles) {
     "crisis = disease outbreak/earthquake/flood/storm/natural disaster/accident/emergency\n" +
     "pol = domestic politics/government/policy/law\n" +
     "other = none of the above\n" +
-    "Reply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
+    (ex ? "\nThe user corrected these before — follow the same judgement:\n" + ex + "\n" : "") +
+    "\nReply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
     list;
   const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 300 });
   const text = String((out && (out.response || out.result)) || "");
@@ -87,10 +90,13 @@ async function classifyBatch(env, titles) {
   return found.map((c) => (CAT_KEYS.includes(c) ? c : "other"));
 }
 
-async function enrichCategories(env, sources, prevCat, allowAI, diag) {
+async function enrichCategories(env, sources, prevCat, allowAI, diag, userCats, examples) {
+  userCats = userCats || {};
   const toAI = [];
+  let userN = 0;
   for (const s of ["newsth", "newsintl"]) {
     for (const it of (sources[s]?.items || [])) {
+      if (userCats[it.link]) { it.cat = userCats[it.link]; it.byUser = true; userN++; continue; } // ผู้ใช้จัดเอง = สูงสุด
       const cached = prevCat[it.link];
       if (cached) { it.cat = cached; it.byAI = true; continue; } // เคยจัดด้วย AI แล้ว
       const hits = keywordHits(it);
@@ -101,6 +107,7 @@ async function enrichCategories(env, sources, prevCat, allowAI, diag) {
   }
   diag.bound = !!(env && env.AI);
   diag.allowAI = !!allowAI;
+  diag.userCats = userN;
   diag.candidates = toAI.length;
   diag.sent = 0; diag.ok = 0;
   if (!allowAI || !env || !env.AI || !toAI.length) return;
@@ -109,7 +116,7 @@ async function enrichCategories(env, sources, prevCat, allowAI, diag) {
     const chunk = batch.slice(i, i + AI_BATCH);
     diag.sent += chunk.length;
     try {
-      const cats = await classifyBatch(env, chunk.map((x) => x.title));
+      const cats = await classifyBatch(env, chunk.map((x) => x.title), examples);
       chunk.forEach((it, j) => { if (cats[j]) { it.cat = cats[j]; it.byAI = true; diag.ok++; } });
     } catch (e) { diag.err = String((e && e.message) || e).slice(0, 200); } // คงค่า keyword provisional ไว้
   }
@@ -292,8 +299,17 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       }
     }
   }
+  // อ่านหมวดที่ผู้ใช้จัดเอง (override) + ตัวอย่างล่าสุด (few-shot) จาก flags KV ของหน้า IR
+  let userCats = {}, catExamples = [];
+  try {
+    if (env && env.FLAGS_KV) {
+      const fraw = await env.FLAGS_KV.get(envPrefix(env) + "flags:ir");
+      if (fraw) { const fs = JSON.parse(fraw); userCats = fs.cats || {}; catExamples = fs.catlog || []; }
+    }
+  } catch {}
+
   const aiDiag = {};
-  try { await enrichCategories(env, sources, prevCat, allowAI, aiDiag); } catch (e) { aiDiag.fatal = String((e && e.message) || e).slice(0, 200); }
+  try { await enrichCategories(env, sources, prevCat, allowAI, aiDiag, userCats, catExamples); } catch (e) { aiDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
   // สะสมข่าว/alert ลง KV (ในประเทศ/ต่างประเทศ 2 วัน · ปศุสัตว์ 10 วัน) แม้หลุดจากฟีดแล้ว
   const arDiag = {};

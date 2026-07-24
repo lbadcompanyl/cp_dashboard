@@ -7,6 +7,7 @@
   const LS_RECS = "flgRecs.v1"; // [{ link, title, source, label, host, ts }]
   const LS_KW = "flgKw.v1"; // { [source]: [term, ...] } — คำที่กำลังจะเพิ่มใน Alert
   const LS_DISM = "flgDism.v1"; // [link, ...] — ลบออกจากรายการแล้ว แต่ยังซ่อนข่าวไว้
+  const LS_CAT = "flgCat.v1"; // { link: catKey } — ผู้ใช้จัดหมวดข่าวเอง (override หมวดจาก AI)
   const THRESH = 3; // host/คำ ซ้ำถึงเกณฑ์นี้ → แนะนำตัด (จุดแดง)
   const MIN_LIST = 2; // แสดงในรายการเมื่อซ้ำ ≥ นี้
 
@@ -29,6 +30,8 @@
   let records = [];
   let dismissed = [];
   let kwStore = {};
+  let catStore = {}; // { link: catKey } override หมวดโดยผู้ใช้
+  let catList = []; // [{ key, label }] หมวดที่เลือกได้ (ส่งมาจาก app.js ตอน init)
   let onChange = () => {};
 
   // แยกที่เก็บต่อหน้า (IR ≠ PR) แม้อยู่โดเมนเดียวกัน — กันข้อมูล flag ปนกัน
@@ -61,10 +64,12 @@
     records = Array.isArray(d.records) ? d.records : [];
     dismissed = Array.isArray(d.dismissed) ? d.dismissed : [];
     kwStore = d.kw && typeof d.kw === "object" ? d.kw : {};
+    catStore = d.cats && typeof d.cats === "object" ? d.cats : {};
     rebuildHidden();
     save(key(LS_RECS), records);
     save(key(LS_DISM), dismissed);
     save(key(LS_KW), kwStore);
+    save(key(LS_CAT), catStore);
     save(key(LS_HIDDEN), hidden);
     onChange();
     refresh();
@@ -188,6 +193,16 @@
     refresh();
     pushOp({ op: "dismiss", link });
   }
+
+  // ---------- จัดหมวดเอง (override) ----------
+  function setCat(link, cat, title) {
+    if (!link) return;
+    if (cat) catStore[link] = cat; else delete catStore[link];
+    save(key(LS_CAT), catStore);
+    onChange(); // re-render การ์ด → ย้ายหมวดทันที
+    pushOp({ op: "setCat", link, cat: cat || "", title: title || "" });
+  }
+  function getCat(link) { return (link && catStore[link]) || ""; }
   function clearSource(source) {
     const gone = records.filter((r) => r.source === source);
     gone.forEach((r) => delete hidden[r.link]);
@@ -217,8 +232,8 @@
   function hideToast() { if (toastEl) toastEl.style.display = "none"; }
 
   // ---------- FAB + panel ----------
-  let fab, kwFab, fabWrap, mask, panel, kwPanel;
-  function closeAll() { closePanel(); closeKw(); }
+  let fab, kwFab, fabWrap, mask, panel, kwPanel, catPicker;
+  function closeAll() { closePanel(); closeKw(); closeCat(); }
   function ensureUi() {
     if (fabWrap) return;
     fabWrap = document.createElement("div");
@@ -251,7 +266,44 @@
     kwPanel.className = "flg-panel";
     document.body.appendChild(kwPanel);
 
+    catPicker = document.createElement("div");
+    catPicker.className = "flg-catpick";
+    document.body.appendChild(catPicker);
+
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
+  }
+
+  // ---------- ตัวเลือกจัดหมวดข่าว (popup แบบ flag) ----------
+  function openCatPicker(link, title, source) {
+    ensureUi();
+    if (!catList.length) return;
+    const cur = getCat(link);
+    catPicker.innerHTML =
+      `<div class="flg-head"><b>🗂 จัดหมวดข่าวนี้</b><button type="button" class="flg-x" data-catclose>✕</button></div>
+       <div class="flg-cattt">${esc((title || "").slice(0, 90))}</div>
+       <div class="flg-catopts">
+         <button type="button" class="flg-catopt${cur ? "" : " on"}" data-setcat="">↩ อัตโนมัติ (AI/keyword)</button>` +
+      catList.map((c) => `<button type="button" class="flg-catopt${cur === c.key ? " on" : ""}" data-setcat="${esc(c.key)}">${esc(c.label)}</button>`).join("") +
+      `</div>`;
+    catPicker.dataset.link = link;
+    catPicker.dataset.title = title || "";
+    catPicker.classList.add("open");
+    mask.style.display = "block";
+    catPicker.style.display = "block";
+    $("[data-catclose]", catPicker)?.addEventListener("click", closeCat);
+    $$("[data-setcat]", catPicker).forEach((b) =>
+      b.addEventListener("click", () => {
+        setCat(catPicker.dataset.link, b.dataset.setcat, catPicker.dataset.title);
+        closeCat();
+      })
+    );
+  }
+  function closeCat() {
+    if (!catPicker) return;
+    catPicker.classList.remove("open");
+    catPicker.style.display = "none";
+    if ((!panel || !panel.classList.contains("open")) && (!kwPanel || !kwPanel.classList.contains("open")))
+      mask.style.display = "none";
   }
 
   // ---------- ปุ่ม "เพิ่มคำค้น" ในคอลัมน์ Alert ----------
@@ -432,6 +484,19 @@
     @media(hover:none){.flag-btn{opacity:.45}}
     :root[data-theme="light"] .flag-btn{background:rgba(255,255,255,.8);color:#888;border-color:rgba(0,0,0,.12)}
     :root[data-theme="light"] .flag-btn:hover{background:#c0392b;color:#fff;border-color:#c0392b}
+    .flag-cat-btn{position:absolute;top:6px;right:6px;z-index:3;border:1px solid rgba(160,160,160,.28);background:rgba(30,30,30,.5);color:#fff;min-width:23px;height:23px;padding:0 5px;border-radius:6px;font-size:12px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s,background .12s;display:grid;place-items:center}
+    .card:hover .flag-cat-btn{opacity:.8}
+    .flag-cat-btn:hover,.flag-cat-btn.on{opacity:1;background:#2a78d6;border-color:#2a78d6;color:#fff}
+    @media(hover:none){.flag-cat-btn{opacity:.5}}
+    :root[data-theme="light"] .flag-cat-btn{background:rgba(255,255,255,.8);color:#888;border-color:rgba(0,0,0,.12)}
+    :root[data-theme="light"] .flag-cat-btn:hover,:root[data-theme="light"] .flag-cat-btn.on{background:#2a78d6;color:#fff}
+    .flg-catpick{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(340px,92vw);background:#16181d;color:#eee;border:1px solid rgba(150,150,150,.22);border-radius:14px;z-index:9999;display:none;padding:16px;box-shadow:0 16px 48px rgba(0,0,0,.5);font-family:inherit;font-size:13px}
+    :root[data-theme="light"] .flg-catpick{background:#fff;color:#1a1a1a;border-color:rgba(0,0,0,.12)}
+    .flg-cattt{font-size:12px;opacity:.7;margin:2px 0 10px;line-height:1.4}
+    .flg-catopts{display:flex;flex-direction:column;gap:7px}
+    .flg-catopt{text-align:left;border:1px solid rgba(150,150,150,.3);background:rgba(150,150,150,.08);color:inherit;border-radius:9px;padding:9px 12px;font-size:13px;cursor:pointer;font-family:inherit}
+    .flg-catopt:hover{border-color:#2a78d6}
+    .flg-catopt.on{background:#2a78d6;color:#fff;border-color:#2a78d6}
     .card mark.hl{background:none;color:inherit;font-weight:700}
     .flg-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:10000;font-family:inherit;max-width:92vw}
     .flg-toast button{background:none;border:none;color:#7db3ff;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap}
@@ -511,13 +576,17 @@
       records = load(key(LS_RECS), []);
       dismissed = load(key(LS_DISM), []);
       kwStore = load(key(LS_KW), {});
+      catStore = load(key(LS_CAT), {});
+      catList = Array.isArray(opts.cats) ? opts.cats : [];
       rebuildHidden(); // สร้าง hidden จาก records + dismissed ให้ตรงกันเสมอ
       injectCss();
       ensureUi();
       injectKwButtons();
       document.addEventListener("click", (e) => {
         const b = e.target.closest(".flag-btn");
-        if (b) { e.preventDefault(); e.stopPropagation(); flag(b); }
+        if (b) { e.preventDefault(); e.stopPropagation(); flag(b); return; }
+        const cb = e.target.closest(".flag-cat-btn");
+        if (cb) { e.preventDefault(); e.stopPropagation(); openCatPicker(cb.dataset.link, cb.dataset.title, cb.dataset.source); }
       });
       refresh();
       // sync กับ server (ถ้า bind KV) — ดึงตอนเปิด, ทุก 25 วิ, และตอนกลับมาโฟกัสแท็บ
@@ -526,10 +595,17 @@
       window.addEventListener("focus", syncPull);
     },
     isHidden(link) { return !!hidden[link]; },
+    getCat,
     button(item, source) {
       // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม
       if (!source || !source.startsWith("alert")) return "";
       return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(stripMarks(item.title))}" data-label="${esc(item.sourceLabel || "")}">⚑</button>`;
+    },
+    // ปุ่มจัดหมวดเอง — เฉพาะคอลัมน์ข่าว (มีหมวดให้เลือก)
+    catButton(item, source) {
+      if (!catList.length || !source || source.indexOf("news") !== 0) return "";
+      const on = getCat(item.link);
+      return `<button type="button" class="flag-cat-btn${on ? " on" : ""}" title="จัดหมวดข่าวนี้เอง" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(stripMarks(item.title))}">🗂</button>`;
     },
     refresh,
   };
