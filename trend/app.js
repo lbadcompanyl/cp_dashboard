@@ -453,8 +453,8 @@ function setupSwipeDots() {
     arrows = document.createElement("div");
     arrows.id = "swipeArrows";
     arrows.innerHTML =
-      '<button type="button" class="swipe-arrow left" aria-label="ก่อนหน้า">‹</button>' +
-      '<button type="button" class="swipe-arrow right" aria-label="ถัดไป">›</button>';
+      '<button type="button" class="swipe-arrow left" aria-label="ก่อนหน้า">«</button>' +
+      '<button type="button" class="swipe-arrow right" aria-label="ถัดไป">»</button>';
     document.body.appendChild(arrows);
   }
   const la = $(".left", arrows), ra = $(".right", arrows);
