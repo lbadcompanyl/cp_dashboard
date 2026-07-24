@@ -45,6 +45,6 @@ export default [
     url: "https://www.google.com/alerts/feeds/09603683942017157714/5523361181985541471",
   },
 
-  // 🔔 Alert 2 — (รอหัวข้อ) วาง Google Alert RSS URL ที่นี่ แล้วตั้ง source: "alert2"
-  // { id: "alert2-xxx", source: "alert2", label: "หัวข้อ", url: "https://www.google.com/alerts/feeds/..." },
+  // 🔔 Alert 2
+  { id: "alert2-a", source: "alert2", label: "Alert 2", url: "https://www.google.com/alerts/feeds/09603683942017157714/4359961479006170518" },
 ];
