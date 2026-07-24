@@ -74,6 +74,17 @@ async function buildAndStore(cache, cacheKey) {
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
   }
 
+  // Google Alert ส่งว่างชั่วคราว (ฟีดรีเซ็ตหลังแก้ query / โดน throttle) → คงชุดเดิมจาก cache กันแผงว่าง
+  if (sources.alert.items.length === 0) {
+    try {
+      const prev = await cache.match(cacheKey);
+      if (prev) {
+        const pj = JSON.parse(await prev.clone().text());
+        if (pj.sources?.alert?.items?.length) { sources.alert.items = pj.sources.alert.items; sources.alert.stale = true; }
+      }
+    } catch {}
+  }
+
   const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors });
   const resp = new Response(body, {
     headers: {

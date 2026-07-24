@@ -17,6 +17,7 @@ const ARCHIVE_KEY = "ir:archive";
 // prefix key ตาม environment (ตั้ง APP_ENV=dev ที่ Preview) → dev/prod ใช้คลังแยกกัน ไม่ทับข้อมูลผู้ใช้จริง
 const envPrefix = (env) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : "");
 const ARCHIVE_CFG = {
+  alert1:   { days: 10, max: 300 }, // CP / ซีพี
   alert2:   { days: 10, max: 400 }, // ปศุสัตว์
   newsth:   { days: 2,  max: 500 }, // ในประเทศ
   newsintl: { days: 2,  max: 500 }, // ต่างประเทศ
@@ -184,7 +185,8 @@ export async function onRequest(context) {
         `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
         `จำนวนข่าว: ในประเทศ=${(s.newsth?.items || []).length}  ต่างประเทศ=${(s.newsintl?.items || []).length}  CP=${(s.alert1?.items || []).length}  ปศุสัตว์=${(s.alert2?.items || []).length}\n` +
         `จัดหมวดด้วย AI: ${byAI} ข่าว (ที่เหลือใช้ keyword)\n` +
-        `คลังเก็บสะสม (KV — ในปท./ตปท. 2วัน, ปศุสัตว์ 10วัน): ${JSON.stringify(j.archive || {})}\n` +
+        `คลังเก็บสะสม (KV — ในปท./ตปท. 2วัน, CP/ปศุสัตว์ 10วัน): ${JSON.stringify(j.archive || {})}\n` +
+        `ฟีด Alert รอบ build ล่าสุด (สดจาก Google): ${JSON.stringify(j.alerts || [])}\n` +
         `AI debug: ${JSON.stringify(j.ai || {})}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
@@ -204,6 +206,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
   for (const f of feeds) { const t = targetSource(f); if (sources[t]) sources[t].feedCount++; }
   const errors = [];
+  const alertMeta = []; // สถานะสดของฟีด alert รอบนี้ (แยก "Google ส่งว่าง/รีเซ็ต" ออกจาก "cache เราค้าง")
 
   await mapPool(feeds, POOL, async (f) => {
     const target = targetSource(f);
@@ -214,6 +217,10 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       let xml = await res.text();
       if (xml.length > MAX_XML) xml = xml.slice(0, MAX_XML); // กัน CPU พุ่งจากฟีดยักษ์
       const items = parseGeneric(xml, f.source).slice(0, MAX_PER_FEED);
+      if (f.source.startsWith("alert")) {
+        const newest = items.reduce((m, x) => (x.publishedAt > m ? x.publishedAt : m), "");
+        alertMeta.push({ id: f.id, http: res.status, items: items.length, newest: newest || null });
+      }
       for (const it of items) {
         if (!it.sourceLabel) it.sourceLabel = f.label;
         it.group = f.group || "gen"; // biz | intl | gen
@@ -223,6 +230,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       }
       sources[target].items.push(...items);
     } catch (e) {
+      if (f.source.startsWith("alert")) alertMeta.push({ id: f.id, err: String((e && e.message) || e).slice(0, 80) });
       errors.push({ id: f.id, source: f.source, label: f.label, message: String(e.message || e) });
     }
   });
@@ -273,7 +281,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
