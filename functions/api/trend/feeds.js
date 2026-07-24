@@ -37,7 +37,7 @@ async function buildAndStore(cache, cacheKey) {
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
     alert1: { label: "Alert 1 · CP", items: [], feedCount: 0 },
-    alert2: { label: "Alert 2", items: [], feedCount: 0 },
+    alert2: { label: "หัวข้อที่จับตามอง", items: [], feedCount: 0 },
     trends: { label: "Google Trends", items: [], feedCount: 0 },
   };
   for (const f of feeds) if (sources[f.source]) sources[f.source].feedCount++;

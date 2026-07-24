@@ -46,5 +46,5 @@ export default [
   },
 
   // 🔔 Alert 2
-  { id: "alert2-a", source: "alert2", label: "Alert 2", url: "https://www.google.com/alerts/feeds/09603683942017157714/4359961479006170518" },
+  { id: "alert2-a", source: "alert2", label: "หัวข้อที่จับตามอง", url: "https://www.google.com/alerts/feeds/09603683942017157714/4359961479006170518" },
 ];
