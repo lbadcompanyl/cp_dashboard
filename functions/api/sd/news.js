@@ -10,7 +10,7 @@ const FETCH_TIMEOUT = 12000;
 const EDGE_TTL = 1800;   // cache 30 นาที ที่ edge
 const MAX_ARTICLES = 14; // จำนวนข่าวหลัง merge
 const MAX_TERMS = 4;     // ยิงมากสุดกี่คำต่อกลุ่ม (กัน request บานปลาย)
-const CACHE_VER = "8";
+const CACHE_VER = "9";
 
 const MKT = { "": "en-US", TH: "th-TH", US: "en-US", SG: "en-SG", GB: "en-GB" };
 const HLGL = { "": ["en", "US"], TH: ["th", "TH"], US: ["en", "US"], SG: ["en", "SG"], GB: ["en", "GB"] };
@@ -146,8 +146,10 @@ function imgFromBlock(b) {
   return /^https?:\/\//i.test(u) ? u : "";
 }
 function dec(s = "") {
-  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  s = s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
+  let prev; // decode จนสุด (บางเว็บ encode &amp; ซ้อนหลายชั้นใน URL รูป → กัน client escape เป๊ะเกินจนรูปพัง)
+  do { prev = s; s = s.replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#0*39;/g, "'"); } while (s !== prev);
+  return s;
 }
 
 // Bing ห่อลิงก์เป็น bing.com/news/apiclick.aspx?...&url=<ของจริง> → แกะออก
