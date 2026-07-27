@@ -254,11 +254,9 @@ function loadFromStore(){ try{ const raw=localStorage.getItem(STORE_KEY); if(!ra
 function renderTabs(){
   const t=el("tabs");
   t.innerHTML = groups.map((g,i)=>`<button class="tab" role="tab" data-i="${i}" aria-selected="${i===state.active}"><span class="tdot"></span>${escapeHtml(g.name)}</button>`).join("")
-    + `<button class="add-tab" id="addTab" type="button" ${groups.length>=MAX_GROUPS?"disabled":""}>＋ เพิ่มกลุ่ม</button>`
-    + `<button class="add-tab" id="resetBtn" type="button" title="กลับค่าเริ่มต้น">↺ รีเซ็ต</button>`;
+    + `<button class="add-tab" id="addTab" type="button" ${groups.length>=MAX_GROUPS?"disabled":""}>＋ เพิ่มกลุ่ม</button>`;
   t.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ state.active=+b.dataset.i; refresh(); });
   el("addTab").onclick=()=>{ if(groups.length>=MAX_GROUPS) return; groups.push({ name:"กลุ่ม "+(groups.length+1), keywords:["keyword"] }); state.active=groups.length-1; refresh(); };
-  el("resetBtn").onclick=()=>{ if(!confirm("กลับเป็นค่าเริ่มต้น?")) return; groups=JSON.parse(JSON.stringify(DEFAULT_GROUPS)); state.active=0; state.geo=""; state.period="5y"; fillSelects(); refresh(); };
 }
 function renderEditor(){
   const g=activeGroup();
