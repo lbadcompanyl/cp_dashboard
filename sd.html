@@ -337,7 +337,7 @@ async function loadNews(){
   list.innerHTML = arts.map(a=>{
     const src=a.sourceLabel||"ข่าว", c=newsColor(src);
     const thumb = a.image
-      ? `<img class="newsimg" src="${escapeHtml(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'newsimg ph',textContent:'📰'}))">`
+      ? `<img class="newsimg" src="/api/sd/img?u=${encodeURIComponent(a.image)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'newsimg ph',textContent:'📰'}))">`
       : `<div class="newsimg ph" style="color:${c}">${escapeHtml((src[0]||'•').toUpperCase())}</div>`;
     return `<div class="newsrow">
       ${thumb}

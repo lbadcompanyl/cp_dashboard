@@ -10,7 +10,7 @@ const FETCH_TIMEOUT = 12000;
 const EDGE_TTL = 1800;   // cache 30 นาที ที่ edge
 const MAX_ARTICLES = 14; // จำนวนข่าวหลัง merge
 const MAX_TERMS = 4;     // ยิงมากสุดกี่คำต่อกลุ่ม (กัน request บานปลาย)
-const CACHE_VER = "9";
+const CACHE_VER = "10";
 
 const MKT = { "": "en-US", TH: "th-TH", US: "en-US", SG: "en-SG", GB: "en-GB" };
 const HLGL = { "": ["en", "US"], TH: ["th", "TH"], US: ["en", "US"], SG: ["en", "SG"], GB: ["en", "GB"] };
@@ -103,7 +103,7 @@ async function enrichImages(articles) {
         if (!res.ok) return;
         if (!/html/i.test(res.headers.get("content-type") || "")) return;
         let html = await res.text();
-        if (html.length > 120000) html = html.slice(0, 120000); // og:image อยู่ใน <head> ตอนต้น
+        if (html.length > 220000) html = html.slice(0, 220000); // og:image อยู่ใน <head> ตอนต้น
         a.image = ogImage(html);
       } catch { /* ปล่อยว่าง → client โชว์กล่องตัวอักษรแทน */ }
     })
@@ -114,6 +114,9 @@ function ogImage(html) {
     /<meta[^>]+(?:property|name)=["']og:image(?::url|:secure_url)?["'][^>]*\scontent=["']([^"']+)["']/i,
     /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']og:image(?::url|:secure_url)?["']/i,
     /<meta[^>]+(?:property|name)=["']twitter:image(?::src)?["'][^>]*\scontent=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']twitter:image(?::src)?["']/i,
+    /<link[^>]+rel=["']image_src["'][^>]*\shref=["']([^"']+)["']/i,
+    /"image"\s*:\s*(?:\{[^{}]*?"url"\s*:\s*)?["'](https?:\/\/[^"']+?\.(?:jpe?g|png|webp|avif)[^"']*)["']/i, // JSON-LD
   ];
   for (const p of pats) {
     const m = html.match(p);
