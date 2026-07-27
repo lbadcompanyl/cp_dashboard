@@ -376,6 +376,13 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
 // ---------- Hybrid alert filter: keyword ต้องอยู่ในเนื้อ/meta ของบทความจริง (ไม่ใช่ related block) ----------
 // ต้นเหตุ false positive: Google Alert จับ keyword จากบล็อก "ข่าวที่เกี่ยวข้อง/แนะนำ/roundup" ท้ายหน้า
 const ROUNDUP_RE = /สรุปข่าวประจำวัน|สรุปข่าวเด่น|รวมข่าวเด่นประจำ|ข่าวเด่นประจำวัน/;
+// ตระกูลแบรนด์ในเครือ CP — บทความ CP มักเรียกตัวเองด้วยชื่อลูก (CPF/เซเว่น/แม็คโคร) ไม่ใช่คำว่า "ซีพี" ตรง ๆ
+// ใช้ตอน verify คอลัมน์ alert1: ถ้า meta มีชื่อในเครือ = ข่าว CP จริง แม้ Google จะไฮไลต์ "ซีพี" จาก related block
+const CP_BRANDS = [
+  "ซีพี", "cp all", "cpall", "cpf", "ซีพีเอฟ", "ซีพี ออลล์", "ซีพีแรม", "cpram", "cp axtra", "แอ็กซ์ตร้า",
+  "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
+  "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "แม็คโคร", "makro", "โลตัส", "lotus's",
+];
 // คำที่ Google ไฮไลต์ (= คำที่ match) จาก marker [[hl]]…[[/hl]] ใน title+snippet
 function highlightedTerms(it) {
   const s = (it.title || "") + " " + (it.snippet || "");
@@ -404,8 +411,8 @@ function articleMainText(html) {
   return decodeEnt(parts.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
 }
 // ตรวจว่า term ที่ match อยู่ในเนื้อบทความไหม (cache verdict ต่อ link ที่ edge → ไม่ fetch ซ้ำ)
-async function verifyInBody(cache, link, terms) {
-  const vkey = new Request("https://verify.local/ir?u=" + encodeURIComponent(link), { method: "GET" });
+async function verifyInBody(cache, link, terms, extra) {
+  const vkey = new Request("https://verify.local/ir2?u=" + encodeURIComponent(link), { method: "GET" });
   try { const hit = await cache.match(vkey); if (hit) return (await hit.json()).ok; } catch {}
   let ok = true; // default: เก็บไว้เมื่อไม่แน่ใจ (กันตัดพลาด)
   try {
@@ -414,7 +421,8 @@ async function verifyInBody(cache, link, terms) {
       let html = await res.text();
       if (html.length > 200000) html = html.slice(0, 200000);
       const main = articleMainText(html);
-      if (main && main.length > 20) ok = terms.some((t) => main.includes(t)); // main มีจริงถึงจะตัดสิน
+      // main มีคำที่ match จริง หรือมีชื่อในเครือ (extra) ถึงจะเก็บ
+      if (main && main.length > 20) ok = terms.some((t) => main.includes(t)) || (extra ? extra.some((t) => main.includes(t)) : false);
     }
   } catch { ok = true; }
   try { await cache.put(vkey, new Response(JSON.stringify({ ok }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
@@ -425,12 +433,13 @@ async function verifyAlertItems(cache, sources, diag) {
   for (const src of ["alert1", "alert2"]) {
     if (!sources[src]) continue;
     const items = sources[src].items;
+    const extra = src === "alert1" ? CP_BRANDS : null; // คอลัมน์ CP → ยอมรับชื่อในเครือด้วย
     const verdict = await mapPoolResults(items, 6, async (it) => {
       if (/\[\[hl\]\]/.test(it.title || "")) return { ok: true };                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
       if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return { ok: false, why: "roundup" }; // ชั้น 2: roundup → ทิ้ง (ฟรี)
       const terms = highlightedTerms(it);
       if (!terms.length) return { ok: true };                                     // ไม่รู้ match อะไร → เก็บ
-      const ok = await verifyInBody(cache, it.link, terms);                       // ชั้น 3: body/meta check (fetch+cache)
+      const ok = await verifyInBody(cache, it.link, terms, extra);                // ชั้น 3: body/meta check (fetch+cache)
       return { ok, why: ok ? "" : "ไม่อยู่ในเนื้อ", terms };
     });
     sources[src].items = items.filter((_, i) => verdict[i].ok !== false);
