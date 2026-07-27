@@ -149,11 +149,18 @@
       </section>
     </div>
 
-    <section class="panel" id="newsPanel">
-      <h3>ข่าวที่เกี่ยวข้อง (Related news)</h3>
-      <p class="sub" id="newsSub"></p>
-      <div class="newslist" id="newsList"><div class="news-state">กำลังโหลดข่าว…</div></div>
-    </section>
+    <div class="two-col">
+      <section class="panel">
+        <h3>🇹🇭 ข่าวในประเทศ (Related news)</h3>
+        <p class="sub" id="newsSubTH"></p>
+        <div class="newslist" id="newsListTH"><div class="news-state">กำลังโหลดข่าว…</div></div>
+      </section>
+      <section class="panel">
+        <h3>🌏 ข่าวต่างประเทศ (Related news)</h3>
+        <p class="sub" id="newsSubINTL"></p>
+        <div class="newslist" id="newsListINTL"><div class="news-state">กำลังโหลดข่าว…</div></div>
+      </section>
+    </div>
 
     <div class="note"><span>ℹ️</span><span>แต่ละแท็บรวมคำในกลุ่มด้วย <b>“+”</b> เป็น <b>เส้นเดียว</b> — Google รวมและถ่วงน้ำหนักตาม volume จริงให้เอง. เปลี่ยนพื้นที่/ช่วงเวลาหรือแก้คำแล้ว widget จะโหลดใหม่อัตโนมัติ. โหมดมืดเป็นของหน้าเว็บ ส่วนตัว widget เป็น UI ของ Google (พื้นขาว)</span></div>
   </main>
@@ -341,32 +348,34 @@ function newsQuery(g){
 }
 let newsGen = 0, newsTimer = 0;
 function scheduleNews(){ clearTimeout(newsTimer); newsTimer=setTimeout(loadNews, 500); }
+function newsRow(a){
+  const src=a.sourceLabel||"ข่าว", c=newsColor(src);
+  const thumb = a.image
+    ? `<img class="newsimg" src="/api/sd/img?u=${encodeURIComponent(a.image)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'newsimg ph',textContent:'📰'}))">`
+    : `<div class="newsimg ph" style="color:${c}">${escapeHtml((src[0]||'•').toUpperCase())}</div>`;
+  return `<div class="newsrow">${thumb}<div class="body">
+      <a class="t" href="${escapeHtml(a.link)}" target="_blank" rel="noopener">${escapeHtml(a.title)}</a>
+      <div class="m">${escapeHtml(src)} · ${timeAgoTh(a.publishedAt)}</div>
+    </div></div>`;
+}
+// โหลดข่าว 2 แผง: 🇹🇭 ในประเทศ (geo=TH) และ 🌏 ต่างประเทศ (geo=worldwide) — ไม่ผูกกับ dropdown พื้นที่
 async function loadNews(){
-  const g=activeGroup(), q=newsQuery(g), gen=++newsGen;
-  const sub=el("newsSub"), list=el("newsList");
-  sub.textContent = `${combinedKeyword(g)} · ${GEOS[state.geo]}`;
-  if(!q){ list.innerHTML=`<div class="news-state">เพิ่มคำค้นในกลุ่มเพื่อดูข่าวที่เกี่ยวข้อง</div>`; return; }
+  const g=activeGroup(), q=newsQuery(g), gen=++newsGen, label=combinedKeyword(g);
+  loadNewsPanel(q, "TH", el("newsListTH"), el("newsSubTH"), `${label} · 🇹🇭 ในประเทศ`, gen);
+  loadNewsPanel(q, "",   el("newsListINTL"), el("newsSubINTL"), `${label} · 🌏 ต่างประเทศ`, gen);
+}
+async function loadNewsPanel(q, geo, list, sub, subText, gen){
+  sub.textContent = subText;
+  if(!q){ list.innerHTML=`<div class="news-state">เพิ่มคำค้นในกลุ่มเพื่อดูข่าว</div>`; return; }
   list.innerHTML=`<div class="news-state">กำลังโหลดข่าว…</div>`;
   let data;
-  try{ data=await (await fetch(`/api/sd/news?q=${encodeURIComponent(q)}&geo=${state.geo}`)).json(); }
+  try{ data=await (await fetch(`/api/sd/news?q=${encodeURIComponent(q)}&geo=${geo}`)).json(); }
   catch(e){ data={ articles:[] }; }
-  if(gen!==newsGen) return; // เปลี่ยนกลุ่ม/พื้นที่แล้ว → ทิ้งผลเก่า
+  if(gen!==newsGen) return; // เปลี่ยนกลุ่มแล้ว → ทิ้งผลเก่า
   const arts=data.articles||[];
   const more=`https://www.bing.com/news/search?q=${encodeURIComponent(q)}`;
-  if(!arts.length){ list.innerHTML=`<div class="news-state">ยังไม่พบข่าวที่ตรงกับคำในกลุ่มนี้</div>`+`<a class="news-more" href="${more}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Bing News →</a>`; return; }
-  list.innerHTML = arts.map(a=>{
-    const src=a.sourceLabel||"ข่าว", c=newsColor(src);
-    const thumb = a.image
-      ? `<img class="newsimg" src="/api/sd/img?u=${encodeURIComponent(a.image)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'newsimg ph',textContent:'📰'}))">`
-      : `<div class="newsimg ph" style="color:${c}">${escapeHtml((src[0]||'•').toUpperCase())}</div>`;
-    return `<div class="newsrow">
-      ${thumb}
-      <div class="body">
-        <a class="t" href="${escapeHtml(a.link)}" target="_blank" rel="noopener">${escapeHtml(a.title)}</a>
-        <div class="m">${escapeHtml(src)} · ${timeAgoTh(a.publishedAt)}</div>
-      </div>
-    </div>`;
-  }).join("") + `<a class="news-more" href="${escapeHtml(more)}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Bing News →</a>`;
+  const moreLink=`<a class="news-more" href="${escapeHtml(more)}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Bing News →</a>`;
+  list.innerHTML = (arts.length ? arts.map(newsRow).join("") : `<div class="news-state">ยังไม่พบข่าวที่ตรงกับคำในกลุ่มนี้</div>`) + moreLink;
 }
 
 function refresh(){ renderTabs(); renderEditor(); updateSubs(); renderWidgets(); scheduleNews(); save(); }
