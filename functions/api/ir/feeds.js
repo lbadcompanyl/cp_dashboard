@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "24"; // bump: แตก alert2 เป็น 5 ฟีดตามธีม + ตัวกรองบริบท (ตัด noise หมู/ไก่ลอย)
+const CACHE_VER = "25"; // bump: auto-sync ปุ่ม 🔤 (แนบ sources[*].queries จาก title ฟีด Alert)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้

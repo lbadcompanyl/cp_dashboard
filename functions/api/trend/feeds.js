@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "12"; // แยก alert → alert1 + เพิ่มคอลัมน์ alert2
+const CACHE_VER = "13"; // bump: auto-sync ปุ่ม 🔤 (แนบ sources[*].queries จาก title ฟีด Alert)
 
 export async function onRequest(context) {
   const cache = caches.default;
