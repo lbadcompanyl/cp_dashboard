@@ -30,14 +30,16 @@ export async function onRequest(context) {
     `&hl=${g.hl}&gl=${g.gl}&ceid=${g.gl}:${g.hl}`;
 
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/sd/news?q=${encodeURIComponent(q)}&geo=${geo}`, { method: "GET" });
+  const key = new Request(url.origin + `/api/sd/news?v=2&q=${encodeURIComponent(q)}&geo=${geo}`, { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
   try {
     const res = await fetchWithTimeout(searchUrl, FETCH_TIMEOUT);
-    if (!res.ok) throw new Error("HTTP " + res.status);
     const xml = await res.text();
+    const rawItems = (xml.match(/<item\b/g) || []).length;
+    const diag = { http: res.status, xmlLen: xml.length, rawItems, ct: res.headers.get("content-type") || "" };
+    if (!res.ok) return json({ q, geo, articles: [], searchUrl, diag, error: "HTTP " + res.status });
     const articles = parseGeneric(xml, "news")
       .map((it) => {
         // Google News: title = "หัวข้อ - สำนักข่าว" → แยกชื่อสำนักข่าวออกมาโชว์แยก
@@ -53,7 +55,7 @@ export async function onRequest(context) {
       .filter((a) => a.title)
       .slice(0, MAX_ARTICLES);
 
-    const edge = json({ q, geo, articles, searchUrl }, EDGE_TTL);
+    const edge = json({ q, geo, articles, searchUrl, diag }, EDGE_TTL);
     context.waitUntil(cache.put(key, edge.clone()));
     return browserCopy(edge);
   } catch (e) {
