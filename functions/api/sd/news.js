@@ -10,7 +10,7 @@ const FETCH_TIMEOUT = 12000;
 const EDGE_TTL = 1800;   // cache 30 นาที ที่ edge
 const MAX_ARTICLES = 14; // จำนวนข่าวหลัง merge
 const MAX_TERMS = 4;     // ยิงมากสุดกี่คำต่อกลุ่ม (กัน request บานปลาย)
-const CACHE_VER = "6";
+const CACHE_VER = "7";
 
 const MKT = { "": "en-US", TH: "th-TH", US: "en-US", SG: "en-SG", GB: "en-GB" };
 const HLGL = { "": ["en", "US"], TH: ["th", "TH"], US: ["en", "US"], SG: ["en", "SG"], GB: ["en", "GB"] };
@@ -64,9 +64,10 @@ async function fetchTerm(u, term, name, diag) {
     const res = await fetchWithTimeout(u, FETCH_TIMEOUT);
     const xml = await res.text();
     const rawItems = (xml.match(/<item\b/g) || []).length;
-    diag.push({ term, name, http: res.status, rawItems });
-    if (!res.ok || rawItems === 0) return [];
-    return mapArticles(xml);
+    if (!res.ok || rawItems === 0) { diag.push({ term, name, http: res.status, rawItems }); return []; }
+    const arts = mapArticles(xml);
+    diag.push({ term, name, http: res.status, rawItems, imgs: arts.filter((a) => a.image).length });
+    return arts;
   } catch (e) {
     diag.push({ term, name, err: String((e && e.message) || e).slice(0, 60) });
     return [];
@@ -74,16 +75,46 @@ async function fetchTerm(u, term, name, diag) {
 }
 
 function mapArticles(xml) {
+  const imgByLink = imageMap(xml); // รูป thumbnail จากฟีด (Bing แนบมา) แมปตาม <link> ดิบ
   return parseGeneric(xml, "news")
     .map((it) => {
       let title = it.title, sourceLabel = "";
       const i = title.lastIndexOf(" - "); // Google News: "หัวข้อ - สำนักข่าว"
       if (i > 0) { sourceLabel = title.slice(i + 3).trim(); title = title.slice(0, i).trim(); }
+      const image = imgByLink[it.link] || "";
       const link = unwrapLink(it.link);
       if (!sourceLabel) sourceLabel = hostLabel(link); // Bing: ไม่มีชื่อใน title → ใช้โดเมน
-      return { title, link, sourceLabel, publishedAt: it.publishedAt };
+      return { title, link, sourceLabel, image, publishedAt: it.publishedAt };
     })
     .filter((a) => a.title && a.link);
+}
+
+// แกะ URL รูปจากแต่ละ <item> แมปตาม <link> ดิบ (ก่อน unwrap) — รองรับหลายรูปแบบฟีด
+function imageMap(xml) {
+  const map = {};
+  const items = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
+  for (const b of items) {
+    const lm = b.match(/<link\b[^>]*>([\s\S]*?)<\/link>/i);
+    const link = lm ? dec(lm[1]).trim() : "";
+    if (!link) continue;
+    const img = imgFromBlock(b);
+    if (img) map[link] = img;
+  }
+  return map;
+}
+function imgFromBlock(b) {
+  let m =
+    b.match(/<[a-z]*:?Image[^>]*>[\s\S]*?<[a-z]*:?Url[^>]*>([\s\S]*?)<\/[a-z]*:?Url>/i) ||  // Bing <News:Image><News:Url>
+    b.match(/<media:(?:thumbnail|content)[^>]*\burl="([^"]+)"/i) ||                          // media:thumbnail/content
+    b.match(/<enclosure[^>]*\burl="([^"]+)"[^>]*type="image/i) ||
+    b.match(/<enclosure[^>]*type="image[^>]*\burl="([^"]+)"/i) ||
+    b.match(/<image>\s*(?:<url>)?([\s\S]*?)(?:<\/url>)?\s*<\/image>/i);
+  const u = m ? dec(m[1]).trim() : "";
+  return /^https?:\/\//i.test(u) ? u : "";
+}
+function dec(s = "") {
+  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
 
 // Bing ห่อลิงก์เป็น bing.com/news/apiclick.aspx?...&url=<ของจริง> → แกะออก

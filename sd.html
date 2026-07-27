@@ -90,6 +90,8 @@
   .newsrow { display:flex; gap:12px; align-items:flex-start; padding:12px 2px; border-top:1px solid var(--border); }
   .newsrow:first-child { border-top:none; }
   .newsav { flex:0 0 auto; width:34px; height:34px; border-radius:8px; display:grid; place-items:center; font-weight:700; font-size:0.9rem; color:#fff; text-transform:uppercase; }
+  .newsimg { flex:0 0 auto; width:84px; height:60px; border-radius:8px; object-fit:cover; background:var(--surface-2); }
+  .newsimg.ph { display:grid; place-items:center; font-size:1.1rem; color:var(--muted); }
   .newsrow .body { min-width:0; }
   .newsrow a.t { color:var(--ink); text-decoration:none; font-size:0.92rem; font-weight:550; line-height:1.4; display:block; }
   .newsrow a.t:hover { color:var(--accent); text-decoration:underline; }
@@ -334,8 +336,11 @@ async function loadNews(){
   if(!arts.length){ list.innerHTML=`<div class="news-state">ยังไม่พบข่าวที่ตรงกับคำในกลุ่มนี้</div>`+`<a class="news-more" href="${more}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Bing News →</a>`; return; }
   list.innerHTML = arts.map(a=>{
     const src=a.sourceLabel||"ข่าว", c=newsColor(src);
+    const thumb = a.image
+      ? `<img class="newsimg" src="${escapeHtml(a.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'newsimg ph',textContent:'📰'}))">`
+      : `<div class="newsimg ph" style="color:${c}">${escapeHtml((src[0]||'•').toUpperCase())}</div>`;
     return `<div class="newsrow">
-      <div class="newsav" style="background:${c}">${escapeHtml(src[0]||"•")}</div>
+      ${thumb}
       <div class="body">
         <a class="t" href="${escapeHtml(a.link)}" target="_blank" rel="noopener">${escapeHtml(a.title)}</a>
         <div class="m">${escapeHtml(src)} · ${timeAgoTh(a.publishedAt)}</div>
