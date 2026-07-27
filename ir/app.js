@@ -114,6 +114,7 @@ async function load() {
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
     renderAll();
+    applyKeywords(); // sync ปุ่ม 🔤 จาก query สดของฟีด (ถ้าครบ)
   } catch (e) {
     if (state.data) {
       $("#updated").textContent = "อัปเดตไม่สำเร็จ (ใช้ข้อมูลล่าสุด)";
@@ -301,18 +302,29 @@ function injectCats(panel) {
   });
 }
 
-if (window.Flags) {
-  Flags.init({ onChange: renderAll, cats: CATS });
-  // รายการ keyword ที่ตั้งไว้ใน Alert 2 (ปศุสัตว์) — รวม 5 ธีม → โชว์ในปุ่ม 🔤 ดู keyword
-  Flags.setKeywords({
-    alert2: [
+// keyword ที่ตั้งไว้ (fallback ถ้า title ฟีดโดนตัดสั้น) — feed สดจาก Google จะ override เมื่อครบ
+const HARD_KW = {
+  alert2: [
       `"ราคาหมู" OR "ราคาสุกร" OR "หมูหน้าฟาร์ม" OR "ราคาไก่" OR "ไก่หน้าฟาร์ม" OR "ราคาไข่ไก่" OR "ราคากุ้ง" OR "ราคาอาหารสัตว์" OR "ต้นทุนอาหารสัตว์" OR "ราคาข้าวโพด" OR "กากถั่วเหลือง" OR "ปลาป่น" OR "หมูเป็น" OR "ราคาลูกสุกร" OR "ข้าวโพดเลี้ยงสัตว์" OR "ถั่วเหลือง" OR "ต้นทุนการเลี้ยง" OR "ราคาตกต่ำ" OR "หมูแพง" OR "ไข่แพง"`,
       `"อหิวาต์แอฟริกา" OR "อหิวาต์สุกร" OR "African swine fever" OR ASF OR "ไข้หวัดนก" OR "avian influenza" OR "bird flu" OR H5N1 OR PRRS OR "โรคระบาดสัตว์" OR "โรคปากและเท้าเปื่อย" OR "foot and mouth disease" OR "โรคกุ้ง" OR "โรคตัวแดงดวงขาว" OR "กุ้งตาย" OR "หมูตาย" OR "ไก่ตายยกฟาร์ม" OR "ทำลายซาก" OR "อาหารปนเปื้อน" OR "ซาลโมเนลลา" OR "เชื้อดื้อยา" OR "เรียกคืนสินค้า" OR "ปิดฟาร์ม" OR "ภัยแล้ง" OR "เอลนีโญ" OR "ลานีญา" OR "พื้นที่การเกษตรเสียหาย"`,
       `"หมูเถื่อน" OR "เนื้อเถื่อน" OR "ไก่เถื่อน" OR "กุ้งเถื่อน" OR "ลักลอบนำเข้า" OR "ห้ามนำเข้า" OR "ระงับนำเข้า" OR "ภาษีนำเข้า" OR "โควตานำเข้า" OR "กำแพงภาษี" OR "ภาษีทรัมป์" OR "ภาษีตอบโต้" OR "ทุ่มตลาด" OR "ศุลกากร" OR "ด่านกักกัน" OR "ส่งออกไก่" OR "ส่งออกกุ้ง" OR "ส่งออกหมู" OR "ส่งออกอาหาร" OR "ส่งออกเนื้อสัตว์" OR "ยอดส่งออก" OR "ตลาดส่งออก" OR FTA OR "สงครามการค้า"`,
       `"กรมปศุสัตว์" OR "กรมประมง" OR "กรมการค้าภายใน" OR "กระทรวงเกษตรและสหกรณ์" OR "กระทรวงพาณิชย์" OR "เศรษฐกิจการเกษตร" OR "สศก." OR "มกอช." OR "รมว.เกษตร" OR "รมว.พาณิชย์" OR "ปศุสัตว์จังหวัด" OR "ตรึงราคา" OR "ควบคุมราคา" OR "ประกันรายได้" OR "ช่วยเหลือเกษตรกร" OR "เยียวยาเกษตรกร" OR "พิกบอร์ด" OR "เอ้กบอร์ด" OR "สมาคมผู้เลี้ยงสุกร" OR "สมาคมผู้เลี้ยงไก่ไข่" OR "สมาคมผู้ผลิตอาหารสัตว์" OR "สภาเกษตรกร" OR "สวัสดิภาพสัตว์" OR "ไก่ไร้กรง"`,
       `เบทาโกร OR Betagro OR "ไทยฟู้ดส์" OR "ไทยยูเนี่ยน" OR "Thai Union" OR GFPT OR TFG OR TGM OR "แหลมทอง" OR "ลีพัฒนา" OR "บางกอกแร้นช์" OR "ซันฟีด" OR Cargill OR BRF OR JBS OR "New Hope Group" OR Tyson OR Muyuan OR "WH Group" OR Smithfield OR "Thailand poultry" OR "Thailand shrimp" OR "Thai pork" OR "Thailand food export" OR "cage free" OR IUU OR "Brazil chicken" OR "China pork import"`,
-    ],
-  });
+  ],
+};
+// เลือก keyword ที่จะโชว์: feed สด (auto-sync) ถ้าครบ ≥ hardcode; ไม่งั้น fallback hardcode
+function applyKeywords() {
+  if (!window.Flags) return;
+  const map = {};
+  for (const src of Object.keys(HARD_KW)) {
+    const feedQ = state.data?.sources?.[src]?.queries || [];
+    map[src] = Flags.parseKw(feedQ).length >= Flags.parseKw(HARD_KW[src]).length ? feedQ : HARD_KW[src];
+  }
+  Flags.setKeywords(map);
+}
+if (window.Flags) {
+  Flags.init({ onChange: renderAll, cats: CATS });
+  Flags.setKeywords(HARD_KW); // แสดงทันทีก่อนโหลด
 }
 wire();
 load();

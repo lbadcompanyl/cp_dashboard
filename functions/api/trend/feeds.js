@@ -33,6 +33,18 @@ export async function onRequest(context) {
 }
 
 // ดึงทุกฟีด, ประกอบ response, เก็บลง cache (เฉพาะตอนไม่มี error), แล้วคืน response
+// แกะ query จาก title ของฟีด Google Alert: "<title>Google Alert - QUERY</title>" → "QUERY"
+function alertQueryFromXml(xml) {
+  const m = xml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (!m) return "";
+  const t = m[1]
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .trim();
+  const i = t.indexOf(" - ");
+  return i >= 0 ? t.slice(i + 3).trim() : "";
+}
+
 async function buildAndStore(cache, cacheKey) {
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
@@ -42,6 +54,7 @@ async function buildAndStore(cache, cacheKey) {
   };
   for (const f of feeds) if (sources[f.source]) sources[f.source].feedCount++;
   const errors = [];
+  const queriesBySource = {}; // query ที่แกะจาก title ฟีด Alert (auto-sync ปุ่ม 🔤)
 
   await Promise.all(
     feeds.map(async (f) => {
@@ -50,6 +63,10 @@ async function buildAndStore(cache, cacheKey) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         const xml = await res.text();
         const items = f.source === "trends" ? parseTrends(xml) : parseGeneric(xml, f.source);
+        if (f.source.startsWith("alert")) {
+          const q = alertQueryFromXml(xml);
+          if (q) (queriesBySource[f.source] = queriesBySource[f.source] || []).push(q);
+        }
         for (const it of items) {
           if (!it.sourceLabel) it.sourceLabel = f.label;
           // some feeds (e.g. Workpoint) give relative links — resolve against the feed URL
@@ -74,6 +91,7 @@ async function buildAndStore(cache, cacheKey) {
       })
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
   }
+  for (const s of Object.keys(queriesBySource)) if (sources[s]) sources[s].queries = queriesBySource[s];
 
   // Google Alert ส่งว่างชั่วคราว (ฟีดรีเซ็ตหลังแก้ query / โดน throttle) → คงชุดเดิมจาก cache กันแผงว่าง
   try {

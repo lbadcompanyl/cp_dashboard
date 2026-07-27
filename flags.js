@@ -632,6 +632,7 @@
     },
     isHidden(link) { return !!hidden[link]; },
     getCat,
+    parseKw: kwFromQuery, // ให้ app.js แกะ query → คำ ๆ ได้ (ใช้เทียบ feed vs hardcode)
     setKeywords(map) { keywordsBySource = {}; for (const k of Object.keys(map || {})) keywordsBySource[k] = kwFromQuery(map[k]); },
     button(item, source) {
       // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม

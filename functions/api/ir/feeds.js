@@ -238,12 +238,25 @@ export async function onRequest(context) {
   return browserCopy(resp);
 }
 
+// แกะ query จาก title ของฟีด Google Alert: "<title>Google Alert - QUERY</title>" → "QUERY"
+function alertQueryFromXml(xml) {
+  const m = xml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (!m) return "";
+  const t = m[1]
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .trim();
+  const i = t.indexOf(" - "); // ตัด prefix "Google Alert - " / "การแจ้งเตือนของ Google - "
+  return i >= 0 ? t.slice(i + 3).trim() : "";
+}
+
 async function buildAndStore(cache, cacheKey, env, allowAI) {
   const sources = {};
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
   for (const f of feeds) { const t = targetSource(f); if (sources[t]) sources[t].feedCount++; }
   const errors = [];
   const alertMeta = []; // สถานะสดของฟีด alert รอบนี้ (แยก "Google ส่งว่าง/รีเซ็ต" ออกจาก "cache เราค้าง")
+  const queriesBySource = {}; // เก็บ query ที่แกะจาก title ของฟีด Alert (auto-sync ปุ่ม 🔤)
 
   await mapPool(feeds, POOL, async (f) => {
     const target = targetSource(f);
@@ -257,6 +270,8 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       if (f.source.startsWith("alert")) {
         const newest = items.reduce((m, x) => (x.publishedAt > m ? x.publishedAt : m), "");
         alertMeta.push({ id: f.id, http: res.status, items: items.length, newest: newest || null });
+        const q = alertQueryFromXml(xml); // แกะ query จาก "<title>Google Alert - ...</title>"
+        if (q) (queriesBySource[target] = queriesBySource[target] || []).push(q);
       }
       for (const it of items) {
         if (!it.sourceLabel) it.sourceLabel = f.label;
@@ -284,6 +299,8 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       })
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
   }
+  // แนบ query ที่แกะจาก title ฟีด Alert → client เอาไป sync ปุ่ม 🔤
+  for (const s of SOURCES) if (queriesBySource[s]) sources[s].queries = queriesBySource[s];
 
   // ตัด noise คอลัมน์ปศุสัตว์: ต้องมีบริบทอุตสาหกรรม ≥1 คำ (กันข่าวอาหาร/อาชญากรรมที่แค่มี หมู/ไก่)
   let alert2Cut = 0;
