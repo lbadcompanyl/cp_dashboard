@@ -224,6 +224,7 @@ export async function onRequest(context) {
         `คลังเก็บสะสม (KV — ในปท./ตปท. 2วัน, CP/ปศุสัตว์ 10วัน): ${JSON.stringify(j.archive || {})}\n` +
         `ฟีด Alert รอบ build ล่าสุด (สดจาก Google): ${JSON.stringify(j.alerts || [])}\n` +
         `ตัด noise ปศุสัตว์ (ไม่มีบริบทอุตสาหกรรม): ${j.alert2Cut ?? "-"} ข่าว\n` +
+        `ตัด related-block (keyword ไม่อยู่ในเนื้อจริง): ${JSON.stringify(j.alertVerify || {})}\n` +
         `AI debug: ${JSON.stringify(j.ai || {})}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
@@ -310,6 +311,11 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     alert2Cut = before - sources.alert2.items.length;
   }
 
+  // Hybrid alert filter: keyword ต้องอยู่ในเนื้อ/meta ของบทความจริง (ไม่ใช่ related block)
+  // เฉพาะ background rebuild (allowAI) → cold build ไม่โดนหน่วง · ทำก่อน archive เพื่อไม่ให้ noise ถูกสะสม
+  const alertVerify = {};
+  if (allowAI) { try { await verifyAlertItems(cache, sources, alertVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); } }
+
   // อ่าน cache เก่า 1 ครั้ง — ใช้ทั้ง reuse หมวดจาก AI + คงของเดิมถ้า source ว่าง
   let pj = null;
   try {
@@ -352,7 +358,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alertVerify });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -362,6 +368,79 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   });
   if (Object.values(sources).some((s) => s.items.length > 0)) await cache.put(cacheKey, resp.clone());
   return resp;
+}
+
+// ---------- Hybrid alert filter: keyword ต้องอยู่ในเนื้อ/meta ของบทความจริง (ไม่ใช่ related block) ----------
+// ต้นเหตุ false positive: Google Alert จับ keyword จากบล็อก "ข่าวที่เกี่ยวข้อง/แนะนำ/roundup" ท้ายหน้า
+const ROUNDUP_RE = /สรุปข่าวประจำวัน|สรุปข่าวเด่น|รวมข่าวเด่นประจำ|ข่าวเด่นประจำวัน/;
+// คำที่ Google ไฮไลต์ (= คำที่ match) จาก marker [[hl]]…[[/hl]] ใน title+snippet
+function highlightedTerms(it) {
+  const s = (it.title || "") + " " + (it.snippet || "");
+  const out = new Set(); let m;
+  const re = /\[\[hl\]\]([\s\S]*?)\[\[\/hl\]\]/g;
+  while ((m = re.exec(s))) { const w = m[1].replace(/\[\[\/?hl\]\]/g, "").trim().toLowerCase(); if (w.length >= 2) out.add(w); }
+  return [...out];
+}
+function decodeEnt(s = "") {
+  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#0*39;/g, "'").replace(/&nbsp;/gi, " ");
+}
+// เนื้อหา "ของบทความเอง" — meta/title/h1 (related block จะไม่โผล่ในนี้) → ใช้ตัดสินว่า match มาจากเนื้อจริงไหม
+function articleMainText(html) {
+  const grab = (re) => { const m = html.match(re); return m ? m[1] : ""; };
+  const parts = [
+    grab(/<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["']/i),
+    grab(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:title["']/i),
+    grab(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["']/i),
+    grab(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:description["']/i),
+    grab(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i),
+    grab(/<meta[^>]+content=["']([^"']+)["'][^>]*name=["']description["']/i),
+    grab(/<title[^>]*>([\s\S]*?)<\/title>/i),
+    (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/gi) || []).join(" "),
+  ];
+  return decodeEnt(parts.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
+}
+// ตรวจว่า term ที่ match อยู่ในเนื้อบทความไหม (cache verdict ต่อ link ที่ edge → ไม่ fetch ซ้ำ)
+async function verifyInBody(cache, link, terms) {
+  const vkey = new Request("https://verify.local/ir?u=" + encodeURIComponent(link), { method: "GET" });
+  try { const hit = await cache.match(vkey); if (hit) return (await hit.json()).ok; } catch {}
+  let ok = true; // default: เก็บไว้เมื่อไม่แน่ใจ (กันตัดพลาด)
+  try {
+    const res = await fetchWithTimeout(link, 6000);
+    if (res.ok && /html/i.test(res.headers.get("content-type") || "")) {
+      let html = await res.text();
+      if (html.length > 200000) html = html.slice(0, 200000);
+      const main = articleMainText(html);
+      if (main && main.length > 20) ok = terms.some((t) => main.includes(t)); // main มีจริงถึงจะตัดสิน
+    }
+  } catch { ok = true; }
+  try { await cache.put(vkey, new Response(JSON.stringify({ ok }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
+  return ok;
+}
+async function verifyAlertItems(cache, sources, diag) {
+  for (const src of ["alert1", "alert2"]) {
+    if (!sources[src]) continue;
+    const items = sources[src].items;
+    const before = items.length;
+    const verdict = await mapPoolResults(items, 6, async (it) => {
+      if (/\[\[hl\]\]/.test(it.title || "")) return true;                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
+      if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return false; // ชั้น 2: roundup → ทิ้ง (ฟรี)
+      const terms = highlightedTerms(it);
+      if (!terms.length) return true;                                     // ไม่รู้ match อะไร → เก็บ
+      return await verifyInBody(cache, it.link, terms);                   // ชั้น 3: body/meta check (fetch+cache)
+    });
+    sources[src].items = items.filter((_, i) => verdict[i] !== false);
+    diag[src] = before - sources[src].items.length;
+  }
+}
+async function mapPoolResults(items, limit, fn) {
+  const results = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const idx = i++; results[idx] = await fn(items[idx], idx); }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 // ดึงทีละ `limit` ตัว (คุม peak) — total subrequest ยังเท่าเดิม แต่ไม่ระเบิดพร้อมกัน
