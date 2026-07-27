@@ -383,6 +383,18 @@ const CP_BRANDS = [
   "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
   "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "แม็คโคร", "makro", "โลตัส", "lotus's",
 ];
+// คอลัมน์ alert2 (ปศุสัตว์/การค้า) ก็มีปัญหาเดียวกัน: บทความเรียกคู่แข่ง/ภาษีด้วยชื่อย่อหรือคำพ้อง
+// เก็บไว้ถ้า meta มีคำ "เฉพาะเจาะจง" เหล่านี้ (เลี่ยงคำโดด หมู/ไก่/ไข่ ที่โผล่ในข่าวอาชญากรรม)
+const ALERT2_KEEP = [
+  // คู่แข่ง (ชื่อย่อ/อังกฤษ ↔ ไทย)
+  "เบทาโกร", "betagro", "ไทยฟู้ดส์", "thai foods", "tfg", "ไทยยูเนี่ยน", "thai union", "tu ",
+  "gfpt", "บางกอกแร้นช์", "br group", "แหลมทอง", "ลีพัฒนา", "ซันฟีด",
+  // กลุ่มภาษี/การค้า (คำพ้องของ query)
+  "ภาษีนำเข้า", "ภาษีสหรัฐ", "ภาษีทรัมป์", "กำแพงภาษี", "ภาษีตอบโต้", "มาตรา 301", "section 301", "ทุ่มตลาด", "tariff",
+  // ราคา/โรคปศุสัตว์ แบบเฉพาะ (คำประสม ไม่ใช่คำโดด)
+  "ราคาหมู", "ราคาสุกร", "หมูหน้าฟาร์ม", "ราคาไก่", "ราคาไข่", "ราคากุ้ง", "อาหารสัตว์", "ปศุสัตว์", "สัตว์ปีก",
+  "หมอคางดำ", "ไข้หวัดนก", "อหิวาต์", "asf", "h5n1", "prrs",
+];
 // คำที่ Google ไฮไลต์ (= คำที่ match) จาก marker [[hl]]…[[/hl]] ใน title+snippet
 function highlightedTerms(it) {
   const s = (it.title || "") + " " + (it.snippet || "");
@@ -412,7 +424,7 @@ function articleMainText(html) {
 }
 // ตรวจว่า term ที่ match อยู่ในเนื้อบทความไหม (cache verdict ต่อ link ที่ edge → ไม่ fetch ซ้ำ)
 async function verifyInBody(cache, link, terms, extra) {
-  const vkey = new Request("https://verify.local/ir2?u=" + encodeURIComponent(link), { method: "GET" });
+  const vkey = new Request("https://verify.local/ir3?u=" + encodeURIComponent(link), { method: "GET" });
   try { const hit = await cache.match(vkey); if (hit) return (await hit.json()).ok; } catch {}
   let ok = true; // default: เก็บไว้เมื่อไม่แน่ใจ (กันตัดพลาด)
   try {
@@ -433,7 +445,7 @@ async function verifyAlertItems(cache, sources, diag) {
   for (const src of ["alert1", "alert2"]) {
     if (!sources[src]) continue;
     const items = sources[src].items;
-    const extra = src === "alert1" ? CP_BRANDS : null; // คอลัมน์ CP → ยอมรับชื่อในเครือด้วย
+    const extra = src === "alert1" ? CP_BRANDS : src === "alert2" ? ALERT2_KEEP : null; // ยอมรับชื่อพ้อง/ชื่อย่อในโดเมน
     const verdict = await mapPoolResults(items, 6, async (it) => {
       if (/\[\[hl\]\]/.test(it.title || "")) return { ok: true };                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
       if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return { ok: false, why: "roundup" }; // ชั้น 2: roundup → ทิ้ง (ฟรี)
