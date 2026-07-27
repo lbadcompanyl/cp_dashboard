@@ -85,6 +85,18 @@
   .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--plane); padding:10px 18px; border-radius:999px; font-size:0.85rem; opacity:0; transition:all .2s; pointer-events:none; z-index:99; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
   footer.foot { padding:20px 0 40px; color:var(--muted); font-size:0.78rem; border-top:1px solid var(--border); }
+  /* related news list */
+  .newslist { display:flex; flex-direction:column; }
+  .newsrow { display:flex; gap:12px; align-items:flex-start; padding:12px 2px; border-top:1px solid var(--border); }
+  .newsrow:first-child { border-top:none; }
+  .newsav { flex:0 0 auto; width:34px; height:34px; border-radius:8px; display:grid; place-items:center; font-weight:700; font-size:0.9rem; color:#fff; text-transform:uppercase; }
+  .newsrow .body { min-width:0; }
+  .newsrow a.t { color:var(--ink); text-decoration:none; font-size:0.92rem; font-weight:550; line-height:1.4; display:block; }
+  .newsrow a.t:hover { color:var(--accent); text-decoration:underline; }
+  .newsrow .m { font-size:0.75rem; color:var(--muted); margin-top:3px; }
+  .news-more { display:inline-block; margin-top:12px; font-size:0.82rem; color:var(--accent); text-decoration:none; }
+  .news-more:hover { text-decoration:underline; }
+  .news-state { color:var(--muted); font-size:0.85rem; padding:8px 2px; }
   @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
 </style>
 </head>
@@ -134,6 +146,12 @@
         <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading">กำลังโหลด…</div></div>
       </section>
     </div>
+
+    <section class="panel" id="newsPanel">
+      <h3>ข่าวที่เกี่ยวข้อง (Related news)</h3>
+      <p class="sub" id="newsSub"></p>
+      <div class="newslist" id="newsList"><div class="news-state">กำลังโหลดข่าว…</div></div>
+    </section>
 
     <div class="note"><span>ℹ️</span><span>แต่ละแท็บรวมคำในกลุ่มด้วย <b>“+”</b> เป็น <b>เส้นเดียว</b> — Google รวมและถ่วงน้ำหนักตาม volume จริงให้เอง. เปลี่ยนพื้นที่/ช่วงเวลาหรือแก้คำแล้ว widget จะโหลดใหม่อัตโนมัติ. โหมดมืดเป็นของหน้าเว็บ ส่วนตัว widget เป็น UI ของ Google (พื้นขาว)</span></div>
   </main>
@@ -224,8 +242,8 @@ function renderEditor(){
   el("grpDel").disabled=groups.length<=1;
   el("grpKws").innerHTML = g.keywords.map((kw,ki)=>`<span class="kw">${escapeHtml(kw)}<button data-k="${ki}" aria-label="ลบคำ">×</button></span>`).join("")
     + `<input class="grp-add" id="grpAdd" placeholder="+ เพิ่มคำค้น" aria-label="เพิ่มคำค้น">`;
-  el("grpKws").querySelectorAll(".kw button").forEach(btn=>btn.onclick=()=>{ g.keywords.splice(+btn.dataset.k,1); renderEditor(); renderWidgets(); save(); });
-  el("grpAdd").onkeydown=e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v){ g.keywords.push(v); renderEditor(); renderWidgets(); save(); const a=el("grpAdd"); if(a) a.focus(); } } };
+  el("grpKws").querySelectorAll(".kw button").forEach(btn=>btn.onclick=()=>{ g.keywords.splice(+btn.dataset.k,1); renderEditor(); renderWidgets(); scheduleNews(); save(); });
+  el("grpAdd").onkeydown=e=>{ if(e.key==="Enter"){ const v=e.target.value.trim(); if(v){ g.keywords.push(v); renderEditor(); renderWidgets(); scheduleNews(); save(); const a=el("grpAdd"); if(a) a.focus(); } } };
   el("combineEq").innerHTML = `คำค้นที่ส่งให้ Google: <b>${escapeHtml(combinedKeyword(g))}</b>`;
 }
 el("grpName").oninput=e=>{ activeGroup().name=e.target.value; renderTabs(); updateSubs(); save(); };
@@ -234,7 +252,7 @@ el("grpDel").onclick=()=>{ if(groups.length<=1) return; groups.splice(state.acti
 function fillSelects(){
   el("geo").innerHTML=Object.entries(GEOS).map(([k,v])=>`<option value="${k}" ${k===state.geo?"selected":""}>${v}</option>`).join("");
   el("period").innerHTML=Object.entries(PERIODS).map(([k,p])=>`<option value="${k}" ${k===state.period?"selected":""}>${p.label}</option>`).join("");
-  el("geo").onchange=e=>{ state.geo=e.target.value; renderWidgets(); updateSubs(); save(); };
+  el("geo").onchange=e=>{ state.geo=e.target.value; renderWidgets(); updateSubs(); scheduleNews(); save(); };
   el("period").onchange=e=>{ state.period=e.target.value; renderWidgets(); updateSubs(); save(); };
 }
 function updateSubs(){
@@ -284,7 +302,49 @@ function waitForTrends(cb,tries=0){
   setTimeout(()=>waitForTrends(cb,tries+1),250);
 }
 
-function refresh(){ renderTabs(); renderEditor(); updateSubs(); renderWidgets(); save(); }
+// ---------- related news (ข่าวที่เกี่ยวข้อง) ----------
+const NEWS_COLORS = ["#3987e5","#8b5cf6","#e0699a","#e28743","#2fa37a","#d9a441","#4b9dd8","#c0603c"];
+function newsColor(s){ let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))|0; return NEWS_COLORS[Math.abs(h)%NEWS_COLORS.length]; }
+function timeAgoTh(iso){
+  const diff=Date.now()-new Date(iso).getTime(), m=Math.floor(diff/60000);
+  if(m<1) return "เมื่อสักครู่";
+  if(m<60) return `${m} นาทีก่อน`;
+  const h=Math.floor(m/60); if(h<24) return `${h} ชม.ก่อน`;
+  return `${Math.floor(h/24)} วันก่อน`;
+}
+// query สำหรับ Google News: รวมคำในกลุ่มด้วย OR (คำหลายคำครอบ "..") เพื่อให้ได้ข่าวที่ match คำใดคำหนึ่ง
+function newsQuery(g){
+  return g.keywords.map(k=>k.trim()).filter(Boolean)
+    .map(k=>/\s/.test(k) ? `"${k}"` : k).join(" OR ");
+}
+let newsGen = 0, newsTimer = 0;
+function scheduleNews(){ clearTimeout(newsTimer); newsTimer=setTimeout(loadNews, 500); }
+async function loadNews(){
+  const g=activeGroup(), q=newsQuery(g), gen=++newsGen;
+  const sub=el("newsSub"), list=el("newsList");
+  sub.textContent = `${combinedKeyword(g)} · ${GEOS[state.geo]}`;
+  if(!q){ list.innerHTML=`<div class="news-state">เพิ่มคำค้นในกลุ่มเพื่อดูข่าวที่เกี่ยวข้อง</div>`; return; }
+  list.innerHTML=`<div class="news-state">กำลังโหลดข่าว…</div>`;
+  let data;
+  try{ data=await (await fetch(`/api/sd/news?q=${encodeURIComponent(q)}&geo=${state.geo}`)).json(); }
+  catch(e){ data={ articles:[] }; }
+  if(gen!==newsGen) return; // เปลี่ยนกลุ่ม/พื้นที่แล้ว → ทิ้งผลเก่า
+  const arts=data.articles||[];
+  const more=`https://news.google.com/search?q=${encodeURIComponent(q)}&hl=th&gl=${state.geo||"US"}`;
+  if(!arts.length){ list.innerHTML=`<div class="news-state">ยังไม่พบข่าวที่ตรงกับคำในกลุ่มนี้</div>`+`<a class="news-more" href="${more}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>`; return; }
+  list.innerHTML = arts.map(a=>{
+    const src=a.sourceLabel||"ข่าว", c=newsColor(src);
+    return `<div class="newsrow">
+      <div class="newsav" style="background:${c}">${escapeHtml(src[0]||"•")}</div>
+      <div class="body">
+        <a class="t" href="${escapeHtml(a.link)}" target="_blank" rel="noopener">${escapeHtml(a.title)}</a>
+        <div class="m">${escapeHtml(src)} · ${timeAgoTh(a.publishedAt)}</div>
+      </div>
+    </div>`;
+  }).join("") + `<a class="news-more" href="${escapeHtml(more)}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>`;
+}
+
+function refresh(){ renderTabs(); renderEditor(); updateSubs(); renderWidgets(); scheduleNews(); save(); }
 
 // ---------- share / theme ----------
 function toast(msg){ const t=el("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); }
@@ -303,6 +363,7 @@ fillSelects();
 setTheme("dark");
 renderTabs(); renderEditor(); updateSubs();
 waitForTrends(renderWidgets);
+loadNews();
 save();
 </script>
 </body>
