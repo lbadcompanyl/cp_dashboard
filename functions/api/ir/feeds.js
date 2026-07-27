@@ -224,7 +224,10 @@ export async function onRequest(context) {
         `คลังเก็บสะสม (KV — ในปท./ตปท. 2วัน, CP/ปศุสัตว์ 10วัน): ${JSON.stringify(j.archive || {})}\n` +
         `ฟีด Alert รอบ build ล่าสุด (สดจาก Google): ${JSON.stringify(j.alerts || [])}\n` +
         `ตัด noise ปศุสัตว์ (ไม่มีบริบทอุตสาหกรรม): ${j.alert2Cut ?? "-"} ข่าว\n` +
-        `ตัด related-block (keyword ไม่อยู่ในเนื้อจริง): ${JSON.stringify(j.alertVerify || {})}\n` +
+        `ตัด related-block (keyword ไม่อยู่ในเนื้อจริง): alert1=${j.alertVerify?.alert1 ?? "-"}  alert2=${j.alertVerify?.alert2 ?? "-"}\n` +
+        ((j.alertVerify?.dropped || []).length
+          ? (j.alertVerify.dropped || []).map((d) => `   ✂ [${d.src}${d.why ? "/" + d.why : ""}]${d.terms?.length ? " (" + d.terms.join(",") + ")" : ""} ${d.title}\n      ${d.link}`).join("\n") + "\n"
+          : "") +
         `AI debug: ${JSON.stringify(j.ai || {})}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
@@ -418,19 +421,24 @@ async function verifyInBody(cache, link, terms) {
   return ok;
 }
 async function verifyAlertItems(cache, sources, diag) {
+  diag.dropped = []; // รายการข่าวที่ถูกตัด (ไว้ debug ผ่าน ?errors)
   for (const src of ["alert1", "alert2"]) {
     if (!sources[src]) continue;
     const items = sources[src].items;
-    const before = items.length;
     const verdict = await mapPoolResults(items, 6, async (it) => {
-      if (/\[\[hl\]\]/.test(it.title || "")) return true;                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
-      if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return false; // ชั้น 2: roundup → ทิ้ง (ฟรี)
+      if (/\[\[hl\]\]/.test(it.title || "")) return { ok: true };                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
+      if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return { ok: false, why: "roundup" }; // ชั้น 2: roundup → ทิ้ง (ฟรี)
       const terms = highlightedTerms(it);
-      if (!terms.length) return true;                                     // ไม่รู้ match อะไร → เก็บ
-      return await verifyInBody(cache, it.link, terms);                   // ชั้น 3: body/meta check (fetch+cache)
+      if (!terms.length) return { ok: true };                                     // ไม่รู้ match อะไร → เก็บ
+      const ok = await verifyInBody(cache, it.link, terms);                       // ชั้น 3: body/meta check (fetch+cache)
+      return { ok, why: ok ? "" : "ไม่อยู่ในเนื้อ", terms };
     });
-    sources[src].items = items.filter((_, i) => verdict[i] !== false);
-    diag[src] = before - sources[src].items.length;
+    sources[src].items = items.filter((_, i) => verdict[i].ok !== false);
+    diag[src] = items.length - sources[src].items.length;
+    items.forEach((it, i) => {
+      if (verdict[i].ok === false)
+        diag.dropped.push({ src, why: verdict[i].why, terms: verdict[i].terms || [], title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
+    });
   }
 }
 async function mapPoolResults(items, limit, fn) {

@@ -17,24 +17,51 @@ export async function onRequest(context) {
     { method: "GET" }
   );
 
-  // ?rebuild = build สดพร้อม verify ทันที (ทดสอบตัวกรอง related-block · เลี่ยงรอ background 5 นาที)
-  if (new URL(context.request.url).searchParams.has("rebuild")) {
-    return browserCopy(await buildAndStore(cache, cacheKey, true));
-  }
+  const params = new URL(context.request.url).searchParams;
+  const wantRebuild = params.has("rebuild") || params.has("errors"); // ?errors บังคับ build+verify เพื่อให้เห็น dropped
 
-  const hit = await cache.match(cacheKey);
-  if (hit) {
-    const age = Date.now() - Number(hit.headers.get("x-cached-at") || 0);
-    if (age > FRESH_MS) {
+  let resp;
+  if (wantRebuild) {
+    // ?rebuild/?errors = build สดพร้อม verify ทันที (ทดสอบตัวกรอง related-block · เลี่ยงรอ background 5 นาที)
+    resp = await buildAndStore(cache, cacheKey, true);
+  } else {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      const age = Date.now() - Number(hit.headers.get("x-cached-at") || 0);
       // ของเริ่มเก่า → ดึงใหม่เบื้องหลัง (ผู้ใช้ไม่ต้องรอ) · เปิด verify เฉพาะรอบนี้
-      context.waitUntil(buildAndStore(cache, cacheKey, true));
+      if (age > FRESH_MS) context.waitUntil(buildAndStore(cache, cacheKey, true));
+      resp = hit; // ส่งของใน cache ทันที — เร็วเสมอ
+    } else {
+      // ไม่มีใน cache (ครั้งแรกสุด) → ดึงสด · ไม่ verify (กันคำขอแรกหน่วง)
+      resp = await buildAndStore(cache, cacheKey, false);
     }
-    return browserCopy(hit); // ส่งของใน cache ทันที — เร็วเสมอ
   }
 
-  // ไม่มีใน cache (ครั้งแรกสุด) → ดึงสด · ไม่ verify (กันคำขอแรกหน่วง)
-  const fresh = await buildAndStore(cache, cacheKey, false);
-  return browserCopy(fresh);
+  // มุมมองอ่านง่าย — เปิด /api/trend/feeds?errors (โชว์ฟีดพัง + รายการข่าวที่ตัด)
+  if (params.has("errors")) {
+    let txt;
+    try {
+      const j = JSON.parse(await resp.clone().text());
+      const s = j.sources || {};
+      const v = j.alertVerify || {};
+      txt =
+        `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
+        `จำนวนข่าว: news=${(s.news?.items || []).length}  CP=${(s.alert1?.items || []).length}  จับตามอง=${(s.alert2?.items || []).length}\n` +
+        `ตัด related-block (keyword ไม่อยู่ในเนื้อจริง): alert1=${v.alert1 ?? "-"}  alert2=${v.alert2 ?? "-"}\n` +
+        ((v.dropped || []).length
+          ? (v.dropped || []).map((d) => `   ✂ [${d.src}${d.why ? "/" + d.why : ""}]${d.terms?.length ? " (" + d.terms.join(",") + ")" : ""} ${d.title}\n      ${d.link}`).join("\n") + "\n"
+          : "") +
+        `อัปเดต: ${j.generatedAt || "-"}\n\n` +
+        ((j.errors || []).length
+          ? (j.errors || []).map((e) => `✗ ${e.label}  [${e.source}/${e.id}]  →  ${e.message}`).join("\n")
+          : "✓ ทุกฟีดโหลดได้หมด");
+    } catch (e) {
+      txt = "อ่าน errors ไม่ได้: " + String(e);
+    }
+    return new Response(txt, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  }
+
+  return browserCopy(resp);
 }
 
 // ดึงทุกฟีด, ประกอบ response, เก็บลง cache (เฉพาะตอนไม่มี error), แล้วคืน response
@@ -184,19 +211,24 @@ async function verifyInBody(cache, link, terms) {
   return ok;
 }
 async function verifyAlertItems(cache, sources, diag) {
+  diag.dropped = []; // รายการข่าวที่ถูกตัด (ไว้ debug ผ่าน ?errors)
   for (const src of ["alert1", "alert2"]) {
     if (!sources[src]) continue;
     const items = sources[src].items;
-    const before = items.length;
     const verdict = await mapPoolResults(items, 6, async (it) => {
-      if (/\[\[hl\]\]/.test(it.title || "")) return true;                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
-      if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return false; // ชั้น 2: roundup → ทิ้ง (ฟรี)
+      if (/\[\[hl\]\]/.test(it.title || "")) return { ok: true };                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
+      if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return { ok: false, why: "roundup" }; // ชั้น 2: roundup → ทิ้ง (ฟรี)
       const terms = highlightedTerms(it);
-      if (!terms.length) return true;                                     // ไม่รู้ match อะไร → เก็บ
-      return await verifyInBody(cache, it.link, terms);                   // ชั้น 3: body/meta check (fetch+cache)
+      if (!terms.length) return { ok: true };                                     // ไม่รู้ match อะไร → เก็บ
+      const ok = await verifyInBody(cache, it.link, terms);                       // ชั้น 3: body/meta check (fetch+cache)
+      return { ok, why: ok ? "" : "ไม่อยู่ในเนื้อ", terms };
     });
-    sources[src].items = items.filter((_, i) => verdict[i] !== false);
-    diag[src] = before - sources[src].items.length;
+    sources[src].items = items.filter((_, i) => verdict[i].ok !== false);
+    diag[src] = items.length - sources[src].items.length;
+    items.forEach((it, i) => {
+      if (verdict[i].ok === false)
+        diag.dropped.push({ src, why: verdict[i].why, terms: verdict[i].terms || [], title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
+    });
   }
 }
 async function mapPoolResults(items, limit, fn) {
