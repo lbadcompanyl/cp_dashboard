@@ -358,13 +358,14 @@ function newsRow(a){
       <div class="m">${escapeHtml(src)} · ${timeAgoTh(a.publishedAt)}</div>
     </div></div>`;
 }
-// โหลดข่าว 2 แผง: 🇹🇭 ในประเทศ (geo=TH) และ 🌏 ต่างประเทศ (geo=worldwide) — ไม่ผูกกับ dropdown พื้นที่
+const hasThai=s=>/[฀-๿]/.test(s||""); // มีอักษรไทย = ข่าวในประเทศ
+// โหลดข่าว 2 แผง: 🇹🇭 ในประเทศ (หัวข้อภาษาไทย) และ 🌏 ต่างประเทศ (หัวข้อไม่ใช่ไทย) — แยกด้วยภาษา ไม่ผูกกับ dropdown
 async function loadNews(){
   const g=activeGroup(), q=newsQuery(g), gen=++newsGen, label=combinedKeyword(g);
-  loadNewsPanel(q, "TH", el("newsListTH"), el("newsSubTH"), `${label} · 🇹🇭 ในประเทศ`, gen);
-  loadNewsPanel(q, "",   el("newsListINTL"), el("newsSubINTL"), `${label} · 🌏 ต่างประเทศ`, gen);
+  loadNewsPanel(q, "TH", el("newsListTH"), el("newsSubTH"), `${label} · 🇹🇭 ในประเทศ`, gen, "th");
+  loadNewsPanel(q, "",   el("newsListINTL"), el("newsSubINTL"), `${label} · 🌏 ต่างประเทศ`, gen, "intl");
 }
-async function loadNewsPanel(q, geo, list, sub, subText, gen){
+async function loadNewsPanel(q, geo, list, sub, subText, gen, region){
   sub.textContent = subText;
   if(!q){ list.innerHTML=`<div class="news-state">เพิ่มคำค้นในกลุ่มเพื่อดูข่าว</div>`; return; }
   list.innerHTML=`<div class="news-state">กำลังโหลดข่าว…</div>`;
@@ -372,7 +373,9 @@ async function loadNewsPanel(q, geo, list, sub, subText, gen){
   try{ data=await (await fetch(`/api/sd/news?q=${encodeURIComponent(q)}&geo=${geo}`)).json(); }
   catch(e){ data={ articles:[] }; }
   if(gen!==newsGen) return; // เปลี่ยนกลุ่มแล้ว → ทิ้งผลเก่า
-  const arts=data.articles||[];
+  let arts=data.articles||[];
+  if(region==="th") arts=arts.filter(a=>hasThai(a.title));        // ในประเทศ = หัวข้อไทย
+  else if(region==="intl") arts=arts.filter(a=>!hasThai(a.title)); // ต่างประเทศ = หัวข้อไม่ใช่ไทย
   const more=`https://www.bing.com/news/search?q=${encodeURIComponent(q)}`;
   const moreLink=`<a class="news-more" href="${escapeHtml(more)}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Bing News →</a>`;
   list.innerHTML = (arts.length ? arts.map(newsRow).join("") : `<div class="news-state">ยังไม่พบข่าวที่ตรงกับคำในกลุ่มนี้</div>`) + moreLink;
