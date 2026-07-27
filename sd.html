@@ -385,7 +385,7 @@ el("themeBtn").onclick=()=>{ setTheme(document.documentElement.getAttribute("dat
 // ---------- boot ----------
 loadFromURL() || loadFromStore();   // local ก่อน (instant paint) — URL ที่แชร์ > localStorage
 fillSelects();
-setTheme("dark");
+setTheme("light");   // ค่าเริ่มต้น: โหมดสว่าง (กดปุ่มสลับเป็นมืดได้)
 renderTabs(); renderEditor(); updateSubs();
 waitForTrends(renderWidgets);
 loadNews();
