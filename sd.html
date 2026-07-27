@@ -269,7 +269,7 @@ function renderEditor(){
   el("combineEq").innerHTML = `คำค้นที่ส่งให้ Google: <b>${escapeHtml(combinedKeyword(g))}</b>`;
 }
 el("grpName").oninput=e=>{ activeGroup().name=e.target.value; renderTabs(); updateSubs(); save(); };
-el("grpDel").onclick=()=>{ if(groups.length<=1) return; groups.splice(state.active,1); if(state.active>=groups.length) state.active=groups.length-1; refresh(); };
+el("grpDel").onclick=()=>{ if(groups.length<=1) return; if(!confirm(`ลบกลุ่ม “${activeGroup().name}” ?\n(มีผลกับทุกคน เพราะเป็นชุดกลางที่ sync ร่วมกัน)`)) return; groups.splice(state.active,1); if(state.active>=groups.length) state.active=groups.length-1; refresh(); };
 
 function fillSelects(){
   el("geo").innerHTML=Object.entries(GEOS).map(([k,v])=>`<option value="${k}" ${k===state.geo?"selected":""}>${v}</option>`).join("");
