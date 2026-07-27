@@ -1,57 +1,26 @@
-// GET /api/sd/news?q=<คำค้น (join ด้วย OR)>&geo=TH
-// ข่าวที่เกี่ยวข้องของกลุ่มคำใน SD dashboard — ดึงจาก news RSS search ฝั่ง server (แก้ CORS)
-// ลองหลายแหล่งตามลำดับ: Bing News RSS → Google News RSS (Google มักบล็อก IP datacenter ด้วย 503)
-// คืน JSON { q, geo, articles:[{title, link, sourceLabel, publishedAt}], provider, searchUrl, diag }
+// GET /api/sd/news?q=<คำในกลุ่ม join ด้วย OR>&geo=TH
+// ข่าวที่เกี่ยวข้องของกลุ่มคำใน SD dashboard — ค้น "ทีละ keyword" แล้ว merge (แก้ CORS ฝั่ง server)
+// Bing News RSS ไม่รองรับ operator OR → ต้องยิงทีละคำแล้วรวม (ตัดซ้ำ+เรียงใหม่ล่าสุด)
+// Google News fallback ต่อคำ (Google มักบล็อก IP datacenter ด้วย 503)
+// คืน JSON { q, geo, articles:[{title,link,sourceLabel,publishedAt}], provider, diag }
 
 import { parseGeneric } from "../trend/_lib/parser.js";
 
 const FETCH_TIMEOUT = 12000;
-const EDGE_TTL = 1800; // cache 30 นาที ที่ edge
-const MAX_ARTICLES = 12;
-const CACHE_VER = "5";
+const EDGE_TTL = 1800;   // cache 30 นาที ที่ edge
+const MAX_ARTICLES = 14; // จำนวนข่าวหลัง merge
+const MAX_TERMS = 4;     // ยิงมากสุดกี่คำต่อกลุ่ม (กัน request บานปลาย)
+const CACHE_VER = "6";
 
-// Bing ห่อลิงก์เป็น bing.com/news/apiclick.aspx?...&url=<ของจริง> → แกะออกให้เป็นลิงก์ตรง
-function unwrapLink(link) {
-  try {
-    const u = new URL(link);
-    if (u.hostname.includes("bing.com")) {
-      const real = u.searchParams.get("url");
-      if (real) return real;
-    }
-  } catch {}
-  return link;
-}
-// ชื่อสำนักข่าวจากโดเมน (fallback เมื่อ title ไม่มี " - สำนักข่าว")
-function hostLabel(link) {
-  try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; }
-}
-function toArticles(xml) {
-  return parseGeneric(xml, "news")
-    .map((it) => {
-      let title = it.title, sourceLabel = "";
-      const i = title.lastIndexOf(" - "); // Google News: "หัวข้อ - สำนักข่าว"
-      if (i > 0) { sourceLabel = title.slice(i + 3).trim(); title = title.slice(0, i).trim(); }
-      const link = unwrapLink(it.link);
-      if (!sourceLabel) sourceLabel = hostLabel(link); // Bing: ไม่มีชื่อใน title → ใช้โดเมน
-      return { title, link, sourceLabel, publishedAt: it.publishedAt };
-    })
-    .filter((a) => a.title && a.link)
-    .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)) // ล่าสุดก่อน
-    .slice(0, MAX_ARTICLES);
-}
-
-// geo → market/lang
 const MKT = { "": "en-US", TH: "th-TH", US: "en-US", SG: "en-SG", GB: "en-GB" };
 const HLGL = { "": ["en", "US"], TH: ["th", "TH"], US: ["en", "US"], SG: ["en", "SG"], GB: ["en", "GB"] };
 
-function providers(q, geo) {
-  const mkt = MKT[geo] || MKT[""];
+const bingUrl = (term, geo) =>
+  `https://www.bing.com/news/search?q=${encodeURIComponent(term)}&format=RSS&setmkt=${MKT[geo] || MKT[""]}`;
+const googleUrl = (term, geo) => {
   const [hl, gl] = HLGL[geo] || HLGL[""];
-  return [
-    { name: "bing", url: `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=RSS&setmkt=${mkt}` },
-    { name: "google", url: `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=${hl}&gl=${gl}&ceid=${gl}:${hl}` },
-  ];
-}
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(term)}&hl=${hl}&gl=${gl}&ceid=${gl}:${hl}`;
+};
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -64,33 +33,69 @@ export async function onRequest(context) {
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
-  // ลอง query เต็มก่อน (ตรงกับทุก keyword ในกลุ่ม) ถ้าว่างค่อยถอยมาใช้ "คำแรก" (กว้างขึ้น = การันตีมีข่าว)
-  const firstKw = q.split(/\s+OR\s+/i)[0].replace(/^"|"$/g, "").trim();
-  const tries = firstKw && firstKw.toLowerCase() !== q.toLowerCase() ? [q, firstKw] : [q];
-
+  // แยกคำในกลุ่มกลับจาก "a OR \"b c\" OR d" → ["a","b c","d"]
+  const terms = q.split(/\s+OR\s+/i).map((t) => t.replace(/^"|"$/g, "").trim()).filter(Boolean).slice(0, MAX_TERMS);
   const diag = [];
-  let articles = [], provider = "", searchUrl = "", usedQuery = "";
+  let provider = "bing";
 
-  outer:
-  for (const qq of tries) {
-    for (const p of providers(qq, geo)) {
-      try {
-        const res = await fetchWithTimeout(p.url, FETCH_TIMEOUT);
-        const xml = await res.text();
-        const rawItems = (xml.match(/<item\b/g) || []).length;
-        diag.push({ q: qq === q ? "full" : "first", name: p.name, http: res.status, rawItems });
-        if (!res.ok || rawItems === 0) continue;
-        const parsed = toArticles(xml);
-        if (parsed.length) { articles = parsed; provider = p.name; searchUrl = p.url; usedQuery = qq; break outer; }
-      } catch (e) {
-        diag.push({ q: qq === q ? "full" : "first", name: p.name, err: String((e && e.message) || e).slice(0, 60) });
-      }
-    }
+  // ยิง Bing ทีละคำพร้อมกัน แล้ว merge
+  let pool = (await Promise.all(terms.map((term) => fetchTerm(bingUrl(term, geo), term, "bing", diag)))).flat();
+
+  // ถ้า Bing ว่างหมด (โดนบล็อก/ตลาดไม่มีข่าว) → ลอง Google ทีละคำ
+  if (pool.length === 0) {
+    provider = "google";
+    pool = (await Promise.all(terms.map((term) => fetchTerm(googleUrl(term, geo), term, "google", diag)))).flat();
   }
 
-  const body = json({ q, usedQuery, geo, articles, provider, searchUrl, diag }, articles.length ? EDGE_TTL : 0);
+  // ตัดซ้ำตามลิงก์ + เรียงใหม่ล่าสุดก่อน + ตัดจำนวน
+  const seen = new Set();
+  const articles = pool
+    .filter((a) => a.link && !seen.has(a.link) && seen.add(a.link))
+    .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
+    .slice(0, MAX_ARTICLES);
+
+  const body = json({ q, geo, articles, provider, diag }, articles.length ? EDGE_TTL : 0);
   if (articles.length) context.waitUntil(cache.put(key, body.clone()));
   return browserCopy(body);
+}
+
+async function fetchTerm(u, term, name, diag) {
+  try {
+    const res = await fetchWithTimeout(u, FETCH_TIMEOUT);
+    const xml = await res.text();
+    const rawItems = (xml.match(/<item\b/g) || []).length;
+    diag.push({ term, name, http: res.status, rawItems });
+    if (!res.ok || rawItems === 0) return [];
+    return mapArticles(xml);
+  } catch (e) {
+    diag.push({ term, name, err: String((e && e.message) || e).slice(0, 60) });
+    return [];
+  }
+}
+
+function mapArticles(xml) {
+  return parseGeneric(xml, "news")
+    .map((it) => {
+      let title = it.title, sourceLabel = "";
+      const i = title.lastIndexOf(" - "); // Google News: "หัวข้อ - สำนักข่าว"
+      if (i > 0) { sourceLabel = title.slice(i + 3).trim(); title = title.slice(0, i).trim(); }
+      const link = unwrapLink(it.link);
+      if (!sourceLabel) sourceLabel = hostLabel(link); // Bing: ไม่มีชื่อใน title → ใช้โดเมน
+      return { title, link, sourceLabel, publishedAt: it.publishedAt };
+    })
+    .filter((a) => a.title && a.link);
+}
+
+// Bing ห่อลิงก์เป็น bing.com/news/apiclick.aspx?...&url=<ของจริง> → แกะออก
+function unwrapLink(link) {
+  try {
+    const u = new URL(link);
+    if (u.hostname.includes("bing.com")) { const real = u.searchParams.get("url"); if (real) return real; }
+  } catch {}
+  return link;
+}
+function hostLabel(link) {
+  try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
 function json(obj, maxAge = 0) {
