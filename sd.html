@@ -330,8 +330,8 @@ async function loadNews(){
   catch(e){ data={ articles:[] }; }
   if(gen!==newsGen) return; // เปลี่ยนกลุ่ม/พื้นที่แล้ว → ทิ้งผลเก่า
   const arts=data.articles||[];
-  const more=`https://news.google.com/search?q=${encodeURIComponent(q)}&hl=th&gl=${state.geo||"US"}`;
-  if(!arts.length){ list.innerHTML=`<div class="news-state">ยังไม่พบข่าวที่ตรงกับคำในกลุ่มนี้</div>`+`<a class="news-more" href="${more}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>`; return; }
+  const more=`https://www.bing.com/news/search?q=${encodeURIComponent(q)}`;
+  if(!arts.length){ list.innerHTML=`<div class="news-state">ยังไม่พบข่าวที่ตรงกับคำในกลุ่มนี้</div>`+`<a class="news-more" href="${more}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Bing News →</a>`; return; }
   list.innerHTML = arts.map(a=>{
     const src=a.sourceLabel||"ข่าว", c=newsColor(src);
     return `<div class="newsrow">
@@ -341,7 +341,7 @@ async function loadNews(){
         <div class="m">${escapeHtml(src)} · ${timeAgoTh(a.publishedAt)}</div>
       </div>
     </div>`;
-  }).join("") + `<a class="news-more" href="${escapeHtml(more)}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Google News →</a>`;
+  }).join("") + `<a class="news-more" href="${escapeHtml(more)}" target="_blank" rel="noopener">ดูข่าวเพิ่มใน Bing News →</a>`;
 }
 
 function refresh(){ renderTabs(); renderEditor(); updateSubs(); renderWidgets(); scheduleNews(); save(); }
