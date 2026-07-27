@@ -221,9 +221,31 @@ function applySnapshot(d){
   state.active = Math.min(Math.max(0, d.act|0), groups.length-1);
   return true;
 }
-function save(){
+function saveLocal(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(snapshot())); }catch(e){}
   try{ history.replaceState(null,"","#"+encodeURIComponent(JSON.stringify(snapshot()))); }catch(e){}
+}
+function save(){ saveLocal(); pushState(); }   // เก็บ local ทันที + ดันขึ้นส่วนกลาง (KV) แบบ debounce
+
+// ---------- cross-device sync (ชุดเดียวรวมทั้งองค์กร ผ่าน /api/sd/state → FLAGS_KV) ----------
+let kvConfigured = null, pushTimer = 0;
+function pushState(){
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async ()=>{
+    try{ await fetch("/api/sd/state",{ method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(snapshot()) }); }
+    catch(e){ /* ออฟไลน์/ยังไม่ bind KV → มี localStorage อยู่แล้ว */ }
+  }, 800);
+}
+async function pullState(){   // คืน true ถ้าได้ state จากส่วนกลางมาปรับใช้
+  try{
+    const d = await (await fetch("/api/sd/state")).json();
+    kvConfigured = !!(d && d.configured);
+    if(d && d.configured && d.state && applySnapshot(d.state)) return true;
+  }catch(e){}
+  return false;
+}
+async function syncFromCloud(announce){
+  if(await pullState()){ fillSelects(); renderTabs(); renderEditor(); updateSubs(); renderWidgets(); loadNews(); if(announce) toast("ซิงค์จากส่วนกลางแล้ว ☁️"); }
 }
 function loadFromURL(){ try{ const h=location.hash.replace(/^#/,""); if(!h) return false; return applySnapshot(JSON.parse(decodeURIComponent(h))); }catch(e){ return false; } }
 function loadFromStore(){ try{ const raw=localStorage.getItem(STORE_KEY); if(!raw) return false; return applySnapshot(JSON.parse(raw)); }catch(e){ return false; } }
@@ -363,13 +385,17 @@ function setTheme(m){ if(m==="light") document.documentElement.setAttribute("dat
 el("themeBtn").onclick=()=>{ setTheme(document.documentElement.getAttribute("data-theme")==="light"?"dark":"light"); };
 
 // ---------- boot ----------
-loadFromURL() || loadFromStore();   // URL ก่อน (แชร์) แล้วค่อย localStorage
+loadFromURL() || loadFromStore();   // local ก่อน (instant paint) — URL ที่แชร์ > localStorage
 fillSelects();
 setTheme("dark");
 renderTabs(); renderEditor(); updateSubs();
 waitForTrends(renderWidgets);
 loadNews();
-save();
+saveLocal();
+// ดึงชุดกลางจาก KV (source of truth ขององค์กร) มาทับ ถ้ามี — แล้วรีเฟรชหน้า
+syncFromCloud(false);
+// กลับมาที่แท็บ → ดึงของล่าสุดที่คนอื่นอาจแก้ไว้
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(true); });
 </script>
 </body>
 </html>
