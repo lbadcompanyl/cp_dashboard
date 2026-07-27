@@ -8,7 +8,23 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const FETCH_TIMEOUT = 12000;
 const EDGE_TTL = 1800; // cache 30 นาที ที่ edge
 const MAX_ARTICLES = 12;
-const CACHE_VER = "3";
+const CACHE_VER = "4";
+
+// Bing ห่อลิงก์เป็น bing.com/news/apiclick.aspx?...&url=<ของจริง> → แกะออกให้เป็นลิงก์ตรง
+function unwrapLink(link) {
+  try {
+    const u = new URL(link);
+    if (u.hostname.includes("bing.com")) {
+      const real = u.searchParams.get("url");
+      if (real) return real;
+    }
+  } catch {}
+  return link;
+}
+// ชื่อสำนักข่าวจากโดเมน (fallback เมื่อ title ไม่มี " - สำนักข่าว")
+function hostLabel(link) {
+  try { return new URL(link).hostname.replace(/^www\./, ""); } catch { return ""; }
+}
 
 // geo → market/lang
 const MKT = { "": "en-US", TH: "th-TH", US: "en-US", SG: "en-SG", GB: "en-GB" };
@@ -51,9 +67,12 @@ export async function onRequest(context) {
           let title = it.title, sourceLabel = "";
           const i = title.lastIndexOf(" - "); // Google News: "หัวข้อ - สำนักข่าว"
           if (i > 0) { sourceLabel = title.slice(i + 3).trim(); title = title.slice(0, i).trim(); }
-          return { title, link: it.link, sourceLabel, publishedAt: it.publishedAt };
+          const link = unwrapLink(it.link);
+          if (!sourceLabel) sourceLabel = hostLabel(link); // Bing: ไม่มีชื่อใน title → ใช้โดเมน
+          return { title, link, sourceLabel, publishedAt: it.publishedAt };
         })
-        .filter((a) => a.title && a.link);
+        .filter((a) => a.title && a.link)
+        .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)); // ล่าสุดก่อน
       if (parsed.length) { articles = parsed.slice(0, MAX_ARTICLES); provider = p.name; searchUrl = p.url; break; }
     } catch (e) {
       diag.push({ name: p.name, err: String((e && e.message) || e).slice(0, 60) });
