@@ -1,21 +1,27 @@
 // GET /api/sd/news?q=<คำค้น (join ด้วย OR)>&geo=TH
-// ข่าวที่เกี่ยวข้องของกลุ่มคำใน SD dashboard — ดึงจาก Google News RSS search (ฝั่ง server แก้ CORS)
-// คืน JSON { q, geo, articles:[{title, link, sourceLabel, publishedAt}], searchUrl }
+// ข่าวที่เกี่ยวข้องของกลุ่มคำใน SD dashboard — ดึงจาก news RSS search ฝั่ง server (แก้ CORS)
+// ลองหลายแหล่งตามลำดับ: Bing News RSS → Google News RSS (Google มักบล็อก IP datacenter ด้วย 503)
+// คืน JSON { q, geo, articles:[{title, link, sourceLabel, publishedAt}], provider, searchUrl, diag }
 
 import { parseGeneric } from "../trend/_lib/parser.js";
 
 const FETCH_TIMEOUT = 12000;
-const EDGE_TTL = 1800; // cache 30 นาที ที่ edge (ข่าวไม่ต้องสดวินาที)
+const EDGE_TTL = 1800; // cache 30 นาที ที่ edge
 const MAX_ARTICLES = 12;
+const CACHE_VER = "3";
 
-// geo → (hl ภาษา, gl ประเทศ) สำหรับ Google News
-const GEO_MAP = {
-  "":   { hl: "en", gl: "US" }, // ทั่วโลก
-  TH:   { hl: "th", gl: "TH" },
-  US:   { hl: "en", gl: "US" },
-  SG:   { hl: "en", gl: "SG" },
-  GB:   { hl: "en", gl: "GB" },
-};
+// geo → market/lang
+const MKT = { "": "en-US", TH: "th-TH", US: "en-US", SG: "en-SG", GB: "en-GB" };
+const HLGL = { "": ["en", "US"], TH: ["th", "TH"], US: ["en", "US"], SG: ["en", "SG"], GB: ["en", "GB"] };
+
+function providers(q, geo) {
+  const mkt = MKT[geo] || MKT[""];
+  const [hl, gl] = HLGL[geo] || HLGL[""];
+  return [
+    { name: "bing", url: `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=RSS&setmkt=${mkt}` },
+    { name: "google", url: `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=${hl}&gl=${gl}&ceid=${gl}:${hl}` },
+  ];
+}
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -23,45 +29,40 @@ export async function onRequest(context) {
   const geo = (url.searchParams.get("geo") || "").toUpperCase().slice(0, 2);
   if (!q) return json({ q, articles: [], error: "missing q" });
 
-  const g = GEO_MAP[geo] || GEO_MAP[""];
-  const searchUrl =
-    "https://news.google.com/rss/search?q=" +
-    encodeURIComponent(q) +
-    `&hl=${g.hl}&gl=${g.gl}&ceid=${g.gl}:${g.hl}`;
-
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/sd/news?v=2&q=${encodeURIComponent(q)}&geo=${geo}`, { method: "GET" });
+  const key = new Request(url.origin + `/api/sd/news?v=${CACHE_VER}&q=${encodeURIComponent(q)}&geo=${geo}`, { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
-  try {
-    const res = await fetchWithTimeout(searchUrl, FETCH_TIMEOUT);
-    const xml = await res.text();
-    const rawItems = (xml.match(/<item\b/g) || []).length;
-    const diag = { http: res.status, xmlLen: xml.length, rawItems, ct: res.headers.get("content-type") || "" };
-    if (!res.ok) return json({ q, geo, articles: [], searchUrl, diag, error: "HTTP " + res.status });
-    const articles = parseGeneric(xml, "news")
-      .map((it) => {
-        // Google News: title = "หัวข้อ - สำนักข่าว" → แยกชื่อสำนักข่าวออกมาโชว์แยก
-        let title = it.title;
-        let sourceLabel = "";
-        const i = title.lastIndexOf(" - ");
-        if (i > 0) {
-          sourceLabel = title.slice(i + 3).trim();
-          title = title.slice(0, i).trim();
-        }
-        return { title, link: it.link, sourceLabel, publishedAt: it.publishedAt };
-      })
-      .filter((a) => a.title)
-      .slice(0, MAX_ARTICLES);
+  const diag = [];
+  let articles = [];
+  let provider = "";
+  let searchUrl = "";
 
-    const edge = json({ q, geo, articles, searchUrl, diag }, EDGE_TTL);
-    context.waitUntil(cache.put(key, edge.clone()));
-    return browserCopy(edge);
-  } catch (e) {
-    // ไม่ throw — UI จะซ่อนส่วนข่าวเองถ้าว่าง
-    return json({ q, geo, articles: [], searchUrl, error: String((e && e.message) || e) });
+  for (const p of providers(q, geo)) {
+    try {
+      const res = await fetchWithTimeout(p.url, FETCH_TIMEOUT);
+      const xml = await res.text();
+      const rawItems = (xml.match(/<item\b/g) || []).length;
+      diag.push({ name: p.name, http: res.status, xmlLen: xml.length, rawItems });
+      if (!res.ok || rawItems === 0) continue;
+      const parsed = parseGeneric(xml, "news")
+        .map((it) => {
+          let title = it.title, sourceLabel = "";
+          const i = title.lastIndexOf(" - "); // Google News: "หัวข้อ - สำนักข่าว"
+          if (i > 0) { sourceLabel = title.slice(i + 3).trim(); title = title.slice(0, i).trim(); }
+          return { title, link: it.link, sourceLabel, publishedAt: it.publishedAt };
+        })
+        .filter((a) => a.title && a.link);
+      if (parsed.length) { articles = parsed.slice(0, MAX_ARTICLES); provider = p.name; searchUrl = p.url; break; }
+    } catch (e) {
+      diag.push({ name: p.name, err: String((e && e.message) || e).slice(0, 60) });
+    }
   }
+
+  const body = json({ q, geo, articles, provider, searchUrl, diag }, articles.length ? EDGE_TTL : 0);
+  if (articles.length) context.waitUntil(cache.put(key, body.clone()));
+  return browserCopy(body);
 }
 
 function json(obj, maxAge = 0) {
