@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "25"; // bump: auto-sync ปุ่ม 🔤 (แนบ sources[*].queries จาก title ฟีด Alert)
+const CACHE_VER = "26"; // bump: ตัด related-block ด้วยพาดหัวล้วน (เลิก fetch เนื้อ) — ทำทุก build
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -314,10 +314,9 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     alert2Cut = before - sources.alert2.items.length;
   }
 
-  // Hybrid alert filter: keyword ต้องอยู่ในเนื้อ/meta ของบทความจริง (ไม่ใช่ related block)
-  // เฉพาะ background rebuild (allowAI) → cold build ไม่โดนหน่วง · ทำก่อน archive เพื่อไม่ให้ noise ถูกสะสม
+  // ตัด related-block: keyword ต้องอยู่ในพาดหัว (ไม่ใช่แค่ในเนื้อ/related) · ทำทุก build (ราคาถูก ไม่ fetch) · ก่อน archive เพื่อไม่สะสม noise
   const alertVerify = {};
-  if (allowAI) { try { await verifyAlertItems(cache, sources, alertVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); } }
+  try { verifyAlertItems(sources, alertVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
 
   // อ่าน cache เก่า 1 ครั้ง — ใช้ทั้ง reuse หมวดจาก AI + คงของเดิมถ้า source ว่าง
   let pj = null;
@@ -403,69 +402,27 @@ function highlightedTerms(it) {
   while ((m = re.exec(s))) { const w = m[1].replace(/\[\[\/?hl\]\]/g, "").trim().toLowerCase(); if (w.length >= 2) out.add(w); }
   return [...out];
 }
-function decodeEnt(s = "") {
-  return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#0*39;/g, "'").replace(/&nbsp;/gi, " ");
-}
-// พาดหัว "ของบทความเอง" — og:title/<title>/<h1> เท่านั้น (ไม่เอา og:description — บางเว็บยัด related/หุ้นแนะนำไว้ในนั้น)
-function articleHeadline(html) {
-  const grab = (re) => { const m = html.match(re); return m ? m[1] : ""; };
-  const parts = [
-    grab(/<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["']/i),
-    grab(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:title["']/i),
-    grab(/<title[^>]*>([\s\S]*?)<\/title>/i),
-    (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/gi) || []).join(" "),
-  ];
-  return decodeEnt(parts.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
-}
-// ตรวจว่าคำที่ match อยู่ใน "พาดหัว" ของบทความไหม (related block/หุ้นแนะนำจะไม่โผล่ในพาดหัว) · cache verdict ต่อ link
-async function verifyInBody(cache, link, terms, extra) {
-  const vkey = new Request("https://verify.local/ir4?u=" + encodeURIComponent(link), { method: "GET" });
-  try { const hit = await cache.match(vkey); if (hit) return (await hit.json()).ok; } catch {}
-  let ok = true; // default: เก็บไว้เมื่อไม่แน่ใจ (กันตัดพลาด)
-  try {
-    const res = await fetchWithTimeout(link, 6000);
-    if (res.ok && /html/i.test(res.headers.get("content-type") || "")) {
-      let html = await res.text();
-      if (html.length > 200000) html = html.slice(0, 200000);
-      const head = articleHeadline(html);
-      // พาดหัวมีคำที่ match จริง หรือมีชื่อในเครือ/ชื่อพ้อง (extra) ถึงจะเก็บ
-      if (head && head.length > 4) ok = terms.some((t) => head.includes(t)) || (extra ? extra.some((t) => head.includes(t)) : false);
-    }
-  } catch { ok = true; }
-  try { await cache.put(vkey, new Response(JSON.stringify({ ok }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
-  return ok;
-}
-async function verifyAlertItems(cache, sources, diag) {
+// ตัด related-block ด้วย "พาดหัว" ล้วน — RSS ให้ title = พาดหัวมาแล้ว จึงไม่ต้อง fetch หน้าเว็บ (เร็ว/แม่น/ไม่พึ่ง og:description ที่มักมี related+หุ้นแนะนำปน)
+// เก็บเฉพาะข่าวที่ "พาดหัว" มีคำที่ Google match หรือมีชื่อในโดเมน (เครือ CP / คู่แข่ง-ภาษี) · ที่เหลือ = ชื่อโผล่แต่ในเนื้อ/related block → ตัด
+function verifyAlertItems(sources, diag) {
   diag.dropped = []; // รายการข่าวที่ถูกตัด (ไว้ debug ผ่าน ?errors)
   for (const src of ["alert1", "alert2"]) {
     if (!sources[src]) continue;
     const items = sources[src].items;
-    const extra = src === "alert1" ? CP_BRANDS : src === "alert2" ? ALERT2_KEEP : null; // ยอมรับชื่อพ้อง/ชื่อย่อในโดเมน
-    const verdict = await mapPoolResults(items, 6, async (it) => {
-      if (/\[\[hl\]\]/.test(it.title || "")) return { ok: true };                 // ชั้น 1: match อยู่ใน title → เชื่อ (ฟรี)
-      if (ROUNDUP_RE.test((it.title || "").replace(/\[\[\/?hl\]\]/g, ""))) return { ok: false, why: "roundup" }; // ชั้น 2: roundup → ทิ้ง (ฟรี)
+    const extra = src === "alert1" ? CP_BRANDS : src === "alert2" ? ALERT2_KEEP : []; // ชื่อพ้อง/ชื่อย่อในโดเมน
+    const kept = [];
+    for (const it of items) {
+      const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
+      const title = bare.toLowerCase();
+      if (ROUNDUP_RE.test(title)) { diag.dropped.push({ src, why: "roundup", terms: [], title: bare, link: it.link }); continue; }
       const terms = highlightedTerms(it);
-      if (!terms.length) return { ok: true };                                     // ไม่รู้ match อะไร → เก็บ
-      const ok = await verifyInBody(cache, it.link, terms, extra);                // ชั้น 3: body/meta check (fetch+cache)
-      return { ok, why: ok ? "" : "ไม่อยู่ในเนื้อ", terms };
-    });
-    sources[src].items = items.filter((_, i) => verdict[i].ok !== false);
-    diag[src] = items.length - sources[src].items.length;
-    items.forEach((it, i) => {
-      if (verdict[i].ok === false)
-        diag.dropped.push({ src, why: verdict[i].why, terms: verdict[i].terms || [], title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
-    });
+      const keep = terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t)); // พาดหัวต้องมีคำที่ match หรือชื่อในโดเมน
+      if (keep) kept.push(it);
+      else diag.dropped.push({ src, why: "ไม่อยู่ในพาดหัว", terms, title: bare, link: it.link });
+    }
+    diag[src] = items.length - kept.length;
+    sources[src].items = kept;
   }
-}
-async function mapPoolResults(items, limit, fn) {
-  const results = new Array(items.length);
-  let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) { const idx = i++; results[idx] = await fn(items[idx], idx); }
-  });
-  await Promise.all(workers);
-  return results;
 }
 
 // ดึงทีละ `limit` ตัว (คุม peak) — total subrequest ยังเท่าเดิม แต่ไม่ระเบิดพร้อมกัน
