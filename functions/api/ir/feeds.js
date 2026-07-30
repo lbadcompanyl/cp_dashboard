@@ -407,24 +407,20 @@ function decodeEnt(s = "") {
   return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     .replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#0*39;/g, "'").replace(/&nbsp;/gi, " ");
 }
-// เนื้อหา "ของบทความเอง" — meta/title/h1 (related block จะไม่โผล่ในนี้) → ใช้ตัดสินว่า match มาจากเนื้อจริงไหม
-function articleMainText(html) {
+// พาดหัว "ของบทความเอง" — og:title/<title>/<h1> เท่านั้น (ไม่เอา og:description — บางเว็บยัด related/หุ้นแนะนำไว้ในนั้น)
+function articleHeadline(html) {
   const grab = (re) => { const m = html.match(re); return m ? m[1] : ""; };
   const parts = [
     grab(/<meta[^>]+property=["']og:title["'][^>]*content=["']([^"']+)["']/i),
     grab(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:title["']/i),
-    grab(/<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["']/i),
-    grab(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:description["']/i),
-    grab(/<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i),
-    grab(/<meta[^>]+content=["']([^"']+)["'][^>]*name=["']description["']/i),
     grab(/<title[^>]*>([\s\S]*?)<\/title>/i),
     (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/gi) || []).join(" "),
   ];
   return decodeEnt(parts.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
 }
-// ตรวจว่า term ที่ match อยู่ในเนื้อบทความไหม (cache verdict ต่อ link ที่ edge → ไม่ fetch ซ้ำ)
+// ตรวจว่าคำที่ match อยู่ใน "พาดหัว" ของบทความไหม (related block/หุ้นแนะนำจะไม่โผล่ในพาดหัว) · cache verdict ต่อ link
 async function verifyInBody(cache, link, terms, extra) {
-  const vkey = new Request("https://verify.local/ir3?u=" + encodeURIComponent(link), { method: "GET" });
+  const vkey = new Request("https://verify.local/ir4?u=" + encodeURIComponent(link), { method: "GET" });
   try { const hit = await cache.match(vkey); if (hit) return (await hit.json()).ok; } catch {}
   let ok = true; // default: เก็บไว้เมื่อไม่แน่ใจ (กันตัดพลาด)
   try {
@@ -432,9 +428,9 @@ async function verifyInBody(cache, link, terms, extra) {
     if (res.ok && /html/i.test(res.headers.get("content-type") || "")) {
       let html = await res.text();
       if (html.length > 200000) html = html.slice(0, 200000);
-      const main = articleMainText(html);
-      // main มีคำที่ match จริง หรือมีชื่อในเครือ (extra) ถึงจะเก็บ
-      if (main && main.length > 20) ok = terms.some((t) => main.includes(t)) || (extra ? extra.some((t) => main.includes(t)) : false);
+      const head = articleHeadline(html);
+      // พาดหัวมีคำที่ match จริง หรือมีชื่อในเครือ/ชื่อพ้อง (extra) ถึงจะเก็บ
+      if (head && head.length > 4) ok = terms.some((t) => head.includes(t)) || (extra ? extra.some((t) => head.includes(t)) : false);
     }
   } catch { ok = true; }
   try { await cache.put(vkey, new Response(JSON.stringify({ ok }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
