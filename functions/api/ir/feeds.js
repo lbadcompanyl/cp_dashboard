@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "28"; // bump: ตัด related-block ชั้น 3 อ่านเนื้อข่าวจริง (JSON-LD articleBody, ไม่รวม related)
+const CACHE_VER = "29"; // bump: ตัด spam (bare cp อ่อนเกิน) + ชั้น 3 อ่านเนื้อข่าวจริง
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -379,9 +379,12 @@ const ROUNDUP_RE = /สรุปข่าวประจำวัน|สรุ�
 // ใช้ตอน verify คอลัมน์ alert1: ถ้า meta มีชื่อในเครือ = ข่าว CP จริง แม้ Google จะไฮไลต์ "ซีพี" จาก related block
 const CP_BRANDS = [
   "ซีพี", "cp all", "cpall", "cpf", "ซีพีเอฟ", "ซีพี ออลล์", "ซีพีแรม", "cpram", "cp axtra", "แอ็กซ์ตร้า",
+  "cp group", "cp foods", "cp land", "cp brand", "cp fresh", "cp meiji", "cp-meiji", "cp intertrade",
   "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
   "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "แม็คโคร", "makro", "โลตัส", "lotus's",
 ];
+// คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
+const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
 // คอลัมน์ alert2 (ปศุสัตว์/การค้า) พาดหัวมักใช้คำแปร (เลี้ยงหมู/เขียงหมู) หรือชื่อย่อ (TU) ไม่ตรงคำที่ Google match
 // เก็บไว้ถ้าพาดหัวมีคำ "เฉพาะโดเมน" เหล่านี้ (เลี่ยงคำโดด หมู/ไก่/ไข่ ที่โผล่ในข่าวอาชญากรรม) · alert2 ผ่านตัวกรอง anchor มาแล้ว
 const ALERT2_KEEP = [
@@ -463,7 +466,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
       const title = bare.toLowerCase();
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
-      const terms = highlightedTerms(it);
+      const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
       if (terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t))) return { ok: true }; // ชั้น 1
       return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link }; // ค้างไว้เช็คเนื้อ (ชั้น 3)
     });
