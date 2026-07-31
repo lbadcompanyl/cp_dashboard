@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "16"; // bump: ตัด spam (bare cp อ่อนเกิน) + ชั้น 3 อ่านเนื้อข่าวจริง
+const CACHE_VER = "17"; // bump: CP_BRANDS +7-11 (เซเว่นเลขล้วน)
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -171,7 +171,7 @@ const CP_BRANDS = [
   "ซีพี", "cp all", "cpall", "cpf", "ซีพีเอฟ", "ซีพี ออลล์", "ซีพีแรม", "cpram", "cp axtra", "แอ็กซ์ตร้า",
   "cp group", "cp foods", "cp land", "cp brand", "cp fresh", "cp meiji", "cp-meiji", "cp intertrade",
   "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
-  "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "แม็คโคร", "makro", "โลตัส", "lotus's",
+  "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "7-11", "7 11", "แม็คโคร", "makro", "โลตัส", "lotus's",
 ];
 // คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
 const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);

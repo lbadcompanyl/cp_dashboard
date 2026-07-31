@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "29"; // bump: ตัด spam (bare cp อ่อนเกิน) + ชั้น 3 อ่านเนื้อข่าวจริง
+const CACHE_VER = "30"; // bump: CP_BRANDS +7-11 (เซเว่นเลขล้วน)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -381,7 +381,7 @@ const CP_BRANDS = [
   "ซีพี", "cp all", "cpall", "cpf", "ซีพีเอฟ", "ซีพี ออลล์", "ซีพีแรม", "cpram", "cp axtra", "แอ็กซ์ตร้า",
   "cp group", "cp foods", "cp land", "cp brand", "cp fresh", "cp meiji", "cp-meiji", "cp intertrade",
   "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
-  "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "แม็คโคร", "makro", "โลตัส", "lotus's",
+  "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "7-11", "7 11", "แม็คโคร", "makro", "โลตัส", "lotus's",
 ];
 // คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
 const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
