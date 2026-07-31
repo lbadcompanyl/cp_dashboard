@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "27"; // bump: ขยาย ALERT2_KEEP รับคำแปรในพาดหัว (เลี้ยงหมู/ข้าวโพด/สินค้าเกษตร)
+const CACHE_VER = "28"; // bump: ตัด related-block ชั้น 3 อ่านเนื้อข่าวจริง (JSON-LD articleBody, ไม่รวม related)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -314,9 +314,9 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     alert2Cut = before - sources.alert2.items.length;
   }
 
-  // ตัด related-block: keyword ต้องอยู่ในพาดหัว (ไม่ใช่แค่ในเนื้อ/related) · ทำทุก build (ราคาถูก ไม่ fetch) · ก่อน archive เพื่อไม่สะสม noise
+  // ตัด related-block: พาดหัว (ฟรี) + เนื้อข่าวจริง articleBody เฉพาะ background (allowAI) · ก่อน archive เพื่อไม่สะสม noise
   const alertVerify = {};
-  try { verifyAlertItems(sources, alertVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
+  try { await verifyAlertItems(cache, sources, alertVerify, allowAI); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
 
   // อ่าน cache เก่า 1 ครั้ง — ใช้ทั้ง reuse หมวดจาก AI + คงของเดิมถ้า source ว่าง
   let pj = null;
@@ -407,24 +407,79 @@ function highlightedTerms(it) {
   while ((m = re.exec(s))) { const w = m[1].replace(/\[\[\/?hl\]\]/g, "").trim().toLowerCase(); if (w.length >= 2) out.add(w); }
   return [...out];
 }
-// ตัด related-block ด้วย "พาดหัว" ล้วน — RSS ให้ title = พาดหัวมาแล้ว จึงไม่ต้อง fetch หน้าเว็บ (เร็ว/แม่น/ไม่พึ่ง og:description ที่มักมี related+หุ้นแนะนำปน)
-// เก็บเฉพาะข่าวที่ "พาดหัว" มีคำที่ Google match หรือมีชื่อในโดเมน (เครือ CP / คู่แข่ง-ภาษี) · ที่เหลือ = ชื่อโผล่แต่ในเนื้อ/related block → ตัด
-function verifyAlertItems(sources, diag) {
+// "เนื้อข่าวจริง" จาก JSON-LD articleBody/description ที่สำนักข่าวประกาศไว้ — เป็น prose ของบทความล้วน (related/หุ้นแนะนำ ไม่อยู่ในนี้)
+function articleBodyText(html) {
+  const out = [];
+  const blocks = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+  for (const b of blocks) {
+    const jsonStr = b.replace(/^[\s\S]*?<script[^>]*>/i, "").replace(/<\/script>\s*$/i, "");
+    let parsed; try { parsed = JSON.parse(jsonStr); } catch { continue; }
+    const nodes = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed["@graph"]) ? parsed["@graph"] : [parsed]);
+    for (const n of nodes) {
+      if (n && typeof n.articleBody === "string" && n.articleBody.length > 20) out.push(n.articleBody);
+      else if (n && typeof n.description === "string" && n.description.length > 20) out.push(n.description); // เผื่อไม่มี articleBody แต่มี description ของบทความเอง
+    }
+  }
+  return out.join("  ").replace(/<[^>]+>/g, " ").toLowerCase();
+}
+// เช็คว่า "เนื้อข่าวจริง" มีคำเฉพาะโดเมน (keep) ไหม — cache เนื้อที่ดึงได้ต่อลิงก์ 24 ชม. (ไม่ fetch ซ้ำ)
+async function bodyHasKeep(cache, link, keep) {
+  if (!keep || !keep.length) return false;
+  const vkey = new Request("https://verify.local/ir5?u=" + encodeURIComponent(link), { method: "GET" });
+  let body = null;
+  try { const hit = await cache.match(vkey); if (hit) body = (await hit.json()).b || ""; } catch {}
+  if (body === null) {
+    body = "";
+    try {
+      const res = await fetchWithTimeout(link, 6000);
+      if (res.ok && /html/i.test(res.headers.get("content-type") || "")) {
+        let html = await res.text();
+        if (html.length > 400000) html = html.slice(0, 400000);
+        body = articleBodyText(html).slice(0, 20000);
+      }
+    } catch { body = ""; }
+    try { await cache.put(vkey, new Response(JSON.stringify({ b: body }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
+  }
+  return !!body && keep.some((t) => body.includes(t));
+}
+async function mapPoolResults(items, limit, fn) {
+  const results = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const idx = i++; results[idx] = await fn(items[idx], idx); }
+  });
+  await Promise.all(workers);
+  return results;
+}
+// ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
+// ชั้น 3 fetch เฉพาะ background (allowFetch) → cold ใช้พาดหัวอย่างเดียว (ตัด) แล้ว background ค่อยกู้คืนถ้าเนื้อจริงมีคำโดเมน
+async function verifyAlertItems(cache, sources, diag, allowFetch) {
   diag.dropped = []; // รายการข่าวที่ถูกตัด (ไว้ debug ผ่าน ?errors)
   for (const src of ["alert1", "alert2"]) {
     if (!sources[src]) continue;
     const items = sources[src].items;
-    const extra = src === "alert1" ? CP_BRANDS : src === "alert2" ? ALERT2_KEEP : []; // ชื่อพ้อง/ชื่อย่อในโดเมน
-    const kept = [];
-    for (const it of items) {
+    const extra = src === "alert1" ? CP_BRANDS : src === "alert2" ? ALERT2_KEEP : []; // คำเฉพาะโดเมน (เครือ CP / คู่แข่ง-ภาษี-ปศุสัตว์)
+    const verdict = items.map((it) => {
       const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
       const title = bare.toLowerCase();
-      if (ROUNDUP_RE.test(title)) { diag.dropped.push({ src, why: "roundup", terms: [], title: bare, link: it.link }); continue; }
+      if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
       const terms = highlightedTerms(it);
-      const keep = terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t)); // พาดหัวต้องมีคำที่ match หรือชื่อในโดเมน
-      if (keep) kept.push(it);
-      else diag.dropped.push({ src, why: "ไม่อยู่ในพาดหัว", terms, title: bare, link: it.link });
+      if (terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t))) return { ok: true }; // ชั้น 1
+      return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link }; // ค้างไว้เช็คเนื้อ (ชั้น 3)
+    });
+    const needBody = [];
+    verdict.forEach((v, i) => { if (v.ok === "body") needBody.push(i); });
+    if (allowFetch && needBody.length) {
+      const hits = await mapPoolResults(needBody, 6, (i) => bodyHasKeep(cache, items[i].link, extra));
+      needBody.forEach((i, k) => { verdict[i].ok = hits[k] === true; }); // เนื้อจริงมีคำโดเมน → เก็บ
+    } else {
+      needBody.forEach((i) => { verdict[i].ok = false; }); // cold: ไม่ fetch → ตัด (ตามพาดหัว)
     }
+    const kept = [];
+    verdict.forEach((v, i) => {
+      if (v.ok === true) kept.push(items[i]);
+      else diag.dropped.push({ src, why: v.why, terms: v.terms || [], title: v.bare, link: v.link });
+    });
     diag[src] = items.length - kept.length;
     sources[src].items = kept;
   }
