@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "17"; // bump: CP_BRANDS +7-11 (เซเว่นเลขล้วน)
+const CACHE_VER = "18"; // bump: noise filter (shopping/daily-report/gallery) ในคอลัมน์ alert
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -165,6 +165,38 @@ function browserCopy(resp) {
 // ---------- Hybrid alert filter: keyword ต้องอยู่ในเนื้อ/meta ของบทความจริง (ไม่ใช่ related block) ----------
 // ต้นเหตุ false positive: Google Alert จับ keyword จากบล็อก "ข่าวที่เกี่ยวข้อง/แนะนำ/roundup" ท้ายหน้า
 const ROUNDUP_RE = /สรุปข่าวประจำวัน|สรุปข่าวเด่น|รวมข่าวเด่นประจำ|ข่าวเด่นประจำวัน/;
+
+// ---------- Noise filter: ตัด "โฆษณา/ขายของ" และ "รายงานประจำวัน" ที่ match keyword แต่ไม่ใช่ข่าวน่าจับตา ----------
+// โดเมนร้านค้า/มาร์เก็ตเพลส/เว็บ affiliate — เนื้อหาเป็นสินค้าไม่ใช่ข่าว
+const SHOP_HOSTS = [
+  "thaisuperphone", "shopee.", "lazada.", "kaidee.", "thaisecondhand", "weloveshopping", "priceza",
+  "lnwshop", "tarad.com", "aliexpress", "amazon.", "bananastore", "advice.co.th", "jib.co.th",
+  "powerbuy", "mercular", "itopplus", "bentoweb", "makewebeasy", "pantipmarket", "chilindo", "nocnoc",
+];
+// วลีเชิงพาณิชย์ในพาดหัว/สนิปเป็ต (คัดเฉพาะสัญญาณแรง เลี่ยงคำข่าว เช่น "วางจำหน่าย/เปิดตัว")
+const SHOP_RE =
+  /โปรโมชั่น|โปรโมชัน|ลดราคา|ราคาพิเศษ|ราคาถูก|สั่งซื้อ|สั่งเลย|ซื้อเลย|ช้อปเลย|ส่งฟรี|พร้อมส่ง|ของแท้ราคา|สินค้าขายดี|shop now|buy now|order now|for sale|free shipping|best price|add to cart|with our |protect yourself/i;
+// รายงาน/พยากรณ์รายวันที่วนซ้ำ — routine ไม่ใช่ข่าวเด่น (ระวัง "โรคประจำตัว" ต้องไม่โดน = จับ "ประจำวัน" ตรง ๆ)
+const DAILY_RE =
+  /ประจำวัน|พยากรณ์อากาศ|รายงานสถานการณ์ฝุ่น|รายงานค่าฝุ่น|รายงานคุณภาพอากาศ|สรุปสภาพอากาศ|ค่าฝุ่นละออง[\s\S]{0,12}วันที่/;
+// หน้าแกลเลอรี/ดูรูป — match keyword จาก caption รูป ไม่ใช่บทความข่าว (เช่น .../Gallery/viewpic2d.php)
+const GALLERY_RE = /\/gallery\/|viewpic|gallery\.php|\/album\/|\/photos?\/|\/pic\/|viewimage|showpic/i;
+
+function hostOf(link) {
+  try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
+}
+// คืนเหตุผลถ้าเป็น noise (shopping/daily/gallery) มิฉะนั้น null — ใช้ title+snippet ที่ถอด marker hl แล้ว
+function noiseReason(it, title) {
+  const link = it.link || "";
+  if (GALLERY_RE.test(link)) return "gallery";
+  const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
+  const text = title + " " + snip;
+  if (DAILY_RE.test(text)) return "daily";
+  const host = hostOf(link);
+  if (host && SHOP_HOSTS.some((h) => host.includes(h))) return "shopping";
+  if (SHOP_RE.test(text)) return "shopping";
+  return null;
+}
 // ตระกูลแบรนด์ในเครือ CP — บทความ CP มักเรียกตัวเองด้วยชื่อลูก (CPF/เซเว่น/แม็คโคร) ไม่ใช่คำว่า "ซีพี" ตรง ๆ
 // ใช้ตอน verify คอลัมน์ alert1: ถ้า meta มีชื่อในเครือ = ข่าว CP จริง แม้ Google จะไฮไลต์ "ซีพี" จาก related block
 const CP_BRANDS = [
@@ -237,6 +269,8 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
     const verdict = items.map((it) => {
       const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
       const title = bare.toLowerCase();
+      const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/หน้าแกลเลอรี ก่อนเช็ค related-block
+      if (noise) return { ok: false, why: noise, terms: [], bare, link: it.link };
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
       if (terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t))) return { ok: true }; // ชั้น 1
