@@ -8,7 +8,8 @@ export default [
   { id: "news-matichon",    source: "news", label: "มติชน",           url: "https://www.matichon.co.th/feed" },
   { id: "news-khaosod",     source: "news", label: "ข่าวสด",          url: "https://www.khaosod.co.th/feed" },
   { id: "news-thairath",    source: "news", label: "ไทยรัฐ",          url: "https://www.thairath.co.th/rss/news" },
-  { id: "news-dailynews",   source: "news", label: "เดลินิวส์",        url: "https://www.dailynews.co.th/feed/" },
+  // เดลินิวส์: ฟีดตรง /feed/ โดนบล็อกบอต (403) → ดึงผ่าน Bing News site-search แทน (Worker เข้าถึงได้)
+  { id: "news-dailynews",   source: "news", label: "เดลินิวส์",        url: "https://www.bing.com/news/search?q=site%3Adailynews.co.th&format=RSS&setmkt=th-TH" },
   { id: "news-thestandard", source: "news", label: "THE STANDARD",    url: "https://thestandard.co/feed/" },
   { id: "news-prachatai",   source: "news", label: "ประชาไท",         url: "https://prachatai.com/rss.xml" },
   { id: "news-blognone",    source: "news", label: "Blognone",        url: "https://www.blognone.com/atom.xml" },

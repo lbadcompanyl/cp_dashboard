@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "21"; // bump: KV archive เก็บสะสม alert (CP/จับตามอง) 10 วัน เหมือน IR
+const CACHE_VER = "22"; // bump: KV archive alert 10 วัน + เดลินิวส์ via Bing (แก้ 403)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
