@@ -5,6 +5,7 @@ const state = {
   filters: {}, // per-source { kw, rc }
   trendsGeo: "TH",
   trendsHours: 24, // Past 4/24/48/168 ชม. (แบบ Google Trending Now)
+  trendsCat: 0, // หมวดหมู่ (แบบ Google Trends): 0 = ทุกหมวด
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -50,7 +51,7 @@ async function load() {
   try {
     const [feeds, trends] = await Promise.all([
       fetch("/api/trend/feeds").then((r) => r.json()),
-      fetchTrends(state.trendsGeo, state.trendsHours),
+      fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat),
     ]);
     feeds.sources.trends = trends;
     state.data = feeds;
@@ -68,8 +69,8 @@ async function load() {
   }
 }
 
-async function fetchTrends(geo, hours) {
-  const res = await fetch(`/api/trend/trending?geo=${encodeURIComponent(geo)}&hours=${hours}`);
+async function fetchTrends(geo, hours, cat = 0) {
+  const res = await fetch(`/api/trend/trending?geo=${encodeURIComponent(geo)}&hours=${hours}&cat=${cat}`);
   const d = await res.json();
   return {
     label: "Google Trends",
@@ -83,7 +84,7 @@ async function reloadTrends() {
   const panel = $('.panel[data-source="trends"]');
   $("[data-list]", panel).innerHTML = `<div class="state skeleton">กำลังดึงเทรนด์…</div>`;
   try {
-    state.data.sources.trends = await fetchTrends(state.trendsGeo, state.trendsHours);
+    state.data.sources.trends = await fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat);
   } catch (e) {
     state.data.sources.trends = { label: "Google Trends", items: [], error: e.message };
   }
@@ -411,6 +412,12 @@ function wire() {
     if (geoEl)
       geoEl.addEventListener("change", (e) => {
         state.trendsGeo = e.target.value;
+        reloadTrends();
+      });
+    const catEl = $("[data-cat]", panel);
+    if (catEl)
+      catEl.addEventListener("change", (e) => {
+        state.trendsCat = Number(e.target.value);
         reloadTrends();
       });
     const hoursEl = $("[data-hours]", panel);

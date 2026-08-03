@@ -19,8 +19,9 @@ async function getCookie() {
 
 // Trending Now (หน้าใหม่ของ Google) ผ่าน batchexecute — ให้ search volume, %, เวลาเริ่ม, breakdown
 // hours: 4 | 24 | 48 | 168 (7 วัน)
-export async function fetchTrendingNow(geo = "TH", hours = 24) {
-  const inner = JSON.stringify([null, null, geo, 0, "th", hours, 1]);
+// cat: หมวดหมู่ Google Trends (0 = ทุกหมวด) — index 3 ของ payload i0OFE
+export async function fetchTrendingNow(geo = "TH", hours = 24, cat = 0) {
+  const inner = JSON.stringify([null, null, geo, cat, "th", hours, 1]);
   const freq = JSON.stringify([[["i0OFE", inner, null, "generic"]]]);
   const r = await fetch(
     "https://trends.google.com/_/TrendsUi/data/batchexecute?rpcids=i0OFE&hl=th&rt=c",
