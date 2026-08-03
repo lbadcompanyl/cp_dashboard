@@ -9,6 +9,8 @@ export default [
   { id: "news-khaosod",     source: "news", group: "gen", region: "th", label: "ข่าวสด",          url: "https://www.khaosod.co.th/feed" },
   { id: "news-thairath",    source: "news", group: "gen", region: "th", label: "ไทยรัฐ",          url: "https://www.thairath.co.th/rss/news" },
   { id: "news-bbcthai",     source: "news", group: "gen", region: "th", label: "BBC Thai",         url: "https://feeds.bbci.co.uk/thai/rss.xml" },
+  // เดลินิวส์: ฟีดตรง /feed/ โดนบล็อกบอต (403) → ดึงผ่าน Bing News site-search แทน (Worker เข้าถึงได้)
+  { id: "news-dailynews",   source: "news", group: "gen", region: "th", label: "เดลินิวส์",        url: "https://www.bing.com/news/search?q=site%3Adailynews.co.th&format=RSS&setmkt=th-TH" },
   { id: "news-thestandard", source: "news", group: "gen", region: "th", label: "THE STANDARD",    url: "https://thestandard.co/feed/" },
   { id: "news-workpoint",   source: "news", group: "gen", region: "th", label: "Workpoint Today", url: "https://workpointtoday.com/feed/" },
   { id: "news-thaipbs",     source: "news", group: "gen", region: "th", label: "Thai PBS",        url: "https://news.thaipbs.or.th/rss/news" },
