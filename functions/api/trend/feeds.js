@@ -8,7 +8,16 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "20"; // bump: narrow gallery rule (เลิกจับ /gallery/ เปล่า — moc.go.th เป็นข่าวจริง)
+const CACHE_VER = "21"; // bump: KV archive เก็บสะสม alert (CP/จับตามอง) 10 วัน เหมือน IR
+
+// เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
+// key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
+const ARCHIVE_KEY = "pr:archive";
+const ARCHIVE_CFG = {
+  alert1: { days: 10, max: 300 }, // CP
+  alert2: { days: 10, max: 400 }, // หัวข้อที่จับตามอง
+};
+const envPrefix = (env) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : "");
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -23,17 +32,17 @@ export async function onRequest(context) {
   let resp;
   if (wantRebuild) {
     // ?rebuild/?errors = build สดพร้อม verify ทันที (ทดสอบตัวกรอง related-block · เลี่ยงรอ background 5 นาที)
-    resp = await buildAndStore(cache, cacheKey, true);
+    resp = await buildAndStore(cache, cacheKey, true, context.env);
   } else {
     const hit = await cache.match(cacheKey);
     if (hit) {
       const age = Date.now() - Number(hit.headers.get("x-cached-at") || 0);
       // ของเริ่มเก่า → ดึงใหม่เบื้องหลัง (ผู้ใช้ไม่ต้องรอ) · เปิด verify เฉพาะรอบนี้
-      if (age > FRESH_MS) context.waitUntil(buildAndStore(cache, cacheKey, true));
+      if (age > FRESH_MS) context.waitUntil(buildAndStore(cache, cacheKey, true, context.env));
       resp = hit; // ส่งของใน cache ทันที — เร็วเสมอ
     } else {
       // ไม่มีใน cache (ครั้งแรกสุด) → ดึงสด · ไม่ verify (กันคำขอแรกหน่วง)
-      resp = await buildAndStore(cache, cacheKey, false);
+      resp = await buildAndStore(cache, cacheKey, false, context.env);
     }
   }
 
@@ -47,6 +56,7 @@ export async function onRequest(context) {
       txt =
         `feeds ที่โหลดไม่ได้: ${(j.errors || []).length}\n` +
         `จำนวนข่าว: news=${(s.news?.items || []).length}  CP=${(s.alert1?.items || []).length}  จับตามอง=${(s.alert2?.items || []).length}\n` +
+        `คลังเก็บสะสม (KV — CP/จับตามอง 10 วัน): ${JSON.stringify(j.archive || {})}\n` +
         `ตัด related-block (keyword ไม่อยู่ในเนื้อจริง): alert1=${v.alert1 ?? "-"}  alert2=${v.alert2 ?? "-"}\n` +
         ((v.dropped || []).length
           ? (v.dropped || []).map((d) => `   ✂ [${d.src}${d.why ? "/" + d.why : ""}]${d.terms?.length ? " (" + d.terms.join(",") + ")" : ""} ${d.title}\n      ${d.link}`).join("\n") + "\n"
@@ -77,7 +87,7 @@ function alertQueryFromXml(xml) {
   return i >= 0 ? t.slice(i + 3).trim() : "";
 }
 
-async function buildAndStore(cache, cacheKey, allowVerify) {
+async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
     alert1: { label: "CP", items: [], feedCount: 0 },
@@ -129,6 +139,10 @@ async function buildAndStore(cache, cacheKey, allowVerify) {
   const alertVerify = {};
   try { await verifyAlertItems(cache, sources, alertVerify, allowVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
 
+  // เก็บสะสม alert ลง KV (CP/จับตามอง 10 วัน) แม้หลุดจากฟีด Google Alert แล้ว — หลัง verify กันสะสม noise
+  const archive = {};
+  try { await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
+
   // Google Alert ส่งว่างชั่วคราว (ฟีดรีเซ็ตหลังแก้ query / โดน throttle) → คงชุดเดิมจาก cache กันแผงว่าง
   try {
     const prev = await cache.match(cacheKey);
@@ -141,7 +155,7 @@ async function buildAndStore(cache, cacheKey, allowVerify) {
     }
   } catch {}
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -153,6 +167,34 @@ async function buildAndStore(cache, cacheKey, allowVerify) {
   // เก็บ cache ตราบใดที่ได้ข่าวมาบ้าง (ทนฟีดพังบางเจ้า) — จะรีเฟรชเบื้องหลังเองตาม SWR
   if (Object.values(sources).some((s) => s.items.length > 0)) await cache.put(cacheKey, resp.clone());
   return resp;
+}
+
+// สะสม alert ลง KV: merge ของสด+ของเก่า, ตัดซ้ำด้วย link, คงเฉพาะ N วันต่อคอลัมน์ (blob เดียว)
+async function mergeArchives(env, sources, diag) {
+  const kv = env && env.FLAGS_KV;
+  diag.enabled = !!kv;
+  if (!kv) return; // ไม่มี KV → ใช้เฉพาะที่ดึงสด (หน้าไม่พัง)
+  const now = Date.now();
+  const key = envPrefix(env) + ARCHIVE_KEY;
+  let store = {};
+  try { const raw = await kv.get(key); if (raw) store = JSON.parse(raw) || {}; } catch {}
+  const out = {};
+  for (const src of Object.keys(ARCHIVE_CFG)) {
+    if (!sources[src]) continue;
+    const cfg = ARCHIVE_CFG[src];
+    const cutoff = now - cfg.days * 86400000;
+    const byLink = new Map();
+    for (const it of (store[src] || [])) if (it && it.link) byLink.set(it.link, it);
+    for (const it of sources[src].items) if (it && it.link) byLink.set(it.link, it); // ของสดทับของเก่า
+    const merged = [...byLink.values()]
+      .filter((it) => { const t = new Date(it.publishedAt).getTime(); return isNaN(t) || t >= cutoff; })
+      .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
+      .slice(0, cfg.max);
+    sources[src].items = merged;
+    out[src] = merged;
+    diag[src] = merged.length;
+  }
+  try { await kv.put(key, JSON.stringify(out)); diag.saved = true; diag.env = env.APP_ENV || "prod"; } catch (e) { diag.err = String((e && e.message) || e).slice(0, 120); }
 }
 
 // ส่งสำเนาที่ไม่ให้เบราว์เซอร์ cache (กดรีเฟรชแล้วได้ของล่าสุดจาก edge เสมอ)
