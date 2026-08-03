@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "18"; // bump: noise filter (shopping/daily-report/gallery) ในคอลัมน์ alert
+const CACHE_VER = "19"; // bump: noise filter (shopping/daily-report/gallery/pr) ในคอลัมน์ alert
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -181,14 +181,17 @@ const DAILY_RE =
   /ประจำวัน|พยากรณ์อากาศ|รายงานสถานการณ์ฝุ่น|รายงานค่าฝุ่น|รายงานคุณภาพอากาศ|สรุปสภาพอากาศ|ค่าฝุ่นละออง[\s\S]{0,12}วันที่/;
 // หน้าแกลเลอรี/ดูรูป — match keyword จาก caption รูป ไม่ใช่บทความข่าว (เช่น .../Gallery/viewpic2d.php)
 const GALLERY_RE = /\/gallery\/|viewpic|gallery\.php|\/album\/|\/photos?\/|\/pic\/|viewimage|showpic/i;
+// พาดหัวขึ้นต้น "ข่าวประชาสัมพันธ์" = หน้าประกาศ/PR ราชการ-หน่วยงาน (มัก match keyword จากเมนู/บล็อกลิงก์ ไม่ใช่ตัวข่าว)
+const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
 function hostOf(link) {
   try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
 }
-// คืนเหตุผลถ้าเป็น noise (shopping/daily/gallery) มิฉะนั้น null — ใช้ title+snippet ที่ถอด marker hl แล้ว
+// คืนเหตุผลถ้าเป็น noise (gallery/pr/daily/shopping) มิฉะนั้น null — ใช้ title+snippet ที่ถอด marker hl แล้ว
 function noiseReason(it, title) {
   const link = it.link || "";
   if (GALLERY_RE.test(link)) return "gallery";
+  if (PR_RE.test(title)) return "pr";
   const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
   const text = title + " " + snip;
   if (DAILY_RE.test(text)) return "daily";
