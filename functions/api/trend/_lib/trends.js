@@ -19,9 +19,10 @@ async function getCookie() {
 
 // Trending Now (หน้าใหม่ของ Google) ผ่าน batchexecute — ให้ search volume, %, เวลาเริ่ม, breakdown
 // hours: 4 | 24 | 48 | 168 (7 วัน)
-// cat: หมวดหมู่ Google Trends (0 = ทุกหมวด) — index 3 ของ payload i0OFE
+// cat: หมวดหมู่ Google Trends (0 = ทุกหมวด). หมายเหตุ: RPC i0OFE ไม่รับ param หมวดหมู่ —
+//   Google ติด topic id มากับแต่ละ trend (index 10) แล้วกรองฝั่ง client เอง เราจึงกรองแบบเดียวกัน
 export async function fetchTrendingNow(geo = "TH", hours = 24, cat = 0) {
-  const inner = JSON.stringify([null, null, geo, cat, "th", hours, 1]);
+  const inner = JSON.stringify([null, null, geo, 0, "th", hours, 1]);
   const freq = JSON.stringify([[["i0OFE", inner, null, "generic"]]]);
   const r = await fetch(
     "https://trends.google.com/_/TrendsUi/data/batchexecute?rpcids=i0OFE&hl=th&rt=c",
@@ -36,7 +37,10 @@ export async function fetchTrendingNow(geo = "TH", hours = 24, cat = 0) {
   const line = t.split("\n").find((l) => l.includes("wrb.fr"));
   if (!line) throw new Error("trendingnow: no data line");
   const payload = JSON.parse(JSON.parse(line)[0][2]);
-  const trends = payload[1] || [];
+  let trends = payload[1] || [];
+
+  // กรองตามหมวดหมู่ (ถ้าเลือก) โดยดู topic id ที่ index 10 ของแต่ละ trend
+  if (cat) trends = trends.filter((a) => Array.isArray(a[10]) && a[10].includes(cat));
 
   return trends.map((a) => {
     const title = a[0] || "";
@@ -54,6 +58,7 @@ export async function fetchTrendingNow(geo = "TH", hours = 24, cat = 0) {
       pctLabel: pct ? "+" + pct.toLocaleString("en-US") + "%" : "",
       sourceLabel: fmtVolume(volume) + " ค้นหา",
       related: breakdown, // คำที่เกี่ยวข้อง (ใช้เป็น fallback ตอน Top/Rising โดน rate limit)
+      topics: Array.isArray(a[10]) ? a[10] : [], // topic/category ids (ใช้กรองหมวดหมู่)
       newsIds: Array.isArray(a[11]) ? a[11].slice(0, 8) : [], // article id triplets สำหรับดึงข่าว
       snippet: breakdown.join(" · "),
       publishedAt: started ? new Date(started * 1000).toISOString() : new Date().toISOString(),

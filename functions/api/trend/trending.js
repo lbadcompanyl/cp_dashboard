@@ -7,7 +7,7 @@ import { fetchTrendingNow } from "./_lib/trends.js";
 
 const VALID_HOURS = [4, 24, 48, 168];
 // หมวดหมู่แบบ Google Trends "Trending now" (0 = ทุกหมวด) — ต้องตรงกับ dropdown ใน trend/index.html
-const VALID_CATS = [0, 3, 4, 5, 6, 7, 10, 15, 16, 17, 18, 19];
+const VALID_CATS = [0, 3, 4, 5, 6, 7, 10, 14, 15, 16, 17, 18, 19];
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -18,26 +18,31 @@ export async function onRequest(context) {
   const cat = VALID_CATS.includes(catRaw) ? catRaw : 0;
 
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/trend/trending?geo=${geo}&hours=${hours}&cat=${cat}&v=3`, { method: "GET" });
+  const key = new Request(url.origin + `/api/trend/trending?geo=${geo}&hours=${hours}&cat=${cat}&v=4`, { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
   const out = { geo, hours, cat, items: [], error: null, source: "trendingnow" };
   try {
     out.items = await fetchTrendingNow(geo, hours, cat);
-    if (out.items.length === 0) throw new Error("empty result");
+    // เฉพาะ "ทุกหมวด" ที่ว่าง = ผิดปกติ -> ลอง fallback; หมวดเจาะจงว่างได้ (แค่ไม่มีเทรนด์ในหมวดนั้นตอนนี้)
+    if (out.items.length === 0 && cat === 0) throw new Error("empty result");
   } catch (e) {
-    // fallback: RSS คำฮิตวันนี้ (ไม่มี volume/%/hours แต่ยังใช้งานได้)
-    try {
-      const r = await fetch(`https://trends.google.com/trending/rss?geo=${geo}`, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; TrendDashboard/1.0)" },
-      });
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      out.items = parseTrends(await r.text());
-      out.source = "rss-fallback";
+    // RSS fallback ไม่มี topic id ให้กรอง จึงใช้ได้เฉพาะ "ทุกหมวด" — เลี่ยงการโชว์ผลข้ามหมวด
+    if (cat === 0) {
+      try {
+        const r = await fetch(`https://trends.google.com/trending/rss?geo=${geo}`, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; TrendDashboard/1.0)" },
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        out.items = parseTrends(await r.text());
+        out.source = "rss-fallback";
+        out.error = "trendingnow ล้มเหลว: " + String(e.message || e);
+      } catch (e2) {
+        out.error = String(e2.message || e2);
+      }
+    } else {
       out.error = "trendingnow ล้มเหลว: " + String(e.message || e);
-    } catch (e2) {
-      out.error = String(e2.message || e2);
     }
   }
 
