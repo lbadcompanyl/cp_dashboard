@@ -10,14 +10,18 @@ export default [
   { id: "news-thairath",    source: "news", label: "ไทยรัฐ",          url: "https://www.thairath.co.th/rss/news" },
   // เดลินิวส์: ฟีดตรง /feed/ โดนบล็อกบอต (403) → ดึงผ่าน Bing News site-search แทน (Worker เข้าถึงได้)
   { id: "news-dailynews",   source: "news", label: "เดลินิวส์",        url: "https://www.bing.com/news/search?q=site%3Adailynews.co.th&format=RSS&setmkt=th-TH" },
+  // เพิ่มกลับผ่าน Bing (ฟีดตรงเดิม 404/บล็อก)
+  { id: "news-longtunman",  source: "news", label: "ลงทุนแมน",       url: "https://www.bing.com/news/search?q=site%3Alongtunman.com&format=RSS&setmkt=th-TH" },
+  { id: "news-pptv",        source: "news", label: "PPTV HD36",     url: "https://www.bing.com/news/search?q=site%3Apptvhd36.com&format=RSS&setmkt=th-TH" },
+  { id: "news-sanook",      source: "news", label: "Sanook",        url: "https://www.bing.com/news/search?q=site%3Anews.sanook.com&format=RSS&setmkt=th-TH" },
+  { id: "news-cnn",         source: "news", label: "CNN World",     url: "https://www.bing.com/news/search?q=site%3Aedition.cnn.com&format=RSS&setmkt=en-US" },
   { id: "news-thestandard", source: "news", label: "THE STANDARD",    url: "https://thestandard.co/feed/" },
   { id: "news-prachatai",   source: "news", label: "ประชาไท",         url: "https://prachatai.com/rss.xml" },
   { id: "news-blognone",    source: "news", label: "Blognone",        url: "https://www.blognone.com/atom.xml" },
   { id: "news-workpoint",   source: "news", label: "Workpoint Today", url: "https://workpointtoday.com/feed/" },
   { id: "news-thaipbs",  source: "news", label: "Thai PBS",  url: "https://news.thaipbs.or.th/rss/news" },
-  // ผู้จัดการ (MGR) — เปิด RSS เฉพาะหมวด store (หมวดข่าวอื่น 404) — เป็นเนื้อหาฝั่ง store/ไลฟ์สไตล์
-  { id: "news-mgr", source: "news", label: "ผู้จัดการ", url: "https://mgronline.com/store/rss/index.xml" },
-  // PPTV (pptvhd36) ยังไม่พบ RSS
+  // ผู้จัดการ (MGR) — ฟีดตรงมีแค่หมวด store → ดึงข่าวจริงผ่าน Bing แทน
+  { id: "news-mgr", source: "news", label: "ผู้จัดการ", url: "https://www.bing.com/news/search?q=site%3Amgronline.com&format=RSS&setmkt=th-TH" },
   // ธุรกิจ/การเงิน (สำคัญกับ IR/CP)
   { id: "news-bangkokbiz",  source: "news", label: "กรุงเทพธุรกิจ",    url: "https://www.bangkokbiznews.com/rss" },
   { id: "news-prachachat",  source: "news", label: "ประชาชาติธุรกิจ",  url: "https://www.prachachat.net/feed" },

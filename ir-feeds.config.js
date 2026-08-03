@@ -11,6 +11,12 @@ export default [
   { id: "news-bbcthai",     source: "news", group: "gen", region: "th", label: "BBC Thai",         url: "https://feeds.bbci.co.uk/thai/rss.xml" },
   // เดลินิวส์: ฟีดตรง /feed/ โดนบล็อกบอต (403) → ดึงผ่าน Bing News site-search แทน (Worker เข้าถึงได้)
   { id: "news-dailynews",   source: "news", group: "gen", region: "th", label: "เดลินิวส์",        url: "https://www.bing.com/news/search?q=site%3Adailynews.co.th&format=RSS&setmkt=th-TH" },
+  // ── เพิ่มกลับผ่าน Bing (ฟีดตรงเดิม 404/บล็อก) — group/region คุมคอลัมน์ ไม่ขึ้นกับตำแหน่ง ──
+  { id: "news-longtunman",  source: "news", group: "biz",  region: "th",   label: "ลงทุนแมน",      url: "https://www.bing.com/news/search?q=site%3Alongtunman.com&format=RSS&setmkt=th-TH" },
+  { id: "news-mgr",         source: "news", group: "gen",  region: "th",   label: "ผู้จัดการ",       url: "https://www.bing.com/news/search?q=site%3Amgronline.com&format=RSS&setmkt=th-TH" },
+  { id: "news-pptv",        source: "news", group: "gen",  region: "th",   label: "PPTV HD36",     url: "https://www.bing.com/news/search?q=site%3Apptvhd36.com&format=RSS&setmkt=th-TH" },
+  { id: "news-sanook",      source: "news", group: "gen",  region: "th",   label: "Sanook",        url: "https://www.bing.com/news/search?q=site%3Anews.sanook.com&format=RSS&setmkt=th-TH" },
+  { id: "news-cnn",         source: "news", group: "intl", region: "intl", label: "CNN World",     url: "https://www.bing.com/news/search?q=site%3Aedition.cnn.com&format=RSS&setmkt=en-US" },
   { id: "news-thestandard", source: "news", group: "gen", region: "th", label: "THE STANDARD",    url: "https://thestandard.co/feed/" },
   { id: "news-workpoint",   source: "news", group: "gen", region: "th", label: "Workpoint Today", url: "https://workpointtoday.com/feed/" },
   { id: "news-thaipbs",     source: "news", group: "gen", region: "th", label: "Thai PBS",        url: "https://news.thaipbs.or.th/rss/news" },
@@ -40,9 +46,7 @@ export default [
   { id: "news-independent", source: "news", group: "intl", region: "intl", label: "The Independent", url: "https://www.independent.co.uk/news/world/rss" },
   { id: "news-france24",    source: "news", group: "intl", region: "intl", label: "France 24",     url: "https://www.france24.com/en/rss" },
   { id: "news-scmp",        source: "news", group: "intl", region: "intl", label: "SCMP (เอเชีย)",  url: "https://www.scmp.com/rss/91/feed" },
-  { id: "news-aljazeera",   source: "news", group: "intl", region: "intl", label: "Al Jazeera",    url: "https://www.aljazeera.com/xml/rss/all.xml" },
   { id: "news-time",        source: "news", group: "intl", region: "intl", label: "Time",          url: "https://time.com/feed/" },
-  { id: "news-skynews",     source: "news", group: "intl", region: "intl", label: "Sky News World", url: "https://feeds.skynews.com/feeds/rss/world.xml" },
   { id: "news-straits",     source: "news", group: "intl", region: "intl", label: "Straits Times", url: "https://www.straitstimes.com/news/world/rss.xml" },
 
   // 🔔 Alert 1 — แบรนด์ CP (รวม 2 ฟีด: "cp" + "ซีพี")

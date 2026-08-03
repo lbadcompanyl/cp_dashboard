@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "34"; // bump: เดลินิวส์ via Bing + keep จีน overcapacity/สินค้า GI
+const CACHE_VER = "35"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN) + ตัดฟีดซ้ำ
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
