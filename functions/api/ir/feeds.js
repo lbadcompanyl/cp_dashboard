@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "31"; // bump: noise filter (shopping/daily-report/gallery/pr) ในคอลัมน์ alert
+const CACHE_VER = "32"; // bump: narrow gallery rule (เลิกจับ /gallery/ เปล่า — moc.go.th เป็นข่าวจริง)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -386,7 +386,8 @@ const SHOP_RE =
   /โปรโมชั่น|โปรโมชัน|ลดราคา|ราคาพิเศษ|ราคาถูก|สั่งซื้อ|สั่งเลย|ซื้อเลย|ช้อปเลย|ส่งฟรี|พร้อมส่ง|ของแท้ราคา|สินค้าขายดี|shop now|buy now|order now|for sale|free shipping|best price|add to cart|with our |protect yourself/i;
 const DAILY_RE =
   /ประจำวัน|พยากรณ์อากาศ|รายงานสถานการณ์ฝุ่น|รายงานค่าฝุ่น|รายงานคุณภาพอากาศ|สรุปสภาพอากาศ|ค่าฝุ่นละออง[\s\S]{0,12}วันที่/;
-const GALLERY_RE = /\/gallery\/|viewpic|gallery\.php|\/album\/|\/photos?\/|\/pic\/|viewimage|showpic/i;
+// เฉพาะสคริปต์เปิดดูรูปจริง — ไม่จับ /gallery/ เปล่า ๆ (moc.go.th ใช้ /gallery/ เป็นหมวดข่าวจริง)
+const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
 function hostOf(link) {

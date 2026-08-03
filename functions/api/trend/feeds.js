@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "19"; // bump: noise filter (shopping/daily-report/gallery/pr) ในคอลัมน์ alert
+const CACHE_VER = "20"; // bump: narrow gallery rule (เลิกจับ /gallery/ เปล่า — moc.go.th เป็นข่าวจริง)
 
 export async function onRequest(context) {
   const cache = caches.default;
@@ -179,8 +179,9 @@ const SHOP_RE =
 // รายงาน/พยากรณ์รายวันที่วนซ้ำ — routine ไม่ใช่ข่าวเด่น (ระวัง "โรคประจำตัว" ต้องไม่โดน = จับ "ประจำวัน" ตรง ๆ)
 const DAILY_RE =
   /ประจำวัน|พยากรณ์อากาศ|รายงานสถานการณ์ฝุ่น|รายงานค่าฝุ่น|รายงานคุณภาพอากาศ|สรุปสภาพอากาศ|ค่าฝุ่นละออง[\s\S]{0,12}วันที่/;
-// หน้าแกลเลอรี/ดูรูป — match keyword จาก caption รูป ไม่ใช่บทความข่าว (เช่น .../Gallery/viewpic2d.php)
-const GALLERY_RE = /\/gallery\/|viewpic|gallery\.php|\/album\/|\/photos?\/|\/pic\/|viewimage|showpic/i;
+// หน้าแกลเลอรี/ดูรูป — เฉพาะสคริปต์เปิดดูรูปจริง (เช่น .../Gallery/viewpic2d.php) ไม่จับ /gallery/ เปล่า ๆ
+// (บางหน่วยงานเช่น moc.go.th ใช้ /gallery/ เป็นหมวดข่าว/บทความจริง — ไม่ใช่อัลบั้มรูป)
+const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 // พาดหัวขึ้นต้น "ข่าวประชาสัมพันธ์" = หน้าประกาศ/PR ราชการ-หน่วยงาน (มัก match keyword จากเมนู/บล็อกลิงก์ ไม่ใช่ตัวข่าว)
 const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
