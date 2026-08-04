@@ -62,14 +62,16 @@ body {
 .refresh:disabled { opacity: .5; cursor: default; }
 
 /* Global search — ค้นหาทุกคอลัมน์พร้อมกัน */
-.gsearch { padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.gsearch { max-width: 1680px; margin: 0 auto; padding: 14px 20px 0; } /* กว้างเท่ากรอบ 4 คอลัมน์ */
 .gsearch input {
   width: 100%; box-sizing: border-box; padding: 11px 14px; font-size: 14px;
   border: 1px solid var(--border); border-radius: 12px;
   background: var(--bg); color: var(--text); outline: none;
 }
 .gsearch input:focus { border-color: var(--alert); }
-@media (max-width: 640px) { .gsearch { padding: 8px 12px; position: sticky; top: 0; z-index: 20; } }
+@media (max-width: 640px) {
+  .gsearch { max-width: none; padding: 8px 10px; position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--border); }
+}
 
 .board {
   display: grid;
