@@ -65,8 +65,8 @@ body {
 .gsearch { max-width: 1680px; margin: 0 auto; padding: 14px 20px 0; } /* กว้างเท่ากรอบ 4 คอลัมน์ */
 .gsearch input {
   width: 100%; box-sizing: border-box; padding: 11px 14px; font-size: 14px;
-  border: 1px solid var(--border); border-radius: 12px;
-  background: var(--surface); color: var(--text); outline: none; /* พื้นหลังขาว (light mode) */
+  border: 1.5px solid var(--muted); border-radius: 12px;
+  background: var(--surface); color: var(--text); outline: none; /* พื้นหลังขาว + ขอบเข้มให้เด่น */
 }
 .gsearch input:focus { border-color: var(--alert); }
 @media (max-width: 640px) {
