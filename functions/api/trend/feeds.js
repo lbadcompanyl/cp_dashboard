@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "23"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN)
+const CACHE_VER = "24"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -87,6 +87,38 @@ function alertQueryFromXml(xml) {
   return i >= 0 ? t.slice(i + 3).trim() : "";
 }
 
+// ---------- ไฮบริด: บวกข่าว Google News ที่ match keyword เข้าคอลัมน์ alert (dedup ด้วย link ที่ normalize) ----------
+function normLink(url) {
+  try { const u = new URL(url); return u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/+$/, ""); }
+  catch { return url || ""; }
+}
+// แตกคำจาก query ของ Google Alert เช่น '"PM2.5" OR ฝุ่น' -> ["pm2.5","ฝุ่น"]
+function parseAlertTerms(queries) {
+  const out = new Set();
+  for (const q of (queries || [])) for (const part of String(q).split(/\bOR\b/i)) {
+    const t = part.replace(/["'()]/g, "").trim().toLowerCase();
+    if (t.length >= 2 && !t.startsWith("-")) out.add(t);
+  }
+  return [...out];
+}
+// เอาข่าวจาก newsKeys ที่ (title+snippet) มี term -> เพิ่มเข้า alertSrc ถ้ายังไม่ซ้ำ (ตาม normLink)
+function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
+  if (!sources[alertSrc] || !terms.length) return 0;
+  const kws = terms.map((t) => t.toLowerCase());
+  const have = new Set(sources[alertSrc].items.map((it) => normLink(it.link)));
+  let added = 0;
+  for (const nk of newsKeys) for (const it of (sources[nk]?.items || [])) {
+    const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+    if (!kws.some((k) => hay.includes(k))) continue;
+    const nl = normLink(it.link);
+    if (have.has(nl)) continue;
+    have.add(nl);
+    sources[alertSrc].items.push({ ...it, fromNews: true });
+    added++;
+  }
+  return added;
+}
+
 async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
@@ -134,6 +166,10 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
   }
   for (const s of Object.keys(queriesBySource)) if (sources[s]) sources[s].queries = queriesBySource[s];
+
+  // ไฮบริด: บวกข่าว Google News ที่ match keyword ของคอลัมน์เข้ามา (เสถียรขึ้น ไม่พึ่ง Google Alert อย่างเดียว)
+  mergeNewsIntoAlert(sources, "alert1", ["news"], CP_BRANDS);
+  mergeNewsIntoAlert(sources, "alert2", ["news"], parseAlertTerms(queriesBySource.alert2));
 
   // ตัด related-block: พาดหัว (ฟรี) + เนื้อข่าวจริง articleBody เฉพาะ background (allowVerify) · ก่อน stale-fill กันสะสม noise
   const alertVerify = {};
@@ -318,6 +354,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/หน้าแกลเลอรี ก่อนเช็ค related-block
       if (noise) return { ok: false, why: noise, terms: [], bare, link: it.link };
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
+      if (it.fromNews) return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
       if (terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t))) return { ok: true }; // ชั้น 1
       return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link };

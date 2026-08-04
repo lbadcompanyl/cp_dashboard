@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "35"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN) + ตัดฟีดซ้ำ
+const CACHE_VER = "36"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN) + ตัดฟีดซ้ำ
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -254,6 +254,28 @@ function alertQueryFromXml(xml) {
   return i >= 0 ? t.slice(i + 3).trim() : "";
 }
 
+// ---------- ไฮบริด: บวกข่าว News ที่ match keyword เข้าคอลัมน์ alert (dedup ด้วย link ที่ normalize) ----------
+function normLink(url) {
+  try { const u = new URL(url); return u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/+$/, ""); }
+  catch { return url || ""; }
+}
+function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
+  if (!sources[alertSrc] || !terms.length) return 0;
+  const kws = terms.map((t) => t.toLowerCase());
+  const have = new Set(sources[alertSrc].items.map((it) => normLink(it.link)));
+  let added = 0;
+  for (const nk of newsKeys) for (const it of (sources[nk]?.items || [])) {
+    const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+    if (!kws.some((k) => hay.includes(k))) continue;
+    const nl = normLink(it.link);
+    if (have.has(nl)) continue;
+    have.add(nl);
+    sources[alertSrc].items.push({ ...it, fromNews: true });
+    added++;
+  }
+  return added;
+}
+
 async function buildAndStore(cache, cacheKey, env, allowAI) {
   const sources = {};
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
@@ -313,6 +335,10 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     sources.alert2.items = sources.alert2.items.filter(alert2Relevant);
     alert2Cut = before - sources.alert2.items.length;
   }
+
+  // ไฮบริด: บวกข่าวจาก News (ในปท.+ตปท.) ที่ match keyword ของคอลัมน์ (เสถียรขึ้น ไม่พึ่ง Google Alert อย่างเดียว)
+  mergeNewsIntoAlert(sources, "alert1", ["newsth", "newsintl"], CP_BRANDS);
+  mergeNewsIntoAlert(sources, "alert2", ["newsth", "newsintl"], ALERT2_KEEP);
 
   // ตัด related-block: พาดหัว (ฟรี) + เนื้อข่าวจริง articleBody เฉพาะ background (allowAI) · ก่อน archive เพื่อไม่สะสม noise
   const alertVerify = {};
@@ -504,6 +530,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/แกลเลอรี/PR ก่อนเช็ค related-block
       if (noise) return { ok: false, why: noise, terms: [], bare, link: it.link };
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
+      if (it.fromNews) return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
       if (terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t))) return { ok: true }; // ชั้น 1
       return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link }; // ค้างไว้เช็คเนื้อ (ชั้น 3)
