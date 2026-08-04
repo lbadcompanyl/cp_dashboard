@@ -552,8 +552,8 @@ if (window.Flags) {
 }
 wire();
 load();
-// auto-refresh ทุก 5 นาที (เงียบ ไม่กระโดด scroll) · หยุดเมื่อสลับแท็บออกไป ค่อยรีเฟรชทันทีตอนกลับมา
-setInterval(() => { if (!document.hidden) load({ silent: true }); }, 5 * 60 * 1000);
+// auto-refresh ทุก 3 นาที (เงียบ ไม่กระโดด scroll) · สลับแท็บกลับมาแล้วเก่ากว่า 3 นาที รีเฟรชทันที
+setInterval(() => { if (!document.hidden) load({ silent: true }); }, 3 * 60 * 1000);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && state.data && Date.now() - (new Date(state.data.generatedAt || 0)).getTime() > 5 * 60 * 1000) load({ silent: true });
+  if (!document.hidden && state.data && Date.now() - (new Date(state.data.generatedAt || 0)).getTime() > 3 * 60 * 1000) load({ silent: true });
 });
