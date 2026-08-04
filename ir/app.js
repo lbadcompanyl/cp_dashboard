@@ -94,13 +94,16 @@ function loadSnapshot() {
   try { const s = localStorage.getItem(SNAP_KEY); return s ? JSON.parse(s) : null; } catch { return null; }
 }
 
-async function load() {
+async function load(opts = {}) {
+  const silent = !!opts.silent; // auto-refresh: ไม่แตะสถานะ/ไม่กระโดด scroll
   const btn = $("#refresh");
   btn.disabled = true;
 
   // เปิดมาเห็นข่าวเดิมทันที (จาก localStorage) แทนหน้าจอโหลดเปล่า ๆ
   const snap = loadSnapshot();
-  if (snap && !state.data) {
+  if (silent && state.data) {
+    /* auto-refresh: คงสถานะเดิมไว้ */
+  } else if (snap && !state.data) {
     state.data = snap;
     renderAll();
     $("#updated").textContent = "กำลังอัปเดต…";
@@ -119,8 +122,14 @@ async function load() {
     saveSnapshot(feeds);
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
+    const sp = silent ? $$(".panel [data-list]").map((el) => el.scrollTop) : null;
+    const wy = silent ? window.scrollY : 0;
     renderAll();
     applyKeywords(); // sync ปุ่ม 🔤 จาก query สดของฟีด (ถ้าครบ)
+    if (silent) {
+      $$(".panel [data-list]").forEach((el, i) => { if (sp[i] != null) el.scrollTop = sp[i]; });
+      window.scrollTo(0, wy);
+    }
   } catch (e) {
     if (state.data) {
       $("#updated").textContent = "อัปเดตไม่สำเร็จ (ใช้ข้อมูลล่าสุด)";
@@ -337,3 +346,8 @@ if (window.Flags) {
 }
 wire();
 load();
+// auto-refresh ทุก 5 นาที (เงียบ ไม่กระโดด scroll) · กลับมาที่แท็บแล้วเก่ากว่า 5 นาที รีเฟรชทันที
+setInterval(() => { if (!document.hidden) load({ silent: true }); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && state.data && Date.now() - (new Date(state.data.generatedAt || 0)).getTime() > 5 * 60 * 1000) load({ silent: true });
+});

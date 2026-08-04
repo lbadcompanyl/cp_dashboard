@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "26"; // bump: re-derive label สำนักข่าวสำหรับ alert ที่ค้างใน KV
+const CACHE_VER = "27"; // bump: re-derive label + ไฮไลต์ทุก term + เพิ่มแบรนด์เครือ CP (CPAXT/CPPC/ศุภชัย ฯลฯ)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -104,6 +104,24 @@ function hlWrap(text, term) {
   const re = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
   return text.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
 }
+// ไฮไลต์ทุก term ที่ตามอยู่ในข้อความเดียว: ลบ marker เดิม (ของ Google หรือรอบก่อน) แล้วครอบใหม่ทีเดียว
+// longest-first + regex เดียว → ไม่ครอบซ้อนกัน (เช่น "ซีพี" ใน "ซีพีเอฟ")
+function hlAll(text, terms) {
+  if (!text) return text || "";
+  const stripped = text.replace(/\[\[\/?hl\]\]/g, "");
+  const esc = [...new Set(terms.filter(Boolean).map((t) => String(t)))]
+    .sort((a, b) => b.length - a.length)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!esc.length) return stripped;
+  const re = new RegExp("(" + esc.join("|") + ")", "gi");
+  return stripped.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
+}
+// ไฮไลต์ทุก item ในคอลัมน์ alert (ทั้งข่าว native + ที่ merge เข้ามา + ที่ค้างใน KV) ให้สม่ำเสมอ
+function highlightAlertItems(sources, alertSrc, terms) {
+  const s = sources[alertSrc];
+  if (!s || !terms || !terms.length) return;
+  for (const it of s.items) { it.title = hlAll(it.title, terms); it.snippet = hlAll(it.snippet, terms); }
+}
 // แตกคำจาก query ของ Google Alert เช่น '"PM2.5" OR ฝุ่น' -> ["pm2.5","ฝุ่น"]
 function parseAlertTerms(queries) {
   const out = new Set();
@@ -192,6 +210,12 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   // เก็บสะสม alert ลง KV (CP/จับตามอง 10 วัน) แม้หลุดจากฟีด Google Alert แล้ว — หลัง verify กันสะสม noise
   const archive = {};
   try { await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
+
+  // ไฮไลต์ keyword ให้ทุก item ใน alert สม่ำเสมอ (ไม่พึ่ง <b> ของ Google ที่บางทีไม่ bold) — หลัง merge+archive
+  try {
+    highlightAlertItems(sources, "alert1", CP_BRANDS);
+    highlightAlertItems(sources, "alert2", parseAlertTerms(queriesBySource.alert2));
+  } catch {}
 
   // Google Alert ส่งว่างชั่วคราว (ฟีดรีเซ็ตหลังแก้ query / โดน throttle) → คงชุดเดิมจาก cache กันแผงว่าง
   try {
@@ -301,6 +325,8 @@ const CP_BRANDS = [
   "cp group", "cp foods", "cp land", "cp brand", "cp fresh", "cp meiji", "cp-meiji", "cp intertrade",
   "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
   "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "7-11", "7 11", "แม็คโคร", "makro", "โลตัส", "lotus's",
+  "cpaxt", "ซีพี แอ็กซ์ตร้า", "ซีพีแอ็กซ์ตร้า", "cppc", "ซีพีพีซี", "quantum club",
+  "ศุภชัย เจียรวนนท์", "ธนินท์ เจียรวนนท์", "supachai chearavanont", "true corp", "ทรู คอร์ปอเรชั่น",
 ];
 // คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
 const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);

@@ -40,13 +40,16 @@ function withinRecency(iso, hours) {
 }
 
 // ---------- data ----------
-async function load() {
+async function load(opts = {}) {
+  const silent = !!opts.silent; // auto-refresh: ไม่ล้างเป็น skeleton / ไม่กระโดด scroll
   const btn = $("#refresh");
   btn.disabled = true;
-  $("#updated").textContent = "กำลังโหลด…";
-  $$(".panel").forEach((p) => {
-    $("[data-list]", p).innerHTML = `<div class="state skeleton">กำลังดึงข้อมูล…</div>`;
-  });
+  if (!silent) {
+    $("#updated").textContent = "กำลังโหลด…";
+    $$(".panel").forEach((p) => {
+      $("[data-list]", p).innerHTML = `<div class="state skeleton">กำลังดึงข้อมูล…</div>`;
+    });
+  }
 
   try {
     const [feeds, trends] = await Promise.all([
@@ -57,13 +60,22 @@ async function load() {
     state.data = feeds;
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
+    // จำตำแหน่ง scroll ของแต่ละคอลัมน์ + หน้า แล้วคืนหลัง render (กัน auto-refresh กระโดด)
+    const sp = silent ? $$(".panel [data-list]").map((el) => el.scrollTop) : null;
+    const wy = silent ? window.scrollY : 0;
     renderAll();
     applyKeywords(); // sync ปุ่ม 🔤 จาก query สดของฟีด (ถ้าครบ)
+    if (silent) {
+      $$(".panel [data-list]").forEach((el, i) => { if (sp[i] != null) el.scrollTop = sp[i]; });
+      window.scrollTo(0, wy);
+    }
   } catch (e) {
-    $("#updated").textContent = "โหลดไม่สำเร็จ";
-    $$(".panel").forEach((p) => {
-      $("[data-list]", p).innerHTML = `<div class="state error">ดึงข้อมูลไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
-    });
+    if (!silent) {
+      $("#updated").textContent = "โหลดไม่สำเร็จ";
+      $$(".panel").forEach((p) => {
+        $("[data-list]", p).innerHTML = `<div class="state error">ดึงข้อมูลไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
+      });
+    }
   } finally {
     btn.disabled = false;
   }
@@ -540,3 +552,8 @@ if (window.Flags) {
 }
 wire();
 load();
+// auto-refresh ทุก 5 นาที (เงียบ ไม่กระโดด scroll) · หยุดเมื่อสลับแท็บออกไป ค่อยรีเฟรชทันทีตอนกลับมา
+setInterval(() => { if (!document.hidden) load({ silent: true }); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && state.data && Date.now() - (new Date(state.data.generatedAt || 0)).getTime() > 5 * 60 * 1000) load({ silent: true });
+});
