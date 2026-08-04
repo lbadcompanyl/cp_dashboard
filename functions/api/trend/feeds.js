@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "28"; // bump: ตัด quantum club + freshen 3 นาที
+const CACHE_VER = "29"; // bump: prune ข่าว merge ที่ไม่ match term แล้ว (เช่น quantum club ที่ค้าง)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -116,6 +116,18 @@ function hlAll(text, terms) {
   const re = new RegExp("(" + esc.join("|") + ")", "gi");
   return stripped.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
 }
+// ตัดข่าวที่ "merge เข้ามา" (fromNews) ซึ่งไม่ match term ปัจจุบันแล้ว — เช่นเคยเพิ่ม brand แล้วเอาออก
+// ข่าว native/alert เดิมไม่แตะ (Google Alert อาจ match เชิงความหมายโดยไม่มีคำตรงๆ)
+function pruneStaleMerged(sources, alertSrc, terms) {
+  const s = sources[alertSrc];
+  if (!s || !terms || !terms.length) return;
+  const kws = terms.map((t) => String(t).toLowerCase());
+  s.items = s.items.filter((it) => {
+    if (!it.fromNews) return true;
+    const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase().replace(/\[\[\/?hl\]\]/g, "");
+    return kws.some((k) => hay.includes(k));
+  });
+}
 // ไฮไลต์ทุก item ในคอลัมน์ alert (ทั้งข่าว native + ที่ merge เข้ามา + ที่ค้างใน KV) ให้สม่ำเสมอ
 function highlightAlertItems(sources, alertSrc, terms) {
   const s = sources[alertSrc];
@@ -211,10 +223,13 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const archive = {};
   try { await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
 
-  // ไฮไลต์ keyword ให้ทุก item ใน alert สม่ำเสมอ (ไม่พึ่ง <b> ของ Google ที่บางทีไม่ bold) — หลัง merge+archive
+  // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   try {
+    const a2terms = parseAlertTerms(queriesBySource.alert2);
+    pruneStaleMerged(sources, "alert1", CP_BRANDS);
+    pruneStaleMerged(sources, "alert2", a2terms);
     highlightAlertItems(sources, "alert1", CP_BRANDS);
-    highlightAlertItems(sources, "alert2", parseAlertTerms(queriesBySource.alert2));
+    highlightAlertItems(sources, "alert2", a2terms);
   } catch {}
 
   // Google Alert ส่งว่างชั่วคราว (ฟีดรีเซ็ตหลังแก้ query / โดน throttle) → คงชุดเดิมจาก cache กันแผงว่าง

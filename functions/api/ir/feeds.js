@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "40"; // bump: ตัด quantum club + freshen 3 นาที
+const CACHE_VER = "41"; // bump: prune ข่าว merge ที่ไม่ match term แล้ว (เช่น quantum club ที่ค้าง)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -283,6 +283,17 @@ function hlAll(text, terms) {
   const re = new RegExp("(" + esc.join("|") + ")", "gi");
   return stripped.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
 }
+// ตัดข่าว merge (fromNews) ที่ไม่ match term ปัจจุบันแล้ว — self-heal เมื่อแก้ brand list · native ไม่แตะ
+function pruneStaleMerged(sources, alertSrc, terms) {
+  const s = sources[alertSrc];
+  if (!s || !terms || !terms.length) return;
+  const kws = terms.map((t) => String(t).toLowerCase());
+  s.items = s.items.filter((it) => {
+    if (!it.fromNews) return true;
+    const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase().replace(/\[\[\/?hl\]\]/g, "");
+    return kws.some((k) => hay.includes(k));
+  });
+}
 // ไฮไลต์ทุก item ใน alert (native + merge + ค้าง KV) ให้สม่ำเสมอ ไม่พึ่ง <b> ของ Google
 function highlightAlertItems(sources, alertSrc, terms) {
   const s = sources[alertSrc];
@@ -408,8 +419,10 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   const arDiag = {};
   try { await mergeArchives(env, sources, arDiag); } catch (e) { arDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
-  // ไฮไลต์ keyword ให้ทุก item ใน alert สม่ำเสมอ (ไม่พึ่ง <b> ของ Google) — หลัง merge+archive
+  // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   try {
+    pruneStaleMerged(sources, "alert1", CP_BRANDS);
+    pruneStaleMerged(sources, "alert2", ALERT2_KEEP);
     highlightAlertItems(sources, "alert1", CP_BRANDS);
     highlightAlertItems(sources, "alert2", ALERT2_KEEP);
   } catch {}
