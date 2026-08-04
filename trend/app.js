@@ -224,7 +224,7 @@ function renderPanel(panel) {
 
   const bucket = state.data?.sources?.[source] || { items: [] };
   const f = state.filters[source] || { kw: "", rc: "all" };
-  const kw = f.kw.trim().toLowerCase();
+  const kw = (state.gkw || "").trim().toLowerCase(); // global search (ทุกคอลัมน์ใช้คำเดียวกัน)
 
   const items = bucket.items.filter((it) => {
     if (window.Flags && Flags.isHidden(it.link)) return false;
@@ -261,7 +261,7 @@ function renderPanel(panel) {
 function renderTrends(panel) {
   const bucket = state.data?.sources?.trends || { items: [], error: null };
   const f = state.filters.trends || { kw: "" };
-  const kw = f.kw.trim().toLowerCase();
+  const kw = (state.gkw || "").trim().toLowerCase(); // global search (ทุกคอลัมน์ใช้คำเดียวกัน)
   const items = bucket.items.filter(
     (it) => !kw || (it.title + " " + it.snippet).toLowerCase().includes(kw)
   );
@@ -452,6 +452,8 @@ function wire() {
         reloadTrends();
       });
   });
+  const gs = $("#gsearch");
+  if (gs) gs.addEventListener("input", (e) => { state.gkw = e.target.value; renderAll(); });
   $("#refresh").addEventListener("click", load);
   setupSwipeDots();
 }

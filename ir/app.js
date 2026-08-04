@@ -146,7 +146,7 @@ function renderPanel(panel) {
   const source = panel.dataset.source;
   const bucket = state.data?.sources?.[source] || { items: [] };
   const f = state.filters[source] || { kw: "", rc: "all" };
-  const kw = f.kw.trim().toLowerCase();
+  const kw = (state.gkw || "").trim().toLowerCase(); // global search (ทุกคอลัมน์ใช้คำเดียวกัน)
 
   const items = bucket.items.filter((it) => {
     if (window.Flags && Flags.isHidden(it.link)) return false;
@@ -239,6 +239,8 @@ function wire() {
       });
     injectCats(panel);
   });
+  const gs = $("#gsearch");
+  if (gs) gs.addEventListener("input", (e) => { state.gkw = e.target.value; renderAll(); });
   $("#refresh").addEventListener("click", load);
   setupSwipeDots();
 }

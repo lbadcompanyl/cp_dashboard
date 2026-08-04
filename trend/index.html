@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Trend Dashboard</title>
-  <link rel="stylesheet" href="./styles.css?v=21" />
+  <link rel="stylesheet" href="./styles.css?v=22" />
 </head>
 <body>
   <header class="topbar">
@@ -21,6 +21,10 @@
     </div>
   </header>
 
+  <div class="gsearch">
+    <input type="search" id="gsearch" placeholder="🔎 ค้นหาทุกคอลัมน์พร้อมกัน…" autocomplete="off" />
+  </div>
+
   <div class="swipe-dots" id="swipeDots"></div>
 
   <main class="board" id="board">
@@ -31,7 +35,6 @@
         <span class="pcount" data-count>—</span>
       </div>
       <div class="filters">
-        <input type="search" class="kw" placeholder="🔎 ค้นคำในแผงนี้…" data-kw />
         <select class="rc" data-rc>
           <option value="all">ทุกช่วงเวลา</option>
           <option value="24">24 ชม.</option>
@@ -49,7 +52,6 @@
         <span class="pcount" data-count>—</span>
       </div>
       <div class="filters">
-        <input type="search" class="kw" placeholder="🔎 ค้นคำในแผงนี้…" data-kw />
         <select class="rc" data-rc>
           <option value="all">ทุกช่วงเวลา</option>
           <option value="24">24 ชม.</option>
@@ -67,7 +69,6 @@
         <span class="pcount" data-count>—</span>
       </div>
       <div class="filters">
-        <input type="search" class="kw" placeholder="🔎 ค้นคำในแผงนี้…" data-kw />
         <select class="rc" data-rc>
           <option value="all">ทุกช่วงเวลา</option>
           <option value="24">24 ชม.</option>
@@ -85,7 +86,6 @@
         <span class="pcount" data-count>—</span>
       </div>
       <div class="filters">
-        <input type="search" class="kw" placeholder="🔎 ค้นคำในแผงนี้…" data-kw />
         <select class="rc" data-geo title="เลือกประเทศ">
           <option value="TH">🇹🇭 ไทย</option>
           <option value="US">🇺🇸 สหรัฐฯ</option>
@@ -124,6 +124,6 @@
   </main>
 
   <script src="/flags.js?v=24"></script>
-  <script src="./app.js?v=23"></script>
+  <script src="./app.js?v=24"></script>
 </body>
 </html>

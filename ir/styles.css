@@ -61,6 +61,16 @@ body {
 .refresh:hover { background: var(--bg); }
 .refresh:disabled { opacity: .5; cursor: default; }
 
+/* Global search — ค้นหาทุกคอลัมน์พร้อมกัน */
+.gsearch { padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.gsearch input {
+  width: 100%; box-sizing: border-box; padding: 11px 14px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg); color: var(--text); outline: none;
+}
+.gsearch input:focus { border-color: var(--alert); }
+@media (max-width: 640px) { .gsearch { padding: 8px 12px; position: sticky; top: 0; z-index: 20; } }
+
 .board {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
