@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "41"; // bump: prune ข่าว merge ที่ไม่ match term แล้ว (เช่น quantum club ที่ค้าง)
+const CACHE_VER = "42"; // bump: ตัดโพสต์รูปล้วน S_<id> (Pasusart) ในคอลัมน์ปศุสัตว์
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -465,6 +465,8 @@ const DAILY_RE =
   /ประจำวัน|พยากรณ์อากาศ|รายงานสถานการณ์ฝุ่น|รายงานค่าฝุ่น|รายงานคุณภาพอากาศ|สรุปสภาพอากาศ|ค่าฝุ่นละออง[\s\S]{0,12}วันที่/;
 // เฉพาะสคริปต์เปิดดูรูปจริง — ไม่จับ /gallery/ เปล่า ๆ (moc.go.th ใช้ /gallery/ เป็นหมวดข่าวจริง)
 const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
+// โพสต์รูปภาพล้วน (สไลด์แกลเลอรี) ที่ตั้งหัวข้อเป็นรหัสรูป เช่น "S_30752912 | Pasusart News" — ไม่มีพาดหัวจริง
+const IMGPOST_RE = /^\s*S_?\d{4,}\b/i;
 const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
 function hostOf(link) {
@@ -474,6 +476,7 @@ function hostOf(link) {
 function noiseReason(it, title) {
   const link = it.link || "";
   if (GALLERY_RE.test(link)) return "gallery";
+  if (IMGPOST_RE.test(title)) return "imagepost";
   if (PR_RE.test(title)) return "pr";
   const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
   const text = title + " " + snip;
