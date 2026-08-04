@@ -30,7 +30,14 @@ const ALERT2_CATS = [
 ];
 const ALERT2_MAP = Object.fromEntries(ALERT2_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
 
+// หมวดย่อยคอลัมน์ CP (alert1) — แยก CPF ออกจากเครือ CP (กรอง keyword ฝั่ง client)
+const ALERT1_CATS = [
+  { key: "cpf", label: "CPF", kw: ["cpf", "ซีพีเอฟ", "cp foods", "เจริญโภคภัณฑ์อาหาร", "charoen pokphand foods"] },
+];
+const ALERT1_MAP = Object.fromEntries(ALERT1_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+
 function catsForSource(source) {
+  if (source === "alert1") return ALERT1_CATS;
   if (source === "alert2") return ALERT2_CATS;
   if (source === "newsth" || source === "newsintl") return CATS;
   return null;
@@ -42,8 +49,8 @@ function catOf(it, source) {
     const o = Flags.getCat(it.link);
     if (o) return o;
   }
-  const map = source === "alert2" ? ALERT2_MAP : CAT_MAP;
-  if (source !== "alert2" && it.cat) return it.cat;
+  const map = source === "alert1" ? ALERT1_MAP : source === "alert2" ? ALERT2_MAP : CAT_MAP;
+  if (source.indexOf("news") === 0 && it.cat) return it.cat; // it.cat (AI) เฉพาะคอลัมน์ข่าว
   const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
   for (const key of Object.keys(map)) if (map[key].some((k) => hay.includes(k))) return key;
   return "other";
@@ -289,8 +296,9 @@ function injectCats(panel) {
   if (!cats) return;
   const row = document.createElement("div");
   row.className = "cats";
+  const allLabel = source === "alert1" ? "CP group" : "ทั้งหมด"; // CP: "CP group" · อื่นๆ: "ทั้งหมด"
   row.innerHTML =
-    `<button type="button" class="cat on" data-cat="">ทั้งหมด</button>` +
+    `<button type="button" class="cat on" data-cat="">${allLabel}</button>` +
     cats.map((c) => `<button type="button" class="cat" data-cat="${c.key}">${c.label}</button>`).join("");
   $(".filters", panel).after(row);
   row.addEventListener("click", (e) => {

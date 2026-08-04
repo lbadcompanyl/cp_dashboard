@@ -195,6 +195,29 @@ function renderAll() {
   if (window.Flags) Flags.refresh();
 }
 
+// หมวดย่อยคอลัมน์ CP (alert1): แยก CPF ออกจากเครือ CP (กรอง keyword ฝั่ง client)
+const CPF_KW = ["cpf", "ซีพีเอฟ", "cp foods", "เจริญโภคภัณฑ์อาหาร", "charoen pokphand foods"];
+const isCPF = (it) => {
+  const h = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  return CPF_KW.some((k) => h.includes(k));
+};
+function injectCPFChips(panel) {
+  const source = panel.dataset.source;
+  const row = document.createElement("div");
+  row.className = "cats";
+  row.innerHTML =
+    `<button type="button" class="cat on" data-cat="">CP group</button>` +
+    `<button type="button" class="cat" data-cat="cpf">CPF</button>`;
+  $(".filters", panel).after(row);
+  row.addEventListener("click", (e) => {
+    const b = e.target.closest(".cat");
+    if (!b) return;
+    state.filters[source].cat = b.dataset.cat || null;
+    $$(".cat", row).forEach((x) => x.classList.toggle("on", x === b));
+    renderPanel(panel);
+  });
+}
+
 function renderPanel(panel) {
   const source = panel.dataset.source;
   if (source === "trends") return renderTrends(panel);
@@ -206,6 +229,7 @@ function renderPanel(panel) {
   const items = bucket.items.filter((it) => {
     if (window.Flags && Flags.isHidden(it.link)) return false;
     if (!withinRecency(it.publishedAt, f.rc)) return false;
+    if (source === "alert1" && f.cat === "cpf" && !isCPF(it)) return false; // chip CPF
     if (kw) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
       if (!hay.includes(kw)) return false;
@@ -395,7 +419,8 @@ function emptyState(source, bucket, filtered) {
 function wire() {
   $$(".panel").forEach((panel) => {
     const source = panel.dataset.source;
-    state.filters[source] = { kw: "", rc: "all", trc: "all" };
+    state.filters[source] = { kw: "", rc: "all", trc: "all", cat: null };
+    if (source === "alert1") injectCPFChips(panel); // หมวดย่อย CP group / CPF
     const kwEl = $("[data-kw]", panel);
     if (kwEl)
       kwEl.addEventListener("input", (e) => {

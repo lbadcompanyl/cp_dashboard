@@ -156,6 +156,15 @@ body {
 }
 .kw:focus, .rc:focus { outline: 2px solid var(--alert); outline-offset: -1px; }
 
+/* ชิพหมวดย่อย (CP group / CPF) */
+.cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
+.cat {
+  padding: 3px 11px; font-size: 12px; line-height: 1.5;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-2); color: var(--ink-2); cursor: pointer; white-space: nowrap;
+}
+.cat.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
 .list { overflow-y: auto; padding: 8px; flex: 1; }
 
 .card {
