@@ -346,6 +346,19 @@ body {
   border-radius: 0;
 }
 
+/* ข่าวเดียวกันจากสำนักอื่น (ยุบข่าวซ้ำ) */
+.card .also {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.card .also .alink {
+  color: var(--alert);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.card .also .alink:hover { opacity: 0.75; }
+
 /* ลูกศรบอกให้ปัด (มือถือ) */
 #swipeArrows { display: none; }
 @media (max-width: 640px) {

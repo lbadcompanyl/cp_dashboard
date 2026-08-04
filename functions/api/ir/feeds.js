@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "42"; // bump: ตัดโพสต์รูปล้วน S_<id> (Pasusart) ในคอลัมน์ปศุสัตว์
+const CACHE_VER = "43"; // bump: ยุบข่าวซ้ำหลายสำนัก (collapseDupes) + it.also
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -294,6 +294,30 @@ function pruneStaleMerged(sources, alertSrc, terms) {
     return kws.some((k) => hay.includes(k));
   });
 }
+// ---------- ยุบข่าวซ้ำ (เรื่องเดียวกันหลายสำนัก) ----------
+// เทียบพาดหัวด้วย bigram Jaccard: เรื่องเดียวกันต่างสำนัก ~0.3-0.7 · คนละเรื่องแม้หัวข้อเดียวกัน <0.2 (วัดจากตัวอย่างจริง)
+function dupKeyText(t) {
+  return String(t || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+function dupBigrams(s) { const o = new Set(); for (let i = 0; i < s.length - 1; i++) o.add(s.slice(i, i + 2)); return o; }
+function dupSim(a, b) { if (!a.size || !b.size) return 0; let n = 0; for (const g of a) if (b.has(g)) n++; return n / (a.size + b.size - n); }
+// ใบแรก (ใหม่สุด) เป็นตัวแทน · ใบซ้ำยุบเป็น it.also = [{label, link}] ให้ frontend โชว์ "อ่านจากสำนักอื่น"
+function collapseDupes(sources, src) {
+  const s = sources[src];
+  if (!s || !s.items || s.items.length < 2) return;
+  const metas = s.items.map((it) => ({ it, g: dupBigrams(dupKeyText(it.title)), t: new Date(it.publishedAt).getTime() }));
+  const kept = [];
+  for (const m of metas) {
+    const host = m.g.size >= 12
+      ? kept.find((k) => k.g.size >= 12 && Math.abs(m.t - k.t) < 72 * 3600e3 && dupSim(m.g, k.g) >= 0.3)
+      : null;
+    if (host) {
+      host.it.also = host.it.also || [];
+      if (host.it.also.length < 5 && m.it.link) host.it.also.push({ label: m.it.sourceLabel || "", link: m.it.link });
+    } else kept.push(m);
+  }
+  s.items = kept.map((k) => k.it);
+}
 // ไฮไลต์ทุก item ใน alert (native + merge + ค้าง KV) ให้สม่ำเสมอ ไม่พึ่ง <b> ของ Google
 function highlightAlertItems(sources, alertSrc, terms) {
   const s = sources[alertSrc];
@@ -426,6 +450,9 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     highlightAlertItems(sources, "alert1", CP_BRANDS);
     highlightAlertItems(sources, "alert2", ALERT2_KEEP);
   } catch {}
+
+  // ยุบข่าวซ้ำหลายสำนัก (พาดหัวคล้าย+เวลาใกล้กัน) เหลือใบเดียว แนบลิงก์สำนักอื่นใน it.also — เฉพาะผลแสดงผล ไม่แตะ KV
+  try { for (const s of ["newsth", "newsintl", "alert1", "alert2"]) collapseDupes(sources, s); } catch {}
 
   // ถ้ารอบนี้บาง source ดึงได้ 0 (Google Alert ส่งว่างชั่วคราว) → คงของเดิมไว้
   if (pj) {

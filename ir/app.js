@@ -190,8 +190,25 @@ function cardHtml(it, source) {
     <div class="ttl">${hl(escapeHtml(it.title))}</div>
     ${it.snippet ? `<div class="snip">${hl(escapeHtml(it.snippet))}</div>` : ""}
     <div class="meta">${timeAgo(it.publishedAt)}</div>
+    ${alsoHtml(it)}
   </a>`;
 }
+
+// ข่าวเดียวกันจากสำนักอื่น (ยุบซ้ำจาก server) — ใช้ span+data-href เพราะซ้อน <a> ในการ์ดไม่ได้
+function alsoHtml(it) {
+  if (!it.also || !it.also.length) return "";
+  const links = it.also
+    .map((a) => `<span class="alink" data-href="${escapeHtml(a.link)}">${escapeHtml(a.label || "สำนักอื่น")}</span>`)
+    .join(" · ");
+  return `<div class="also">ข่าวเดียวกัน: ${links}</div>`;
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest(".alink");
+  if (!a) return;
+  e.preventDefault();
+  e.stopPropagation();
+  window.open(a.dataset.href, "_blank", "noopener");
+});
 
 
 function setCount(panel, source, n) {
@@ -348,7 +365,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 27; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 28; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง
 let updateReady = false;
 let lastCodeCheck = Date.now();
