@@ -552,8 +552,36 @@ if (window.Flags) {
 }
 wire();
 load();
-// auto-refresh ทุก 3 นาที (เงียบ ไม่กระโดด scroll) · สลับแท็บกลับมาแล้วเก่ากว่า 3 นาที รีเฟรชทันที
-setInterval(() => { if (!document.hidden) load({ silent: true }); }, 3 * 60 * 1000);
+// ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
+const APP_VER = 28; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+let updateReady = false;
+function showUpdateBanner() {
+  if (document.getElementById("updbar")) return;
+  const b = document.createElement("button");
+  b.id = "updbar";
+  b.textContent = "🔄 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";
+  b.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";
+  b.onclick = () => location.reload();
+  document.body.appendChild(b);
+}
+function onUpdateFound() {
+  if (updateReady) return;
+  updateReady = true;
+  if (document.hidden) location.reload(); // ผู้ใช้ไม่ได้ดูอยู่ → รีโหลดเงียบ
+  else showUpdateBanner();
+}
+async function checkForUpdate() {
+  try {
+    const html = await fetch("./?_ct=" + Date.now(), { cache: "no-store" }).then((r) => r.text());
+    const m = html.match(/app\.js\?v=(\d+)/);
+    if (m && parseInt(m[1], 10) > APP_VER) onUpdateFound();
+  } catch {}
+}
+// auto-refresh + auto-update ทุก 3 นาที (เงียบ ไม่กระโดด scroll)
+setInterval(() => { if (!document.hidden) { load({ silent: true }); checkForUpdate(); } }, 3 * 60 * 1000);
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && state.data && Date.now() - (new Date(state.data.generatedAt || 0)).getTime() > 3 * 60 * 1000) load({ silent: true });
+  if (document.hidden) return;
+  if (updateReady) { location.reload(); return; } // เจอเวอร์ชันใหม่ตอนแท็บซ่อน → รีโหลดตอนกลับมา
+  if (state.data && Date.now() - (new Date(state.data.generatedAt || 0)).getTime() > 3 * 60 * 1000) load({ silent: true });
+  checkForUpdate();
 });
