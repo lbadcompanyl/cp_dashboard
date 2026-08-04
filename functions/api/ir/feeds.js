@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "37"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN) + ตัดฟีดซ้ำ
+const CACHE_VER = "38"; // bump: re-derive label สำนักข่าวสำหรับ alert ที่ค้างใน KV
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -153,6 +153,7 @@ async function mergeArchives(env, sources, diag) {
       .filter((it) => { const t = new Date(it.publishedAt).getTime(); return isNaN(t) || t >= cutoff; })
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
       .slice(0, cfg.max);
+    if (src.startsWith("alert")) for (const it of merged) if (!it.fromNews) it.sourceLabel = outletOf(it.link) || it.sourceLabel; // refresh label สำนักข่าว (กันของเก่าใน KV ค้าง "ซีพี")
     sources[src].items = merged;
     out[src] = merged;
     diag[src] = merged.length;

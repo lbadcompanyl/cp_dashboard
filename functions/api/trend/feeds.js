@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "25"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN)
+const CACHE_VER = "26"; // bump: re-derive label สำนักข่าวสำหรับ alert ที่ค้างใน KV
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -240,6 +240,7 @@ async function mergeArchives(env, sources, diag) {
       .filter((it) => { const t = new Date(it.publishedAt).getTime(); return isNaN(t) || t >= cutoff; })
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
       .slice(0, cfg.max);
+    if (src.startsWith("alert")) for (const it of merged) if (!it.fromNews) it.sourceLabel = outletOf(it.link) || it.sourceLabel; // refresh label สำนักข่าว (กันของเก่าใน KV ค้าง "ซีพี")
     sources[src].items = merged;
     out[src] = merged;
     diag[src] = merged.length;
