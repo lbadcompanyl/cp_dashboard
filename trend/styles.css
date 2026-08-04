@@ -66,11 +66,11 @@ body {
 .gsearch input {
   width: 100%; box-sizing: border-box; padding: 11px 14px; font-size: 14px;
   border: 1px solid var(--border); border-radius: 12px;
-  background: var(--bg); color: var(--text); outline: none;
+  background: var(--surface); color: var(--text); outline: none; /* พื้นหลังขาว (light mode) */
 }
 .gsearch input:focus { border-color: var(--alert); }
 @media (max-width: 640px) {
-  .gsearch { max-width: none; padding: 8px 10px; position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .gsearch { max-width: none; margin-top: 8px; padding: 8px 10px 10px; position: sticky; top: 0; z-index: 20; background: var(--bg); border-bottom: 1px solid var(--border); }
 }
 
 .board {
