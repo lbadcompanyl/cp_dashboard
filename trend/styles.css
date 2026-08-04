@@ -169,7 +169,7 @@ body {
 .kw:focus, .rc:focus { outline: 2px solid var(--alert); outline-offset: -1px; }
 
 /* ชิพหมวดย่อย (CP group/CPF · หมวดข่าว) */
-.cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
+.cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
 .cat {
   padding: 3px 11px; font-size: 12px; line-height: 1.5;
   border: 1px solid var(--border); border-radius: 999px;
