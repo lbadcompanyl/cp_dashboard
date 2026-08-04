@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 5 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (5 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "24"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN)
+const CACHE_VER = "25"; // bump: +5 ช่องผ่าน Bing (ลงทุนแมน/MGR/PPTV/Sanook/CNN)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -92,6 +92,18 @@ function normLink(url) {
   try { const u = new URL(url); return u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/+$/, ""); }
   catch { return url || ""; }
 }
+// map โดเมน → ชื่อสำนักข่าว (จาก feed config); ไม่รู้จัก → ใช้โดเมน
+const OUTLET_BY_HOST = {};
+for (const _f of feeds) { try { const _h = new URL(_f.url).hostname.replace(/^www\./, ""); if (!_h.includes("bing.com") && !OUTLET_BY_HOST[_h]) OUTLET_BY_HOST[_h] = _f.label; } catch {} }
+function outletOf(link) {
+  try { const h = new URL(link).hostname.replace(/^www\./, ""); return h.includes("google.") ? "" : (OUTLET_BY_HOST[h] || h); } catch { return ""; }
+}
+// ครอบคำที่ match ด้วย marker [[hl]] ให้ frontend ไฮไลต์ (เหมือน <b> ของ Google Alert)
+function hlWrap(text, term) {
+  if (!text || !term) return text || "";
+  const re = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  return text.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
+}
 // แตกคำจาก query ของ Google Alert เช่น '"PM2.5" OR ฝุ่น' -> ["pm2.5","ฝุ่น"]
 function parseAlertTerms(queries) {
   const out = new Set();
@@ -109,11 +121,12 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
   let added = 0;
   for (const nk of newsKeys) for (const it of (sources[nk]?.items || [])) {
     const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
-    if (!kws.some((k) => hay.includes(k))) continue;
+    const matched = kws.find((k) => hay.includes(k));
+    if (!matched) continue;
     const nl = normLink(it.link);
     if (have.has(nl)) continue;
     have.add(nl);
-    sources[alertSrc].items.push({ ...it, fromNews: true });
+    sources[alertSrc].items.push({ ...it, fromNews: true, title: hlWrap(it.title, matched), snippet: hlWrap(it.snippet, matched) });
     added++;
   }
   return added;
@@ -142,9 +155,10 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
           if (q) (queriesBySource[f.source] = queriesBySource[f.source] || []).push(q);
         }
         for (const it of items) {
-          if (!it.sourceLabel) it.sourceLabel = f.label;
           // some feeds (e.g. Workpoint) give relative links — resolve against the feed URL
           if (it.link && it.link.startsWith("/")) { try { it.link = new URL(it.link, f.url).href; } catch {} }
+          // Alert: โชว์สำนักข่าวจริงจากโดเมน (ไม่ใช่ label ของ query เช่น "ซีพี") · News: ใช้ label ฟีด
+          it.sourceLabel = f.source.startsWith("alert") ? (outletOf(it.link) || f.label) : (it.sourceLabel || f.label);
         }
         (sources[f.source] || (sources[f.source] = { label: f.label, items: [] })).items.push(...items);
       } catch (e) {
