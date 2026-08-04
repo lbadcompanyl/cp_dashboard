@@ -201,13 +201,28 @@ const isCPF = (it) => {
   const h = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
   return CPF_KW.some((k) => h.includes(k));
 };
-function injectCPFChips(panel) {
+// หมวดข่าว Google News (แบบหน้า IR) — กรอง keyword ฝั่ง client
+const NEWS_CATS = [
+  { key: "econ",   label: "💰 เศรษฐกิจ", kw: ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"] },
+  { key: "agri",   label: "🍗 อาหาร/เกษตร", kw: ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","อาหารสัตว์","เกษตร","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","livestock","pork","poultry","agri","farm","food","shrimp","crop","harvest"] },
+  { key: "retail", label: "🛒 ค้าปลีก/ผู้บริโภค", kw: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale"] },
+  { key: "crisis", label: "🚨 วิกฤติ/ภัยพิบัติ", kw: ["โรคระบาด","ระบาด","อหิวาต์","ไข้หวัดนก","asf","โควิด","แผ่นดินไหว","น้ำท่วม","ภัยแล้ง","พายุ","ไฟไหม้","ไฟป่า","สึนามิ","ดินถล่ม","ภัยพิบัติ","อุบัติเหตุ","ฉุกเฉิน","วิกฤต","ภัยธรรมชาติ","disease","outbreak","pandemic","epidemic","earthquake","quake","flood","drought","storm","typhoon","wildfire","tsunami","disaster","emergency","crisis"] },
+  { key: "pol",    label: "🏛️ การเมือง", kw: ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"] },
+];
+const NEWS_MAP = Object.fromEntries(NEWS_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+function newsCatOf(it) {
+  const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  for (const key of Object.keys(NEWS_MAP)) if (NEWS_MAP[key].some((k) => hay.includes(k))) return key;
+  return "other";
+}
+// สร้างแถบชิปหมวด — ใช้ร่วมทั้ง CP group/CPF (alert1) และหมวดข่าว (news)
+function injectCatChips(panel, cats, allLabel) {
   const source = panel.dataset.source;
   const row = document.createElement("div");
   row.className = "cats";
   row.innerHTML =
-    `<button type="button" class="cat on" data-cat="">CP group</button>` +
-    `<button type="button" class="cat" data-cat="cpf">CPF</button>`;
+    `<button type="button" class="cat on" data-cat="">${allLabel}</button>` +
+    cats.map((c) => `<button type="button" class="cat" data-cat="${c.key}">${c.label}</button>`).join("");
   $(".filters", panel).after(row);
   row.addEventListener("click", (e) => {
     const b = e.target.closest(".cat");
@@ -230,6 +245,7 @@ function renderPanel(panel) {
     if (window.Flags && Flags.isHidden(it.link)) return false;
     if (!withinRecency(it.publishedAt, f.rc)) return false;
     if (source === "alert1" && f.cat === "cpf" && !isCPF(it)) return false; // chip CPF
+    if (source === "news" && f.cat && newsCatOf(it) !== f.cat) return false; // chip หมวดข่าว (แบบ IR)
     if (kw) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
       if (!hay.includes(kw)) return false;
@@ -420,7 +436,8 @@ function wire() {
   $$(".panel").forEach((panel) => {
     const source = panel.dataset.source;
     state.filters[source] = { kw: "", rc: "all", trc: "all", cat: null };
-    if (source === "alert1") injectCPFChips(panel); // หมวดย่อย CP group / CPF
+    if (source === "alert1") injectCatChips(panel, [{ key: "cpf", label: "CPF" }], "CP group"); // CP group / CPF
+    if (source === "news") injectCatChips(panel, NEWS_CATS, "ทั้งหมด"); // หมวดข่าว (แบบ IR)
     const kwEl = $("[data-kw]", panel);
     if (kwEl)
       kwEl.addEventListener("input", (e) => {
