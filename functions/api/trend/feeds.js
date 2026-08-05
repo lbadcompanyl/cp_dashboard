@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "30"; // bump: ยุบข่าวซ้ำหลายสำนัก (collapseDupes) + it.also
+const CACHE_VER = "31"; // bump: ?errors โชว์รายการ prune ที่ตัด
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -61,6 +61,8 @@ export async function onRequest(context) {
         ((v.dropped || []).length
           ? (v.dropped || []).map((d) => `   ✂ [${d.src}${d.why ? "/" + d.why : ""}]${d.terms?.length ? " (" + d.terms.join(",") + ")" : ""} ${d.title}\n      ${d.link}`).join("\n") + "\n"
           : "") +
+        `ตัดข่าว merge ที่ไม่ match keyword ปัจจุบัน (prune): alert1=${(j.pruned?.alert1 || []).length}  alert2=${(j.pruned?.alert2 || []).length}\n` +
+        (["alert1", "alert2"].flatMap((s2) => (j.pruned?.[s2] || []).map((d) => `   ✂ [${s2}/prune] ${d.title}\n      ${d.link}`)).join("\n") + "\n").replace(/^\n$/, "") +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
           ? (j.errors || []).map((e) => `✗ ${e.label}  [${e.source}/${e.id}]  →  ${e.message}`).join("\n")
@@ -120,13 +122,17 @@ function hlAll(text, terms) {
 // ข่าว native/alert เดิมไม่แตะ (Google Alert อาจ match เชิงความหมายโดยไม่มีคำตรงๆ)
 function pruneStaleMerged(sources, alertSrc, terms) {
   const s = sources[alertSrc];
-  if (!s || !terms || !terms.length) return;
+  const cut = []; // รายการที่ตัด (โชว์ใน ?errors)
+  if (!s || !terms || !terms.length) return cut;
   const kws = terms.map((t) => String(t).toLowerCase());
   s.items = s.items.filter((it) => {
     if (!it.fromNews) return true;
     const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase().replace(/\[\[\/?hl\]\]/g, "");
-    return kws.some((k) => hay.includes(k));
+    if (kws.some((k) => hay.includes(k))) return true;
+    if (cut.length < 40) cut.push({ title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
+    return false;
   });
+  return cut;
 }
 // ---------- ยุบข่าวซ้ำ (เรื่องเดียวกันหลายสำนัก) ----------
 // เทียบพาดหัวด้วย bigram Jaccard: เรื่องเดียวกันต่างสำนัก ~0.3-0.7 · คนละเรื่องแม้หัวข้อเดียวกัน <0.2 (วัดจากตัวอย่างจริง)
@@ -249,10 +255,11 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   try { await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
 
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
+  const pruned = {};
   try {
     const a2terms = parseAlertTerms(queriesBySource.alert2);
-    pruneStaleMerged(sources, "alert1", CP_BRANDS);
-    pruneStaleMerged(sources, "alert2", a2terms);
+    pruned.alert1 = pruneStaleMerged(sources, "alert1", CP_BRANDS);
+    pruned.alert2 = pruneStaleMerged(sources, "alert2", a2terms);
     highlightAlertItems(sources, "alert1", CP_BRANDS);
     highlightAlertItems(sources, "alert2", a2terms);
   } catch {}
@@ -272,7 +279,7 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
     }
   } catch {}
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive, pruned });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",

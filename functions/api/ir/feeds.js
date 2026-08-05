@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "43"; // bump: ยุบข่าวซ้ำหลายสำนัก (collapseDupes) + it.also
+const CACHE_VER = "44"; // bump: ?errors โชว์รายการ no-context + prune ที่ตัด
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -225,10 +225,15 @@ export async function onRequest(context) {
         `คลังเก็บสะสม (KV — ในปท./ตปท. 2วัน, CP/ปศุสัตว์ 10วัน): ${JSON.stringify(j.archive || {})}\n` +
         `ฟีด Alert รอบ build ล่าสุด (สดจาก Google): ${JSON.stringify(j.alerts || [])}\n` +
         `ตัด noise ปศุสัตว์ (ไม่มีบริบทอุตสาหกรรม): ${j.alert2Cut ?? "-"} ข่าว\n` +
+        ((j.alert2CutList || []).length
+          ? (j.alert2CutList || []).map((d) => `   ✂ [alert2/no-context] ${d.title}\n      ${d.link}`).join("\n") + "\n"
+          : "") +
         `ตัด related-block (keyword ไม่อยู่ในเนื้อจริง): alert1=${j.alertVerify?.alert1 ?? "-"}  alert2=${j.alertVerify?.alert2 ?? "-"}\n` +
         ((j.alertVerify?.dropped || []).length
           ? (j.alertVerify.dropped || []).map((d) => `   ✂ [${d.src}${d.why ? "/" + d.why : ""}]${d.terms?.length ? " (" + d.terms.join(",") + ")" : ""} ${d.title}\n      ${d.link}`).join("\n") + "\n"
           : "") +
+        `ตัดข่าว merge ที่ไม่ match keyword ปัจจุบัน (prune): alert1=${(j.pruned?.alert1 || []).length}  alert2=${(j.pruned?.alert2 || []).length}\n` +
+        (["alert1", "alert2"].flatMap((s2) => (j.pruned?.[s2] || []).map((d) => `   ✂ [${s2}/prune] ${d.title}\n      ${d.link}`)).join("\n") + "\n").replace(/^\n$/, "") +
         `AI debug: ${JSON.stringify(j.ai || {})}\n` +
         `อัปเดต: ${j.generatedAt || "-"}\n\n` +
         ((j.errors || []).length
@@ -286,13 +291,17 @@ function hlAll(text, terms) {
 // ตัดข่าว merge (fromNews) ที่ไม่ match term ปัจจุบันแล้ว — self-heal เมื่อแก้ brand list · native ไม่แตะ
 function pruneStaleMerged(sources, alertSrc, terms) {
   const s = sources[alertSrc];
-  if (!s || !terms || !terms.length) return;
+  const cut = []; // รายการที่ตัด (โชว์ใน ?errors)
+  if (!s || !terms || !terms.length) return cut;
   const kws = terms.map((t) => String(t).toLowerCase());
   s.items = s.items.filter((it) => {
     if (!it.fromNews) return true;
     const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase().replace(/\[\[\/?hl\]\]/g, "");
-    return kws.some((k) => hay.includes(k));
+    if (kws.some((k) => hay.includes(k))) return true;
+    if (cut.length < 40) cut.push({ title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
+    return false;
   });
+  return cut;
 }
 // ---------- ยุบข่าวซ้ำ (เรื่องเดียวกันหลายสำนัก) ----------
 // เทียบพาดหัวด้วย bigram Jaccard: เรื่องเดียวกันต่างสำนัก ~0.3-0.7 · คนละเรื่องแม้หัวข้อเดียวกัน <0.2 (วัดจากตัวอย่างจริง)
@@ -397,9 +406,14 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
 
   // ตัด noise คอลัมน์ปศุสัตว์: ต้องมีบริบทอุตสาหกรรม ≥1 คำ (กันข่าวอาหาร/อาชญากรรมที่แค่มี หมู/ไก่)
   let alert2Cut = 0;
+  const alert2CutList = []; // รายการที่ตัด (โชว์ใน ?errors)
   if (sources.alert2) {
     const before = sources.alert2.items.length;
-    sources.alert2.items = sources.alert2.items.filter(alert2Relevant);
+    sources.alert2.items = sources.alert2.items.filter((it) => {
+      const ok = alert2Relevant(it);
+      if (!ok && alert2CutList.length < 40) alert2CutList.push({ title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
+      return ok;
+    });
     alert2Cut = before - sources.alert2.items.length;
   }
 
@@ -444,9 +458,10 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   try { await mergeArchives(env, sources, arDiag); } catch (e) { arDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
+  const pruned = {};
   try {
-    pruneStaleMerged(sources, "alert1", CP_BRANDS);
-    pruneStaleMerged(sources, "alert2", ALERT2_KEEP);
+    pruned.alert1 = pruneStaleMerged(sources, "alert1", CP_BRANDS);
+    pruned.alert2 = pruneStaleMerged(sources, "alert2", ALERT2_KEEP);
     highlightAlertItems(sources, "alert1", CP_BRANDS);
     highlightAlertItems(sources, "alert2", ALERT2_KEEP);
   } catch {}
@@ -464,7 +479,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alertVerify });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alert2CutList, alertVerify, pruned });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
