@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Issue Dashboard</title>
+  <link rel="stylesheet" href="./styles.css?v=1" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🧭</span>
+      <div>
+        <h1>Issue Dashboard</h1>
+        <p class="sub" id="updated">กำลังโหลด…</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a href="/" class="refresh" style="text-decoration:none" title="กลับหน้าหลัก">🏠 หน้าหลัก</a>
+      <button id="refresh" class="refresh" title="ดึงข้อมูลใหม่">🔄 รีเฟรช</button>
+    </div>
+  </header>
+
+  <div class="pgtabs">
+    <a class="pgtab on" href="./">📰 ข่าวประเด็น</a>
+    <a class="pgtab" href="trends.html">📈 เทรนด์ (Trends)</a>
+    <a class="pgtab" href="three.html">➕ หน้า 3</a>
+  </div>
+
+  <div class="gsearch">
+    <input type="search" id="gsearch" placeholder="🔎 ค้นหาทุกคอลัมน์พร้อมกัน…" autocomplete="off" />
+  </div>
+
+  <div class="swipe-dots" id="swipeDots"></div>
+
+  <main class="board" id="board">
+    <!-- 4 panels: News · Alert 1 · Alert 2 · Trends -->
+    <section class="panel" data-source="news">
+      <div class="phead">
+        <span class="ptitle"><span class="dot news"></span>📰 ข่าวรวมทุกประเด็น</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <select class="rc" data-rc>
+          <option value="all">ทุกช่วงเวลา</option>
+          <option value="24">24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="72">3 วัน</option>
+          <option value="168">7 วัน</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+
+    <section class="panel" data-source="alert1">
+      <div class="phead">
+        <span class="ptitle"><span class="dot alert"></span>🥫 อาหารแปรรูป × มะเร็ง</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <select class="rc" data-rc>
+          <option value="all">ทุกช่วงเวลา</option>
+          <option value="24">24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="72">3 วัน</option>
+          <option value="168">7 วัน</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+
+    <section class="panel" data-source="alert2">
+      <div class="phead">
+        <span class="ptitle"><span class="dot alert"></span>🦎 สัตว์ต่างถิ่น</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <select class="rc" data-rc>
+          <option value="all">ทุกช่วงเวลา</option>
+          <option value="24">24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="72">3 วัน</option>
+          <option value="168">7 วัน</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+
+    <section class="panel" data-source="trends">
+      <div class="phead">
+        <span class="ptitle"><span class="dot trends"></span>🔥 Google Trends</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <select class="rc" data-geo title="เลือกประเทศ">
+          <option value="TH">🇹🇭 ไทย</option>
+          <option value="US">🇺🇸 สหรัฐฯ</option>
+          <option value="GB">🇬🇧 อังกฤษ</option>
+          <option value="JP">🇯🇵 ญี่ปุ่น</option>
+          <option value="KR">🇰🇷 เกาหลี</option>
+          <option value="SG">🇸🇬 สิงคโปร์</option>
+          <option value="IN">🇮🇳 อินเดีย</option>
+          <option value="DE">🇩🇪 เยอรมนี</option>
+          <option value="FR">🇫🇷 ฝรั่งเศส</option>
+        </select>
+        <select class="rc" data-cat title="หมวดหมู่ (แบบ Google Trends)">
+          <option value="0">📚 ทุกหมวด</option>
+          <option value="3">💼 ธุรกิจ/การเงิน</option>
+          <option value="4">🎬 บันเทิง</option>
+          <option value="5">🍔 อาหาร/เครื่องดื่ม</option>
+          <option value="6">🎮 เกม</option>
+          <option value="7">🩺 สุขภาพ</option>
+          <option value="14">🏛️ การเมือง</option>
+          <option value="10">⚖️ กฎหมาย/ราชการ</option>
+          <option value="15">🔬 วิทยาศาสตร์</option>
+          <option value="16">🛍️ ช้อปปิ้ง</option>
+          <option value="17">⚽ กีฬา</option>
+          <option value="18">💻 เทคโนโลยี</option>
+          <option value="19">✈️ ท่องเที่ยว</option>
+        </select>
+        <select class="rc" data-hours title="ช่วงเวลา (แบบ Google)">
+          <option value="4">4 ชม.</option>
+          <option value="24" selected>24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="168">7 วัน</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+  </main>
+
+  <script src="/flags.js?v=24"></script>
+  <script src="./app.js?v=1"></script>
+</body>
+</html>
