@@ -13,6 +13,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Dashboards" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ index.html — เครื่องที่ติดตั้งเป็นแอปใช้ค่านี้เช็คว่ามีของใหม่ -->
+<meta name="landing-ver" content="2" />
 <script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}</script>
 <style>
   :root {
@@ -136,6 +138,54 @@
 <footer class="foot">Dashboards · Trends Explorer & IR News Monitor · static · deploy บน Cloudflare Pages</footer>
 
 <script>
+  // ── เช็คของใหม่ ─────────────────────────────────────────────────────────
+  // หน้า /trend/ กับ /ir/ มีระบบนี้อยู่แล้ว แต่หน้า landing ไม่เคยมี — พอติดตั้งเป็นแอป
+  // บนมือถือแล้วมันค้างหน้าเก่าไว้ (การ์ดใหม่ไม่ขึ้น) ต้องถอนแอปติดตั้งใหม่ถึงจะเห็น
+  (function(){
+    var VER = 2; // ต้องตรงกับ <meta name="landing-ver"> ด้านบน
+    var CHECK_MS = 60 * 60 * 1000; // เช็คไม่ถี่กว่าชั่วโมงละครั้ง
+    var last = 0, ready = false;
+
+    function banner(){
+      if (document.getElementById("updbar")) return;
+      var b = document.createElement("button");
+      b.id = "updbar";
+      b.textContent = "🔄 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";
+      b.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";
+      b.onclick = function(){ location.reload(); };
+      document.body.appendChild(b);
+    }
+    // reload เงียบได้ไม่เกิน 1 ครั้ง/ชม. กัน loop ตอน CDN กระจายไฟล์ยังไม่ครบทุก edge
+    function canAutoReload(){
+      try {
+        var t = +sessionStorage.getItem("landingAutoReload") || 0;
+        if (Date.now() - t < CHECK_MS) return false;
+        sessionStorage.setItem("landingAutoReload", String(Date.now()));
+      } catch(e){}
+      return true;
+    }
+    function check(){
+      if (Date.now() - last < CHECK_MS) return;
+      last = Date.now();
+      fetch("./?_ct=" + Date.now(), { cache: "no-store" })
+        .then(function(r){ return r.text(); })
+        .then(function(html){
+          var m = html.match(/name="landing-ver"\s+content="(\d+)"/);
+          if (!m || parseInt(m[1], 10) <= VER || ready) return;
+          ready = true;
+          if (document.hidden && canAutoReload()) location.reload();
+          else banner();
+        })
+        .catch(function(){});
+    }
+    addEventListener("load", function(){ last = Date.now() - CHECK_MS; check(); });
+    document.addEventListener("visibilitychange", function(){
+      if (document.hidden) return;
+      if (ready) { location.reload(); return; } // เจอของใหม่ตอนสลับไปแอปอื่น → รีโหลดตอนกลับมา
+      check();
+    });
+  })();
+
   function setTheme(m){ if(m==="light") document.documentElement.setAttribute("data-theme","light"); else document.documentElement.removeAttribute("data-theme"); const i=document.getElementById("themeIcon"), l=document.getElementById("themeLabel"); i.textContent=m==="dark"?"☀️":"🌙"; l.textContent=m==="dark"?"โหมดสว่าง":"โหมดมืด"; try{ localStorage.setItem("dashTheme",m); }catch(e){} }
   document.getElementById("themeBtn").onclick=()=>setTheme(document.documentElement.getAttribute("data-theme")==="light"?"dark":"light");
   let saved="dark"; try{ saved=localStorage.getItem("dashTheme")||"dark"; }catch(e){}
