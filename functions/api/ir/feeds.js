@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "45"; // bump: กู้คืน TRUE/ทรู + TU + เนื้อสัตว์เถื่อน + normalize title ตอนเช็ค keep-term
+const CACHE_VER = "46"; // bump: ตัดชื่อลวง บีแอลซีพี/ซีพีเอ็น ออกจากคอลัมน์ CP
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -331,7 +331,13 @@ function collapseDupes(sources, src) {
 function highlightAlertItems(sources, alertSrc, terms) {
   const s = sources[alertSrc];
   if (!s || !terms || !terms.length) return;
-  for (const it of s.items) { it.title = hlAll(it.title, terms); it.snippet = hlAll(it.snippet, terms); }
+  // กันไฮไลต์ "ซีพี" ที่ซ่อนอยู่ในชื่อลวง (บีแอลซีพี) — พักไว้เป็น token ก่อน แล้วคืนหลังไฮไลต์
+  const mask = (t) => { const keep = []; const masked = String(t || "").replace(CP_FALSE_RE, (m) => { keep.push(m); return "\u0001" + (keep.length - 1) + "\u0002"; }); return [masked, keep]; };
+  const unmask = (t, keep) => String(t || "").replace(/\u0001(\d+)\u0002/g, (_, i) => keep[+i] || "");
+  for (const it of s.items) {
+    const [mt, kt] = mask(it.title); it.title = unmask(hlAll(mt, terms), kt);
+    const [ms, ks] = mask(it.snippet); it.snippet = unmask(hlAll(ms, terms), ks);
+  }
 }
 function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
   if (!sources[alertSrc] || !terms.length) return 0;
@@ -540,6 +546,16 @@ const CP_BRANDS = [
 ];
 // คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
 const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
+// ชื่อที่ "มีซีพี/CP อยู่ข้างใน" แต่ไม่ใช่เครือ CP — บีแอลซีพี = BLCP Power (โรงไฟฟ้า), ซีพีเอ็น = Central Pattana
+const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็น", "cpn "];
+const CP_FALSE_RE = new RegExp(CP_FALSE.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+const hasFalseCP = (s) => { CP_FALSE_RE.lastIndex = 0; return CP_FALSE_RE.test(String(s || "")); };
+const dropFalseCP = (s) => String(s || "").replace(CP_FALSE_RE, " ");
+// จริงหรือไม่: ตัดชื่อลวงออกก่อน แล้วยังเหลือชื่อเครือ CP อยู่ไหม
+function realCP(text) {
+  const hay = dropFalseCP(String(text || "").replace(/\[\[\/?hl\]\]/g, "")).toLowerCase();
+  return CP_BRANDS.some((b) => hay.includes(b));
+}
 // คอลัมน์ alert2 (ปศุสัตว์/การค้า) พาดหัวมักใช้คำแปร (เลี้ยงหมู/เขียงหมู) หรือชื่อย่อ (TU) ไม่ตรงคำที่ Google match
 // เก็บไว้ถ้าพาดหัวมีคำ "เฉพาะโดเมน" เหล่านี้ (เลี่ยงคำโดด หมู/ไก่/ไข่ ที่โผล่ในข่าวอาชญากรรม) · alert2 ผ่านตัวกรอง anchor มาแล้ว
 const ALERT2_KEEP = [
@@ -630,6 +646,9 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/แกลเลอรี/PR ก่อนเช็ค related-block
       if (noise) return { ok: false, why: noise, terms: [], bare, link: it.link };
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
+      // CP มาจากชื่อลวงล้วน ๆ (บีแอลซีพี/ซีพีเอ็น) → ไม่ใช่ข่าวเครือ CP
+      const rawHay = bare + " " + (it.snippet || "");
+      if (src === "alert1" && hasFalseCP(rawHay) && !realCP(rawHay)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
       if (it.fromNews) return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
       // เช็คทั้ง title ดิบ + แบบแปลงเครื่องหมายเป็นช่องว่าง — พาดหัวแบบ 'TU'อัพเป้า ให้คำอย่าง "tu " match ติด
