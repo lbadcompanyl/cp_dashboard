@@ -6,7 +6,9 @@ const state = {
   trendsGeo: "TH",
   trendsHours: 24, // Past 4/24/48/168 ชม. (แบบ Google Trending Now)
   trendsCat: 0, // หมวดหมู่ (แบบ Google Trends): 0 = ทุกหมวด
-  xGeo: "thailand", // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
+  xGeo: "thailand",
+  xCat: null,        // หมวดที่เลือกในคอลัมน์ X (null = ทุกหมวด)
+  xNews: {},         // ชื่อเทรนด์ -> ข่าวที่ดึงมาแล้ว (กันยิงซ้ำ) // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -116,7 +118,15 @@ async function fetchTrends(geo, hours, cat = 0) {
 async function fetchXTrends(geo) {
   const res = await fetch(`/api/trend/xtrends?geo=${encodeURIComponent(geo)}`);
   const d = await res.json();
-  return { label: "X Trends", items: d.trends || [], error: d.error || null, stale: !!d.stale, source: d.source || "" };
+  return {
+    label: "X Trends",
+    items: d.trends || [],
+    error: d.error || null,
+    stale: !!d.stale,
+    source: d.source || "",
+    fetchedAt: d.fetchedAt || null,
+    sourceUpdatedAt: d.sourceUpdatedAt || null,
+  };
 }
 
 async function reloadXTrends() {
@@ -130,10 +140,68 @@ async function reloadXTrends() {
   renderPanel(panel);
 }
 
+const X_CATS = [
+  { k: "ent",   label: "🎬 บันเทิง" },
+  { k: "biz",   label: "🛍️ แบรนด์/สินค้า" },
+  { k: "pol",   label: "🏛️ การเมือง" },
+  { k: "sport", label: "⚽ กีฬา" },
+  { k: "news",  label: "📰 ข่าว" },
+  { k: "other", label: "❓ อื่นๆ" },
+];
+
+// แถวปุ่มหมวด — โชว์เฉพาะหมวดที่มีข้อมูลจริง พร้อมจำนวน
+function renderXCats(panel, all) {
+  let row = $(".xcats", panel);
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "xcats";
+    $(".filters", panel).after(row);
+    row.addEventListener("click", (e) => {
+      const b = e.target.closest(".cat");
+      if (!b) return;
+      state.xCat = b.dataset.cat || null;
+      renderXTrends(panel);
+    });
+  }
+  const n = {};
+  all.forEach((t) => { n[t.cat || "other"] = (n[t.cat || "other"] || 0) + 1; });
+  const chips = [`<button class="cat${state.xCat ? "" : " on"}" data-cat="">ทั้งหมด ${all.length}</button>`]
+    .concat(X_CATS.filter((c) => n[c.k]).map(
+      (c) => `<button class="cat${state.xCat === c.k ? " on" : ""}" data-cat="${c.k}">${c.label} ${n[c.k]}</button>`
+    ));
+  row.innerHTML = chips.join("");
+}
+
+// กดที่เทรนด์ -> ดึงข่าวที่เกี่ยวข้องมาแสดงใต้ชื่อ (โพสต์จริงบน X ต้องใช้ API เสียเงิน)
+async function loadXNews(name, box) {
+  if (state.xNews[name]) return paintXNews(state.xNews[name], box);
+  box.innerHTML = `<div class="xnews-state">กำลังหาข่าวที่เกี่ยวข้อง…</div>`;
+  try {
+    const r = await fetch(`/api/trend/xnews?q=${encodeURIComponent(name)}`).then((x) => x.json());
+    state.xNews[name] = r.articles || [];
+    paintXNews(state.xNews[name], box);
+  } catch {
+    box.innerHTML = `<div class="xnews-state">ดึงข่าวไม่ได้</div>`;
+  }
+}
+function paintXNews(articles, box) {
+  if (!articles.length) {
+    box.innerHTML = `<div class="xnews-state">ไม่พบข่าวที่เกี่ยวข้อง — เทรนด์นี้อาจมาจากแฟนคลับล้วน กดปุ่ม 𝕏 เพื่ออ่านโพสต์จริง</div>`;
+    return;
+  }
+  box.innerHTML = articles
+    .map((a) => `<a class="xnews-item" href="${escapeHtml(a.link)}" target="_blank" rel="noopener">
+        <span class="xnews-title">${escapeHtml(a.title)}</span>
+        <span class="xnews-meta">${escapeHtml(a.source || "")}${a.publishedAt ? " · " + timeAgo(a.publishedAt) : ""}</span>
+      </a>`)
+    .join("");
+}
+
 function renderXTrends(panel) {
   const bucket = state.data?.sources?.xtrends || { items: [], error: null };
   const kw = (state.gkw || "").trim().toLowerCase(); // global search ใช้คำเดียวกับคอลัมน์อื่น
-  const items = bucket.items.filter((it) => !kw || it.name.toLowerCase().includes(kw));
+  const all = bucket.items.filter((it) => !kw || it.name.toLowerCase().includes(kw));
+  const items = state.xCat ? all.filter((it) => (it.cat || "other") === state.xCat) : all;
 
   const countEl = $("[data-count]", panel);
   if (bucket.error && bucket.items.length === 0) {
@@ -143,22 +211,55 @@ function renderXTrends(panel) {
   } else {
     countEl.className = "pcount";
     countEl.textContent = items.length + " คำ";
-    countEl.title = bucket.stale ? "ข้อมูลค้างจากรอบก่อน (แหล่งดึงไม่ได้ชั่วคราว)" : (bucket.source || "");
+    countEl.title = bucket.source || "";
   }
+
+  // ป้ายบอกความสด — ให้รู้ว่าข้อมูลที่เห็นเก่าแค่ไหน ไม่ต้องเดา
+  let fresh = $(".xfresh", panel);
+  if (!fresh) {
+    fresh = document.createElement("div");
+    fresh.className = "xfresh";
+    $(".phead", panel).after(fresh);
+  }
+  if (bucket.items.length) {
+    const src = bucket.sourceUpdatedAt ? `ต้นทางอัปเดต ${timeAgo(bucket.sourceUpdatedAt)}` : "";
+    const got = bucket.fetchedAt ? `ดึงเมื่อ ${timeAgo(bucket.fetchedAt)}` : "";
+    fresh.innerHTML = bucket.stale
+      ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
+      : `<span>🕒 ${[src, got].filter(Boolean).join(" · ")}</span>`;
+  } else fresh.innerHTML = "";
+
+  renderXCats(panel, all);
 
   const list = $("[data-list]", panel);
   if (items.length === 0) {
-    list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : kw ? "ไม่พบคำที่ตรงกับตัวกรอง" : "ยังไม่มีข้อมูล"}</div>`;
+    list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : "ไม่พบคำที่ตรงกับตัวกรอง"}</div>`;
     return;
   }
   list.innerHTML = items
     .map(
-      (it, i) => `<a class="xrow" href="${escapeHtml(it.url)}" target="_blank" rel="noopener">
-        <span class="rank">${i + 1}</span>
-        <span class="xname${it.isHashtag ? " xtag" : ""}">${escapeHtml(it.name)}</span>
-      </a>`
+      (it, i) => `<div class="xrow" data-name="${escapeHtml(it.name)}">
+        <div class="xrow-head">
+          <span class="rank">${i + 1}</span>
+          <span class="xname${it.isHashtag ? " xtag" : ""}">${escapeHtml(it.name)}</span>
+          <a class="xopen" href="${escapeHtml(it.url)}" target="_blank" rel="noopener" title="เปิดหน้าค้นหาบน X">𝕏</a>
+        </div>
+        <div class="xnews" hidden></div>
+      </div>`
     )
     .join("");
+
+  list.onclick = (e) => {
+    if (e.target.closest(".xopen")) return; // กดปุ่ม 𝕏 = เปิดลิงก์ ไม่ใช่กางข่าว
+    const head = e.target.closest(".xrow-head");
+    if (!head) return;
+    const row = head.parentElement;
+    const box = $(".xnews", row);
+    const open = !box.hidden;
+    box.hidden = open;
+    row.classList.toggle("open", !open);
+    if (!open) loadXNews(row.dataset.name, box);
+  };
 }
 
 async function reloadTrends() {
@@ -632,7 +733,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 32; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 33; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

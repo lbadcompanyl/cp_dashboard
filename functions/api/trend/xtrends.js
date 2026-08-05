@@ -13,6 +13,92 @@ const EDGE_TTL = 900;         // เทรนด์ขยับทุก ~30 น
 const KV_TTL = 6 * 3600;      // เก็บของเก่าไว้ 6 ชม. เผื่อทั้งสองแหล่งล่ม
 const MAX_TRENDS = 50;
 
+// จัดหมวดด้วย Workers AI (โมเดลเดียวกับที่ /api/ir/feeds ใช้จัดหมวดข่าว)
+const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct";
+const AI_BATCH = 25;            // รวมหลายคำต่อ 1 call
+const CAT_TTL = 7 * 24 * 3600;  // หมวดของแท็กไม่ค่อยเปลี่ยน เก็บยาวได้
+export const CATS = ["ent", "sport", "pol", "biz", "news", "other"];
+
+// เดาหมวดจากคำก่อน ประหยัด AI call (ตัวที่เดาไม่ได้ค่อยส่งไปถาม)
+const CAT_KW = {
+  ent:   ["concert", "mv", "selca", "fanmeet", "ost", "ep", "live", "คอนเสิร์ต", "ซีรีส์", "ละคร", "หนัง", "เพลง", "ตอนพิเศษ", "ปิดกล้อง", "บวงสรวง", "แฟนมีต"],
+  sport: ["fc", "cup", "league", "match", "vs", "ฟุตบอล", "วอลเลย์", "มวย", "แข่ง", "ทีมชาติ"],
+  pol:   ["ศาล", "รัฐบาล", "นายก", "สภา", "เลือกตั้ง", "ม็อบ", "พรรค", "รัฐมนตรี", "กฎหมาย"],
+  biz:   ["sale", "promotion", "collection", "fw", "ss", "x ", "โปร", "ลดราคา", "เปิดตัว", "คอลแลบ"],
+  news:  ["ด่วน", "อุบัติเหตุ", "ไฟไหม้", "แผ่นดินไหว", "น้ำท่วม", "เสียชีวิต", "จับกุม"],
+};
+
+function guessCat(name) {
+  const hay = name.toLowerCase();
+  for (const k of Object.keys(CAT_KW)) if (CAT_KW[k].some((w) => hay.includes(w))) return k;
+  return null;
+}
+
+// ถาม AI เป็นชุด — คืน array หมวดตามลำดับที่ส่งไป
+async function classifyBatch(env, names) {
+  const list = names.map((n, i) => `${i + 1}. ${n}`).join("\n");
+  const prompt =
+    "Classify each Thai/English social media trending topic into ONE category code:\n" +
+    "ent = entertainment: artists, idols, K-pop, series, drama, movies, music, fandom events\n" +
+    "sport = sports, matches, teams, athletes\n" +
+    "pol = politics, government, courts, protests, policy\n" +
+    "biz = brands, products, sales, promotions, collaborations, business\n" +
+    "news = breaking news, accidents, disasters, crime\n" +
+    "other = none of the above\n" +
+    "Most Thai trending hashtags are fandom/entertainment — prefer ent when it names a person, show or fan event.\n" +
+    "Reply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
+    list;
+  const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 400 });
+  const text = String((out && (out.response || out.result)) || "").toLowerCase();
+  const found = text.match(/\b(ent|sport|pol|biz|news|other)\b/g) || [];
+  if (!found.length) throw new Error("no cats");
+  return found;
+}
+
+// เติมหมวดให้ทุกเทรนด์: KV -> เดาจากคำ -> ถาม AI (แล้วเก็บ KV ไว้ใช้ซ้ำ)
+async function addCategories(trends, env, ctx, diag) {
+  const kv = env && env.FLAGS_KV;
+  const pre = env.APP_ENV ? String(env.APP_ENV) + ":" : "";
+  const ask = [];
+
+  for (const t of trends) {
+    const cached = kv ? await kv.get(pre + "xcat:" + t.name).catch(() => null) : null;
+    if (cached && CATS.includes(cached)) { t.cat = cached; continue; }
+    const g = guessCat(t.name);
+    if (g) { t.cat = g; if (kv) ctx.waitUntil(kv.put(pre + "xcat:" + t.name, g, { expirationTtl: CAT_TTL }).catch(() => {})); continue; }
+    t.cat = "other"; // ค่าเริ่มต้นระหว่างรอ AI
+    ask.push(t);
+  }
+  diag.cached = trends.length - ask.length;
+  diag.asked = 0;
+
+  if (!env.AI || !ask.length) return;
+  for (let i = 0; i < ask.length; i += AI_BATCH) {
+    const chunk = ask.slice(i, i + AI_BATCH);
+    try {
+      const cats = await classifyBatch(env, chunk.map((x) => x.name));
+      chunk.forEach((t, j) => {
+        const c = cats[j];
+        if (!c || !CATS.includes(c)) return;
+        t.cat = c;
+        diag.asked++;
+        if (kv) ctx.waitUntil(kv.put(pre + "xcat:" + t.name, c, { expirationTtl: CAT_TTL }).catch(() => {}));
+      });
+    } catch (e) { diag.aiErr = String((e && e.message) || e).slice(0, 100); }
+  }
+}
+
+// เวลาที่ "ต้นทาง" อัปเดตเทรนด์ล่าสุด — เอาไว้ยืนยันว่าข้อมูลสดจริง ไม่ใช่หน้าค้าง
+function extractSourceTime(html) {
+  const iso = html.match(/<time[^>]*datetime=["']([^"']+)["']/i);
+  if (iso) { const d = new Date(iso[1]); if (!isNaN(d)) return d.toISOString(); }
+  const mins = html.match(/(\d+)\s*(?:minute|min)s?\s*ago/i);
+  if (mins) return new Date(Date.now() - parseInt(mins[1], 10) * 60000).toISOString();
+  const hrs = html.match(/(\d+)\s*hours?\s*ago/i);
+  if (hrs) return new Date(Date.now() - parseInt(hrs[1], 10) * 3600000).toISOString();
+  return null;
+}
+
 const SOURCES = [
   { id: "getdaytrends", url: (g) => `https://getdaytrends.com/${g}/` },
   { id: "trends24",     url: (g) => `https://trends24.in/${g}/` },
@@ -39,13 +125,17 @@ export async function onRequest(context) {
       const { trends, strategy } = parseTrends(html, src.id);
       attempts.push({ source: src.id, bytes: html.length, got: trends.length, strategy });
       if (trends.length >= 5) {
+        const catDiag = {};
+        try { await addCategories(trends, env, context, catDiag); }
+        catch (e) { catDiag.err = String((e && e.message) || e).slice(0, 100); }
         const body = {
           geo,
           source: src.id,
           fetchedAt: new Date().toISOString(),
+          sourceUpdatedAt: extractSourceTime(html), // null ถ้าหน้านั้นไม่ได้บอกเวลาไว้
           count: trends.length,
           trends,
-          meta: { strategy, attempts },
+          meta: { strategy, attempts, cats: catDiag },
         };
         if (kv) context.waitUntil(kv.put(kvKey, JSON.stringify(body), { expirationTtl: KV_TTL }).catch(() => {}));
         const edge = json(body, 200, EDGE_TTL);
