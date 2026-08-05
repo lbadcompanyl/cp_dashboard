@@ -1,4 +1,4 @@
-// Issue Dashboard — โคลนจาก Trend Dashboard ทั้งชุด (เปลี่ยนแหล่งข้อมูลเป็น /api/issue/feeds)
+// Issue Dashboard หน้า 1 — โคลนจาก Trend Dashboard ทั้งชุด (ข้อมูลชุดเดียวกัน /api/trend/feeds)
 
 const state = {
   data: null, // { sources: { news, alert, trends }, errors }
@@ -69,7 +69,7 @@ async function load(opts = {}) {
 
   try {
     const [feeds, trends] = await Promise.all([
-      fetch("/api/issue/feeds").then((r) => r.json()),
+      fetch("/api/trend/feeds").then((r) => r.json()),
       fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat),
     ]);
     feeds.sources.trends = trends;
@@ -224,12 +224,26 @@ function renderAll() {
   if (window.Flags) Flags.refresh();
 }
 
-// ชิพคอลัมน์ข่าวรวม: กรองรายประเด็น — server ติด tag it.cat ("i0"/"i1") มากับข่าวแต่ละชิ้น
+// หมวดย่อยคอลัมน์ CP (alert1): แยก CPF ออกจากเครือ CP (กรอง keyword ฝั่ง client)
+const CPF_KW = ["cpf", "ซีพีเอฟ", "cp foods", "เจริญโภคภัณฑ์อาหาร", "charoen pokphand foods"];
+const isCPF = (it) => {
+  const h = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  return CPF_KW.some((k) => h.includes(k));
+};
+// หมวดข่าว Google News (แบบหน้า IR) — กรอง keyword ฝั่ง client
 const NEWS_CATS = [
-  { key: "i0", label: "🥫 อาหารแปรรูป × มะเร็ง" },
-  { key: "i1", label: "🦎 สัตว์ต่างถิ่น" },
+  { key: "econ",   label: "💰 เศรษฐกิจ", kw: ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"] },
+  { key: "agri",   label: "🍗 อาหาร/เกษตร", kw: ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","อาหารสัตว์","เกษตร","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","livestock","pork","poultry","agri","farm","food","shrimp","crop","harvest"] },
+  { key: "retail", label: "🛒 ค้าปลีก/ผู้บริโภค", kw: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale"] },
+  { key: "crisis", label: "🚨 วิกฤติ/ภัยพิบัติ", kw: ["โรคระบาด","ระบาด","อหิวาต์","ไข้หวัดนก","asf","โควิด","แผ่นดินไหว","น้ำท่วม","ภัยแล้ง","พายุ","ไฟไหม้","ไฟป่า","สึนามิ","ดินถล่ม","ภัยพิบัติ","อุบัติเหตุ","ฉุกเฉิน","วิกฤต","ภัยธรรมชาติ","disease","outbreak","pandemic","epidemic","earthquake","quake","flood","drought","storm","typhoon","wildfire","tsunami","disaster","emergency","crisis"] },
+  { key: "pol",    label: "🏛️ การเมือง", kw: ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"] },
 ];
-function newsCatOf(it) { return it.cat || "other"; }
+const NEWS_MAP = Object.fromEntries(NEWS_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+function newsCatOf(it) {
+  const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  for (const key of Object.keys(NEWS_MAP)) if (NEWS_MAP[key].some((k) => hay.includes(k))) return key;
+  return "other";
+}
 // สร้างแถบชิปหมวด — ใช้ร่วมทั้ง CP group/CPF (alert1) และหมวดข่าว (news)
 function injectCatChips(panel, cats, allLabel) {
   const source = panel.dataset.source;
@@ -259,6 +273,7 @@ function renderPanel(panel) {
   const items = bucket.items.filter((it) => {
     if (window.Flags && Flags.isHidden(it.link)) return false;
     if (!withinRecency(it.publishedAt, f.rc)) return false;
+    if (source === "alert1" && f.cat === "cpf" && !isCPF(it)) return false; // chip CPF
     if (source === "news" && f.cat && newsCatOf(it) !== f.cat) return false; // chip หมวดข่าว (แบบ IR)
     if (kw) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
@@ -427,7 +442,23 @@ function setCount(panel, source, n) {
 function emptyState(source, bucket, filtered) {
   if (filtered && bucket.items.length > 0)
     return `<div class="state">ไม่พบรายการที่ตรงกับตัวกรอง</div>`;
-  return `<div class="state">ยังไม่มีข่าวในประเด็นนี้ตอนนี้<br><span style="font-size:11px">ระบบค้นจาก Bing/Google News อัตโนมัติ — ข่าวจะเข้าเมื่อมีเนื้อหาใหม่ตรงคำค้น</span></div>`;
+  if (source.startsWith("alert")) {
+    if (bucket.feedCount > 0) {
+      // มีฟีดแล้วแต่ยังไม่มีข่าวเข้าเงื่อนไข
+      return `<div class="state">
+        ✓ เพิ่มฟีด Alert แล้ว (${bucket.feedCount})<br><br>
+        ยังไม่มีข่าวใหม่เข้าเงื่อนไขตอนนี้<br>
+        <span style="font-size:11px">Google Alert จะมีรายการเมื่อพบเนื้อหาใหม่ที่ตรงคำ</span>
+      </div>`;
+    }
+    return `<div class="state">
+      ยังไม่ได้เพิ่มฟีด Google Alert<br><br>
+      ตั้ง alert แล้วเลือก <b>Deliver to: RSS feed</b><br>
+      คัดลอก URL มาวางใน <code>feeds.config.js</code><br><br>
+      <a href="https://www.google.com/alerts" target="_blank" rel="noopener">เปิด Google Alerts →</a>
+    </div>`;
+  }
+  return `<div class="state">ยังไม่มีรายการ</div>`;
 }
 
 // ---------- wire ----------
@@ -435,6 +466,7 @@ function wire() {
   $$(".panel").forEach((panel) => {
     const source = panel.dataset.source;
     state.filters[source] = { kw: "", rc: "all", trc: "all", cat: null };
+    if (source === "alert1") injectCatChips(panel, [{ key: "cpf", label: "CPF" }], "CP group"); // CP group / CPF
     if (source === "news") injectCatChips(panel, NEWS_CATS, "ทั้งหมด"); // หมวดข่าว (แบบ IR)
     const kwEl = $("[data-kw]", panel);
     if (kwEl)
@@ -521,8 +553,7 @@ function setupSwipeDots() {
 
 // keyword ที่ตั้งไว้ (fallback ถ้า title ฟีดโดนตัดสั้น) — feed สดจาก Google จะ override เมื่อครบ
 const HARD_KW = {
-  alert1: `"อาหารแปรรูป มะเร็ง" OR "เนื้อแปรรูป มะเร็ง" OR "ไส้กรอก มะเร็ง" OR "processed meat cancer"`,
-  alert2: `"สัตว์ต่างถิ่น" OR "เอเลียนสปีชีส์" OR "ปลาหมอคางดำ" OR "invasive species"`,
+    alert2: `"หมอคางดำ" OR "ปลาหมอคางดำ" OR "ปลาหมอสีคางดำ" OR "เอเลี่ยนสปีชีส์" OR "ชนิดพันธุ์ต่างถิ่น" OR "PM2.5" OR "PM 2.5" OR "ฝุ่นพิษ" OR "ฝุ่นละอองขนาดเล็ก" OR "หมอกควัน" OR "เผาตอซัง" OR "เผาไร่ข้าวโพด" OR "ข้าวโพดรุกป่า" OR "ทารุณสัตว์" OR "ทรมานสัตว์" OR "ทารุณกรรมสัตว์" OR "สวัสดิภาพสัตว์" OR "อาหารปนเปื้อน" OR "สารปนเปื้อน" OR "สารตกค้าง" OR "อาหารเป็นพิษ" OR "เนื้อสัตว์ปนเปื้อน" OR "ยาปฏิชีวนะตกค้าง" OR "เรียกคืนสินค้า" OR "ปล่อยน้ำเสีย" OR "น้ำเสียโรงงาน" OR "มลพิษทางน้ำ" OR "น้ำเน่าเสีย" OR "ปลาตายเกลื่อน" OR "กลิ่นเหม็นโรงงาน" OR "ชาวบ้านร้องเรียนโรงงาน" OR "กรมควบคุมมลพิษ" OR "มูลนิธิเพื่อผู้บริโภค" OR "สภาผู้บริโภค" OR "blackchin tilapia" OR "invasive species Thailand" OR "animal cruelty Thailand" OR "wastewater discharge"`,
 };
 function applyKeywords() {
   if (!window.Flags) return;
