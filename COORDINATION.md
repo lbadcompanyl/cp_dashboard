@@ -68,6 +68,15 @@ lbadcompanyl/test
 
 ## 🚀 แผน deploy
 
-- Cloudflare Pages เชื่อม repo นี้ deploy จาก branch **`main`**
-- ทุก session merge งานเข้า `main` → Cloudflare build + deploy อัตโนมัติ
-- URL: `/` = landing, `/ir.html`, `/trends.html`, `/sd.html`
+> ⚠️ **ส่วนนี้เคยเขียนว่า deploy จาก `main` ซึ่งไม่ตรงกับความจริงแล้ว**
+> ดูข้อมูลที่เป็นปัจจุบันได้ที่ **[`CLAUDE.md`](./CLAUDE.md)** — ใช้ไฟล์นั้นเป็นแหล่งอ้างอิงหลัก
+
+สรุปสั้น:
+
+- **`dev` = staging** — ทดสอบที่นี่ push ได้
+- **production = ห้าม push โดยไม่ได้รับคำสั่งชัดเจน** (เคยพลาดมาแล้ว 2 ครั้ง)
+- โค้ดทดลอง / debug endpoint **ห้ามขึ้น production** ลบทิ้งก่อน merge ทุกครั้ง
+- ไม่แน่ใจว่า branch ไหนคือ environment ไหน → **ถาม อย่าเดา**
+
+URL ปัจจุบัน: `/` = landing, `/trend/`, `/ir/`, `/issue/`, `/sd.html`
+(ไฟล์ `ir.html` / `trends.html` ที่ root เป็นของเก่า ย้ายเป็นโฟลเดอร์แล้ว)
