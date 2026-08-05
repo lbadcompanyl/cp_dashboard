@@ -76,14 +76,13 @@ body {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   padding: 16px 20px 40px;
   max-width: 1680px;
   margin: 0 auto;
   align-items: start;
 }
-@media (max-width: 1500px) { .board { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 1200px) { .board { grid-template-columns: repeat(2, 1fr); } }
 
 .panel {
@@ -387,6 +386,20 @@ body {
 }
 
 /* ---- คอลัมน์ X (Twitter) trending ---- */
+/* X วางเป็นแถวเต็มความกว้างใต้บอร์ด (ไม่เบียดเป็นคอลัมน์ที่ 5) */
+.panel[data-source="xtrends"] { grid-column: 1 / -1; max-height: 440px; }
+.panel[data-source="xtrends"] .list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0 12px;
+  align-content: start;
+}
+@media (max-width: 640px) {
+  /* มือถือเป็น carousel ปัด — กลับไปเรียงเดี่ยวเหมือนคอลัมน์อื่น */
+  .panel[data-source="xtrends"] { max-height: none; }
+  .panel[data-source="xtrends"] .list { display: block; }
+}
+
 .xrow { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-radius: 9px; text-decoration: none; color: inherit; }
 .xrow:hover { background: var(--surface-2, rgba(255,255,255,.04)); }
 .xrow .rank { flex: 0 0 22px; text-align: right; font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
