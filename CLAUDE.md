@@ -4,14 +4,22 @@
 
 ## 🚦 Environment / Branch — สำคัญที่สุด อ่านก่อนแตะอะไร
 
-| branch | environment | push ได้เองไหม |
-|---|---|---|
-| `dev` | **staging** | ได้ — เป็นที่สำหรับทดสอบ |
-| production | **production** | ❌ **ห้าม push เองเด็ดขาด ต้องได้รับคำสั่งชัดเจนทุกครั้ง** |
-| `claude/*` | branch งาน | ได้ |
+Cloudflare Pages project = **`cp-dashboard-680`**
 
-> ⚠️ **[รอยืนยันจากเจ้าของ]** production branch = ? (`main` หรืออื่น) และ URL production = ?
-> อย่าเดา — ถามก่อนทุกครั้งถ้ายังไม่มีคำตอบตรงนี้
+| URL | environment | push ได้เองไหม |
+|---|---|---|
+| `dev.cp-dashboard-680.pages.dev` | **dev / staging** | ได้ — เป็นที่สำหรับทดสอบ |
+| `cp-dashboard-680.pages.dev` | **production** | ❌ **ห้าม push เองเด็ดขาด ต้องได้รับคำสั่งชัดเจนทุกครั้ง** |
+
+| branch | ไปโผล่ที่ไหน | push ได้เองไหม |
+|---|---|---|
+| `dev` | staging | ได้ |
+| `claude/*` | preview ของ Pages | ได้ |
+| branch ที่ feed production | production | ❌ ต้องได้รับคำสั่งเท่านั้น |
+
+> ⚠️ **อย่าสับสนกับ `trend-dashboard.pages.dev`** — อันนั้นคือโปรเจกต์ **ต้นทาง**
+> ที่โค้ดหน้า 3 คอลัมน์ถูกยกมา (ดู `TREND-HANDOFF.md`) **ไม่ใช่แดชบอร์ดนี้**
+> เคยเข้าใจผิดมาแล้ว ทำให้ยิง URL ผิดโปรเจกต์ทั้งหมด
 
 ### กฎเหล็ก
 
@@ -66,5 +74,8 @@ functions/api/  Cloudflare Pages Functions (trend / ir / sd / flags)
   ที่ `trend/` ปัจจุบันไม่มี — ปัจจุบันมีแค่ `now 1-d` / `now 7-d`)
 - `COORDINATION.md` ตกยุค — ยังอ้างไฟล์ที่ root ทั้งที่ย้ายเป็นโฟลเดอร์แล้ว
 - branch `claude/google-trends-dashboard-lt5k09` เป็น history คนละสาย (ต้นแบบ ก.ค.) ทิ้งได้
-- Cloudflare Pages preview deployment ดูเหมือน **ปิดอยู่** — URL ตาม commit
-  (`<sha8>.trend-dashboard.pages.dev`) เข้าไม่ได้
+- **ยังไม่ยืนยัน: branch ไหน feed production** (`main` หรือ `dev`)
+  เช็คได้ใน 5 วินาที — เปิด `cp-dashboard-680.pages.dev/issue/`
+  ขึ้น = production มาจาก `dev` · 404 = production มาจาก `main`
+  (`/issue/` มีเฉพาะบน `dev` ไม่เคยอยู่บน `main`)
+  ถ้าคำตอบคือ `main` แปลว่ามี 23 commit ที่ยังไม่ถึงผู้ใช้จริง
