@@ -23,7 +23,8 @@
     --down:#d03b3b;
   }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI","Sarabun","Noto Sans Thai",Roboto,sans-serif; background:var(--plane); color:var(--ink); line-height:1.5; -webkit-font-smoothing:antialiased; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI","Sarabun","Noto Sans Thai",Roboto,sans-serif; background:var(--plane); color:var(--ink); line-height:1.5; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+  img { max-width:100%; }
   .wrap { max-width:1180px; margin:0 auto; padding:0 20px; }
 
   .appbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
@@ -107,6 +108,14 @@
   .widget-frame iframe { width:100% !important; min-height:440px; border:0; display:block; }
   .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
   .newslist { display:flex; flex-direction:column; }
+  .newsrow { display:flex; gap:12px; align-items:flex-start; padding:12px 2px; border-top:1px solid var(--border); }
+  .newsrow:first-child { border-top:none; }
+  .newsimg { flex:0 0 auto; width:84px; height:60px; border-radius:8px; object-fit:cover; background:var(--surface-2); }
+  .newsimg.ph { display:grid; place-items:center; font-size:1.05rem; color:var(--muted); font-weight:700; }
+  .newsrow .body { min-width:0; }
+  .newsrow a.t { color:var(--ink); text-decoration:none; font-size:0.92rem; font-weight:550; line-height:1.4; display:block; }
+  .newsrow a.t:hover { color:var(--accent); text-decoration:underline; }
+  .newsrow .m { font-size:0.75rem; color:var(--muted); margin-top:3px; }
   .news-more { display:inline-block; margin-top:12px; font-size:0.82rem; color:var(--accent); text-decoration:none; }
   .news-more:hover { text-decoration:underline; }
   .note { display:flex; gap:10px; align-items:flex-start; background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:11px 14px; font-size:0.8rem; color:var(--ink-2); }
@@ -170,26 +179,14 @@
       </section>
       <div class="two-col">
         <section class="panel">
-          <h3>ความสนใจแยกตามพื้นที่</h3>
-          <p class="sub" id="geoSub"></p>
-          <div class="widget-frame widget-frame--tall" id="w-geo"><div class="widget-loading">กำลังโหลดแผนที่…</div></div>
-        </section>
-        <section class="panel">
           <h3>คำค้นหาที่เกี่ยวข้อง (ยอดนิยม / มาแรง)</h3>
           <p class="sub" id="rqSub"></p>
           <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading">กำลังโหลด…</div></div>
         </section>
-      </div>
-      <div class="two-col">
         <section class="panel">
           <h3>🇹🇭 ข่าวในประเทศ (Related news)</h3>
           <p class="sub" id="newsSubTH"></p>
           <div class="newslist" id="newsListTH"><div class="news-state">กำลังโหลดข่าว…</div></div>
-        </section>
-        <section class="panel">
-          <h3>🌏 ข่าวต่างประเทศ (Related news)</h3>
-          <p class="sub" id="newsSubINTL"></p>
-          <div class="newslist" id="newsListINTL"><div class="news-state">กำลังโหลดข่าว…</div></div>
         </section>
       </div>
       <div class="note"><span>ℹ️</span><span>ประเด็นผสมอย่าง <b>“อาหารแปรรูป + มะเร็ง”</b> ใช้ <b>วลีค้นจริง</b> (เช่น “อาหารแปรรูป มะเร็ง”) เป็นคำเดียว เพราะ Google Trends ไม่มีการค้นแบบสองหัวข้อพร้อมกัน — ส่วนเครื่องหมาย “+” ระหว่างคำ = รวม volume หลายคำเป็นเส้นเดียว</span></div>
@@ -398,7 +395,6 @@ function fillSelects(){
 function updateSubs(){
   const g=activeGroup(), geoL=GEOS[state.geo], perL=PERIODS[state.period].label;
   el("tsSub").textContent=`${combinedKeyword(g)} · ${geoL} · ${perL}`;
-  el("geoSub").textContent=`${g.name} · ${geoL}`;
   el("rqSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
 }
 
@@ -416,9 +412,9 @@ function renderWidgets(){
   const g=activeGroup();
   const combined = configFor(combinedKeyword(g));
   const single = configFor(firstKeyword(g));
-  const jobs = [ ["w-ts","TIMESERIES",combined], ["w-geo","GEO_MAP",combined], ["w-rq","RELATED_QUERIES",single] ];
+  const jobs = [ ["w-ts","TIMESERIES",combined], ["w-rq","RELATED_QUERIES",single] ]; // ไม่มีแผนที่ (ตัดออก — layout ล้น)
   const gen = ++widgetGen;
-  const delays = [0, 800, 1900]; // ทยอยโหลด ลดโอกาสโดน Google rate-limit
+  const delays = [0, 900]; // ทยอยโหลด ลดโอกาสโดน Google rate-limit
   jobs.forEach(([id,type,cfg],i)=>{
     setTimeout(()=>{
       if(gen!==widgetGen) return;
@@ -454,7 +450,6 @@ function sdNewsRow(a){
 async function loadNews(){
   const g=activeGroup(), q=newsQuery(g), gen=++newsGen, label=combinedKeyword(g);
   loadNewsPanel(q, "TH", el("newsListTH"), el("newsSubTH"), `${label} · 🇹🇭 ในประเทศ`, gen, "th");
-  loadNewsPanel(q, "",   el("newsListINTL"), el("newsSubINTL"), `${label} · 🌏 ต่างประเทศ`, gen, "intl");
 }
 async function loadNewsPanel(q, geo, list, sub, subText, gen, region){
   sub.textContent = subText;
