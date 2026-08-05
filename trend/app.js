@@ -6,9 +6,8 @@ const state = {
   trendsGeo: "TH",
   trendsHours: 24, // Past 4/24/48/168 ชม. (แบบ Google Trending Now)
   trendsCat: 0, // หมวดหมู่ (แบบ Google Trends): 0 = ทุกหมวด
-  xGeo: "thailand",
   xCat: null,        // หมวดที่เลือกในคอลัมน์ X (null = ทุกหมวด)
-  xNews: {},         // ชื่อเทรนด์ -> ข่าวที่ดึงมาแล้ว (กันยิงซ้ำ) // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
+  xGeo: "thailand",  // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -172,31 +171,6 @@ function renderXCats(panel, all) {
   row.innerHTML = chips.join("");
 }
 
-// กดที่เทรนด์ -> ดึงข่าวที่เกี่ยวข้องมาแสดงใต้ชื่อ (โพสต์จริงบน X ต้องใช้ API เสียเงิน)
-async function loadXNews(name, box) {
-  if (state.xNews[name]) return paintXNews(state.xNews[name], box);
-  box.innerHTML = `<div class="xnews-state">กำลังหาข่าวที่เกี่ยวข้อง…</div>`;
-  try {
-    const r = await fetch(`/api/trend/xnews?q=${encodeURIComponent(name)}`).then((x) => x.json());
-    state.xNews[name] = r.articles || [];
-    paintXNews(state.xNews[name], box);
-  } catch {
-    box.innerHTML = `<div class="xnews-state">ดึงข่าวไม่ได้</div>`;
-  }
-}
-function paintXNews(articles, box) {
-  if (!articles.length) {
-    box.innerHTML = `<div class="xnews-state">ไม่พบข่าวที่เกี่ยวข้อง — เทรนด์นี้อาจมาจากแฟนคลับล้วน กดปุ่ม 𝕏 เพื่ออ่านโพสต์จริง</div>`;
-    return;
-  }
-  box.innerHTML = articles
-    .map((a) => `<a class="xnews-item" href="${escapeHtml(a.link)}" target="_blank" rel="noopener">
-        <span class="xnews-title">${escapeHtml(a.title)}</span>
-        <span class="xnews-meta">${escapeHtml(a.source || "")}${a.publishedAt ? " · " + timeAgo(a.publishedAt) : ""}</span>
-      </a>`)
-    .join("");
-}
-
 function renderXTrends(panel) {
   const bucket = state.data?.sources?.xtrends || { items: [], error: null };
   const kw = (state.gkw || "").trim().toLowerCase(); // global search ใช้คำเดียวกับคอลัมน์อื่น
@@ -236,30 +210,15 @@ function renderXTrends(panel) {
     list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : "ไม่พบคำที่ตรงกับตัวกรอง"}</div>`;
     return;
   }
+  // กดที่เทรนด์ = เปิดหน้าค้นหาบน X ซึ่งคือโพสต์จริงของเทรนด์นั้น
   list.innerHTML = items
     .map(
-      (it, i) => `<div class="xrow" data-name="${escapeHtml(it.name)}">
-        <div class="xrow-head">
-          <span class="rank">${i + 1}</span>
-          <span class="xname${it.isHashtag ? " xtag" : ""}">${escapeHtml(it.name)}</span>
-          <a class="xopen" href="${escapeHtml(it.url)}" target="_blank" rel="noopener" title="เปิดหน้าค้นหาบน X">𝕏</a>
-        </div>
-        <div class="xnews" hidden></div>
-      </div>`
+      (it, i) => `<a class="xrow" href="${escapeHtml(it.url)}" target="_blank" rel="noopener" title="ดูโพสต์บน X">
+        <span class="rank">${i + 1}</span>
+        <span class="xname${it.isHashtag ? " xtag" : ""}">${escapeHtml(it.name)}</span>
+      </a>`
     )
     .join("");
-
-  list.onclick = (e) => {
-    if (e.target.closest(".xopen")) return; // กดปุ่ม 𝕏 = เปิดลิงก์ ไม่ใช่กางข่าว
-    const head = e.target.closest(".xrow-head");
-    if (!head) return;
-    const row = head.parentElement;
-    const box = $(".xnews", row);
-    const open = !box.hidden;
-    box.hidden = open;
-    row.classList.toggle("open", !open);
-    if (!open) loadXNews(row.dataset.name, box);
-  };
 }
 
 async function reloadTrends() {
@@ -733,7 +692,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 33; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 34; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
