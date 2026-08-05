@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "44"; // bump: ?errors โชว์รายการ no-context + prune ที่ตัด
+const CACHE_VER = "45"; // bump: กู้คืน TRUE/ทรู + TU + เนื้อสัตว์เถื่อน + normalize title ตอนเช็ค keep-term
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -536,7 +536,7 @@ const CP_BRANDS = [
   "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
   "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "7-11", "7 11", "แม็คโคร", "makro", "โลตัส", "lotus's",
   "cpaxt", "ซีพี แอ็กซ์ตร้า", "ซีพีแอ็กซ์ตร้า", "cppc", "ซีพีพีซี",
-  "ศุภชัย เจียรวนนท์", "ธนินท์ เจียรวนนท์", "supachai chearavanont", "true corp", "ทรู คอร์ปอเรชั่น",
+  "ศุภชัย เจียรวนนท์", "ธนินท์ เจียรวนนท์", "supachai chearavanont", "true corp", "ทรู คอร์ปอเรชั่น", "ทรู",
 ];
 // คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
 const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
@@ -559,6 +559,8 @@ const ALERT2_KEEP = [
   "ราคาไก่", "เลี้ยงไก่", "เขียงไก่", "ไก่เนื้อ", "ไก่ไข่", "ราคาไข่", "ราคากุ้ง", "เลี้ยงกุ้ง",
   // วัตถุดิบอาหารสัตว์/ธัญพืช (feed) — ในโดเมน alert2 ปลอดภัย
   "อาหารสัตว์", "ข้าวโพด", "ถั่วเหลือง", "กากถั่วเหลือง", "ปลาป่น", "ปศุสัตว์", "สัตว์ปีก",
+  // เนื้อสัตว์เถื่อน/ลักลอบ (คำประสมแคบ — ไม่ใช้ "เถื่อน" โดดกันดูดบุหรี่/สินค้าเถื่อน)
+  "หมูเถื่อน", "ไก่เถื่อน", "เนื้อเถื่อน", "ซากสัตว์", "เครื่องในไก่", "เครื่องในหมู", "ตีนไก่",
   // โรค
   "หมอคางดำ", "ไข้หวัดนก", "อหิวาต์", "asf", "h5n1", "prrs",
 ];
@@ -630,7 +632,9 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
       if (it.fromNews) return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
-      if (terms.some((t) => title.includes(t)) || extra.some((t) => title.includes(t))) return { ok: true }; // ชั้น 1
+      // เช็คทั้ง title ดิบ + แบบแปลงเครื่องหมายเป็นช่องว่าง — พาดหัวแบบ 'TU'อัพเป้า ให้คำอย่าง "tu " match ติด
+      const ntitle = " " + title.replace(/[^\p{L}\p{N}]+/gu, " ") + " ";
+      if (terms.some((t) => title.includes(t) || ntitle.includes(t)) || extra.some((t) => title.includes(t) || ntitle.includes(t))) return { ok: true }; // ชั้น 1
       return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link }; // ค้างไว้เช็คเนื้อ (ชั้น 3)
     });
     const needBody = [];
