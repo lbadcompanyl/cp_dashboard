@@ -10,7 +10,7 @@ const FETCH_TIMEOUT = 12000;
 const EDGE_TTL = 1800;   // cache 30 นาที ที่ edge
 const MAX_ARTICLES = 14; // จำนวนข่าวหลัง merge
 const MAX_TERMS = 4;     // ยิงมากสุดกี่คำต่อกลุ่ม (กัน request บานปลาย)
-const CACHE_VER = "10";
+const CACHE_VER = "11"; // bump: แนบ snippet ให้ Issue dashboard
 
 const MKT = { "": "en-US", TH: "th-TH", US: "en-US", SG: "en-SG", GB: "en-GB" };
 const HLGL = { "": ["en", "US"], TH: ["th", "TH"], US: ["en", "US"], SG: ["en", "SG"], GB: ["en", "GB"] };
@@ -88,7 +88,7 @@ function mapArticles(xml) {
       const image = imgByLink[it.link] || "";
       const link = unwrapLink(it.link);
       if (!sourceLabel) sourceLabel = hostLabel(link); // Bing: ไม่มีชื่อใน title → ใช้โดเมน
-      return { title, link, sourceLabel, image, publishedAt: it.publishedAt };
+      return { title, link, sourceLabel, image, snippet: (it.snippet || "").slice(0, 220), publishedAt: it.publishedAt };
     })
     .filter((a) => a.title && a.link);
 }
