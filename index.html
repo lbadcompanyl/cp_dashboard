@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="Dashboards" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ index.html — เครื่องที่ติดตั้งเป็นแอปใช้ค่านี้เช็คว่ามีของใหม่ -->
-<meta name="page-ver" content="2" />
+<meta name="page-ver" content="3" />
 <script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}</script>
 <style>
   :root {
@@ -55,6 +55,16 @@
   .card.wip .icon { background:rgba(230,169,53,.15); }
   .wip-badge { position:absolute; top:14px; right:14px; display:inline-flex; align-items:center; gap:5px; font-size:0.64rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:#e6a935; background:rgba(230,169,53,.14); border:1px solid rgba(230,169,53,.4); border-radius:999px; padding:4px 10px; }
   :root[data-theme="light"] .wip-badge { color:#9a6a00; }
+
+  /* การ์ดที่พาออกไปเว็บนอก — ทำให้รู้ก่อนกดว่าไม่ใช่หน้าในระบบ */
+  .card.ext:hover { border-color:#8b5cf6; }
+  .card.ext .icon { background:rgba(139,92,246,.15); }
+  .card.ext .tag { color:#a78bfa; background:rgba(139,92,246,.15); }
+  .card.ext .go { color:#a78bfa; }
+  .ext-badge { position:absolute; top:14px; right:14px; font-size:0.64rem; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:#a78bfa; background:rgba(139,92,246,.14); border:1px solid rgba(139,92,246,.4); border-radius:999px; padding:4px 10px; }
+  :root[data-theme="light"] .card.ext .tag,
+  :root[data-theme="light"] .card.ext .go,
+  :root[data-theme="light"] .ext-badge { color:#6d28d9; }
   .card h2 { margin:0; font-size:1.2rem; }
   .card .tag { align-self:flex-start; font-size:0.7rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--accent); background:var(--accent-soft); border-radius:999px; padding:3px 11px; }
   .card p { margin:0; color:var(--ink-2); font-size:0.9rem; flex:1; }
@@ -132,6 +142,20 @@
       </ul>
       <span class="go">เปิดแดชบอร์ด →</span>
     </a>
+
+    <a class="card ext" href="https://ads.tiktok.com/creative/creativeCenter/trends/hashtag?region=TH&amp;period=7" target="_blank" rel="noopener">
+      <span class="ext-badge">↗ เว็บภายนอก</span>
+      <div class="icon">🎵</div>
+      <span class="tag">TIKTOK</span>
+      <h2>TikTok Trend</h2>
+      <p>แฮชแท็กมาแรงบน TikTok ประเทศไทย — เปิดตรงไปที่ TikTok Creative Center</p>
+      <ul>
+        <li>อันดับแฮชแท็ก 7 วันล่าสุด (ไทย)</li>
+        <li>กราฟความนิยม + คลิปตัวอย่าง</li>
+        <li>ข้อมูลทางการจาก TikTok เอง</li>
+      </ul>
+      <span class="go">เปิด Creative Center ↗</span>
+    </a>
   </div>
 </div>
 
@@ -142,7 +166,7 @@
   // หน้า /trend/ กับ /ir/ มีระบบนี้อยู่แล้ว แต่หน้า landing ไม่เคยมี — พอติดตั้งเป็นแอป
   // บนมือถือแล้วมันค้างหน้าเก่าไว้ (การ์ดใหม่ไม่ขึ้น) ต้องถอนแอปติดตั้งใหม่ถึงจะเห็น
   (function(){
-    var VER = 2; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
+    var VER = 3; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
     var CHECK_MS = 60 * 60 * 1000; // เช็คไม่ถี่กว่าชั่วโมงละครั้ง
     var last = 0, ready = false;
 
