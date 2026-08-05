@@ -166,7 +166,8 @@ async function loadRelated(query, box) {
         `/api/trend/related?q=${encodeURIComponent(query)}&geo=${geo}&time=${encodeURIComponent(time)}`
       );
       data = await res.json();
-      state.related[key] = data;
+      // จำเฉพาะผลที่มีข้อมูล — ผลว่าง (โดน Google จำกัดชั่วคราว) ให้กดครั้งหน้าลองใหม่ได้
+      if ((data.top || []).length || (data.rising || []).length) state.related[key] = data;
     } catch {
       data = { top: [], rising: [] };
     }
@@ -571,7 +572,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 30; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 31; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

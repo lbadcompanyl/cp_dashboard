@@ -1,7 +1,11 @@
 // GET /api/trend/related?q=<คำ>&geo=TH&time=now%201-d
 // ดึง Related queries (Top + Rising) ของคำที่ระบุ จาก Google Trends API (ไม่เป็นทางการ)
+// Google จำกัด rate จาก edge IP บ่อย (429) → เก็บผลสำเร็จลง KV 7 วัน ไว้เสิร์ฟแทนตอนโดนจำกัด
+// (related queries เปลี่ยนช้า ของเก่าหลักชั่วโมง/วันยังมีประโยชน์กว่าแผงว่าง)
 
 import { fetchRelated } from "./_lib/trends.js";
+
+const KV_TTL = 7 * 86400; // เก็บ 7 วัน
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -19,12 +23,33 @@ export async function onRequest(context) {
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
+  const kv = context.env && context.env.FLAGS_KV;
+  const env = context.env || {};
+  const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `rel:${geo}|${time}|${q}`;
+
   try {
     const data = await fetchRelated(q, geo, time);
-    const edge = json({ q, geo, time, ...data }, 200, 1800); // cache 30 นาที ที่ edge
-    context.waitUntil(cache.put(key, edge.clone()));
-    return browserCopy(edge);
+    if ((data.top || []).length || (data.rising || []).length) {
+      // สำเร็จและมีข้อมูล → เก็บ KV ไว้เป็น fallback รอบหน้า
+      if (kv) context.waitUntil(kv.put(kvKey, JSON.stringify(data), { expirationTtl: KV_TTL }).catch(() => {}));
+      const edge = json({ q, geo, time, ...data }, 200, 1800); // cache 30 นาที ที่ edge
+      context.waitUntil(cache.put(key, edge.clone()));
+      return browserCopy(edge);
+    }
+    // สำเร็จแต่ว่าง (Google ไม่มี breakdown ให้) → ลองของเก่าใน KV ก่อนยอมว่าง
+    const stale = kv ? await kv.get(kvKey) : null;
+    if (stale) return browserCopy(json({ q, geo, time, ...JSON.parse(stale), stale: true }, 200));
+    return browserCopy(json({ q, geo, time, ...data }, 200));
   } catch (e) {
+    // โดน 429/ผิดพลาด → เสิร์ฟของล่าสุดจาก KV (ถ้ามี) + cache สั้นๆ กันยิงถี่
+    try {
+      const stale = kv ? await kv.get(kvKey) : null;
+      if (stale) {
+        const edge = json({ q, geo, time, ...JSON.parse(stale), stale: true }, 200, 300);
+        context.waitUntil(cache.put(key, edge.clone()));
+        return browserCopy(edge);
+      }
+    } catch {}
     // ไม่ throw — ส่ง error กลับให้ UI แสดง fallback (ไม่ให้พังทั้งจอ)
     return json({ q, geo, time, top: [], rising: [], error: String(e.message || e) }, 200);
   }
