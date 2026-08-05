@@ -42,7 +42,13 @@ const TARGETS = [
 ];
 
 // ดึงตัวอย่าง # ออกมาให้ดู — จะได้รู้ว่า "200 แล้วมีของจริง" ไม่ใช่ 200 แล้วเปลือกเปล่า
-const JUNK_ANCHOR = /^#(content|main|top|footer|header|nav|menu|search|close|modal|app|root|skip|home)$/i;
+const JUNK_ANCHOR = /^#(content|main|top|footer|header|nav|menu|search|close|modal|app|root|skip|home|collapsible\w*)$/i;
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;   // #fff #e5e7eb — สี CSS ไม่ใช่แท็ก
+const ENTITY_FRAG = /^#x[0-9a-f]{2,6}$/i;                            // เศษจาก &#xe40; ไม่ใช่แท็ก
+
+function isRealTag(t) {
+  return !JUNK_ANCHOR.test(t) && !HEX_COLOR.test(t) && !ENTITY_FRAG.test(t);
+}
 
 function extractSample(text, type) {
   if (type.includes("json")) {
@@ -59,12 +65,50 @@ function extractSample(text, type) {
     } catch { return undefined; }
   }
   // HTML: คว้า # ที่โผล่ในหน้า (หยาบๆ พอให้รู้ว่ามีเทรนด์อยู่จริงไหม)
-  const tags = [...new Set(text.match(/#[0-9A-Za-z_฀-๿]{2,40}/g) || [])]
-    .filter((t) => !JUNK_ANCHOR.test(t));
+  const tags = [...new Set(text.match(/#[0-9A-Za-z_฀-๿]{2,40}/g) || [])].filter(isRealTag);
   return tags.length ? tags.slice(0, 10).join("  ") : undefined;
 }
 
-export async function onRequest() {
+// ?dump=<id> — คาย HTML ดิบรอบๆ แท็กตัวแรกที่เจอ เอาไว้ดูโครงสร้างก่อนเขียน parser จริง
+async function dumpStructure(t) {
+  const res = await fetch(t.url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "text/html,*/*;q=0.8",
+      "Accept-Language": "th,en;q=0.9",
+      ...(t.headers || {}),
+    },
+  });
+  const html = await res.text();
+  // หา <a> ตัวแรกที่ข้างในเป็นแท็กจริง (ไม่ใช่สี CSS / เศษ entity)
+  const re = /<a\b[^>]*>\s*(#[0-9A-Za-z_฀-๿]{2,40})\s*<\/a>/g;
+  let m, at = -1, tag = null;
+  while ((m = re.exec(html))) {
+    if (isRealTag(m[1])) { at = m.index; tag = m[1]; break; }
+  }
+  if (at < 0) {
+    return `【${t.id}】 หา <a>#tag</a> ไม่เจอ — เทรนด์อาจไม่ได้อยู่ใน <a> ตรงๆ\n\n` +
+      html.slice(0, 3000);
+  }
+  const from = Math.max(0, at - 1200);
+  return `【${t.id}】 http=${res.status} bytes=${html.length}\n` +
+    `แท็กแรกที่เจอ: ${tag} (ตำแหน่ง ${at})\n` +
+    `${"=".repeat(60)}\n` + html.slice(from, at + 2200);
+}
+
+export async function onRequest({ request }) {
+  const dump = new URL(request.url).searchParams.get("dump");
+  if (dump) {
+    const t = TARGETS.find((x) => x.id === dump);
+    if (!t) {
+      return new Response(`ไม่รู้จัก id "${dump}"\nมีให้เลือก: ${TARGETS.map((x) => x.id).join(", ")}`,
+        { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+    }
+    let body;
+    try { body = await dumpStructure(t); } catch (e) { body = `✗ ${e && e.message}`; }
+    return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  }
+
   const out = [];
   for (const t of TARGETS) {
     const r = { id: t.id };
