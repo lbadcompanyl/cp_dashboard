@@ -1,11 +1,15 @@
 # Cloudflare Pages headers
 # กัน browser/CDN cache หน้า HTML เก่า — ฟีเจอร์ใหม่ใน index.html จะขึ้นทันทีหลัง deploy
 # (ไฟล์ JS/CSS ใช้ ?v=... อยู่แล้ว จึง cache ได้ตามปกติ ไม่กระทบ)
+#
+# ⚠️ URL ที่เป็นโฟลเดอร์ (ลงท้าย /) ไม่เข้าเงื่อนไข /*.html ต้องเขียนแยกทุกอัน
 /
   Cache-Control: no-cache
 /trend/
   Cache-Control: no-cache
 /ir/
+  Cache-Control: no-cache
+/issue/
   Cache-Control: no-cache
 /*.html
   Cache-Control: no-cache
