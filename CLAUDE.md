@@ -6,23 +6,30 @@
 
 Cloudflare Pages project = **`cp-dashboard-680`**
 
-| URL | เสิร์ฟ branch ไหน |
-|---|---|
-| `cp-dashboard-680.pages.dev` | `dev` ← **production** |
-| `dev.cp-dashboard-680.pages.dev` | `dev` ← alias ของ build เดียวกัน |
+Git เชื่อมกับ `lbadcompanyl/cp_dashboard` · Automatic deployments: **Enabled**
+→ **ทุก push ขึ้น production branch = deploy ขึ้นเว็บจริงทันที ไม่มีขั้นยืนยัน**
 
-### 🔴 `dev` = production — ไม่มี staging แยกจริง
+### เช็ค production branch ก่อนเสมอ — ห้ามเดา
 
-ยืนยันแล้ว (5 ส.ค. 2026): `/issue/` มีเฉพาะบน branch `dev` ไม่เคยอยู่บน `main`
-และมันขึ้นบน `cp-dashboard-680.pages.dev` → **production build มาจาก `dev`**
+```
+Cloudflare → cp-dashboard → Settings → Build → Branch control → Production branch
+```
 
-สอง URL ข้างบนชี้ build เดียวกัน คนละชื่อเท่านั้น **push `dev` = ขึ้นเว็บจริงทันที**
+ค่าที่ตั้งอยู่ตอนนี้คือ branch ไหน **branch นั้นคือ production** ไม่ว่ามันจะชื่ออะไร
 
-| branch | ไปโผล่ที่ไหน | push ได้เองไหม |
-|---|---|---|
-| `dev` | **production** | ❌ **ต้องได้รับคำสั่งชัดเจนทุกครั้ง** |
-| `claude/*` | preview ของ Pages | ได้ |
-| `main` | ไม่ได้ deploy ที่ไหนเลย | — (ค้างที่ `6614efa` ตกรุ่นแล้ว) |
+> 📌 **ประวัติที่ต้องรู้:** เคยตั้งเป็น `claude/dashboard-google-alerts-news-0mw9bg`
+> (branch งาน!) อยู่พักหนึ่ง ทำให้ push งานระหว่างทางขึ้นเว็บจริงทุกครั้งโดยไม่มีใครรู้
+> เป็นต้นเหตุที่ debug endpoint หลุดขึ้น production 2 รอบ
+
+### เป้าหมายที่ตกลงกันไว้
+
+| branch | บทบาท | URL | ใครสั่งได้ |
+|---|---|---|---|
+| `claude/*` | branch งาน | preview URL อัตโนมัติ | Claude push เองได้ |
+| `dev` | **staging** | `dev.cp-dashboard-680.pages.dev` | Claude push เองได้ |
+| `main` | **production** | `cp-dashboard-680.pages.dev` | ❌ **เจ้าของสั่งเท่านั้น** |
+
+ไหลของงาน: `claude/*` → `dev` (ดูบน staging) → **อนุมัติ** → `main` (ผู้ใช้เห็น)
 
 > ⚠️ **อย่าสับสนกับ `trend-dashboard.pages.dev`** — อันนั้นคือโปรเจกต์ **ต้นทาง**
 > ที่โค้ดหน้า 3 คอลัมน์ถูกยกมา (ดู `TREND-HANDOFF.md`) **ไม่ใช่แดชบอร์ดนี้**
