@@ -1,11 +1,11 @@
 // GET /api/trend/related?q=<คำ>&geo=TH&time=now%201-d
 // ดึง Related queries (Top + Rising) ของคำที่ระบุ จาก Google Trends API (ไม่เป็นทางการ)
-// Google จำกัด rate จาก edge IP บ่อย (429) → เก็บผลสำเร็จลง KV 7 วัน ไว้เสิร์ฟแทนตอนโดนจำกัด
-// (related queries เปลี่ยนช้า ของเก่าหลักชั่วโมง/วันยังมีประโยชน์กว่าแผงว่าง)
+// Google จำกัด rate จาก edge IP บ่อย (429) → เก็บผลสำเร็จลง KV ไว้เสิร์ฟแทนตอนโดนจำกัด
+// (เก็บหลักชั่วโมงพอ — เกินนั้นข้อมูลเก่าเกินไป)
 
 import { fetchRelated } from "./_lib/trends.js";
 
-const KV_TTL = 7 * 86400; // เก็บ 7 วัน
+const KV_TTL = 6 * 3600; // เก็บ 6 ชม.
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
