@@ -47,7 +47,9 @@
   /* ---- หน้า 1: บอร์ดข่าวรายประเด็น — หน้าตาเหมือน /trend/ (PR) เป๊ะ ---- */
   #page1 { --p1-bg:#f4f6fb; --p1-surface:#fff; --p1-border:#e4e8f0; --p1-text:#1f2937; --p1-muted:#6b7280; --p1-alert:#2563eb; --p1-shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04); }
   :root:not([data-theme="light"]) #page1 { --p1-bg:var(--plane); --p1-surface:var(--surface); --p1-border:var(--border); --p1-text:var(--ink); --p1-muted:var(--muted); --p1-alert:#5b9bef; --p1-shadow:none; }
-  .board { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; padding:16px 0 40px; align-items:start; }
+  .board { display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; padding:12px 0 40px; align-items:start; }
+  @media (max-width:1200px){ .board { grid-template-columns:repeat(2, 1fr); } }
+  @media (max-width:700px){ .board { grid-template-columns:1fr; } }
   .pcol { background:var(--p1-surface); border:1px solid var(--p1-border); border-radius:12px; box-shadow:var(--p1-shadow); display:flex; flex-direction:column; max-height:calc(100vh - 190px); overflow:hidden; color:var(--p1-text); }
   .phead { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:2px solid var(--pc, var(--p1-alert)); }
   .ptitle { font-weight:700; font-size:14px; display:flex; align-items:center; gap:7px; }
@@ -67,6 +69,27 @@
   .news-state { text-align:center; color:var(--p1-muted); font-size:13px; padding:18px 8px; }
   #page1 mark.hl { background:transparent; color:var(--pc, var(--p1-alert)); font-weight:700; padding:0; }
   .updated { font-size:0.78rem; color:var(--muted); }
+  /* ค้นหารวมทุกคอลัมน์ (แบบ trend) */
+  .gsearch { padding:14px 0 4px; }
+  .gsearch input { width:100%; border:1.5px solid var(--p1-muted, #6b7280); background:var(--p1-surface, #fff); color:var(--p1-text, #1f2937); border-radius:10px; padding:10px 14px; font-size:14px; font-family:inherit; }
+  .gsearch input:focus { outline:2px solid var(--p1-alert, #2563eb); outline-offset:-1px; }
+  /* ชิพกรองประเด็น (คอลัมน์ข่าวรวม) */
+  .cats { display:flex; flex-wrap:wrap; gap:6px; padding:8px 14px; border-bottom:1px solid var(--p1-border); }
+  .cat { padding:3px 11px; font-size:12px; line-height:1.5; border:1px solid var(--p1-border); border-radius:20px; background:var(--p1-bg); color:var(--p1-muted); cursor:pointer; font-family:inherit; }
+  .cat.on { background:var(--p1-alert); border-color:var(--p1-alert); color:#fff; font-weight:600; }
+  /* แถว Google Trends (แบบ trend) */
+  .trend { border-bottom:1px solid var(--p1-border); }
+  .trend:last-child { border-bottom:none; }
+  .trend-head { display:flex; gap:8px; align-items:flex-start; padding:10px 6px; cursor:pointer; text-decoration:none; color:inherit; }
+  .trend-head:hover { background:var(--p1-bg); border-radius:8px; }
+  .rank { display:inline-block; min-width:20px; text-align:center; font-weight:700; color:#ea580c; }
+  .trend-main { flex:1; min-width:0; }
+  .trend-term { font-weight:600; font-size:14px; }
+  .trend-sub { font-size:11.5px; color:var(--p1-muted); margin-top:2px; }
+  .trend-sub .vol { color:#ea580c; }
+  .trend-sub .pct { color:#059669; font-weight:600; }
+  .trend-caret { font-size:11px; color:var(--p1-muted); border:1px solid var(--p1-border); border-radius:20px; padding:2px 9px; white-space:nowrap; align-self:center; }
+  .errbadge { font-size:11px; color:#b91c1c; background:#fee2e2; border-radius:20px; padding:2px 9px; }
 
   /* ---- หน้า 2: เทรนด์ (แบบ SD) ---- */
   .tabs { display:flex; gap:4px; margin-top:16px; flex-wrap:wrap; align-items:center; }
@@ -149,9 +172,10 @@
     <button class="pgtab" data-pg="3" role="tab">➕ หน้า 3</button>
   </div>
 
-  <!-- ═══════ หน้า 1: บอร์ดข่าวรายประเด็น (แบบ PR) ═══════ -->
+  <!-- ═══════ หน้า 1: บอร์ดข่าวรายประเด็น (แบบ PR — ค้นหารวม + 4 คอลัมน์ + Google Trends) ═══════ -->
   <section class="page" id="page1">
-    <div style="display:flex;justify-content:flex-end;padding-top:10px"><span class="updated" id="updated1"></span></div>
+    <div class="gsearch"><input type="search" id="gsearch" placeholder="🔎 ค้นหาทุกคอลัมน์พร้อมกัน…" autocomplete="off"></div>
+    <div style="display:flex;justify-content:flex-end"><span class="updated" id="updated1"></span></div>
     <div class="board" id="board"></div>
   </section>
 
@@ -261,29 +285,66 @@ function showPage(n){
 }
 document.querySelectorAll(".pgtab").forEach(b=>b.onclick=()=>showPage(+b.dataset.pg));
 
-// ═══════════════ หน้า 1: บอร์ดข่าวรายประเด็น ═══════════════
-let page1Loaded = false, boardGen = 0;
+// ═══════════════ หน้า 1: บอร์ดแบบ /trend/ — ค้นหารวม + ข่าวรวม + คอลัมน์ละประเด็น + Google Trends ═══════════════
+let page1Loaded = false, boardGen = 0, trendsGen = 0;
 const RECENCY = [["all","ทุกช่วงเวลา"],["24","24 ชม."],["48","48 ชม."],["168","7 วัน"]]; // array คงลำดับ (key ตัวเลขใน object โดนเรียงแซง "all")
 const colState = ISSUES.map(()=>({ rc:"all", articles:[] }));
+const aggState = { rc:"all", cat:"all" };       // คอลัมน์ข่าวรวม: กรองด้วยชิพประเด็น
+const trState = { geo:"TH", hours:"24", items:[], err:null };
+let gkw = "";                                    // ค้นหารวมทุกคอลัมน์
+
+const TR_GEOS = [["TH","🇹🇭 ไทย"],["US","🇺🇸 สหรัฐฯ"],["GB","🇬🇧 อังกฤษ"],["JP","🇯🇵 ญี่ปุ่น"],["SG","🇸🇬 สิงคโปร์"]];
+const TR_HOURS = [["4","4 ชม."],["24","24 ชม."],["48","48 ชม."],["168","7 วัน"]];
 
 function buildBoard(){
-  el("board").innerHTML = ISSUES.map((iss,i)=>`
+  const rcOpts = RECENCY.map(([k,v])=>`<option value="${k}">${v}</option>`).join("");
+  const aggPanel = `
+    <section class="pcol" style="--pc:#059669">
+      <div class="phead">
+        <span class="ptitle"><span class="pdot"></span>📰 ข่าวรวมทุกประเด็น</span>
+        <span class="pcount" id="cnt-agg">—</span>
+      </div>
+      <div class="pfilters"><select class="rc" id="rc-agg">${rcOpts}</select></div>
+      <div class="cats" id="cats-agg">
+        <button type="button" class="cat on" data-cat="all">ทั้งหมด</button>
+        ${ISSUES.map((iss,i)=>`<button type="button" class="cat" data-cat="${i}">${iss.icon} ${escapeHtml(iss.name)}</button>`).join("")}
+      </div>
+      <div class="plist" id="list-agg"><div class="news-state">กำลังดึงข้อมูล…</div></div>
+    </section>`;
+  const issuePanels = ISSUES.map((iss,i)=>`
     <section class="pcol" data-i="${i}" style="--pc:${iss.color||'#2563eb'}">
       <div class="phead">
         <span class="ptitle"><span class="pdot"></span>${iss.icon} ${escapeHtml(iss.name)}</span>
         <span class="pcount" id="cnt-${i}">—</span>
       </div>
-      <div class="pfilters">
-        <select class="rc" data-i="${i}">
-          ${RECENCY.map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}
-        </select>
-      </div>
+      <div class="pfilters"><select class="rc" data-i="${i}">${rcOpts}</select></div>
       <div class="plist" id="list-${i}"><div class="news-state">กำลังดึงข้อมูล…</div></div>
     </section>`).join("");
-  document.querySelectorAll(".pfilters .rc").forEach(s=>s.onchange=e=>{
-    colState[+s.dataset.i].rc = e.target.value;
-    renderCol(+s.dataset.i);
+  const trendsPanel = `
+    <section class="pcol" style="--pc:#ea580c">
+      <div class="phead">
+        <span class="ptitle"><span class="pdot"></span>🔥 Google Trends</span>
+        <span class="pcount" id="cnt-tr">—</span>
+      </div>
+      <div class="pfilters">
+        <select class="rc" id="tr-geo">${TR_GEOS.map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select>
+        <select class="rc" id="tr-hours">${TR_HOURS.map(([k,v])=>`<option value="${k}" ${k==="24"?"selected":""}>${v}</option>`).join("")}</select>
+      </div>
+      <div class="plist" id="list-tr"><div class="news-state">กำลังดึงข้อมูล…</div></div>
+    </section>`;
+  el("board").innerHTML = aggPanel + issuePanels + trendsPanel;
+
+  document.querySelectorAll(".pfilters .rc[data-i]").forEach(s=>s.onchange=e=>{ colState[+s.dataset.i].rc=e.target.value; renderCol(+s.dataset.i); });
+  el("rc-agg").onchange=e=>{ aggState.rc=e.target.value; renderAgg(); };
+  el("cats-agg").addEventListener("click",e=>{
+    const b=e.target.closest(".cat"); if(!b) return;
+    aggState.cat=b.dataset.cat;
+    el("cats-agg").querySelectorAll(".cat").forEach(x=>x.classList.toggle("on",x===b));
+    renderAgg();
   });
+  el("tr-geo").onchange=e=>{ trState.geo=e.target.value; loadTrends(); };
+  el("tr-hours").onchange=e=>{ trState.hours=e.target.value; loadTrends(); };
+  el("gsearch").addEventListener("input",e=>{ gkw=e.target.value.trim().toLowerCase(); renderAllCols(); });
 }
 // การ์ดข่าวหน้าตาเดียวกับ /trend/: สำนักข่าว → หัวข้อ (ไฮไลต์คำ) → เนื้อย่อ 2 บรรทัด → เวลา
 function newsRow(a, iss){
@@ -295,17 +356,65 @@ function newsRow(a, iss){
       <div class="meta">${timeAgoTh(a.publishedAt)}</div>
     </a>`;
 }
+function matchGkw(a){ if(!gkw) return true; return ((a.title||"")+" "+(a.snippet||"")+" "+(a.sourceLabel||"")).toLowerCase().includes(gkw); }
+function applyFilters(arts, rc){
+  if(rc!=="all"){ const cut=Date.now()-Number(rc)*3600000; arts=arts.filter(a=>new Date(a.publishedAt).getTime()>=cut); }
+  if(gkw) arts=arts.filter(matchGkw);
+  return arts;
+}
 function renderCol(i){
-  const st=colState[i], iss=ISSUES[i];
-  let arts = st.articles;
-  if(st.rc!=="all"){ const cut=Date.now()-Number(st.rc)*3600000; arts=arts.filter(a=>new Date(a.publishedAt).getTime()>=cut); }
+  const iss=ISSUES[i];
+  const arts=applyFilters(colState[i].articles, colState[i].rc);
   el("cnt-"+i).textContent = arts.length + " รายการ";
   el("list-"+i).innerHTML = arts.length ? arts.map(a=>newsRow(a,iss)).join("") : `<div class="news-state">ยังไม่พบข่าวในช่วงเวลานี้</div>`;
+}
+// ข่าวรวม: รวมทุกประเด็น dedup ตามลิงก์ + ติดว่ามาจากประเด็นไหน (ไว้กรองด้วยชิพ)
+function renderAgg(){
+  const seen=new Set(); let all=[];
+  colState.forEach((st,i)=>{ for(const a of st.articles){ if(seen.has(a.link)) continue; seen.add(a.link); all.push({...a, _iss:i}); } });
+  if(aggState.cat!=="all") all=all.filter(a=>a._iss===+aggState.cat);
+  all.sort((a,b)=>new Date(b.publishedAt)-new Date(a.publishedAt));
+  const arts=applyFilters(all, aggState.rc);
+  el("cnt-agg").textContent = arts.length + " รายการ";
+  el("list-agg").innerHTML = arts.length ? arts.map(a=>newsRow(a, ISSUES[a._iss])).join("") : `<div class="news-state">ยังไม่พบข่าวในช่วงเวลานี้</div>`;
+}
+function renderTrendsCol(){
+  const cntEl=el("cnt-tr"), list=el("list-tr");
+  if(trState.err && !trState.items.length){ cntEl.className="errbadge"; cntEl.textContent="⚠ โหลดไม่ได้"; list.innerHTML=`<div class="news-state">ดึงเทรนด์ไม่ได้</div>`; return; }
+  cntEl.className="pcount";
+  let items=trState.items;
+  if(gkw) items=items.filter(it=>(it.title||"").toLowerCase().includes(gkw));
+  cntEl.textContent=items.length+" คำ";
+  list.innerHTML = items.length ? items.map((it,i)=>{
+    const vol=it.volumeLabel||"";
+    const sub=[vol?`<b class="vol">${escapeHtml(vol)}</b>`:"", it.pctLabel?`<span class="pct">${escapeHtml(it.pctLabel)}</span>`:"", `<span class="ago">เริ่ม ${timeAgoTh(it.publishedAt)}</span>`].filter(Boolean).join(" ");
+    const link=`https://trends.google.com/trends/explore?q=${encodeURIComponent(it.title)}&geo=${trState.geo}&hl=th`;
+    return `<div class="trend"><a class="trend-head" href="${escapeHtml(link)}" target="_blank" rel="noopener">
+        <span class="rank">${i+1}</span>
+        <div class="trend-main">
+          <div class="trend-term">${escapeHtml(it.title)}</div>
+          <div class="trend-sub">${sub}</div>
+        </div>
+        <span class="trend-caret">🔍 query</span>
+      </a></div>`;
+  }).join("") : `<div class="news-state">${gkw?"ไม่พบคำที่ตรงกับตัวกรอง":"ยังไม่มีข้อมูล"}</div>`;
+}
+function renderAllCols(){ renderAgg(); ISSUES.forEach((_,i)=>renderCol(i)); renderTrendsCol(); }
+async function loadTrends(){
+  const gen=++trendsGen;
+  el("cnt-tr").textContent="…";
+  try{
+    const d=await (await fetch(`/api/trend/trending?geo=${encodeURIComponent(trState.geo)}&hours=${trState.hours}`)).json();
+    if(gen!==trendsGen) return;
+    trState.items=d.items||[]; trState.err=d.error||null;
+  }catch(e){ if(gen!==trendsGen) return; trState.items=[]; trState.err=String(e); }
+  renderTrendsCol();
 }
 async function loadBoard(){
   page1Loaded = true;
   const gen = ++boardGen;
   el("updated1").textContent = "กำลังโหลด…";
+  loadTrends();
   await Promise.all(ISSUES.map(async (iss,i)=>{
     const q = iss.queries.join(" OR ");
     let data;
@@ -313,7 +422,7 @@ async function loadBoard(){
     catch(e){ data={ articles:[] }; }
     if(gen!==boardGen) return;
     colState[i].articles = data.articles||[];
-    renderCol(i);
+    renderCol(i); renderAgg();
   }));
   if(gen===boardGen) el("updated1").textContent = "อัปเดตล่าสุด " + new Date().toLocaleTimeString("th-TH");
 }
