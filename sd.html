@@ -4,6 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SD Trends — Google Trends ด้านความยั่งยืน</title>
+<!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ไฟล์นี้ — เครื่องที่ติดตั้งเป็นแอปใช้เช็คว่ามีของใหม่ -->
+<meta name="page-ver" content="1" />
+<!-- PWA: ติดตั้งเป็นแอปได้จากทุกหน้า ไม่ใช่แค่หน้าแรก -->
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#0d0d0d" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}</script>
 <link rel="preconnect" href="https://trends.google.com" />
 <link rel="preconnect" href="https://ssl.gstatic.com" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
@@ -406,6 +414,52 @@ saveLocal();
 syncFromCloud(false);
 // กลับมาที่แท็บ → ดึงของล่าสุดที่คนอื่นอาจแก้ไว้
 document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFromCloud(true); });
+</script>
+
+<script>
+  // เช็คของใหม่ — กลไกเดียวกับหน้าอื่นทุกหน้า (landing / trend / ir / issue)
+  (function(){
+    var VER = 1; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
+    var CHECK_MS = 60 * 60 * 1000;
+    var last = 0, ready = false;
+    function banner(){
+      if (document.getElementById("updbar")) return;
+      var b = document.createElement("button");
+      b.id = "updbar";
+      b.textContent = "\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";
+      b.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";
+      b.onclick = function(){ location.reload(); };
+      document.body.appendChild(b);
+    }
+    function canAutoReload(){
+      try {
+        var t = +sessionStorage.getItem("sdAutoReload") || 0;
+        if (Date.now() - t < CHECK_MS) return false;
+        sessionStorage.setItem("sdAutoReload", String(Date.now()));
+      } catch(e){}
+      return true;
+    }
+    function check(){
+      if (Date.now() - last < CHECK_MS) return;
+      last = Date.now();
+      fetch(location.pathname + "?_ct=" + Date.now(), { cache: "no-store" })
+        .then(function(r){ return r.text(); })
+        .then(function(html){
+          var m = html.match(/name="page-ver"\s+content="(\d+)"/);
+          if (!m || parseInt(m[1], 10) <= VER || ready) return;
+          ready = true;
+          if (document.hidden && canAutoReload()) location.reload();
+          else banner();
+        })
+        .catch(function(){});
+    }
+    addEventListener("load", function(){ last = Date.now() - CHECK_MS; check(); });
+    document.addEventListener("visibilitychange", function(){
+      if (document.hidden) return;
+      if (ready) { location.reload(); return; }
+      check();
+    });
+  })();
 </script>
 </body>
 </html>
