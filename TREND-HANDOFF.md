@@ -1,7 +1,11 @@
 # Trend 3-column page — handoff (branch `claude/trend-3col`)
 
 หน้า 3 คอลัมน์ **News + Alert + Trends (ข้อมูลสด)** ยกมาจากโปรเจกต์ `trend-dashboard`
-ต้นทาง live: https://trend-dashboard.pages.dev
+
+> ⚠️ **โปรเจกต์ต้นทางเลิกใช้แล้ว** — `trend-dashboard.pages.dev` git ไม่ได้ต่อ
+> หยุด deploy ตั้งแต่ ก.ค. 2026 และถูกลบทิ้ง โค้ดยกมาอยู่ในโปรเจกต์นี้ครบแล้ว
+>
+> **URL ของแดชบอร์ดนี้คือ `cp-dashboard-680.pages.dev`** อย่าสับสน (ดู `CLAUDE.md`)
 
 **Stack:** static HTML/CSS/JS (vanilla, ไม่มี framework) + Cloudflare Pages Functions
 **ไม่มี build step · ไม่มี runtime dependency · ไม่มี API key ใด ๆ**
