@@ -6,6 +6,7 @@ const state = {
   trendsGeo: "TH",
   trendsHours: 24, // Past 4/24/48/168 ชม. (แบบ Google Trending Now)
   trendsCat: 0, // หมวดหมู่ (แบบ Google Trends): 0 = ทุกหมวด
+  xGeo: "thailand", // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -68,11 +69,13 @@ async function load(opts = {}) {
   }
 
   try {
-    const [feeds, trends] = await Promise.all([
+    const [feeds, trends, xtrends] = await Promise.all([
       fetch("/api/trend/feeds").then((r) => r.json()),
       fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat),
+      fetchXTrends(state.xGeo).catch((e) => ({ label: "X Trends", items: [], error: e.message })),
     ]);
     feeds.sources.trends = trends;
+    feeds.sources.xtrends = xtrends;
     state.data = feeds;
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
@@ -106,6 +109,56 @@ async function fetchTrends(geo, hours, cat = 0) {
     error: d.error || null,
     sourceType: d.source || "trendingnow",
   };
+}
+
+// ---------- เทรนด์บน X (Twitter) ----------
+// อ่านจากเว็บมิเรอร์ผ่าน /api/trend/xtrends (endpoint ทางการของ X อยู่ tier Pro)
+async function fetchXTrends(geo) {
+  const res = await fetch(`/api/trend/xtrends?geo=${encodeURIComponent(geo)}`);
+  const d = await res.json();
+  return { label: "X Trends", items: d.trends || [], error: d.error || null, stale: !!d.stale, source: d.source || "" };
+}
+
+async function reloadXTrends() {
+  const panel = $('.panel[data-source="xtrends"]');
+  $("[data-list]", panel).innerHTML = `<div class="state skeleton">กำลังดึงเทรนด์…</div>`;
+  try {
+    state.data.sources.xtrends = await fetchXTrends(state.xGeo);
+  } catch (e) {
+    state.data.sources.xtrends = { label: "X Trends", items: [], error: e.message };
+  }
+  renderPanel(panel);
+}
+
+function renderXTrends(panel) {
+  const bucket = state.data?.sources?.xtrends || { items: [], error: null };
+  const kw = (state.gkw || "").trim().toLowerCase(); // global search ใช้คำเดียวกับคอลัมน์อื่น
+  const items = bucket.items.filter((it) => !kw || it.name.toLowerCase().includes(kw));
+
+  const countEl = $("[data-count]", panel);
+  if (bucket.error && bucket.items.length === 0) {
+    countEl.className = "errbadge";
+    countEl.textContent = "⚠ โหลดไม่ได้";
+    countEl.title = bucket.error;
+  } else {
+    countEl.className = "pcount";
+    countEl.textContent = items.length + " คำ";
+    countEl.title = bucket.stale ? "ข้อมูลค้างจากรอบก่อน (แหล่งดึงไม่ได้ชั่วคราว)" : (bucket.source || "");
+  }
+
+  const list = $("[data-list]", panel);
+  if (items.length === 0) {
+    list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : kw ? "ไม่พบคำที่ตรงกับตัวกรอง" : "ยังไม่มีข้อมูล"}</div>`;
+    return;
+  }
+  list.innerHTML = items
+    .map(
+      (it, i) => `<a class="xrow" href="${escapeHtml(it.url)}" target="_blank" rel="noopener">
+        <span class="rank">${i + 1}</span>
+        <span class="xname${it.isHashtag ? " xtag" : ""}">${escapeHtml(it.name)}</span>
+      </a>`
+    )
+    .join("");
 }
 
 async function reloadTrends() {
@@ -265,6 +318,7 @@ function injectCatChips(panel, cats, allLabel) {
 function renderPanel(panel) {
   const source = panel.dataset.source;
   if (source === "trends") return renderTrends(panel);
+  if (source === "xtrends") return renderXTrends(panel);
 
   const bucket = state.data?.sources?.[source] || { items: [] };
   const f = state.filters[source] || { kw: "", rc: "all" };
@@ -492,6 +546,12 @@ function wire() {
         state.trendsCat = Number(e.target.value);
         reloadTrends();
       });
+    const xgeoEl = $("[data-xgeo]", panel);
+    if (xgeoEl)
+      xgeoEl.addEventListener("change", (e) => {
+        state.xGeo = e.target.value;
+        reloadXTrends();
+      });
     const hoursEl = $("[data-hours]", panel);
     if (hoursEl)
       hoursEl.addEventListener("change", (e) => {
@@ -572,7 +632,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 31; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 32; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}</script>
-  <link rel="stylesheet" href="./styles.css?v=28" />
+  <link rel="stylesheet" href="./styles.css?v=29" />
 </head>
 <body>
   <header class="topbar">
@@ -35,7 +35,7 @@
   <div class="swipe-dots" id="swipeDots"></div>
 
   <main class="board" id="board">
-    <!-- 4 panels: News · Alert 1 · Alert 2 · Trends -->
+    <!-- 5 panels: News · Alert 1 · Alert 2 · Google Trends · X -->
     <section class="panel" data-source="news">
       <div class="phead">
         <span class="ptitle"><span class="dot news"></span>📰 Google News</span>
@@ -128,9 +128,27 @@
       </div>
       <div class="list" data-list></div>
     </section>
+
+    <section class="panel" data-source="xtrends">
+      <div class="phead">
+        <span class="ptitle"><span class="dot xtrends"></span>𝕏 เทรนด์บน X</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <select class="rc" data-xgeo title="เลือกประเทศ">
+          <option value="thailand">🇹🇭 ไทย</option>
+          <option value="united-states">🇺🇸 สหรัฐฯ</option>
+          <option value="japan">🇯🇵 ญี่ปุ่น</option>
+          <option value="korea">🇰🇷 เกาหลี</option>
+          <option value="singapore">🇸🇬 สิงคโปร์</option>
+          <option value="worldwide">🌏 ทั่วโลก</option>
+        </select>
+      </div>
+      <div class="list" data-list></div>
+    </section>
   </main>
 
   <script src="/flags.js?v=24"></script>
-  <script src="./app.js?v=31"></script>
+  <script src="./app.js?v=32"></script>
 </body>
 </html>
