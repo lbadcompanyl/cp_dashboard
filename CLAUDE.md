@@ -6,16 +6,23 @@
 
 Cloudflare Pages project = **`cp-dashboard-680`**
 
-| URL | environment | push ได้เองไหม |
-|---|---|---|
-| `dev.cp-dashboard-680.pages.dev` | **dev / staging** | ได้ — เป็นที่สำหรับทดสอบ |
-| `cp-dashboard-680.pages.dev` | **production** | ❌ **ห้าม push เองเด็ดขาด ต้องได้รับคำสั่งชัดเจนทุกครั้ง** |
+| URL | เสิร์ฟ branch ไหน |
+|---|---|
+| `cp-dashboard-680.pages.dev` | `dev` ← **production** |
+| `dev.cp-dashboard-680.pages.dev` | `dev` ← alias ของ build เดียวกัน |
+
+### 🔴 `dev` = production — ไม่มี staging แยกจริง
+
+ยืนยันแล้ว (5 ส.ค. 2026): `/issue/` มีเฉพาะบน branch `dev` ไม่เคยอยู่บน `main`
+และมันขึ้นบน `cp-dashboard-680.pages.dev` → **production build มาจาก `dev`**
+
+สอง URL ข้างบนชี้ build เดียวกัน คนละชื่อเท่านั้น **push `dev` = ขึ้นเว็บจริงทันที**
 
 | branch | ไปโผล่ที่ไหน | push ได้เองไหม |
 |---|---|---|
-| `dev` | staging | ได้ |
+| `dev` | **production** | ❌ **ต้องได้รับคำสั่งชัดเจนทุกครั้ง** |
 | `claude/*` | preview ของ Pages | ได้ |
-| branch ที่ feed production | production | ❌ ต้องได้รับคำสั่งเท่านั้น |
+| `main` | ไม่ได้ deploy ที่ไหนเลย | — (ค้างที่ `6614efa` ตกรุ่นแล้ว) |
 
 > ⚠️ **อย่าสับสนกับ `trend-dashboard.pages.dev`** — อันนั้นคือโปรเจกต์ **ต้นทาง**
 > ที่โค้ดหน้า 3 คอลัมน์ถูกยกมา (ดู `TREND-HANDOFF.md`) **ไม่ใช่แดชบอร์ดนี้**
@@ -74,8 +81,6 @@ functions/api/  Cloudflare Pages Functions (trend / ir / sd / flags)
   ที่ `trend/` ปัจจุบันไม่มี — ปัจจุบันมีแค่ `now 1-d` / `now 7-d`)
 - `COORDINATION.md` ตกยุค — ยังอ้างไฟล์ที่ root ทั้งที่ย้ายเป็นโฟลเดอร์แล้ว
 - branch `claude/google-trends-dashboard-lt5k09` เป็น history คนละสาย (ต้นแบบ ก.ค.) ทิ้งได้
-- **ยังไม่ยืนยัน: branch ไหน feed production** (`main` หรือ `dev`)
-  เช็คได้ใน 5 วินาที — เปิด `cp-dashboard-680.pages.dev/issue/`
-  ขึ้น = production มาจาก `dev` · 404 = production มาจาก `main`
-  (`/issue/` มีเฉพาะบน `dev` ไม่เคยอยู่บน `main`)
-  ถ้าคำตอบคือ `main` แปลว่ามี 23 commit ที่ยังไม่ถึงผู้ใช้จริง
+- **ไม่มี staging แยกจริง** — `dev` คือ production ถ้าอยากได้ที่ทดสอบที่ปลอดภัย
+  ต้องเปิด preview deployment ของ Pages หรือตั้งโปรเจกต์ staging แยก
+- `main` ค้างที่ `6614efa` ไม่ได้ deploy ที่ไหน ตกรุ่นไป 23 commit — จะ sync ให้ตรงหรือลบก็ได้
