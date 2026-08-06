@@ -8,7 +8,7 @@
 //
 // ⚠️ แก้ไฟล์นี้ทีไรให้บวก SW_VERSION ด้วย — เบราว์เซอร์เทียบ byte ของไฟล์
 // ถ้าเนื้อหาไม่ต่างเลยมันจะไม่ติดตั้งตัวใหม่
-const SW_VERSION = 2;
+const SW_VERSION = 3;
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -33,7 +33,9 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     (async () => {
       try {
-        return await fetch(req, { cache: "no-store" }); // HTML เอาสดเสมอ
+        // ⚠️ ห้ามส่ง req (mode=navigate) เข้า fetch พร้อม init — สเปคจะลดระดับ mode
+        // เป็น same-origin เงียบๆ ทำให้ redirect ข้ามโดเมนพัง ยิงด้วย URL ตรงๆ แทน
+        return await fetch(req.url, { cache: "no-store", credentials: "same-origin", redirect: "follow" });
       } catch {
         // ออฟไลน์ → ใช้ของเก่าดีกว่าหน้าขาว
         const cached = await caches.match(req);

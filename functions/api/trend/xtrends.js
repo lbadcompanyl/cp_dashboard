@@ -17,7 +17,8 @@ const MAX_TRENDS = 50;
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct";
 const AI_BATCH = 25;            // รวมหลายคำต่อ 1 call
 const CAT_TTL = 7 * 24 * 3600;  // หมวดของแท็กไม่ค่อยเปลี่ยน เก็บยาวได้
-export const CATS = ["ent", "sport", "pol", "biz", "news", "other"];
+const CATS = ["ent", "sport", "pol", "biz", "news", "other"];
+const CAT_MAP_KEY = "xcatmap"; // เก็บหมวดของทุกแท็กรวมใน key เดียว
 
 // เดาหมวดจากคำก่อน ประหยัด AI call (ตัวที่เดาไม่ได้ค่อยส่งไปถาม)
 const CAT_KW = {
@@ -55,47 +56,85 @@ async function classifyBatch(env, names) {
   return found;
 }
 
-// เติมหมวดให้ทุกเทรนด์: KV -> เดาจากคำ -> ถาม AI (แล้วเก็บ KV ไว้ใช้ซ้ำ)
+// เติมหมวดให้ทุกเทรนด์: KV -> เดาจากคำ -> ถาม AI
+//
+// ⚠️ เก็บหมวดของทุกแท็กรวมใน key เดียว ไม่แยก key ต่อแท็ก
+// KV แผนฟรีเขียนได้ 1,000 ครั้ง/วัน และ FLAGS_KV ตัวนี้ใช้ร่วมกับ flag/archive/
+// related ทั้งโปรเจกต์ — ถ้าเขียนทีละแท็ก (50 ครั้ง/รอบ) จะกินโควตาหมดใน
+// ไม่กี่ชั่วโมงแล้วพังทั้งระบบ แบบรวม key = อ่าน 1 เขียน 1 เท่ากับ endpoint อื่น
 async function addCategories(trends, env, ctx, diag) {
   const kv = env && env.FLAGS_KV;
-  const pre = env.APP_ENV ? String(env.APP_ENV) + ":" : "";
-  const ask = [];
+  const mapKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + CAT_MAP_KEY;
 
+  let map = {};
+  if (kv) {
+    try { map = JSON.parse((await kv.get(mapKey)) || "{}") || {}; } catch { map = {}; }
+  }
+
+  const ask = [];
+  let dirty = false;
   for (const t of trends) {
-    const cached = kv ? await kv.get(pre + "xcat:" + t.name).catch(() => null) : null;
+    const cached = map[t.name];
     if (cached && CATS.includes(cached)) { t.cat = cached; continue; }
     const g = guessCat(t.name);
-    if (g) { t.cat = g; if (kv) ctx.waitUntil(kv.put(pre + "xcat:" + t.name, g, { expirationTtl: CAT_TTL }).catch(() => {})); continue; }
+    if (g) { t.cat = g; map[t.name] = g; dirty = true; continue; }
     t.cat = "other"; // ค่าเริ่มต้นระหว่างรอ AI
     ask.push(t);
   }
   diag.cached = trends.length - ask.length;
   diag.asked = 0;
 
-  if (!env.AI || !ask.length) return;
-  for (let i = 0; i < ask.length; i += AI_BATCH) {
-    const chunk = ask.slice(i, i + AI_BATCH);
-    try {
-      const cats = await classifyBatch(env, chunk.map((x) => x.name));
-      chunk.forEach((t, j) => {
-        const c = cats[j];
-        if (!c || !CATS.includes(c)) return;
-        t.cat = c;
-        diag.asked++;
-        if (kv) ctx.waitUntil(kv.put(pre + "xcat:" + t.name, c, { expirationTtl: CAT_TTL }).catch(() => {}));
-      });
-    } catch (e) { diag.aiErr = String((e && e.message) || e).slice(0, 100); }
+  if (env.AI && ask.length) {
+    for (let i = 0; i < ask.length; i += AI_BATCH) {
+      const chunk = ask.slice(i, i + AI_BATCH);
+      try {
+        const cats = await classifyBatch(env, chunk.map((x) => x.name));
+        chunk.forEach((t, j) => {
+          const c = cats[j];
+          if (!c || !CATS.includes(c)) return;
+          t.cat = c;
+          map[t.name] = c;
+          dirty = true;
+          diag.asked++;
+        });
+      } catch (e) { diag.aiErr = String((e && e.message) || e).slice(0, 100); }
+    }
+  }
+
+  // ตัดของเก่าทิ้งไม่ให้ blob โตไม่รู้จบ (KV จำกัด 25MB/ค่า แต่ยิ่งเล็กยิ่งเร็ว)
+  const keys = Object.keys(map);
+  if (keys.length > 600) {
+    const trimmed = {};
+    for (const k of keys.slice(-400)) trimmed[k] = map[k];
+    map = trimmed;
+    dirty = true;
+  }
+  diag.mapSize = Object.keys(map).length;
+
+  if (kv && dirty) {
+    ctx.waitUntil(kv.put(mapKey, JSON.stringify(map), { expirationTtl: CAT_TTL }).catch(() => {}));
   }
 }
 
 // เวลาที่ "ต้นทาง" อัปเดตเทรนด์ล่าสุด — เอาไว้ยืนยันว่าข้อมูลสดจริง ไม่ใช่หน้าค้าง
+//
+// ⚠️ เราเดาจาก <time> ตัวแรกในหน้า ซึ่งอาจเป็นเวลาของอย่างอื่นก็ได้ (เช่นวันที่บทความ)
+// การโชว์เวลาผิดแย่กว่าไม่โชว์เลย เพราะฟีเจอร์นี้มีไว้ให้คนเชื่อถือ — จึงรับเฉพาะ
+// เวลาที่ "อยู่ในอดีต และไม่เกิน 24 ชม." เท่านั้น นอกนั้นคืน null ไปเลย
+const MAX_SOURCE_AGE = 24 * 3600 * 1000;
+
+function sane(ms) {
+  const age = Date.now() - ms;
+  return age >= -60000 && age <= MAX_SOURCE_AGE ? new Date(ms).toISOString() : null;
+}
+
 function extractSourceTime(html) {
   const iso = html.match(/<time[^>]*datetime=["']([^"']+)["']/i);
-  if (iso) { const d = new Date(iso[1]); if (!isNaN(d)) return d.toISOString(); }
+  if (iso) { const d = Date.parse(iso[1]); if (!isNaN(d)) return sane(d); }
   const mins = html.match(/(\d+)\s*(?:minute|min)s?\s*ago/i);
-  if (mins) return new Date(Date.now() - parseInt(mins[1], 10) * 60000).toISOString();
+  if (mins) return sane(Date.now() - parseInt(mins[1], 10) * 60000);
   const hrs = html.match(/(\d+)\s*hours?\s*ago/i);
-  if (hrs) return new Date(Date.now() - parseInt(hrs[1], 10) * 3600000).toISOString();
+  if (hrs) return sane(Date.now() - parseInt(hrs[1], 10) * 3600000);
   return null;
 }
 
