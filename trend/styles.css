@@ -9,6 +9,7 @@
   --trends: #ea580c;
   --xtrends: #7c3aed;
   --yttrends: #dc2626;
+  --link: #2563eb; /* สีของอะไรที่กดได้ ใช้ให้เหมือนกันทุกคอลัมน์ */
   --shadow: 0 1px 3px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
   --radius: 12px;
 }
@@ -20,6 +21,7 @@
     --border: #262c36;
     --text: #e6edf3;
     --muted: #8b949e;
+    --link: #60a5fa; /* น้ำเงินเข้มอ่านไม่ออกบนพื้นมืด ต้องอ่อนลง */
     --shadow: none;
   }
 }
@@ -408,8 +410,10 @@ body {
 .xrow { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-radius: 9px; text-decoration: none; color: inherit; }
 .xrow:hover { background: var(--surface-2, rgba(255,255,255,.04)); }
 .xrow .rank { flex: 0 0 22px; text-align: right; font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
-.xrow .xname { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.35; overflow-wrap: anywhere; }
-.xrow .xtag { color: var(--xtrends); font-weight: 650; }
+/* ทุกคำเป็นสีน้ำเงินเหมือนกันหมด = สื่อว่ากดได้ทุกอัน
+   (เดิมแฮชแท็กเป็นสีม่วง คำธรรมดาเป็นสีตัวอักษรปกติ ทำให้ดูเหมือนกดได้แค่บางอัน) */
+.xrow .xname { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.35; overflow-wrap: anywhere; color: var(--link); }
+.xrow:hover .xname { text-decoration: underline; }
 
 /* ---- คอลัมน์ X: ปุ่มหมวด + ป้ายความสด ---- */
 .xfresh { padding: 5px 14px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); }
@@ -423,13 +427,15 @@ body {
 /* ---- คอลัมน์ YouTube — คลิปมาแรง ---- */
 .yrow { display: flex; align-items: flex-start; gap: 10px; padding: 7px 11px; border-radius: 9px; text-decoration: none; color: inherit; }
 .yrow:hover { background: var(--surface-2, rgba(255,255,255,.04)); }
+.yrow:hover .ytitle { text-decoration: underline; }
 .yrow .rank { flex: 0 0 20px; text-align: right; font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 14px; }
 /* ขนาดคงที่ + aspect-ratio กัน layout กระตุกตอนรูปยังไม่มา */
 .yrow .ythumb { flex: 0 0 84px; width: 84px; aspect-ratio: 16 / 9; border-radius: 6px; object-fit: cover; background: var(--border); }
 .yrow .ymeta { flex: 1; min-width: 0; }
-.yrow .ytitle { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* ชื่อคลิปกดได้ → สีน้ำเงินเดียวกับคอลัมน์ X · ชื่อช่องเป็นสีจางเพราะกดไม่ได้ */
+.yrow .ytitle { color: var(--link); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .yrow .ysub { margin-top: 3px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
-.yrow .ych { color: var(--yttrends); }
+.yrow .ych { color: inherit; }
 .dot.yttrends { background: var(--yttrends); }
 /* รายละเอียดตอนดึงไม่ได้ — พับไว้ ไม่รบกวนตอนใช้งานปกติ */
 .ydiag { margin: 0 12px 10px; font-size: 11px; color: var(--muted); }
