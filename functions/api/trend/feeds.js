@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "34"; // bump: + ชื่อลวง บีซีพีจี/BCPG และตัวจับข่าวเก่าที่ถูกดันขึ้นมาใหม่
+const CACHE_VER = "35"; // bump: ตัดข่าวที่ไม่ใช่ของล่าสุดทั้งหมด (ยึด byline เป็นเวลาจริง)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -252,6 +252,9 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   mergeNewsIntoAlert(sources, "alert1", ["news"], CP_BRANDS);
   mergeNewsIntoAlert(sources, "alert2", ["news"], parseAlertTerms(queriesBySource.alert2));
 
+  // แก้เวลาที่ฟีดส่งมาผิดก่อนทุกอย่าง — ตัวกรองเวลาและการเรียงลำดับที่ตามมาจะได้ใช้ของจริง
+  const dateFix = fixContentDates(sources);
+
   // ตัด related-block: พาดหัว (ฟรี) + เนื้อข่าวจริง articleBody เฉพาะ background (allowVerify) · ก่อน stale-fill กันสะสม noise
   const alertVerify = {};
   try { await verifyAlertItems(cache, sources, alertVerify, allowVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
@@ -285,7 +288,7 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
     }
   } catch {}
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive, pruned });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive, pruned, dateFix });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -382,7 +385,9 @@ function noiseReason(it, title) {
 // ถ้าเก่ากว่า 1 ปี = ของเก่าถูกดันขึ้นมา ไม่ใช่ข่าวใหม่
 const TH_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 const TH_DATE_RE = new RegExp("(\\d{1,2})\\s*(" + TH_MONTHS.join("|") + ")\\s*(25\\d{2}|20\\d{2})", "g");
-const OLD_AFTER_MS = 365 * 24 * 3600 * 1000; // เก่ากว่า 1 ปี
+// ยึดหน้าต่างเดียวกับ archive (10 วัน) — แดชบอร์ดนี้ดูของล่าสุดเท่านั้น
+// อะไรที่เก่ากว่านี้ไม่ควรโผล่มาแต่แรก ต่อให้ Alert เพิ่งไปเจอมันก็ตาม
+const OLD_AFTER_MS = 10 * 24 * 3600 * 1000;
 const BYLINE_HEAD = 220;                     // ดูเฉพาะช่วงต้น กันไปเจอวันที่ที่บทความอ้างถึงเฉย ๆ
 
 function bylineDate(text) {
@@ -403,6 +408,28 @@ function bylineDate(text) {
 function isOldRepost(it) {
   const d = bylineDate(it && it.snippet);
   return d !== null && Date.now() - d > OLD_AFTER_MS;
+}
+
+// แก้เวลาให้ตรงความจริงทุกคอลัมน์ — ฟีดส่ง "เวลาที่ Alert เจอหน้านั้น" มา ไม่ใช่เวลา
+// ที่เนื้อหาถูกเขียน พอเจอ byline ที่เก่ากว่ามาก ให้ยึด byline เป็นหลัก
+// การ์ดจะได้แสดงอายุจริง แทนที่จะบอกว่า "6 ชม.ที่แล้ว" ทั้งที่เป็นข่าวปี 2557
+const DATE_TRUST_GAP_MS = 2 * 24 * 3600 * 1000;
+
+function fixContentDates(sources) {
+  let fixed = 0;
+  for (const s of Object.values(sources || {})) {
+    for (const it of (s && s.items) || []) {
+      const d = bylineDate(it.snippet);
+      if (d === null) continue;
+      const feedTime = new Date(it.publishedAt).getTime();
+      if (isNaN(feedTime) || feedTime - d > DATE_TRUST_GAP_MS) {
+        it.publishedAt = new Date(d).toISOString();
+        it.dateFromByline = true;
+        fixed++;
+      }
+    }
+  }
+  return fixed;
 }
 
 // ตระกูลแบรนด์ในเครือ CP — บทความ CP มักเรียกตัวเองด้วยชื่อลูก (CPF/เซเว่น/แม็คโคร) ไม่ใช่คำว่า "ซีพี" ตรง ๆ
