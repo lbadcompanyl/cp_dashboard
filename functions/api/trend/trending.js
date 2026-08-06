@@ -18,7 +18,7 @@ export async function onRequest(context) {
   const cat = VALID_CATS.includes(catRaw) ? catRaw : 0;
 
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/trend/trending?geo=${geo}&hours=${hours}&cat=${cat}&v=4`, { method: "GET" });
+  const key = new Request(url.origin + `/api/trend/trending?geo=${geo}&hours=${hours}&cat=${cat}&v=5`, { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 

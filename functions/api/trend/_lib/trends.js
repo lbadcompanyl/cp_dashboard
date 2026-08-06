@@ -42,6 +42,17 @@ export async function fetchTrendingNow(geo = "TH", hours = 24, cat = 0) {
   // กรองตามหมวดหมู่ (ถ้าเลือก) โดยดู topic id ที่ index 10 ของแต่ละ trend
   if (cat) trends = trends.filter((a) => Array.isArray(a[10]) && a[10].includes(cat));
 
+  // ช่วงยาว (7 วัน) เทรนด์เดียวพุ่งได้หลายรอบ Google ส่งมาเป็นคนละเหตุการณ์
+  // ("ทุเรียน" 2K+ เมื่อ 2 วันก่อน + 200+ เมื่อ 6 วันก่อน = 2 แถว) — เก็บแค่แถวแรก
+  // ซึ่งเป็นรอบที่แรงสุดตามการจัดอันดับของ Google เอง
+  const seen = new Set();
+  trends = trends.filter((a) => {
+    const k = String(a[0] || "").trim().toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+
   return trends.map((a) => {
     const title = a[0] || "";
     const started = Array.isArray(a[3]) ? a[3][0] : null; // unix seconds
