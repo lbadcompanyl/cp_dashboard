@@ -19,7 +19,7 @@
 // ⚠️ บวกเลขนี้ทุกครั้งที่ "โครงของ items เปลี่ยน" (เพิ่ม/แก้ field, เปลี่ยนวิธีเรียง)
 // ไม่งั้นของเก่าใน KV/edge cache จะถูกเสิร์ฟต่ออีกเป็นชั่วโมงทั้งที่โค้ดใหม่ขึ้นไปแล้ว
 // เคยพลาดมาแล้ว: แก้วิธีเรียง + เพิ่มธง live แต่ผู้ใช้ยังเห็นของเก่าเรียงผิดอยู่ 1 ชม.
-const DATA_VER = "3";
+const DATA_VER = "4";
 
 const FETCH_TIMEOUT = 7000;
 const EDGE_TTL = 1800;          // 30 นาที — คลิปมาแรงขยับช้า
@@ -337,12 +337,20 @@ async function fromYouTubeHtml(geo, path = "/feed/trending") {
       c.match(/"viewCountText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
     const pm = c.match(/"publishedTimeText":\{"simpleText":"((?:[^"\\]|\\.)*)"/);
     // ไลฟ์สด: ยอด "วิว" คือคนดูอยู่ตอนนี้ เทียบกับคลิปปกติไม่ได้ ต้องแยกออกมา
-    // ดูหลายสัญญาณ เพราะ YouTube เปลี่ยนรูปแบบบ่อยและใช้ไม่เหมือนกันในแต่ละหน้า
+    //
+    // ⚠️ ห้ามเดาจากข้อความในชื่อคลิป เคยใช้วิธีสแกนหาคำว่า "ถ่ายทอดสด/watching"
+    // ในข้อความดิบ 1500 ตัวอักษร ผลคือจับผิด 13 จาก 15 คลิป (คำพวกนี้อยู่ในชื่อคลิป
+    // ธรรมดาเต็มไปหมด และช่วงที่สแกนยังกินข้อมูลของคลิปตัวถัดไปเข้ามาด้วย)
+    // ใช้เฉพาะสัญญาณที่เป็นโครงสร้างจริงเท่านั้น:
+    //   1. badge LIVE NOW ของตัวคลิปเอง (จำกัดขอบเขตไม่ให้ล้ำไปคลิปอื่น)
+    //   2. ป้ายยอดคนดูที่เขียนว่า "กำลังดู/watching" ซึ่งมีเฉพาะไลฟ์
+    const own = c.slice(0, 2200); // ข้อมูลของคลิปตัวเองอยู่ต้นก้อน
+    const vcAt = c.indexOf('"viewCountText"');
+    const vcRaw = vcAt >= 0 ? c.slice(vcAt, vcAt + 220) : "";
     const live =
-      /BADGE_STYLE_TYPE_LIVE_NOW/.test(c) ||
-      /"isLiveNow":true|"isLive":true/.test(c) ||
-      /"label":"LIVE"|"text":"LIVE"/.test(c) ||
-      /watching|กำลังดู|ถ่ายทอดสด/i.test(c.slice(0, 1500));
+      /BADGE_STYLE_TYPE_LIVE_NOW/.test(own) ||
+      /"isLiveNow":true/.test(own) ||
+      /watching now|กำลังดู/i.test(vcRaw);
     seen.add(idm[1]);
     out.push({
       id: idm[1],

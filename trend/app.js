@@ -333,7 +333,11 @@ function renderYTTrends(panel) {
   const all = bucket.items.filter(
     (it) => !kw || ((it.title || "") + " " + (it.channel || "")).toLowerCase().includes(kw)
   );
-  const shown = state.ytHideLive ? all.filter((it) => !it.live) : all;
+  // ซ่อนไลฟ์ไว้เพื่อให้เห็นคลิปจริง แต่ถ้าซ่อนแล้วแทบไม่เหลืออะไร แปลว่าตัวตรวจไลฟ์เพี้ยน
+  // โชว์ทั้งหมดดีกว่าโชว์ 2 จาก 15 (เคยเกิดจริงตอนตัวตรวจจับผิด 13 ตัว)
+  const noLive = all.filter((it) => !it.live);
+  const filterBroken = state.ytHideLive && all.length >= 6 && noLive.length < 3;
+  const shown = state.ytHideLive && !filterBroken ? noLive : all;
   const items = (state.ytCat ? shown.filter((it) => ytCatOf(it) === state.ytCat) : shown).slice();
 
   // ถ้ายังไม่มีสถิติย้อนหลังพอ การเรียงตาม "วิวเพิ่ม" จะไม่มีความหมาย → ถอยไปใช้ยอดรวม
@@ -379,6 +383,9 @@ function renderYTTrends(panel) {
   // ไม่งั้นผู้ใช้จะอ่านคลิป 900 วิวเป็น "คลิปมาแรงอันดับ 1 ของประเทศ"
   const winH = win ? Number(win[1]) : 0;
   const needMore = win && !hasDelta;
+  const liveWarn = filterBroken
+    ? `<span class="warn">⚠ แยกไลฟ์ออกไม่ได้ในรอบนี้ (ต้นทางสำรองไม่ได้บอกชัด) — โชว์ทั้งหมดไปก่อน</span>`
+    : "";
   const notReady = needMore
     ? `<span class="warn">⏳ เพิ่งเริ่มเก็บสถิติยอดวิว (มี ${bucket.histHours || 0} ชม.) — ยังเทียบ "วิวเพิ่มใน ${winH} ชม." ไม่ได้ ตอนนี้เรียงตามยอดรวมไปก่อน</span>`
     : "";
@@ -390,7 +397,7 @@ function renderYTTrends(panel) {
     ? ""
     : bucket.stale
     ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
-    : notReady || modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
+    : liveWarn || notReady || modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
 
   if (bucket.items.length) renderYTCats(panel, shown, all);
 
@@ -946,7 +953,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 44; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 45; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
