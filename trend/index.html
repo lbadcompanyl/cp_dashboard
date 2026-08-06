@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#0d0d0d" />
 <meta name="mobile-web-app-capable" content="yes" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}</script>
+<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-updated"){try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}location.reload();}});}</script>
   <link rel="stylesheet" href="./styles.css?v=32" />
 </head>
 <body>
