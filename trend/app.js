@@ -926,6 +926,25 @@ function wire() {
   if (gs) gs.addEventListener("input", (e) => { state.gkw = e.target.value; renderAll(); });
   $("#refresh").addEventListener("click", load);
   setupSwipeDots();
+  setupScrollCue();
+}
+
+// ปุ่มชี้ทางไปแถวล่าง (Google Trends / X / YouTube)
+// โผล่เฉพาะตอนที่แถวล่างยังไม่อยู่ในจอ และหน้าเลื่อนลงได้จริง
+function setupScrollCue() {
+  const cue = $("#scrollcue");
+  const target = $('.panel[data-source="trends"]');
+  if (!cue || !target) return;
+  cue.addEventListener("click", () => target.scrollIntoView({ behavior: "smooth", block: "start" }));
+  const update = () => {
+    const top = target.getBoundingClientRect().top;
+    const visible = top < window.innerHeight - 80;              // แถวล่างโผล่มาแล้ว
+    const scrollable = document.documentElement.scrollHeight > window.innerHeight + 40; // จอใหญ่จนพอดีอยู่แล้ว
+    cue.hidden = visible || !scrollable;
+  };
+  update();
+  addEventListener("scroll", update, { passive: true });
+  addEventListener("resize", update);
 }
 
 // จุดบอกตำแหน่ง carousel มือถือ — คลิกเลื่อนไปคอลัมน์นั้น + ไฮไลต์ตามที่ปัด
@@ -995,7 +1014,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 55; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 56; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
