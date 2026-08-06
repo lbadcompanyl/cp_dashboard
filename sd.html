@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SD Trends — Google Trends ด้านความยั่งยืน</title>
 <!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ไฟล์นี้ — เครื่องที่ติดตั้งเป็นแอปใช้เช็คว่ามีของใหม่ -->
-<meta name="page-ver" content="1" />
+<meta name="page-ver" content="2" />
 <!-- PWA: ติดตั้งเป็นแอปได้จากทุกหน้า ไม่ใช่แค่หน้าแรก -->
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#0d0d0d" />
 <meta name="mobile-web-app-capable" content="yes" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
+<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));(function(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}})();navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
 <link rel="preconnect" href="https://trends.google.com" />
 <link rel="preconnect" href="https://ssl.gstatic.com" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>" />
@@ -173,7 +173,7 @@
     <div class="note"><span>ℹ️</span><span>แต่ละแท็บรวมคำในกลุ่มด้วย <b>“+”</b> เป็น <b>เส้นเดียว</b> — Google รวมและถ่วงน้ำหนักตาม volume จริงให้เอง. เปลี่ยนพื้นที่/ช่วงเวลาหรือแก้คำแล้ว widget จะโหลดใหม่อัตโนมัติ. โหมดมืดเป็นของหน้าเว็บ ส่วนตัว widget เป็น UI ของ Google (พื้นขาว)</span></div>
   </main>
 
-  <footer class="foot">SD Trends · เทรนด์การค้นหาด้านความยั่งยืน (ESG / Net Zero / พลังงานสะอาด ฯลฯ) ผ่าน Google Trends embed · จำค่า + แชร์ลิงก์ได้</footer>
+  <footer class="foot">SD Trends · เทรนด์การค้นหาด้านความยั่งยืน (ESG / Net Zero / พลังงานสะอาด ฯลฯ) ผ่าน Google Trends embed · จำค่า + แชร์ลิงก์ได้ <span id="vtag" style="opacity:.6"></span></footer>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -419,7 +419,7 @@ document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFro
 <script>
   // เช็คของใหม่ — กลไกเดียวกับหน้าอื่นทุกหน้า (landing / trend / ir / issue)
   (function(){
-    var VER = 1; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
+    var VER = 2; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
     var CHECK_MS = 60 * 60 * 1000;
     var last = 0, ready = false;
     function banner(){

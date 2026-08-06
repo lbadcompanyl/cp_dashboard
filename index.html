@@ -14,8 +14,8 @@
 <meta name="apple-mobile-web-app-title" content="Dashboards" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ index.html — เครื่องที่ติดตั้งเป็นแอปใช้ค่านี้เช็คว่ามีของใหม่ -->
-<meta name="page-ver" content="4" />
-<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
+<meta name="page-ver" content="5" />
+<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));(function(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}})();navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
 <style>
   :root {
     color-scheme: dark;
@@ -159,14 +159,14 @@
   </div>
 </div>
 
-<footer class="foot">Dashboards · Trends Explorer & IR News Monitor · static · deploy บน Cloudflare Pages</footer>
+<footer class="foot">Dashboards · Trends Explorer &amp; IR News Monitor · static · deploy บน Cloudflare Pages <span id="vtag" style="opacity:.6"></span></footer>
 
 <script>
   // ── เช็คของใหม่ ─────────────────────────────────────────────────────────
   // หน้า /trend/ กับ /ir/ มีระบบนี้อยู่แล้ว แต่หน้า landing ไม่เคยมี — พอติดตั้งเป็นแอป
   // บนมือถือแล้วมันค้างหน้าเก่าไว้ (การ์ดใหม่ไม่ขึ้น) ต้องถอนแอปติดตั้งใหม่ถึงจะเห็น
   (function(){
-    var VER = 4; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
+    var VER = 5; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
     var CHECK_MS = 60 * 60 * 1000; // เช็คไม่ถี่กว่าชั่วโมงละครั้ง
     var last = 0, ready = false;
 

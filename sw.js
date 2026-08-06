@@ -8,9 +8,17 @@
 //
 // ⚠️ แก้ไฟล์นี้ทีไรให้บวก SW_VERSION ด้วย — เบราว์เซอร์เทียบ byte ของไฟล์
 // ถ้าเนื้อหาไม่ต่างเลยมันจะไม่ติดตั้งตัวใหม่
-const SW_VERSION = 3;
+const SW_VERSION = 4;
 
 self.addEventListener("install", () => self.skipWaiting());
+
+// หน้าเว็บถามเลขเวอร์ชันได้ — เอาไว้โชว์ให้เห็นว่าเครื่องถือ sw ตัวไหนอยู่
+// (ที่ผ่านมาต้องเดาเอาว่าแอปอัปเดตหรือยัง เสียเวลาไล่หลายรอบ)
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "get-version" && e.source) {
+    e.source.postMessage({ type: "sw-version", version: SW_VERSION });
+  }
+});
 
 self.addEventListener("activate", (e) =>
   e.waitUntil(
