@@ -19,7 +19,7 @@ const AI_BATCH = 10;            // ก้อนเล็กแม่นกว่
 const AI_MAX_CALLS = 12;        // กันเรียกรัวตอนแบ่งก้อนย่อย (โควตา Workers AI มีจำกัด)
 const CAT_TTL = 7 * 24 * 3600;  // หมวดของแท็กไม่ค่อยเปลี่ยน เก็บยาวได้
 // ⚠️ บวกเลขนี้เมื่อแก้วิธีจัดหมวด ไม่งั้น response เดิม (ที่ยังติดหมวดผิด) ถูกเสิร์ฟต่อ
-const DATA_VER = "3";
+const DATA_VER = "4";
 const CATS = ["ent", "sport", "pol", "biz", "news", "other"];
 // ⚠️ บวกเลขต่อท้ายเมื่อแก้วิธีจัดหมวด — หมวดที่จัดผิดถูก cache ไว้ 7 วัน
 // ถ้าไม่เปลี่ยน key ของผิดเดิมจะถูกเสิร์ฟต่อไปทั้งที่แก้โค้ดแล้ว
@@ -106,6 +106,10 @@ async function addCategories(trends, env, ctx, diag) {
   }
   diag.cached = trends.length - ask.length;
   diag.asked = 0;
+  // ผูก Workers AI ไว้หรือยัง — ถ้าไม่ได้ผูก แท็กจะตกเป็น "อื่นๆ" ทั้งหมดแบบเงียบๆ
+  // จนดูเหมือนโค้ดจัดหมวดพัง ทั้งที่มันไม่เคยถูกเรียกเลย (IR ก็มีธงนี้ด้วยเหตุผลเดียวกัน)
+  diag.bound = !!(env && env.AI);
+  diag.toAsk = ask.length;
 
   const st = { dirty, calls: 0 };
   if (env.AI && ask.length) {

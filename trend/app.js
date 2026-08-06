@@ -137,6 +137,7 @@ async function fetchXTrends(geo) {
     source: d.source || "",
     fetchedAt: d.fetchedAt || null,
     sourceUpdatedAt: d.sourceUpdatedAt || null,
+    cats: (d.meta && d.meta.cats) || null,
   };
 }
 
@@ -214,6 +215,18 @@ function renderXTrends(panel) {
       ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
       : `<span>🕒 ${[src, got].filter(Boolean).join(" · ")}</span>`;
   } else fresh.innerHTML = "";
+
+  // บอกให้รู้เมื่อการจัดหมวดใช้ไม่ได้ — ไม่งั้นจะเห็นแค่ "อื่นๆ 45" แล้วนึกว่าระบบเสีย
+  const cd = bucket.cats;
+  if (cd && bucket.items.length) {
+    const note =
+      cd.bound === false
+        ? "⚠ ยังไม่ได้เปิดใช้ตัวจัดหมวด (Workers AI) — แท็กที่เดาจากคำไม่ได้จะอยู่ใน “อื่นๆ”"
+        : cd.toAsk > 0 && cd.asked === 0
+        ? "⚠ ตัวจัดหมวดไม่ตอบรอบนี้ — เดี๋ยวรอบหน้าจะลองใหม่ให้เอง"
+        : "";
+    if (note) fresh.innerHTML = `<span class="warn">${escapeHtml(note)}</span>`;
+  }
 
   renderXCats(panel, all);
 
@@ -1014,7 +1027,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 59; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 60; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
