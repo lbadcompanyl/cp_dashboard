@@ -424,6 +424,19 @@ body {
 .xcats .cat:hover { color: var(--ink); }
 .xcats .cat.on { background: var(--xtrends); border-color: var(--xtrends); color: #fff; }
 
+/* ---- คอลัมน์ YouTube: ปุ่มเลือกวิธีเรียง ---- */
+/* เป็นปุ่มแยก ไม่ใช่ dropdown — เห็นตัวเลือกทั้งหมดทีเดียว กดครั้งเดียวเปลี่ยนได้
+   มีเฉพาะ "มาแรง" ที่ต้องเลือกช่วงเวลาต่อ จึงมี dropdown ติดมาเฉพาะอันนั้น */
+.ysort { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ysort .ywin { padding: 3px 6px; font-size: 11.5px; }
+.panel[data-source="yttrends"] .ysort .cat.on,
+.panel[data-source="yttrends"] .xcats .cat.on { background: var(--yttrends); border-color: var(--yttrends); }
+@media (max-width: 640px) {
+  .ysort { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .ysort::-webkit-scrollbar { display: none; }
+  .ysort .cat { flex: 0 0 auto; }
+}
+
 /* ---- คอลัมน์ YouTube — คลิปมาแรง ---- */
 .yrow { display: flex; align-items: flex-start; gap: 10px; padding: 7px 11px; border-radius: 9px; text-decoration: none; color: inherit; }
 .yrow:hover { background: var(--surface-2, rgba(255,255,255,.04)); }

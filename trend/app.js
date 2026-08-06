@@ -413,8 +413,12 @@ function renderYTTrends(panel) {
     ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
     : liveWarn || notReady || partial || modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
 
+  // ไฮไลต์ปุ่มที่เลือกอยู่ · ช่องเวลาโผล่เฉพาะโหมด "มาแรง" เท่านั้น
+  $$("[data-ysort] button[data-sort]", panel).forEach((b) =>
+    b.classList.toggle("on", b.dataset.sort === state.ytSort)
+  );
   const winEl = $("[data-ytwin]", panel);
-  if (winEl) winEl.hidden = !isGrowth; // ช่องเวลาไม่เกี่ยวกับโหมดอื่น ซ่อนไว้ไม่ให้รก
+  if (winEl) winEl.hidden = !isGrowth;
 
   if (bucket.items.length) renderYTCats(panel, shown, all);
 
@@ -884,10 +888,12 @@ function wire() {
         state.ytGeo = e.target.value;
         reloadYTTrends();
       });
-    const ytsortEl = $("[data-ytsort]", panel);
-    if (ytsortEl)
-      ytsortEl.addEventListener("change", (e) => {
-        state.ytSort = e.target.value;
+    const ysortEl = $("[data-ysort]", panel);
+    if (ysortEl)
+      ysortEl.addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-sort]");
+        if (!b) return;
+        state.ytSort = b.dataset.sort;
         renderPanel(panel); // เรียงใหม่ฝั่งหน้าเว็บ ไม่ต้องยิงต้นทางซ้ำ
       });
     const ytwinEl = $("[data-ytwin]", panel);
@@ -976,7 +982,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 50; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 51; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
