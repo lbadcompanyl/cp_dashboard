@@ -19,7 +19,7 @@
 // ⚠️ บวกเลขนี้ทุกครั้งที่ "โครงของ items เปลี่ยน" (เพิ่ม/แก้ field, เปลี่ยนวิธีเรียง)
 // ไม่งั้นของเก่าใน KV/edge cache จะถูกเสิร์ฟต่ออีกเป็นชั่วโมงทั้งที่โค้ดใหม่ขึ้นไปแล้ว
 // เคยพลาดมาแล้ว: แก้วิธีเรียง + เพิ่มธง live แต่ผู้ใช้ยังเห็นของเก่าเรียงผิดอยู่ 1 ชม.
-const DATA_VER = "4";
+const DATA_VER = "5";
 
 const FETCH_TIMEOUT = 7000;
 const EDGE_TTL = 1800;          // 30 นาที — คลิปมาแรงขยับช้า
@@ -51,12 +51,20 @@ export async function onRequest(context) {
   // รหัสประเทศ 2 ตัวเท่านั้น — ค่านี้ต่อเข้า URL ปลายทาง อย่าปล่อยให้ใส่อะไรก็ได้
   const geo = (url.searchParams.get("geo") || "TH").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2) || "TH";
 
+  const env = context.env || {};
+  const hasApiKey = !!env.YT_API_KEY;
+
+  // ⚠️ ใส่สถานะ "มี key หรือยัง" ลงใน cache key ด้วย
+  // ไม่งั้นพอเพิ่ง YT_API_KEY เข้า Cloudflare ผู้ใช้จะยังเห็นผลลัพธ์เดิม (ที่ยังไม่ใช้ key)
+  // ไปอีกเป็นชั่วโมง แล้วนึกว่าใส่ key ไม่สำเร็จ — เกิดขึ้นจริงมาแล้ว
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/trend/yttrends?geo=${geo}&_v=${DATA_VER}`, { method: "GET" });
+  const key = new Request(
+    url.origin + `/api/trend/yttrends?geo=${geo}&_v=${DATA_VER}&_k=${hasApiKey ? 1 : 0}`,
+    { method: "GET" }
+  );
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
-  const env = context.env || {};
   const kv = env.FLAGS_KV;
   const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `yttrends:${DATA_VER}:${geo}`;
 
@@ -68,7 +76,9 @@ export async function onRequest(context) {
       if (raw) {
         saved = JSON.parse(raw);
         const age = Date.now() - Date.parse((saved.body && saved.body.fetchedAt) || 0);
-        if (Number.isFinite(age) && age >= 0 && age < KV_FRESH && (saved.body.items || []).length) {
+        // เพิ่งได้ key มาแต่ของที่เก็บไว้ยังไม่ได้ใช้ key → ต้องดึงใหม่ทันที ไม่ต้องรอหมดอายุ
+        const staleKey = hasApiKey && saved.body && saved.body.source !== "youtube:api";
+        if (!staleKey && Number.isFinite(age) && age >= 0 && age < KV_FRESH && (saved.body.items || []).length) {
           const edge = json({ ...saved.body, fromKv: true }, 200, EDGE_TTL);
           context.waitUntil(cache.put(key, edge.clone()));
           return browserCopy(edge);
@@ -93,7 +103,7 @@ export async function onRequest(context) {
     const body = {
       geo,
       source: won.id,
-      mode: modeOf(won.id),
+      mode: modeOf(won.id, won.items),
       fetchedAt: new Date(now).toISOString(),
       count: items.length,
       items,
@@ -419,9 +429,22 @@ function normalize(raw, opts = {}) {
 }
 
 // แหล่งไหนเป็น "อันดับมาแรงจริง" แหล่งไหนแค่ "คลิปจากหน้าเว็บ" — ผู้ใช้ต้องรู้ว่ากำลังดูอะไร
-function modeOf(sourceId) {
+//
+// ⚠️ instance สาธารณะบางตัว "อ้างว่า" เป็น trending แต่คืนคลิปเล็กๆ ของตัวเอง
+// เจอจริง: api.piped.private.coffee คืน 15 คลิป มัธยฐาน 740 วิว แล้วติดป้ายว่า trending
+// เทรนด์ระดับประเทศจริงต้องหลักแสนขึ้นไป — ตัวเลขไม่สมเหตุสมผล = อย่าไปเชื่อป้ายมัน
+const TRENDING_MIN_MEDIAN = 20000;
+
+function modeOf(sourceId, items) {
   if (sourceId === "youtube:api") return "official";
-  return /^(invidious|piped)/.test(sourceId) ? "trending" : "browse";
+  const claimed = /^(invidious|piped)/.test(sourceId) ? "trending" : "browse";
+  if (claimed === "trending" && medianViews(items) < TRENDING_MIN_MEDIAN) return "browse";
+  return claimed;
+}
+
+function medianViews(items) {
+  const v = (items || []).map((i) => i.views || 0).filter((n) => n > 0).sort((a, b) => a - b);
+  return v.length ? v[Math.floor(v.length / 2)] : 0;
 }
 
 function idFromUrl(u) {
