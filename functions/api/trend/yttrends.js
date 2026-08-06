@@ -23,8 +23,18 @@ const KV_TTL = 12 * 3600;
 const MAX_ITEMS = 30;
 
 // instance สาธารณะ — ล่มได้เป็นเรื่องปกติ จึงใส่ไว้หลายตัวและมี YouTube ตรงปิดท้าย
-const INVIDIOUS = ["inv.nadeko.net", "invidious.nerdvpn.de", "yewtu.be"];
-const PIPED = ["pipedapi.kavin.rocks", "pipedapi.adminforge.de"];
+//
+// ⚠️ instance พวกนี้ "เกิดใหม่/ตายไป" ตลอด ลิสต์ที่ hardcode ไว้จะตกยุคเสมอ
+// จึงมีขั้นที่ 2 คือถามรายชื่อสดจากไดเรกทอรีทางการ (ดู discoverInvidious/discoverPiped)
+const INVIDIOUS = [
+  "inv.nadeko.net", "invidious.nerdvpn.de", "yewtu.be",
+  "invidious.jing.rocks", "invidious.privacyredirect.com", "iv.melmac.space",
+];
+const PIPED = [
+  "pipedapi.kavin.rocks", "pipedapi.adminforge.de",
+  "api.piped.private.coffee", "pipedapi.drgns.space",
+];
+const MAX_DISCOVERED = 6; // ยิงพร้อมกันได้ แต่ไม่ต้องยิงทั้งโลก
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -87,15 +97,71 @@ export async function onRequest(context) {
 // ไล่ทีละอัน 5 แหล่ง × timeout 7 วิ = ผู้ใช้รอ 35 วินาทีก่อนเห็นอะไร
 // ยิงพร้อมกันแล้วเอาอันแรกที่ได้ = ช้าสุดเท่ากับ timeout เดียว
 async function race(geo, attempts) {
-  const runners = [];
-  for (const h of INVIDIOUS) runners.push({ id: `invidious:${h}`, run: () => fromInvidious(h, geo) });
-  for (const h of PIPED) runners.push({ id: `piped:${h}`, run: () => fromPiped(h, geo) });
-
-  const won = await firstOk(runners, attempts);
+  // รอบ 1 — instance ที่รู้จัก ไม่ต้องเสียเวลาถามไดเรกทอรีก่อน
+  const seed = [];
+  for (const h of INVIDIOUS) seed.push({ id: `invidious:${h}`, run: () => fromInvidious(h, geo) });
+  for (const h of PIPED) seed.push({ id: `piped:${h}`, run: () => fromPiped(h, geo) });
+  let won = await firstOk(seed, attempts);
   if (won) return won;
 
-  // JSON ล่มหมด → ทางสุดท้าย แกะหน้า YouTube เอง
-  return await firstOk([{ id: "youtube:html", run: () => fromYouTubeHtml(geo) }], attempts);
+  // รอบ 2 — ลิสต์ที่ hardcode ตายหมด ขอรายชื่อสดจากไดเรกทอรีทางการแล้วลองใหม่
+  // (นี่คือตัวกันไม่ให้คอลัมน์ตายถาวรเวลา instance ย้ายบ้านกันทั้งวงการ)
+  const known = new Set([...INVIDIOUS, ...PIPED]);
+  const fresh = [];
+  const [inv, pip] = await Promise.all([
+    discoverInvidious(attempts).catch(() => []),
+    discoverPiped(attempts).catch(() => []),
+  ]);
+  for (const h of inv) if (!known.has(h)) fresh.push({ id: `invidious*:${h}`, run: () => fromInvidious(h, geo) });
+  for (const h of pip) if (!known.has(h)) fresh.push({ id: `piped*:${h}`, run: () => fromPiped(h, geo) });
+  if (fresh.length) {
+    won = await firstOk(fresh.slice(0, MAX_DISCOVERED * 2), attempts);
+    if (won) return won;
+  }
+
+  // รอบ 3 — JSON ล่มหมดจริง แกะหน้า YouTube เอง
+  // /feed/trending ถูกถอดออกตั้งแต่ ก.ค. 2025 จึงลองหน้าแรกรายประเทศด้วย
+  return await firstOk(
+    [
+      { id: "youtube:trending", run: () => fromYouTubeHtml(geo, "/feed/trending") },
+      { id: "youtube:home", run: () => fromYouTubeHtml(geo, "/") },
+    ],
+    attempts
+  );
+}
+
+// ไดเรกทอรีทางการของ Invidious — คืนเฉพาะตัวที่เปิด API และเป็น https
+async function discoverInvidious(attempts) {
+  try {
+    const arr = await fetchJson("https://api.invidious.io/instances.json?sort_by=health");
+    const hosts = (Array.isArray(arr) ? arr : [])
+      .filter((e) => e && e[1] && e[1].type === "https" && e[1].api === true)
+      .map((e) => String(e[0]))
+      .slice(0, MAX_DISCOVERED);
+    attempts.push({ source: "discover:invidious", got: hosts.length });
+    return hosts;
+  } catch (e) {
+    attempts.push({ source: "discover:invidious", err: String((e && e.message) || e).slice(0, 120) });
+    return [];
+  }
+}
+
+// ไดเรกทอรีของ Piped — api_url เป็น URL เต็ม ตัดเหลือ host
+async function discoverPiped(attempts) {
+  try {
+    const arr = await fetchJson("https://piped-instances.kavin.rocks/");
+    const hosts = (Array.isArray(arr) ? arr : [])
+      .map((e) => {
+        try { return new URL(e && e.api_url).host; } catch { return ""; }
+      })
+      .filter(Boolean)
+      .slice(0, MAX_DISCOVERED);
+    attempts.push({ source: "discover:piped", got: hosts.length });
+    return hosts;
+  } catch (e) {
+    attempts.push({ source: "discover:piped", err: String((e && e.message) || e).slice(0, 120) });
+    return [];
+  }
 }
 
 // คืนตัวแรกที่สำเร็จ · ถ้าไม่มีเลยคืน null (ไม่ throw) และบันทึกสาเหตุลง attempts ทุกตัว
@@ -151,9 +217,10 @@ async function fromPiped(host, geo) {
   })));
 }
 
-async function fromYouTubeHtml(geo) {
+async function fromYouTubeHtml(geo, path = "/feed/trending") {
+  const sep = path.includes("?") ? "&" : "?";
   const html = await fetchText(
-    `https://www.youtube.com/feed/trending?gl=${geo}&hl=th&persist_gl=1&persist_hl=1`
+    `https://www.youtube.com${path}${sep}gl=${geo}&hl=th&persist_gl=1&persist_hl=1`
   );
   const out = [];
   const seen = new Set();

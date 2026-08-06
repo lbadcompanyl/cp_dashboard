@@ -238,6 +238,7 @@ async function fetchYTTrends(geo) {
     stale: !!d.stale,
     source: d.source || "",
     fetchedAt: d.fetchedAt || null,
+    attempts: (d.meta && d.meta.attempts) || [],
   };
 }
 
@@ -304,7 +305,18 @@ function renderYTTrends(panel) {
 
   const list = $("[data-list]", panel);
   if (items.length === 0) {
-    list.innerHTML = `<div class="state">${bucket.error ? "ดึงคลิปมาแรงไม่ได้" : "ไม่พบคลิปที่ตรงกับตัวกรอง"}</div>`;
+    if (!bucket.error) {
+      list.innerHTML = `<div class="state">ไม่พบคลิปที่ตรงกับตัวกรอง</div>`;
+      return;
+    }
+    // ดึงไม่ได้ = บอกไปเลยว่าแหล่งไหนพังเพราะอะไร ไม่ต้องให้ผู้ใช้ไปเปิด API เอง
+    // (คอลัมน์นี้พึ่ง instance ของอาสาสมัครที่ล่มบ่อย — รู้สาเหตุแล้วแก้ได้ตรงจุด)
+    const rows = (bucket.attempts || [])
+      .map((a) => `<li><b>${escapeHtml(a.source || "?")}</b> — ${escapeHtml(a.err || (a.got != null ? "ได้ " + a.got + " รายการ" : "ไม่ทราบ"))}</li>`)
+      .join("");
+    list.innerHTML =
+      `<div class="state">ดึงคลิปมาแรงไม่ได้ — ต้นทางสาธารณะไม่ตอบทั้งหมด</div>` +
+      (rows ? `<details class="ydiag"><summary>ดูสาเหตุ (${(bucket.attempts || []).length} แหล่ง)</summary><ul>${rows}</ul></details>` : "");
     return;
   }
   list.innerHTML = items
@@ -825,7 +837,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 40; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 41; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

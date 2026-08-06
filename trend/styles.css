@@ -431,6 +431,11 @@ body {
 .yrow .ysub { margin-top: 3px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .yrow .ych { color: var(--yttrends); }
 .dot.yttrends { background: var(--yttrends); }
+/* รายละเอียดตอนดึงไม่ได้ — พับไว้ ไม่รบกวนตอนใช้งานปกติ */
+.ydiag { margin: 0 12px 10px; font-size: 11px; color: var(--muted); }
+.ydiag summary { cursor: pointer; padding: 4px 0; }
+.ydiag ul { margin: 4px 0 0; padding-left: 18px; }
+.ydiag li { margin: 2px 0; overflow-wrap: anywhere; }
 .panel[data-source="yttrends"] .phead { border-bottom-color: var(--yttrends); }
 
 /* ---- เทรนด์ที่เกี่ยวกับเครือ CP / อาหาร — ดันขึ้นบนแล้วไฮไลต์ ---- */
