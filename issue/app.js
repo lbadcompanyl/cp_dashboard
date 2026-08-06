@@ -572,8 +572,8 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 2; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
-const CODE_CHECK_MS = 10 * 60 * 1000; // เช็คโค้ดใหม่ทุก 10 นาที (ยิงจริงตอนกลับเข้าแอป/ครบรอบ)
+const APP_VER = 3; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
 function showUpdateBanner() {
@@ -612,7 +612,7 @@ function maybeCheckForUpdate() { if (Date.now() - lastCodeCheck >= CODE_CHECK_MS
 // ข้อมูล: รีเฟรชเงียบทุก 3 นาที
 setInterval(() => { if (!document.hidden) load({ silent: true }); }, 3 * 60 * 1000);
 // โค้ด: เช็คชั่วโมงละครั้ง แต่ยิงจริงเมื่อครบ 24 ชม.
-setInterval(() => { if (!document.hidden) maybeCheckForUpdate(); }, 10 * 60 * 1000);
+setInterval(() => { if (!document.hidden) maybeCheckForUpdate(); }, 60 * 60 * 1000);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   if (updateReady) { location.reload(); return; } // เจอเวอร์ชันใหม่ตอนแท็บซ่อน → รีโหลดตอนกลับมา
