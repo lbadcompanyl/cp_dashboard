@@ -345,7 +345,10 @@ function renderYTTrends(panel) {
   const hasDelta = win && shown.some((it) => it[state.ytSort] != null);
   const sortBy = win && !hasDelta ? "views" : state.ytSort;
 
-  if (sortBy === "new") {
+  if (sortBy === "rank") {
+    // API ส่งลำดับมาเป็นอันดับมาแรงทางการอยู่แล้ว — เรียงคืนตามนั้น
+    items.sort((a, b) => (a.rank || 999) - (b.rank || 999));
+  } else if (sortBy === "new") {
     // ตัวที่ต้นทางไม่บอกเวลาให้ไปอยู่ท้าย ไม่ใช่ปนอยู่กลางๆ
     items.sort((a, b) => (b.published || 0) - (a.published || 0));
   } else if (sortBy === "views") {
@@ -386,6 +389,12 @@ function renderYTTrends(panel) {
   const liveWarn = filterBroken
     ? `<span class="warn">⚠ แยกไลฟ์ออกไม่ได้ในรอบนี้ (ต้นทางสำรองไม่ได้บอกชัด) — โชว์ทั้งหมดไปก่อน</span>`
     : "";
+  const nUnknown = win ? items.filter((it) => it[state.ytSort] == null).length : 0;
+  // สถิติยังสะสมไม่ครบช่วงที่เลือก → คลิปเก่ายังเทียบไม่ได้ ต้องบอก ไม่ใช่ปล่อยให้งง
+  const partial =
+    win && hasDelta && (bucket.histHours || 0) < winH && nUnknown
+      ? `<span class="warn">📊 เก็บสถิติมา ${bucket.histHours || 0} ชม. — อีก ${nUnknown} คลิปที่ลงก่อนหน้านั้นยังไม่รู้ยอดวิวที่เพิ่ม (อยู่ท้ายลิสต์) ครบ ${winH} ชม. แล้วจะคำนวณได้ครบทุกคลิป</span>`
+      : "";
   const notReady = needMore
     ? `<span class="warn">⏳ เพิ่งเริ่มเก็บสถิติยอดวิว (มี ${bucket.histHours || 0} ชม.) — ยังเทียบ "วิวเพิ่มใน ${winH} ชม." ไม่ได้ ตอนนี้เรียงตามยอดรวมไปก่อน</span>`
     : "";
@@ -397,7 +406,7 @@ function renderYTTrends(panel) {
     ? ""
     : bucket.stale
     ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
-    : liveWarn || notReady || modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
+    : liveWarn || notReady || partial || modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
 
   if (bucket.items.length) renderYTCats(panel, shown, all);
 
@@ -953,7 +962,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 47; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 48; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
