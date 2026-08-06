@@ -418,6 +418,22 @@ function renderPanel(panel) {
     .join("");
 }
 
+
+// ---- ดันเทรนด์ที่เกี่ยวกับเครือ CP / อาหาร ขึ้นบนสุด + ไฮไลต์ ----
+// เช็คจากชื่อเทรนด์ + คำที่เกี่ยวข้อง + breakdown · ตัดชื่อลวงทิ้งก่อน (บีซีพีจี/ซีพีเอ็น
+// มี "ซีพี" ซ่อนอยู่ข้างใน — บทเรียนเดียวกับคอลัมน์ CP)
+const PIN_FALSE_RE = /บีแอลซีพี|blcp|ซีพีเอ็นจ?|cpn |บีซีพีจี|bcpg|บีซีพี|bcp /gi;
+const PIN_CP_RE = /ซีพี|\bcpf\b|cp ?all|ซีพีเอฟ|เซเว่น|7-?eleven|แม็คโคร|makro|โลตัส|lotus|เจียไต๋|แอ็กซ์ตร้า|cpaxt|ทรู|true ?money|true ?corp/i;
+// หมู(?!่) กัน "หมู่บ้าน" · เนื้อ(?!หา) กัน "เนื้อหา"
+const PIN_FOOD_RE = /อาหาร|หมู(?!่)|ไก่|ไข่|กุ้ง|เนื้อ(?!หา)|ปศุสัตว์|ฟาร์ม|สุกร|บุฟเฟ่?ต์|ร้านอาหาร|เมนู|ขนม|กาแฟ|ชานม|ราคาหมู|วัตถุดิบ|\bfood\b|buffet|restaurant/i;
+function pinScore(it) {
+  const hay = (it.title + " " + (it.snippet || "") + " " + ((it.related || []).map((r) => r.term || r).join(" ")))
+    .toLowerCase().replace(PIN_FALSE_RE, " ");
+  if (PIN_CP_RE.test(hay)) return 2;   // เครือ CP มาก่อน
+  if (PIN_FOOD_RE.test(hay)) return 1; // แล้วค่อยอาหาร
+  return 0;
+}
+
 function renderTrends(panel) {
   const bucket = state.data?.sources?.trends || { items: [], error: null };
   const f = state.filters.trends || { kw: "" };
@@ -425,6 +441,9 @@ function renderTrends(panel) {
   const items = bucket.items.filter(
     (it) => !kw || (it.title + " " + it.snippet).toLowerCase().includes(kw)
   );
+  // เรื่องเครือ CP / อาหาร เด้งขึ้นบนสุด (sort เสถียร — ลำดับเดิมของ Google คงอยู่ในแต่ละกลุ่ม)
+  items.forEach((it) => { it._pin = pinScore(it); });
+  items.sort((a, b) => b._pin - a._pin);
 
   const countEl = $("[data-count]", panel);
   if (bucket.error && bucket.items.length === 0) {
@@ -458,11 +477,12 @@ function renderTrends(panel) {
       ]
         .filter(Boolean)
         .join(" ");
-      return `<div class="trend">
+      const pin = it._pin === 2 ? "เครือ CP" : it._pin === 1 ? "อาหาร" : "";
+      return `<div class="trend${pin ? " pin" : ""}">
         <div class="trend-head" data-q="${escapeHtml(it.title)}">
           <span class="rank">${i + 1}</span>
           <div class="trend-main">
-            <div class="trend-term">${escapeHtml(it.title)}</div>
+            <div class="trend-term">${escapeHtml(it.title)}${pin ? ` <span class="pinbadge">${pin}</span>` : ""}</div>
             <div class="trend-sub">${sub}</div>
             ${it.snippet ? `<div class="trend-bd">${escapeHtml(it.snippet)}</div>` : ""}
           </div>
@@ -692,7 +712,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 37; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 38; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

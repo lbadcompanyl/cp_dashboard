@@ -415,3 +415,8 @@ body {
 .xcats .cat { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 999px; padding: 4px 10px; font-size: 11.5px; cursor: pointer; font-family: inherit; white-space: nowrap; }
 .xcats .cat:hover { color: var(--ink); }
 .xcats .cat.on { background: var(--xtrends); border-color: var(--xtrends); color: #fff; }
+
+/* ---- เทรนด์ที่เกี่ยวกับเครือ CP / อาหาร — ดันขึ้นบนแล้วไฮไลต์ ---- */
+.trend.pin { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.08); border-radius: 8px; }
+.pinbadge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; color: #78350f; background: #fbbf24; vertical-align: 1px; white-space: nowrap; }
+
