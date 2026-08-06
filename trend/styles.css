@@ -484,15 +484,19 @@ body {
 /* แถวบนสูงเต็มจอพอดีจนไม่มีขอบอะไรโผล่ ผู้ใช้เลยไม่รู้ว่ายังมีแถวเทรนด์อยู่ข้างล่าง
    เคยลองบีบให้ทุกอย่างพอดี 1 หน้าจอแล้ว แต่คอลัมน์เตี้ยจนอ่านข่าวไม่ไหว
    จึงคงความสูงไว้แล้วบอกทางแทน — ปุ่มหายเองเมื่อแถวล่างโผล่ในจอ ไม่เกะกะ */
+/* ใช้สีส้มของ Google Trends ซึ่งเป็นคอลัมน์แรกที่ปุ่มพาไป
+   เลี่ยงน้ำเงิน/แดง เพราะเป็นสีของปุ่มลอยอีกสองอันที่มุมขวาล่างอยู่แล้ว จะสับสน */
 #scrollcue {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-  z-index: 40; display: flex; align-items: center; gap: 7px;
-  border: 1px solid var(--border); border-radius: 999px; padding: 9px 18px;
-  background: var(--surface); color: var(--text);
-  font: 600 13px/1 inherit; cursor: pointer;
-  box-shadow: 0 6px 22px rgba(16, 24, 40, .18);
+  z-index: 40; display: flex; align-items: center; gap: 8px;
+  border: 0; border-radius: 999px; padding: 12px 22px;
+  background: var(--trends); color: #fff;
+  font: 700 14px/1 inherit; letter-spacing: .2px; cursor: pointer;
+  box-shadow: 0 6px 20px rgba(234, 88, 12, .45), 0 2px 6px rgba(16, 24, 40, .2);
+  transition: transform .12s, box-shadow .12s;
 }
-#scrollcue:hover { background: var(--bg); }
+#scrollcue:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 10px 26px rgba(234, 88, 12, .55), 0 2px 6px rgba(16, 24, 40, .2); }
+#scrollcue:active { transform: translateX(-50%) translateY(0); }
 #scrollcue[hidden] { display: none; }
 #scrollcue .cuearrow { animation: cuebob 1.6s ease-in-out infinite; }
 @keyframes cuebob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
