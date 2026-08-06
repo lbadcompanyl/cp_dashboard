@@ -296,9 +296,34 @@ function applySnapshot(d){
   state.active = Math.min(Math.max(0, d.act|0), groups.length-1);
   return true;
 }
-function save(){
+function saveLocal(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(snapshot())); }catch(e){}
   try{ history.replaceState(null,"","#"+encodeURIComponent(JSON.stringify(snapshot()))); }catch(e){}
+}
+function save(){ saveLocal(); pushState(); }   // เก็บในเครื่องทันที + ดันขึ้นส่วนกลางแบบหน่วง
+
+// ---- ซิงก์ข้ามเครื่อง (ชุดเดียวรวมทั้งทีม ผ่าน /api/issue/state → FLAGS_KV) ----
+// หน่วง 800ms ก่อนยิง: พิมพ์ชื่อกลุ่มรัวๆ = เขียน KV ครั้งเดียว ไม่ใช่ทุกตัวอักษร
+// (โควตาเขียน 1,000 ครั้ง/วัน ใช้ร่วมกันทั้งโปรเจกต์ — ดู CLAUDE.md)
+let pushTimer = 0;
+function pushState(){
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async ()=>{
+    try{ await fetch("/api/issue/state",{ method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(snapshot()) }); }
+    catch(e){ /* ออฟไลน์/ยังไม่ bind KV → ยังมี localStorage อยู่ ไม่พัง */ }
+  }, 800);
+}
+async function pullState(){   // คืน true ถ้าได้ค่าจากส่วนกลางมาปรับใช้
+  try{
+    const d = await (await fetch("/api/issue/state")).json();
+    if(d && d.configured && d.state && applySnapshot(d.state)) return true;
+  }catch(e){}
+  return false;
+}
+async function syncFromCloud(){
+  // URL ที่แชร์มา = ตั้งใจส่งค่าชุดนั้นมาให้ดู อย่าให้ส่วนกลางทับ
+  if(location.hash.replace(/^#/,"")) return;
+  if(await pullState()){ fillSelects(); renderTabs(); renderEditor(); updateSubs(); renderWidgets(); loadNews(); }
 }
 function loadFromURL(){ try{ const h=location.hash.replace(/^#/,""); if(!h||h.startsWith("p=")) return false; return applySnapshot(JSON.parse(decodeURIComponent(h))); }catch(e){ return false; } }
 function loadFromStore(){ try{ const raw=localStorage.getItem(STORE_KEY); if(!raw) return false; return applySnapshot(JSON.parse(raw)); }catch(e){ return false; } }
@@ -411,6 +436,7 @@ function initTrendsPage(){
   el("grpDel").onclick=()=>{ if(groups.length<=1) return; if(!confirm(`ลบกลุ่ม “${activeGroup().name}” ?`)) return; groups.splice(state.active,1); if(state.active>=groups.length) state.active=groups.length-1; refresh(); };
   waitForTrends(renderWidgets);
   loadNews();
+  syncFromCloud();   // วาดจากค่าในเครื่องก่อน แล้วค่อยตามด้วยของส่วนกลาง
 }
 
 // ═══════════════ theme + boot ═══════════════
