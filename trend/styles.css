@@ -66,7 +66,7 @@ body {
 .refresh:disabled { opacity: .5; cursor: default; }
 
 /* Global search — ค้นหาทุกคอลัมน์พร้อมกัน */
-.gsearch { max-width: 1680px; margin: 0 auto; padding: 14px 20px 0; } /* กว้างเท่ากรอบ 4 คอลัมน์ */
+.gsearch { max-width: 1680px; margin: 0 auto; padding: 14px 20px 0; } /* กว้างเท่ากรอบบอร์ด */
 .gsearch input {
   width: 100%; box-sizing: border-box; padding: 11px 14px; font-size: 14px;
   border: 1.5px solid var(--muted); border-radius: 12px;
@@ -79,7 +79,7 @@ body {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   padding: 16px 20px 40px;
   max-width: 1680px;
@@ -391,8 +391,11 @@ body {
 /* ---- แถวล่าง: X (Twitter) กับ YouTube วางคู่กัน ---- */
 /* บอร์ดเป็น 4 คอลัมน์ → อันละ 2 ช่อง = ครึ่งความกว้าง อยู่ข้างกันพอดี
    จอ ≤1200px บอร์ดเหลือ 2 คอลัมน์ → span 2 กลายเป็นเต็มแถว ซ้อนกันเองอัตโนมัติ */
+/* บอร์ดเป็น 3 คอลัมน์ → แถวบน: ข่าว/CP/จับตามอง · แถวล่าง: Google Trends/X/YouTube
+   เรียงตามลำดับใน HTML อยู่แล้ว ไม่ต้อง span อะไรเพิ่ม */
+.panel[data-source="trends"],
 .panel[data-source="xtrends"],
-.panel[data-source="yttrends"] { grid-column: span 2; max-height: clamp(420px, 68vh, 760px); }
+.panel[data-source="yttrends"] { max-height: clamp(420px, 68vh, 760px); }
 .panel[data-source="xtrends"] .list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -428,7 +431,16 @@ body {
 /* เป็นปุ่มแยก ไม่ใช่ dropdown — เห็นตัวเลือกทั้งหมดทีเดียว กดครั้งเดียวเปลี่ยนได้
    มีเฉพาะ "มาแรง" ที่ต้องเลือกช่วงเวลาต่อ จึงมี dropdown ติดมาเฉพาะอันนั้น */
 .ysort { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.ysort .ywin { padding: 3px 6px; font-size: 11.5px; }
+/* ชิป "มาแรง" มี dropdown ฝังอยู่ข้างใน ให้ดูเป็นปุ่มเดียว ไม่ใช่สองชิ้น */
+.ygrow { display: inline-flex; align-items: center; gap: 3px; }
+.ygrow select {
+  border: 0; background: transparent; color: inherit; font: inherit; font-size: 11.5px;
+  padding: 0 0 0 2px; margin: 0; cursor: pointer; outline: none; appearance: none;
+}
+.ygrow::after { content: "▾"; font-size: 9px; opacity: .7; }
+.ygrow.on select { color: #fff; }
+/* เมนูที่กางออกมาใช้สีของพื้นหลังปกติ ไม่งั้นตัวหนังสือขาวบนพื้นขาว */
+.ygrow select option { color: var(--text); background: var(--surface); }
 .panel[data-source="yttrends"] .ysort .cat.on,
 .panel[data-source="yttrends"] .xcats .cat.on { background: var(--yttrends); border-color: var(--yttrends); }
 @media (max-width: 640px) {
