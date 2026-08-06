@@ -396,6 +396,20 @@ body {
 .panel[data-source="trends"],
 .panel[data-source="xtrends"],
 .panel[data-source="yttrends"] { max-height: clamp(420px, 68vh, 760px); }
+
+/* เดสก์ท็อป: บีบให้ 2 แถวพอดี 1 หน้าจอ
+   ปัญหาเดิมคือแถวบนสูงเต็มจอ ไม่มีขอบอะไรโผล่ ผู้ใช้เลยอ่านว่า "หน้านี้จบแค่นี้"
+   ทั้งที่ยังมีแถวเทรนด์อยู่ข้างล่าง — เห็นครบพร้อมกันแก้ที่ต้นเหตุ ไม่ต้องมีป้ายชี้ทาง
+   190px = topbar + ช่องค้นหา + ระยะขอบบน/ล่าง + ช่องไฟระหว่างแถว
+   ใส่ max() กันจอเตี้ยไม่ให้คอลัมน์บางจนใช้ไม่ได้ (จอเตี้ยกว่านั้นก็เลื่อนตามปกติ)
+   ต้องไล่ชื่อ data-source ซ้ำด้วย เพราะ selector ข้างบนเจาะจงกว่า .panel เฉยๆ */
+@media (min-width: 1201px) {
+  .board { padding-bottom: 16px; }
+  .panel,
+  .panel[data-source="trends"],
+  .panel[data-source="xtrends"],
+  .panel[data-source="yttrends"] { max-height: max(300px, calc((100vh - 190px) / 2)); }
+}
 .panel[data-source="xtrends"] .list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
