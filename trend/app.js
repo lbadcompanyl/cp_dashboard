@@ -8,6 +8,7 @@ const state = {
   trendsCat: 0, // หมวดหมู่ (แบบ Google Trends): 0 = ทุกหมวด
   xCat: null,        // หมวดที่เลือกในคอลัมน์ X (null = ทุกหมวด)
   xGeo: "thailand",  // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
+  ytGeo: "TH",       // ประเทศของคอลัมน์ YouTube (รหัส ISO 2 ตัว)
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -77,6 +78,9 @@ async function load(opts = {}) {
     ]);
     feeds.sources.trends = trends;
     feeds.sources.xtrends = xtrends;
+    // คอลัมน์ YouTube อ่านจาก instance สาธารณะที่ล่มบ่อย จึงโหลดแยก ไม่รวมใน Promise.all
+    // ข้างบน — ถ้ารวมแล้วต้นทางอืด ทั้งบอร์ดจะค้างรอตามไปด้วย
+    reloadYTTrends({ silent }).catch(() => {}); // ไม่ await และไม่ให้ error หลุดออกมาล้มคอลัมน์อื่น
     state.data = feeds;
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
@@ -218,6 +222,105 @@ function renderXTrends(panel) {
         <span class="xname${it.isHashtag ? " xtag" : ""}">${escapeHtml(it.name)}</span>
       </a>`
     )
+    .join("");
+}
+
+// ---------- คลิปมาแรงบน YouTube ----------
+// YouTube ปิดหน้า Trending ในเมนูไปแล้ว /api/trend/yttrends จึงไล่หลายแหล่ง
+// (Invidious → Piped → แกะหน้า YouTube เอง) แหล่งไหนได้ก่อนใช้อันนั้น
+async function fetchYTTrends(geo) {
+  const res = await fetch(`/api/trend/yttrends?geo=${encodeURIComponent(geo)}`);
+  const d = await res.json();
+  return {
+    label: "YouTube",
+    items: d.items || [],
+    error: d.error || null,
+    stale: !!d.stale,
+    source: d.source || "",
+    fetchedAt: d.fetchedAt || null,
+  };
+}
+
+async function reloadYTTrends(opts = {}) {
+  const panel = $('.panel[data-source="yttrends"]');
+  if (!panel) return;
+  const list = $("[data-list]", panel);
+  const keepScroll = opts.silent ? list.scrollTop : null; // auto-refresh ห้ามดีดตำแหน่ง scroll
+  if (!opts.silent) list.innerHTML = `<div class="state skeleton">กำลังดึงคลิปมาแรง…</div>`;
+  let bucket;
+  try {
+    bucket = await fetchYTTrends(state.ytGeo);
+  } catch (e) {
+    bucket = { label: "YouTube", items: [], error: e.message };
+  }
+  if (!state.data) state.data = { sources: {} };
+  if (!state.data.sources) state.data.sources = {};
+  state.data.sources.yttrends = bucket;
+  renderPanel(panel);
+  if (keepScroll != null) list.scrollTop = keepScroll;
+}
+
+// 1,234,567 → 1.2 ล้าน (ตัวเลขยาวๆ ในคอลัมน์แคบอ่านไม่ออก)
+function viewsTh(n) {
+  if (!n) return "";
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + " ล้านวิว";
+  if (n >= 1e3) return Math.round(n / 1e3) + "K วิว";
+  return n + " วิว";
+}
+
+function renderYTTrends(panel) {
+  // คอลัมน์นี้มาทีหลังคอลัมน์อื่น — ยังไม่มีข้อมูลก็อย่าเพิ่งไปทับ skeleton
+  // ด้วยคำว่า "ไม่พบคลิป" ไม่งั้นจะกะพริบเป็นข้อความผิดทุกครั้งที่รีเฟรช
+  const bucket = state.data?.sources?.yttrends;
+  if (!bucket) return;
+  const kw = (state.gkw || "").trim().toLowerCase(); // global search ใช้คำเดียวกับคอลัมน์อื่น
+  const items = bucket.items.filter(
+    (it) => !kw || ((it.title || "") + " " + (it.channel || "")).toLowerCase().includes(kw)
+  );
+
+  const countEl = $("[data-count]", panel);
+  if (bucket.error && bucket.items.length === 0) {
+    countEl.className = "errbadge";
+    countEl.textContent = "⚠ โหลดไม่ได้";
+    countEl.title = bucket.error;
+  } else {
+    countEl.className = "pcount";
+    countEl.textContent = items.length + " คลิป";
+    countEl.title = bucket.source || "";
+  }
+
+  // ป้ายบอกความสด — โครงเดียวกับคอลัมน์ X ให้รู้ว่าของที่เห็นเก่าแค่ไหน
+  let fresh = $(".xfresh", panel);
+  if (!fresh) {
+    fresh = document.createElement("div");
+    fresh.className = "xfresh";
+    $(".phead", panel).after(fresh);
+  }
+  fresh.innerHTML = !bucket.items.length
+    ? ""
+    : bucket.stale
+    ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
+    : `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
+
+  const list = $("[data-list]", panel);
+  if (items.length === 0) {
+    list.innerHTML = `<div class="state">${bucket.error ? "ดึงคลิปมาแรงไม่ได้" : "ไม่พบคลิปที่ตรงกับตัวกรอง"}</div>`;
+    return;
+  }
+  list.innerHTML = items
+    .map((it, i) => {
+      const sub = [it.channel, viewsTh(it.views)].filter(Boolean);
+      return `<a class="yrow" href="${escapeHtml(it.url)}" target="_blank" rel="noopener" title="เปิดคลิปบน YouTube">
+        <span class="rank">${i + 1}</span>
+        <img class="ythumb" src="${escapeHtml(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+        <span class="ymeta">
+          <span class="ytitle">${escapeHtml(it.title)}</span>
+          <span class="ysub"><span class="ych">${escapeHtml(sub[0] || "")}</span>${
+            sub[1] ? " · " + escapeHtml(sub[1]) : ""
+          }</span>
+        </span>
+      </a>`;
+    })
     .join("");
 }
 
@@ -379,6 +482,7 @@ function renderPanel(panel) {
   const source = panel.dataset.source;
   if (source === "trends") return renderTrends(panel);
   if (source === "xtrends") return renderXTrends(panel);
+  if (source === "yttrends") return renderYTTrends(panel);
 
   const bucket = state.data?.sources?.[source] || { items: [] };
   const f = state.filters[source] || { kw: "", rc: "all" };
@@ -635,6 +739,12 @@ function wire() {
         state.xGeo = e.target.value;
         reloadXTrends();
       });
+    const ytgeoEl = $("[data-ytgeo]", panel);
+    if (ytgeoEl)
+      ytgeoEl.addEventListener("change", (e) => {
+        state.ytGeo = e.target.value;
+        reloadYTTrends();
+      });
     const hoursEl = $("[data-hours]", panel);
     if (hoursEl)
       hoursEl.addEventListener("change", (e) => {
@@ -715,7 +825,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 39; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 40; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

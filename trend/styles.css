@@ -8,6 +8,7 @@
   --alert: #2563eb;
   --trends: #ea580c;
   --xtrends: #7c3aed;
+  --yttrends: #dc2626;
   --shadow: 0 1px 3px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
   --radius: 12px;
 }
@@ -385,9 +386,11 @@ body {
   .swipe-arrow.hide { animation: none; }
 }
 
-/* ---- คอลัมน์ X (Twitter) trending ---- */
-/* X วางเป็นแถวเต็มความกว้างใต้บอร์ด (ไม่เบียดเป็นคอลัมน์ที่ 5) */
-.panel[data-source="xtrends"] { grid-column: 1 / -1; max-height: 440px; }
+/* ---- แถวล่าง: X (Twitter) กับ YouTube วางคู่กัน ---- */
+/* บอร์ดเป็น 4 คอลัมน์ → อันละ 2 ช่อง = ครึ่งความกว้าง อยู่ข้างกันพอดี
+   จอ ≤1200px บอร์ดเหลือ 2 คอลัมน์ → span 2 กลายเป็นเต็มแถว ซ้อนกันเองอัตโนมัติ */
+.panel[data-source="xtrends"],
+.panel[data-source="yttrends"] { grid-column: span 2; max-height: 440px; }
 .panel[data-source="xtrends"] .list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -397,7 +400,8 @@ body {
 }
 @media (max-width: 640px) {
   /* มือถือเป็น carousel ปัด — กลับไปเรียงเดี่ยวเหมือนคอลัมน์อื่น */
-  .panel[data-source="xtrends"] { max-height: none; }
+  .panel[data-source="xtrends"],
+  .panel[data-source="yttrends"] { max-height: none; }
   .panel[data-source="xtrends"] .list { display: block; }
 }
 
@@ -415,6 +419,19 @@ body {
 .xcats .cat { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 999px; padding: 4px 10px; font-size: 11.5px; cursor: pointer; font-family: inherit; white-space: nowrap; }
 .xcats .cat:hover { color: var(--ink); }
 .xcats .cat.on { background: var(--xtrends); border-color: var(--xtrends); color: #fff; }
+
+/* ---- คอลัมน์ YouTube — คลิปมาแรง ---- */
+.yrow { display: flex; align-items: flex-start; gap: 10px; padding: 7px 11px; border-radius: 9px; text-decoration: none; color: inherit; }
+.yrow:hover { background: var(--surface-2, rgba(255,255,255,.04)); }
+.yrow .rank { flex: 0 0 20px; text-align: right; font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 14px; }
+/* ขนาดคงที่ + aspect-ratio กัน layout กระตุกตอนรูปยังไม่มา */
+.yrow .ythumb { flex: 0 0 84px; width: 84px; aspect-ratio: 16 / 9; border-radius: 6px; object-fit: cover; background: var(--border); }
+.yrow .ymeta { flex: 1; min-width: 0; }
+.yrow .ytitle { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.yrow .ysub { margin-top: 3px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.yrow .ych { color: var(--yttrends); }
+.dot.yttrends { background: var(--yttrends); }
+.panel[data-source="yttrends"] .phead { border-bottom-color: var(--yttrends); }
 
 /* ---- เทรนด์ที่เกี่ยวกับเครือ CP / อาหาร — ดันขึ้นบนแล้วไฮไลต์ ---- */
 .trend.pin { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.08); border-radius: 8px; }
