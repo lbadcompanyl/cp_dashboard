@@ -280,8 +280,14 @@ async function fromDataApi(keyRaw, geo) {
     "https://www.googleapis.com/youtube/v3/videos" +
     "?part=snippet,statistics&chart=mostPopular" +
     `&regionCode=${geo}&maxResults=${MAX_ITEMS}&key=${encodeURIComponent(key)}`;
-  const d = await fetchJson(u);
-  if (d && d.error) throw new Error("api " + (d.error.code || "") + " " + (d.error.message || "").slice(0, 60));
+  // ⚠️ อย่าใช้ fetchJson ตรงนี้ — มันโยน error ทันทีที่เห็น 403 ทำให้คำอธิบายจาก Google หายไป
+  // Google บอกสาเหตุจริงมาในตัว body เสมอ (ยังไม่ได้ Enable API · key ถูกจำกัด · โควตาหมด)
+  // ต้องอ่าน body ให้ได้ ไม่งั้นผู้ใช้เห็นแค่ "http 403" แล้วไล่ต่อไม่ถูก
+  const d = await fetchJsonAnyStatus(u);
+  if (d && d.error) {
+    const reason = (d.error.errors && d.error.errors[0] && d.error.errors[0].reason) || "";
+    throw new Error(`api ${d.error.code || "?"} ${reason} ${(d.error.message || "").slice(0, 120)}`.trim());
+  }
   const arr = (d && d.items) || [];
   if (!Array.isArray(arr)) throw new Error("not an array");
   return normalize(
@@ -487,6 +493,25 @@ async function fetchRes(target, accept) {
 }
 async function fetchJson(target) {
   return await (await fetchRes(target, "application/json")).json();
+}
+// อ่าน JSON ให้ได้แม้สถานะไม่ใช่ 2xx — ใช้กับ API ที่อธิบายสาเหตุมาใน body
+async function fetchJsonAnyStatus(target) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
+  try {
+    const res = await fetch(target, {
+      signal: ctrl.signal,
+      headers: { "User-Agent": UA, Accept: "application/json", "Accept-Language": "th,en;q=0.9" },
+    });
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error("http " + res.status + " " + text.slice(0, 80));
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 async function fetchText(target) {
   return await (await fetchRes(target, "text/html,application/xhtml+xml")).text();
