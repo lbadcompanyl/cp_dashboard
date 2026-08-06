@@ -10,7 +10,8 @@ const state = {
   xGeo: "thailand",  // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
   ytGeo: "TH",       // ประเทศของคอลัมน์ YouTube (รหัส ISO 2 ตัว)
   ytCat: null,       // หมวดที่เลือกในคอลัมน์ YouTube (null = ทุกหมวด)
-  ytSort: "views",   // "views" = คนดูมากสุด · "new" = ใหม่ล่าสุด
+  ytSort: "d24",     // "d4"/"d24"/"d48" = วิวเพิ่มในช่วงนั้น · "views" = ยอดรวม · "new" = ใหม่ล่าสุด
+  ytHideLive: true,  // ไลฟ์ไม่มียอดวิวสะสมให้เทียบ ปกติจึงซ่อนไว้
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -263,7 +264,7 @@ function ytCatOf(it) {
 }
 
 // แถวปุ่มหมวด — โชว์เฉพาะหมวดที่มีคลิปจริง พร้อมจำนวน (โครงเดียวกับคอลัมน์ X)
-function renderYTCats(panel, all) {
+function renderYTCats(panel, shown, all) {
   let row = $(".xcats", panel);
   if (!row) {
     row = document.createElement("div");
@@ -272,19 +273,27 @@ function renderYTCats(panel, all) {
     row.addEventListener("click", (e) => {
       const b = e.target.closest(".cat");
       if (!b) return;
-      state.ytCat = b.dataset.cat || null;
+      if (b.dataset.live != null) state.ytHideLive = !state.ytHideLive;
+      else state.ytCat = b.dataset.cat || null;
       renderYTTrends(panel);
     });
   }
   const n = {};
-  all.forEach((it) => { const k = ytCatOf(it); n[k] = (n[k] || 0) + 1; });
-  const chips = [`<button class="cat${state.ytCat ? "" : " on"}" data-cat="">ทั้งหมด ${all.length}</button>`]
+  shown.forEach((it) => { const k = ytCatOf(it); n[k] = (n[k] || 0) + 1; });
+  const chips = [`<button class="cat${state.ytCat ? "" : " on"}" data-cat="">ทั้งหมด ${shown.length}</button>`]
     .concat(
       YT_CATS.filter((c) => n[c.key]).map(
         (c) => `<button class="cat${state.ytCat === c.key ? " on" : ""}" data-cat="${c.key}">${c.label} ${n[c.key]}</button>`
       )
     )
     .concat(n.other ? [`<button class="cat${state.ytCat === "other" ? " on" : ""}" data-cat="other">❓ อื่นๆ ${n.other}</button>`] : []);
+  // ไลฟ์นับวิวคนละแบบ ปกติจึงซ่อน แต่ให้กดดูได้ถ้าอยากดู
+  const nLive = all.filter((it) => it.live).length;
+  if (nLive) {
+    chips.push(
+      `<button class="cat${state.ytHideLive ? "" : " on"}" data-live="1">${state.ytHideLive ? "🔴 โชว์ไลฟ์" : "🔴 ซ่อนไลฟ์"} ${nLive}</button>`
+    );
+  }
   row.innerHTML = chips.join("");
 }
 
@@ -324,9 +333,29 @@ function renderYTTrends(panel) {
   const all = bucket.items.filter(
     (it) => !kw || ((it.title || "") + " " + (it.channel || "")).toLowerCase().includes(kw)
   );
-  const items = (state.ytCat ? all.filter((it) => ytCatOf(it) === state.ytCat) : all).slice();
-  // "ใหม่ล่าสุด" ใช้ได้เฉพาะคลิปที่ต้นทางบอกเวลามา ตัวที่ไม่รู้เวลาให้ไปอยู่ท้าย
-  if (state.ytSort === "new") items.sort((a, b) => (b.published || 0) - (a.published || 0));
+  const shown = state.ytHideLive ? all.filter((it) => !it.live) : all;
+  const items = (state.ytCat ? shown.filter((it) => ytCatOf(it) === state.ytCat) : shown).slice();
+
+  // ถ้ายังไม่มีสถิติย้อนหลังพอ การเรียงตาม "วิวเพิ่ม" จะไม่มีความหมาย → ถอยไปใช้ยอดรวม
+  const win = /^d(\d+)$/.exec(state.ytSort);
+  const hasDelta = win && shown.some((it) => it[state.ytSort] != null);
+  const sortBy = win && !hasDelta ? "views" : state.ytSort;
+
+  if (sortBy === "new") {
+    // ตัวที่ต้นทางไม่บอกเวลาให้ไปอยู่ท้าย ไม่ใช่ปนอยู่กลางๆ
+    items.sort((a, b) => (b.published || 0) - (a.published || 0));
+  } else if (sortBy === "views") {
+    items.sort((a, b) => (b.views || 0) - (a.views || 0));
+  } else {
+    // null = "ยังไม่รู้" คนละเรื่องกับ 0 = "ไม่เพิ่มเลย" จึงดัน null ไปท้ายเสมอ
+    items.sort((a, b) => {
+      const x = a[sortBy], y = b[sortBy];
+      if (x == null && y == null) return (b.views || 0) - (a.views || 0);
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return y - x;
+    });
+  }
 
   const countEl = $("[data-count]", panel);
   if (bucket.error && bucket.items.length === 0) {
@@ -348,6 +377,11 @@ function renderYTTrends(panel) {
   }
   // ต้นทางสำรอง (หน้า YouTube รายประเทศ) ไม่ใช่อันดับมาแรงทางการ — ต้องบอกให้รู้
   // ไม่งั้นผู้ใช้จะอ่านคลิป 900 วิวเป็น "คลิปมาแรงอันดับ 1 ของประเทศ"
+  const winH = win ? Number(win[1]) : 0;
+  const needMore = win && !hasDelta;
+  const notReady = needMore
+    ? `<span class="warn">⏳ เพิ่งเริ่มเก็บสถิติยอดวิว (มี ${bucket.histHours || 0} ชม.) — ยังเทียบ "วิวเพิ่มใน ${winH} ชม." ไม่ได้ ตอนนี้เรียงตามยอดรวมไปก่อน</span>`
+    : "";
   const modeNote =
     bucket.mode === "browse"
       ? `<span class="warn">⚠ ต้นทางอันดับทางการล่ม — นี่คือคลิปจากหน้า YouTube ของประเทศนี้ เรียงตามยอดวิว ไม่ใช่อันดับมาแรงทางการ</span>`
@@ -356,9 +390,9 @@ function renderYTTrends(panel) {
     ? ""
     : bucket.stale
     ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
-    : modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
+    : notReady || modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
 
-  if (bucket.items.length) renderYTCats(panel, all);
+  if (bucket.items.length) renderYTCats(panel, shown, all);
 
   const list = $("[data-list]", panel);
   if (items.length === 0) {
@@ -379,11 +413,14 @@ function renderYTTrends(panel) {
   list.innerHTML = items
     .map((it, i) => {
       // ไลฟ์: ยอดที่เห็นคือคนดูอยู่ตอนนี้ ไม่ใช่ยอดวิวสะสม จึงเขียนให้ต่างกัน
+      const d = win ? it[state.ytSort] : null;
       const sub = [
         it.channel,
         it.live ? (it.views ? viewsTh(it.views).replace(" วิว", " คนดูอยู่") : "") : viewsTh(it.views),
         it.published ? timeAgo(new Date(it.published).toISOString()) : "",
       ].filter(Boolean);
+      // ตัวเลขที่ผู้ใช้ขอ — วิวที่เพิ่มขึ้นในช่วงเวลาที่เลือก ให้เด่นกว่ายอดรวม
+      const delta = d != null ? `<span class="ydelta">+${escapeHtml(viewsTh(d))} ใน ${winH} ชม.</span>` : "";
       return `<a class="yrow" href="${escapeHtml(it.url)}" target="_blank" rel="noopener" title="เปิดคลิปบน YouTube">
         <span class="rank">${i + 1}</span>
         <span class="ythumbwrap">
@@ -392,6 +429,7 @@ function renderYTTrends(panel) {
         </span>
         <span class="ymeta">
           <span class="ytitle">${escapeHtml(it.title)}</span>
+          ${delta}
           <span class="ysub"><span class="ych">${escapeHtml(sub[0] || "")}</span>${
             sub.length > 1 ? " · " + escapeHtml(sub.slice(1).join(" · ")) : ""
           }</span>
@@ -908,7 +946,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 43; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 44; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

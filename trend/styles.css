@@ -437,7 +437,9 @@ body {
 .yrow .ymeta { flex: 1; min-width: 0; }
 /* ชื่อคลิปกดได้ → สีน้ำเงินเดียวกับคอลัมน์ X · ชื่อช่องเป็นสีจางเพราะกดไม่ได้ */
 .yrow .ytitle { color: var(--link); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.yrow .ysub { margin-top: 3px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+/* ตัวเลขที่ผู้ใช้มาดูจริงๆ — วิวที่เพิ่มในช่วงเวลาที่เลือก ต้องเด่นกว่ายอดรวม */
+.yrow .ydelta { display: inline-block; margin-top: 3px; font-size: 11.5px; font-weight: 700; color: #16a34a; }
+.yrow .ysub { margin-top: 2px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .yrow .ych { color: inherit; }
 .dot.yttrends { background: var(--yttrends); }
 /* รายละเอียดตอนดึงไม่ได้ — พับไว้ ไม่รบกวนตอนใช้งานปกติ */

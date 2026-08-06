@@ -16,11 +16,21 @@
 // 💧 งบ KV: edge cache 30 นาที + ถือว่าของใน KV ที่อายุไม่เกิน 60 นาทียังสด
 // → เขียน KV อย่างมาก 24 ครั้ง/วัน/ประเทศ ไม่ว่าจะมี colo กี่ที่ก็ตาม
 
+// ⚠️ บวกเลขนี้ทุกครั้งที่ "โครงของ items เปลี่ยน" (เพิ่ม/แก้ field, เปลี่ยนวิธีเรียง)
+// ไม่งั้นของเก่าใน KV/edge cache จะถูกเสิร์ฟต่ออีกเป็นชั่วโมงทั้งที่โค้ดใหม่ขึ้นไปแล้ว
+// เคยพลาดมาแล้ว: แก้วิธีเรียง + เพิ่มธง live แต่ผู้ใช้ยังเห็นของเก่าเรียงผิดอยู่ 1 ชม.
+const DATA_VER = "3";
+
 const FETCH_TIMEOUT = 7000;
 const EDGE_TTL = 1800;          // 30 นาที — คลิปมาแรงขยับช้า
 const KV_FRESH = 60 * 60 * 1000; // ของใน KV อายุไม่เกิน 1 ชม. = ยังสด ไม่ต้องยิงใหม่
-const KV_TTL = 12 * 3600;
+const KV_TTL = 4 * 24 * 3600;    // ต้องเก็บนานกว่า 48 ชม. เพราะใช้เทียบยอดวิวย้อนหลัง
 const MAX_ITEMS = 30;
+
+// ช่วงเวลาที่ใช้วัด "วิวเพิ่มขึ้นเท่าไหร่" (ชั่วโมง)
+const WINDOWS = [4, 24, 48];
+const HIST_KEEP_MS = 50 * 3600 * 1000; // เก็บสถิติย้อนหลังพอสำหรับหน้าต่าง 48 ชม.
+const HIST_MAX = 60;
 
 // instance สาธารณะ — ล่มได้เป็นเรื่องปกติ จึงใส่ไว้หลายตัวและมี YouTube ตรงปิดท้าย
 //
@@ -42,54 +52,105 @@ export async function onRequest(context) {
   const geo = (url.searchParams.get("geo") || "TH").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2) || "TH";
 
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/trend/yttrends?geo=${geo}`, { method: "GET" });
+  const key = new Request(url.origin + `/api/trend/yttrends?geo=${geo}&_v=${DATA_VER}`, { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
   const env = context.env || {};
   const kv = env.FLAGS_KV;
-  const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `yttrends:${geo}`;
+  const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `yttrends:${DATA_VER}:${geo}`;
 
   // ของใน KV ยังสดอยู่ไหม — ถ้าสด ใช้เลย ไม่ต้องยิงเน็ตและไม่ต้องเขียน KV
-  let stale = null;
+  let saved = null;
   if (kv) {
     try {
       const raw = await kv.get(kvKey);
       if (raw) {
-        stale = JSON.parse(raw);
-        const age = Date.now() - Date.parse(stale.fetchedAt || 0);
-        if (Number.isFinite(age) && age >= 0 && age < KV_FRESH && (stale.items || []).length) {
-          const edge = json({ ...stale, fromKv: true }, 200, EDGE_TTL);
+        saved = JSON.parse(raw);
+        const age = Date.now() - Date.parse((saved.body && saved.body.fetchedAt) || 0);
+        if (Number.isFinite(age) && age >= 0 && age < KV_FRESH && (saved.body.items || []).length) {
+          const edge = json({ ...saved.body, fromKv: true }, 200, EDGE_TTL);
           context.waitUntil(cache.put(key, edge.clone()));
           return browserCopy(edge);
         }
       }
     } catch {}
   }
+  const hist = (saved && Array.isArray(saved.hist) ? saved.hist : []).filter(
+    (s) => s && Number.isFinite(s.t) && Date.now() - s.t < HIST_KEEP_MS
+  );
 
   const attempts = [];
-  const won = await race(geo, attempts);
+  const won = await race(geo, attempts, env);
   if (won) {
+    const now = Date.now();
+    // เก็บภาพยอดวิว ณ ตอนนี้ไว้เทียบรอบหน้า แล้วคำนวณ "วิวเพิ่ม" จากภาพเก่า
+    const snap = { t: now, v: {} };
+    won.items.forEach((it) => { if (it.views > 0) snap.v[it.id] = it.views; });
+    const hist2 = hist.concat([snap]).slice(-HIST_MAX);
+    const items = withDeltas(won.items, hist, now);
+
     const body = {
       geo,
       source: won.id,
       mode: modeOf(won.id),
-      fetchedAt: new Date().toISOString(),
-      count: won.items.length,
-      items: won.items,
+      fetchedAt: new Date(now).toISOString(),
+      count: items.length,
+      items,
+      // อายุของสถิติที่มี — หน้าเว็บใช้บอกผู้ใช้ว่าหน้าต่าง 48 ชม. ใช้ได้หรือยัง
+      histHours: hist.length ? Math.round((now - hist[0].t) / 3600000) : 0,
       meta: { attempts },
     };
-    if (kv) context.waitUntil(kv.put(kvKey, JSON.stringify(body), { expirationTtl: KV_TTL }).catch(() => {}));
+    // เขียน KV ครั้งเดียว โดยเก็บทั้งผลลัพธ์และสถิติไว้ใน key เดียวกัน
+    // (แยก key = เขียน 2 ครั้ง/รอบ ซึ่งกินโควตาเป็นเท่าตัวโดยไม่จำเป็น)
+    if (kv) {
+      context.waitUntil(
+        kv.put(kvKey, JSON.stringify({ body, hist: hist2 }), { expirationTtl: KV_TTL }).catch(() => {})
+      );
+    }
     const edge = json(body, 200, EDGE_TTL);
     context.waitUntil(cache.put(key, edge.clone()));
     return browserCopy(edge);
   }
 
   // ดึงไม่ได้เลย → เสิร์ฟของเก่าดีกว่าโชว์หน้าว่าง
-  if (stale && (stale.items || []).length) {
-    return browserCopy(json({ ...stale, stale: true, meta: { ...(stale.meta || {}), attempts } }, 200, 300));
+  if (saved && saved.body && (saved.body.items || []).length) {
+    return browserCopy(json({ ...saved.body, stale: true, meta: { ...(saved.body.meta || {}), attempts } }, 200, 300));
   }
   return browserCopy(json({ geo, count: 0, items: [], error: "no source available", meta: { attempts } }, 200, 120));
+}
+
+/* ---------- วิวเพิ่มขึ้นเท่าไหร่ในช่วง N ชั่วโมง ---------- */
+
+// YouTube ไม่บอกยอดวิวย้อนหลัง จึงต้องเก็บภาพยอดวิวเองทุกรอบแล้วเอามาลบกัน
+// คลิปที่เพิ่งลงหลังจุดเทียบ = วิวทั้งหมดคือวิวที่เพิ่มในช่วงนั้น
+// คลิปที่ไม่มีข้อมูลเทียบเลย = คืน null ไม่ใช่ 0 (0 แปลว่า "ไม่เพิ่ม" ซึ่งคนละเรื่องกับ "ไม่รู้")
+function withDeltas(items, hist, now) {
+  return items.map((it) => {
+    const d = {};
+    for (const w of WINDOWS) {
+      const target = now - w * 3600000;
+      const snap = nearestSnap(hist, target, w * 3600000 * 0.4);
+      if (snap && Number.isFinite(snap.v[it.id])) {
+        d["d" + w] = Math.max(0, it.views - snap.v[it.id]);
+      } else if (it.published && it.published >= target) {
+        d["d" + w] = it.views; // เพิ่งลงในช่วงนี้ → วิวทั้งหมดเกิดในช่วงนี้
+      } else {
+        d["d" + w] = null; // ยังไม่รู้ ต้องรอสถิติสะสม
+      }
+    }
+    return { ...it, ...d };
+  });
+}
+
+function nearestSnap(hist, target, tolerance) {
+  let best = null;
+  let bestGap = Infinity;
+  for (const s of hist) {
+    const gap = Math.abs(s.t - target);
+    if (gap < bestGap) { bestGap = gap; best = s; }
+  }
+  return best && bestGap <= tolerance ? best : null;
 }
 
 // ยิงทุก instance "พร้อมกัน" แล้วเอาอันที่ตอบมาก่อน
@@ -97,7 +158,15 @@ export async function onRequest(context) {
 // ⚠️ ห้ามไล่ยิงทีละอันเด็ดขาด — instance อาสาสมัครล่มบ่อยและมักล่มแบบ "ค้าง" ไม่ใช่ตอบ error
 // ไล่ทีละอัน 5 แหล่ง × timeout 7 วิ = ผู้ใช้รอ 35 วินาทีก่อนเห็นอะไร
 // ยิงพร้อมกันแล้วเอาอันแรกที่ได้ = ช้าสุดเท่ากับ timeout เดียว
-async function race(geo, attempts) {
+async function race(geo, attempts, env = {}) {
+  // รอบ 0 — API ทางการ ถ้ามี key (ตั้งใน Cloudflare env ชื่อ YT_API_KEY)
+  // อันนี้คือของจริง: อันดับมาแรงทางการ · ยอดวิวจริง · เวลาอัปโหลดจริง
+  // ฟรี โควตา 10,000 หน่วย/วัน ส่วนนี้ใช้ราวๆ 24 หน่วย/วัน/ประเทศ
+  if (env.YT_API_KEY) {
+    const won = await firstOk([{ id: "youtube:api", run: () => fromDataApi(env.YT_API_KEY, geo) }], attempts);
+    if (won) return won;
+  }
+
   // รอบ 1 — instance ที่รู้จัก ไม่ต้องเสียเวลาถามไดเรกทอรีก่อน
   const seed = [];
   for (const h of INVIDIOUS) seed.push({ id: `invidious:${h}`, run: () => fromInvidious(h, geo) });
@@ -193,6 +262,31 @@ async function firstOk(runners, attempts) {
 
 /* ---------- แหล่งข้อมูล ---------- */
 
+// API ทางการ — chart=mostPopular ยังใช้ได้อยู่แม้ YouTube จะถอดหน้า Trending ออกไปแล้ว
+async function fromDataApi(keyRaw, geo) {
+  const key = String(keyRaw || "").trim();
+  if (!key) throw new Error("no api key");
+  const u =
+    "https://www.googleapis.com/youtube/v3/videos" +
+    "?part=snippet,statistics&chart=mostPopular" +
+    `&regionCode=${geo}&maxResults=${MAX_ITEMS}&key=${encodeURIComponent(key)}`;
+  const d = await fetchJson(u);
+  if (d && d.error) throw new Error("api " + (d.error.code || "") + " " + (d.error.message || "").slice(0, 60));
+  const arr = (d && d.items) || [];
+  if (!Array.isArray(arr)) throw new Error("not an array");
+  return normalize(
+    arr.map((v) => ({
+      id: v && v.id,
+      title: v && v.snippet && v.snippet.title,
+      channel: (v && v.snippet && v.snippet.channelTitle) || "",
+      views: num(v && v.statistics && v.statistics.viewCount),
+      published: v && v.snippet && v.snippet.publishedAt ? Date.parse(v.snippet.publishedAt) : 0,
+      live: !!(v && v.snippet && v.snippet.liveBroadcastContent === "live"),
+    })),
+    { keepOrder: true } // API ส่งมาเป็นอันดับทางการอยู่แล้ว ไม่ต้องเรียงเอง
+  );
+}
+
 async function fromInvidious(host, geo) {
   const arr = await fetchJson(`https://${host}/api/v1/trending?region=${geo}&type=Default`);
   if (!Array.isArray(arr)) throw new Error("not an array");
@@ -237,10 +331,18 @@ async function fromYouTubeHtml(geo, path = "/feed/trending") {
     const tm = c.match(/"title":\{(?:"runs":\[\{)?"(?:text|simpleText)":"((?:[^"\\]|\\.)*)"/);
     if (!tm) continue;
     const cm = c.match(/"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
-    const vm = c.match(/"viewCountText":\{"simpleText":"((?:[^"\\]|\\.)*)"/);
+    // ⚠️ ไลฟ์ส่งยอดคนดูมาเป็น "runs" ไม่ใช่ "simpleText" — จับแค่ simpleText จะได้ 0 เสมอ
+    const vm =
+      c.match(/"viewCountText":\{"simpleText":"((?:[^"\\]|\\.)*)"/) ||
+      c.match(/"viewCountText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
     const pm = c.match(/"publishedTimeText":\{"simpleText":"((?:[^"\\]|\\.)*)"/);
     // ไลฟ์สด: ยอด "วิว" คือคนดูอยู่ตอนนี้ เทียบกับคลิปปกติไม่ได้ ต้องแยกออกมา
-    const live = /"(?:BADGE_STYLE_TYPE_LIVE_NOW|LIVE)"/.test(c) || /watching|กำลังดู/i.test(vm ? vm[1] : "");
+    // ดูหลายสัญญาณ เพราะ YouTube เปลี่ยนรูปแบบบ่อยและใช้ไม่เหมือนกันในแต่ละหน้า
+    const live =
+      /BADGE_STYLE_TYPE_LIVE_NOW/.test(c) ||
+      /"isLiveNow":true|"isLive":true/.test(c) ||
+      /"label":"LIVE"|"text":"LIVE"/.test(c) ||
+      /watching|กำลังดู|ถ่ายทอดสด/i.test(c.slice(0, 1500));
     seen.add(idm[1]);
     out.push({
       id: idm[1],
@@ -275,7 +377,7 @@ function relativeToMs(text) {
 
 /* ---------- ทำให้เป็นรูปเดียวกัน ---------- */
 
-function normalize(raw) {
+function normalize(raw, opts = {}) {
   const seen = new Set();
   const out = [];
   for (const r of raw || []) {
@@ -300,7 +402,9 @@ function normalize(raw) {
   // ส่งมาตามลำดับที่จัดหน้าเว็บ ทำให้คลิป 900 วิวมาอยู่อันดับ 1 ได้ (เจอจริง)
   // จึงเรียงตามยอดวิวเองทุกครั้ง และดันไลฟ์ไปท้าย เพราะ "วิว" ของไลฟ์คือคนดูสดตอนนั้น
   // เอามาเทียบกับยอดวิวสะสมของคลิปปกติไม่ได้
-  out.sort((a, b) => (a.live !== b.live ? (a.live ? 1 : -1) : b.views - a.views));
+  if (!opts.keepOrder) {
+    out.sort((a, b) => (a.live !== b.live ? (a.live ? 1 : -1) : b.views - a.views));
+  }
   const top = out.slice(0, MAX_ITEMS);
   top.forEach((it, i) => { it.rank = i + 1; });
   return top;
@@ -308,6 +412,7 @@ function normalize(raw) {
 
 // แหล่งไหนเป็น "อันดับมาแรงจริง" แหล่งไหนแค่ "คลิปจากหน้าเว็บ" — ผู้ใช้ต้องรู้ว่ากำลังดูอะไร
 function modeOf(sourceId) {
+  if (sourceId === "youtube:api") return "official";
   return /^(invidious|piped)/.test(sourceId) ? "trending" : "browse";
 }
 
