@@ -8,7 +8,7 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "33"; // bump: ตัดชื่อลวง บีแอลซีพี/ซีพีเอ็น ออกจากคอลัมน์ CP
+const CACHE_VER = "34"; // bump: + ชื่อลวง บีซีพีจี/BCPG และตัวจับข่าวเก่าที่ถูกดันขึ้นมาใหม่
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -374,6 +374,37 @@ function noiseReason(it, title) {
   if (SHOP_RE.test(text)) return "shopping";
   return null;
 }
+
+// ---- ข่าวเก่าที่ถูกดันขึ้นมาใหม่ ----
+// Google Alert เจอหน้าเก่าที่เพิ่งมีคนคอมเมนต์/แก้ไข แล้วส่งมาเป็น "ของใหม่"
+// (เคยได้กระทู้ Pantip ปี 2557 มาแสดงว่า "6 ชม.ที่แล้ว")
+// วิธีจับ: หาวันที่เต็มรูปแบบใน "ช่วงต้น" ของ snippet ซึ่งเป็นตำแหน่งของ byline
+// ถ้าเก่ากว่า 1 ปี = ของเก่าถูกดันขึ้นมา ไม่ใช่ข่าวใหม่
+const TH_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+const TH_DATE_RE = new RegExp("(\\d{1,2})\\s*(" + TH_MONTHS.join("|") + ")\\s*(25\\d{2}|20\\d{2})", "g");
+const OLD_AFTER_MS = 365 * 24 * 3600 * 1000; // เก่ากว่า 1 ปี
+const BYLINE_HEAD = 220;                     // ดูเฉพาะช่วงต้น กันไปเจอวันที่ที่บทความอ้างถึงเฉย ๆ
+
+function bylineDate(text) {
+  const head = String(text || "").replace(/\[\[\/?hl\]\]/g, "").slice(0, BYLINE_HEAD);
+  TH_DATE_RE.lastIndex = 0;
+  let m, newest = null;
+  while ((m = TH_DATE_RE.exec(head))) {
+    let y = parseInt(m[3], 10);
+    if (y >= 2400) y -= 543; // พ.ศ. -> ค.ศ.
+    const mo = TH_MONTHS.indexOf(m[2]);
+    const day = parseInt(m[1], 10);
+    if (mo < 0 || !day || day > 31) continue;
+    const d = Date.UTC(y, mo, day);
+    if (!isNaN(d) && (newest === null || d > newest)) newest = d;
+  }
+  return newest;
+}
+function isOldRepost(it) {
+  const d = bylineDate(it && it.snippet);
+  return d !== null && Date.now() - d > OLD_AFTER_MS;
+}
+
 // ตระกูลแบรนด์ในเครือ CP — บทความ CP มักเรียกตัวเองด้วยชื่อลูก (CPF/เซเว่น/แม็คโคร) ไม่ใช่คำว่า "ซีพี" ตรง ๆ
 // ใช้ตอน verify คอลัมน์ alert1: ถ้า meta มีชื่อในเครือ = ข่าว CP จริง แม้ Google จะไฮไลต์ "ซีพี" จาก related block
 const CP_BRANDS = [
@@ -387,8 +418,14 @@ const CP_BRANDS = [
 // คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
 const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
 // ชื่อที่ "มีซีพี/CP อยู่ข้างใน" แต่ไม่ใช่เครือ CP — บีแอลซีพี = BLCP Power (โรงไฟฟ้า), ซีพีเอ็น = Central Pattana
-const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็น", "cpn "];
-const CP_FALSE_RE = new RegExp(CP_FALSE.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+// บีแอลซีพี = BLCP Power (โรงไฟฟ้า) · ซีพีเอ็น = Central Pattana · บีซีพีจี/บีซีพี = กลุ่มบางจาก
+const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็น", "cpn ", "บีซีพีจี", "bcpg", "บีซีพี", "bcp "];
+// เรียงยาวก่อนสั้น — ไม่งั้น "บีซีพี" จะกินก่อนแล้ว "บีซีพีจี" ไม่มีวันแมตช์
+const CP_FALSE_RE = new RegExp(
+  CP_FALSE.slice().sort((a, b) => b.length - a.length)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+  "gi"
+);
 const hasFalseCP = (s) => { CP_FALSE_RE.lastIndex = 0; return CP_FALSE_RE.test(String(s || "")); };
 const dropFalseCP = (s) => String(s || "").replace(CP_FALSE_RE, " ");
 // จริงหรือไม่: ตัดชื่อลวงออกก่อน แล้วยังเหลือชื่อเครือ CP อยู่ไหม
@@ -461,6 +498,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/หน้าแกลเลอรี ก่อนเช็ค related-block
       if (noise) return { ok: false, why: noise, terms: [], bare, link: it.link };
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
+      if (isOldRepost(it)) return { ok: false, why: "old-content", terms: [], bare, link: it.link };
       // CP มาจากชื่อลวงล้วน ๆ (บีแอลซีพี/ซีพีเอ็น) → ไม่ใช่ข่าวเครือ CP
       const rawHay = bare + " " + (it.snippet || "");
       if (src === "alert1" && hasFalseCP(rawHay) && !realCP(rawHay)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
