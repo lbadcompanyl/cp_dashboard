@@ -17,6 +17,10 @@ const state = {
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
   trendNews: {}, // title -> resolved news articles (cache)
+  trendOpen: {}, // title -> กางอยู่ไหม
+  // ⚠️ ต้องจำไว้ใน state ไม่ใช่ปล่อยให้อยู่ใน DOM อย่างเดียว
+  // auto-refresh ทุก 3 นาทีสร้าง innerHTML ใหม่ทั้งก้อน ของที่กางอยู่จะยุบหมด
+  // ลิสต์สั้นลง → ค่า scroll ที่คืนกลับเกินความสูงใหม่ → หน้าเด้งกลับขึ้นบนกลางที่อ่านอยู่
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -746,24 +750,34 @@ function renderTrends(panel) {
   // wire expand
   $$(".trend-head", list).forEach((head) =>
     head.addEventListener("click", () => {
-      const box = head.nextElementSibling;
-      const open = !box.hidden;
-      if (open) {
-        box.hidden = true;
+      if (!head.nextElementSibling.hidden) {
+        head.nextElementSibling.hidden = true;
         head.classList.remove("open");
+        delete state.trendOpen[head.dataset.q];
         return;
       }
-      box.hidden = false;
-      head.classList.add("open");
-      if (!box.dataset.loaded) {
-        box.dataset.loaded = "1";
-        box.innerHTML = `<div class="tn-news"></div><div class="tn-rel"></div>`;
-        loadNews(head.dataset.q, $(".tn-news", box));
-        renderTerms(head.dataset.q, $(".tn-rel", box)); // แสดงคำค้นที่เกี่ยวข้องทันที (เชื่อถือได้)
-        loadRelated(head.dataset.q, $(".tn-rel", box)); // ถ้าดึง % ได้ จะอัปเกรดเป็นตาราง Top/Rising
-      }
+      state.trendOpen[head.dataset.q] = 1;
+      openTrend(head);
     })
   );
+
+  // กางของที่ผู้ใช้เปิดค้างไว้กลับคืน — ข้อมูลถูก cache ใน state แล้ว จึงเติมได้ทันที
+  // ไม่ต้องยิงเน็ตซ้ำ และความสูงลิสต์กลับมาเท่าเดิมก่อนที่ load() จะคืนตำแหน่ง scroll
+  $$(".trend-head", list).forEach((head) => {
+    if (state.trendOpen[head.dataset.q]) openTrend(head);
+  });
+}
+
+function openTrend(head) {
+  const box = head.nextElementSibling;
+  box.hidden = false;
+  head.classList.add("open");
+  if (box.dataset.loaded) return;
+  box.dataset.loaded = "1";
+  box.innerHTML = `<div class="tn-news"></div><div class="tn-rel"></div>`;
+  loadNews(head.dataset.q, $(".tn-news", box));
+  renderTerms(head.dataset.q, $(".tn-rel", box)); // แสดงคำค้นที่เกี่ยวข้องทันที (เชื่อถือได้)
+  loadRelated(head.dataset.q, $(".tn-rel", box)); // ถ้าดึง % ได้ จะอัปเกรดเป็นตาราง Top/Rising
 }
 
 // ---------- In the news (ข่าวที่เกี่ยวข้อง พร้อมรูป) ----------
@@ -982,7 +996,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 52; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 53; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

@@ -13,9 +13,14 @@ const CACHE_VER = "35"; // bump: ตัดข่าวที่ไม่ใช�
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
 const ARCHIVE_KEY = "pr:archive";
+// days = เก็บไว้ใน KV นานแค่ไหน · show = ส่งให้หน้าเว็บกี่รายการ
+//
+// ⚠️ สองค่านี้ต้องแยกกัน — ถ้าส่งทั้งคลัง 90 วันไปให้เบราว์เซอร์ทุกครั้ง
+// payload จะโตเป็นหลาย MB และถ่วงการโหลดแดชบอร์ดโดยไม่มีใครได้ใช้
+// หน้าเว็บดูของล่าสุดเท่านั้น ส่วนของเก่าเอาไว้ export (ดู /api/trend/archive)
 const ARCHIVE_CFG = {
-  alert1: { days: 10, max: 300 }, // CP
-  alert2: { days: 10, max: 400 }, // หัวข้อที่จับตามอง
+  alert1: { days: 90, max: 3000, show: 300 }, // CP
+  alert2: { days: 90, max: 3000, show: 400 }, // หัวข้อที่จับตามอง
 };
 const envPrefix = (env) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : "");
 
@@ -324,8 +329,8 @@ async function mergeArchives(env, sources, diag) {
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
       .slice(0, cfg.max);
     if (src.startsWith("alert")) for (const it of merged) if (!it.fromNews) it.sourceLabel = outletOf(it.link) || it.sourceLabel; // refresh label สำนักข่าว (กันของเก่าใน KV ค้าง "ซีพี")
-    sources[src].items = merged;
-    out[src] = merged;
+    sources[src].items = merged.slice(0, cfg.show); // หน้าเว็บ: เฉพาะล่าสุด
+    out[src] = merged;                              // KV: เก็บเต็มไว้ export
     diag[src] = merged.length;
   }
   try { await kv.put(key, JSON.stringify(out)); diag.saved = true; diag.env = env.APP_ENV || "prod"; } catch (e) { diag.err = String((e && e.message) || e).slice(0, 120); }
@@ -385,8 +390,9 @@ function noiseReason(it, title) {
 // ถ้าเก่ากว่า 1 ปี = ของเก่าถูกดันขึ้นมา ไม่ใช่ข่าวใหม่
 const TH_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
 const TH_DATE_RE = new RegExp("(\\d{1,2})\\s*(" + TH_MONTHS.join("|") + ")\\s*(25\\d{2}|20\\d{2})", "g");
-// ยึดหน้าต่างเดียวกับ archive (10 วัน) — แดชบอร์ดนี้ดูของล่าสุดเท่านั้น
-// อะไรที่เก่ากว่านี้ไม่ควรโผล่มาแต่แรก ต่อให้ Alert เพิ่งไปเจอมันก็ตาม
+// หน้าต่าง "ความสดตอนรับเข้า" — คนละเรื่องกับอายุที่เก็บใน archive (90 วัน)
+// ตัวนี้กันข่าวเก่าที่ถูกดันขึ้นมาใหม่ไม่ให้ไหลเข้าระบบตั้งแต่แรก
+// ส่วน archive คือเก็บข่าวที่ผ่านด่านนี้แล้วไว้ให้นานขึ้นเพื่อดูย้อนหลัง — อย่าเอาไปผูกกัน
 const OLD_AFTER_MS = 10 * 24 * 3600 * 1000;
 const BYLINE_HEAD = 220;                     // ดูเฉพาะช่วงต้น กันไปเจอวันที่ที่บทความอ้างถึงเฉย ๆ
 
