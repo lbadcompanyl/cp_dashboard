@@ -156,6 +156,7 @@
       <div class="filters">
         <select class="rc" data-ytgeo title="เลือกประเทศ">
           <option value="TH">🇹🇭 ไทย</option>
+          <option value="WW">🌏 ทั่วโลก</option>
           <option value="US">🇺🇸 สหรัฐฯ</option>
           <option value="GB">🇬🇧 อังกฤษ</option>
           <option value="JP">🇯🇵 ญี่ปุ่น</option>
@@ -163,15 +164,18 @@
           <option value="SG">🇸🇬 สิงคโปร์</option>
           <option value="IN">🇮🇳 อินเดีย</option>
         </select>
-        <select class="rc" data-ytsort title="เรียงตามวิวที่เพิ่มขึ้นในช่วงเวลา">
-          <option value="d4">📈 วิวเพิ่มมากสุด · 4 ชม.</option>
-          <option value="d24" selected>📈 วิวเพิ่มมากสุด · 24 ชม.</option>
-          <option value="d48">📈 วิวเพิ่มมากสุด · 48 ชม.</option>
-          <option value="d72">📈 วิวเพิ่มมากสุด · 3 วัน</option>
-          <option value="d168">📈 วิวเพิ่มมากสุด · 7 วัน</option>
-          <option value="rank">🏆 อันดับทางการ YouTube</option>
+        <select class="rc" data-ytsort title="เรียงลำดับ">
+          <option value="rank" selected>🏆 อันดับจาก YouTube</option>
+          <option value="growth">📈 มาแรง (วิวเพิ่ม)</option>
           <option value="views">👁️ ยอดวิวรวม</option>
           <option value="new">🕒 ใหม่ล่าสุด</option>
+        </select>
+        <select class="rc" data-ytwin title="ช่วงเวลาที่ใช้วัดว่ามาแรง" hidden>
+          <option value="4">4 ชม.</option>
+          <option value="24" selected>24 ชม.</option>
+          <option value="48">48 ชม.</option>
+          <option value="72">3 วัน</option>
+          <option value="168">7 วัน</option>
         </select>
       </div>
       <div class="list" data-list></div>
@@ -179,6 +183,6 @@
   </main>
 
   <script src="/flags.js?v=24"></script>
-  <script src="./app.js?v=49"></script>
+  <script src="./app.js?v=50"></script>
 </body>
 </html>

@@ -17,21 +17,28 @@ const MAX_TRENDS = 50;
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct";
 const AI_BATCH = 25;            // รวมหลายคำต่อ 1 call
 const CAT_TTL = 7 * 24 * 3600;  // หมวดของแท็กไม่ค่อยเปลี่ยน เก็บยาวได้
+// ⚠️ บวกเลขนี้เมื่อแก้วิธีจัดหมวด ไม่งั้น response เดิม (ที่ยังติดหมวดผิด) ถูกเสิร์ฟต่อ
+const DATA_VER = "2";
 const CATS = ["ent", "sport", "pol", "biz", "news", "other"];
-const CAT_MAP_KEY = "xcatmap"; // เก็บหมวดของทุกแท็กรวมใน key เดียว
+// ⚠️ บวกเลขต่อท้ายเมื่อแก้วิธีจัดหมวด — หมวดที่จัดผิดถูก cache ไว้ 7 วัน
+// ถ้าไม่เปลี่ยน key ของผิดเดิมจะถูกเสิร์ฟต่อไปทั้งที่แก้โค้ดแล้ว
+const CAT_MAP_KEY = "xcatmap2"; // เก็บหมวดของทุกแท็กรวมใน key เดียว
 
 // เดาหมวดจากคำก่อน ประหยัด AI call (ตัวที่เดาไม่ได้ค่อยส่งไปถาม)
-const CAT_KW = {
-  ent:   ["concert", "mv", "selca", "fanmeet", "ost", "ep", "live", "คอนเสิร์ต", "ซีรีส์", "ละคร", "หนัง", "เพลง", "ตอนพิเศษ", "ปิดกล้อง", "บวงสรวง", "แฟนมีต"],
-  sport: ["fc", "cup", "league", "match", "vs", "ฟุตบอล", "วอลเลย์", "มวย", "แข่ง", "ทีมชาติ"],
-  pol:   ["ศาล", "รัฐบาล", "นายก", "สภา", "เลือกตั้ง", "ม็อบ", "พรรค", "รัฐมนตรี", "กฎหมาย"],
-  biz:   ["sale", "promotion", "collection", "fw", "ss", "x ", "โปร", "ลดราคา", "เปิดตัว", "คอลแลบ"],
-  news:  ["ด่วน", "อุบัติเหตุ", "ไฟไหม้", "แผ่นดินไหว", "น้ำท่วม", "เสียชีวิต", "จับกุม"],
-};
+//
+// ⚠️ ห้ามใช้คำสั้นๆ ที่ไม่มีขอบเขต — เคยใส่ "ep" ไว้ในหมวดบันเทิง (ชนทุกคำที่มี ep)
+// และ "x " / "ss" / "fw" ในหมวดแบรนด์ ทำให้แท็กที่ไม่เกี่ยวถูกจัดผิดเป็นประจำ
+// ภาษาไทยไม่มี \b ให้ใช้ จึงต้องเลือกคำที่ยาวพอจะไม่ชนคำอื่นเอง
+const CAT_RE = [
+  ["pol",   /ศาล|รัฐบาล|นายก|สภา|เลือกตั้ง|ม็อบ|พรรค|รัฐมนตรี|กฎหมาย|อภิปราย|ยุบสภา|ครม/i],
+  ["news",  /ด่วน|อุบัติเหตุ|ไฟไหม้|แผ่นดินไหว|น้ำท่วม|เสียชีวิต|จับกุม|คดี|ชันสูตร/i],
+  ["sport", /\bfc\b|\bcup\b|league|\bmatch\b|\bvs\b|tournament|ฟุตบอล|วอลเลย์|มวย|ทีมชาติ|ลีก|แข่งขัน/i],
+  ["biz",   /\bsale\b|promotion|collection|collab|โปรโมชั่น|ลดราคา|เปิดตัว|คอลแลบ/i],
+  ["ent",   /concert|world ?tour|fanmeet|fansign|debut|comeback|\bmv\b|\bost\b|selca|\bhbd\b|birthday|คอนเสิร์ต|ซีรีส์|ละคร|หนัง|เพลง|แฟนมีต|แฟนไซน์|เดบิวต์|คัมแบ็ก|ตอนพิเศษ|ปิดกล้อง|บวงสรวง|วันเกิด/i],
+];
 
 function guessCat(name) {
-  const hay = name.toLowerCase();
-  for (const k of Object.keys(CAT_KW)) if (CAT_KW[k].some((w) => hay.includes(w))) return k;
+  for (const [k, re] of CAT_RE) if (re.test(name)) return k;
   return null;
 }
 
@@ -51,9 +58,21 @@ async function classifyBatch(env, names) {
     list;
   const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 400 });
   const text = String((out && (out.response || out.result)) || "").toLowerCase();
-  const found = text.match(/\b(ent|sport|pol|biz|news|other)\b/g) || [];
-  if (!found.length) throw new Error("no cats");
-  return found;
+
+  // ⚠️ อ่านทีละบรรทัด ไม่ใช่กวาดทั้งก้อน
+  // เดิมใช้ text.match() กวาดทั้งข้อความ ถ้า AI แถมคำนำหน้าหรือตอบไม่ครบ
+  // ลำดับจะเลื่อนทั้งชุด แล้วทุกแท็กหลังจากนั้นได้หมวดของตัวอื่นไปแทน
+  // (เจอจริง: #ออฟโรด · ENGFA · #รักษ์ ถูกจัดเป็น "การเมือง" ทั้งหมด)
+  const codes = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/\b(ent|sport|pol|biz|news|other)\b/);
+    if (m) codes.push(m[1]);
+  }
+  // จำนวนไม่ตรง = จับคู่ไม่ได้อย่างมั่นใจ → ทิ้งทั้งชุดดีกว่าเดาผิดแล้ว cache ไว้ 7 วัน
+  if (codes.length !== names.length) {
+    throw new Error(`count mismatch ${codes.length}/${names.length}`);
+  }
+  return codes;
 }
 
 // เติมหมวดให้ทุกเทรนด์: KV -> เดาจากคำ -> ถาม AI
@@ -149,7 +168,7 @@ export async function onRequest(context) {
   const geo = (url.searchParams.get("geo") || "thailand").toLowerCase().replace(/[^a-z-]/g, "").slice(0, 40) || "thailand";
 
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/trend/xtrends?geo=${geo}`, { method: "GET" });
+  const key = new Request(url.origin + `/api/trend/xtrends?geo=${geo}&_v=${DATA_VER}`, { method: "GET" });
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 

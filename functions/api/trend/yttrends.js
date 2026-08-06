@@ -46,6 +46,12 @@ const PIPED = [
 ];
 const MAX_DISCOVERED = 6; // ยิงพร้อมกันได้ แต่ไม่ต้องยิงทั้งโลก
 
+// "ทั่วโลก" ไม่มีอยู่จริงใน YouTube API — chart=mostPopular บังคับให้ระบุประเทศ
+// จึงดึงหลายประเทศหลักพร้อมกันแล้วรวมกัน ยุบคลิปซ้ำ เรียงตามยอดวิว
+// (ยอดวิวของ YouTube เป็นตัวเลขรวมทั้งโลกอยู่แล้ว ไม่ใช่แยกรายประเทศ จึงเทียบกันได้ตรงๆ)
+const WORLD = "WW";
+const WORLD_REGIONS = ["US", "GB", "JP", "KR", "IN", "BR", "DE", "MX"];
+
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   // รหัสประเทศ 2 ตัวเท่านั้น — ค่านี้ต่อเข้า URL ปลายทาง อย่าปล่อยให้ใส่อะไรก็ได้
@@ -176,14 +182,19 @@ async function race(geo, attempts, env = {}) {
   // อันนี้คือของจริง: อันดับมาแรงทางการ · ยอดวิวจริง · เวลาอัปโหลดจริง
   // ฟรี โควตา 10,000 หน่วย/วัน ส่วนนี้ใช้ราวๆ 24 หน่วย/วัน/ประเทศ
   if (env.YT_API_KEY) {
-    const won = await firstOk([{ id: "youtube:api", run: () => fromDataApi(env.YT_API_KEY, geo) }], attempts);
+    const run =
+      geo === WORLD
+        ? () => fromDataApiWorld(env.YT_API_KEY)
+        : () => fromDataApi(env.YT_API_KEY, geo);
+    const won = await firstOk([{ id: "youtube:api", run }], attempts);
     if (won) return won;
   }
 
   // รอบ 1 — instance ที่รู้จัก ไม่ต้องเสียเวลาถามไดเรกทอรีก่อน
+  const geoFb = geo === WORLD ? "US" : geo; // ต้นทางสำรองรับแต่รหัสประเทศจริง
   const seed = [];
-  for (const h of INVIDIOUS) seed.push({ id: `invidious:${h}`, run: () => fromInvidious(h, geo) });
-  for (const h of PIPED) seed.push({ id: `piped:${h}`, run: () => fromPiped(h, geo) });
+  for (const h of INVIDIOUS) seed.push({ id: `invidious:${h}`, run: () => fromInvidious(h, geoFb) });
+  for (const h of PIPED) seed.push({ id: `piped:${h}`, run: () => fromPiped(h, geoFb) });
   let won = await firstOk(seed, attempts);
   if (won) return won;
 
@@ -195,8 +206,8 @@ async function race(geo, attempts, env = {}) {
     discoverInvidious(attempts).catch(() => []),
     discoverPiped(attempts).catch(() => []),
   ]);
-  for (const h of inv) if (!known.has(h)) fresh.push({ id: `invidious*:${h}`, run: () => fromInvidious(h, geo) });
-  for (const h of pip) if (!known.has(h)) fresh.push({ id: `piped*:${h}`, run: () => fromPiped(h, geo) });
+  for (const h of inv) if (!known.has(h)) fresh.push({ id: `invidious*:${h}`, run: () => fromInvidious(h, geoFb) });
+  for (const h of pip) if (!known.has(h)) fresh.push({ id: `piped*:${h}`, run: () => fromPiped(h, geoFb) });
   if (fresh.length) {
     won = await firstOk(fresh.slice(0, MAX_DISCOVERED * 2), attempts);
     if (won) return won;
@@ -206,8 +217,8 @@ async function race(geo, attempts, env = {}) {
   // /feed/trending ถูกถอดออกตั้งแต่ ก.ค. 2025 จึงลองหน้าแรกรายประเทศด้วย
   return await firstOk(
     [
-      { id: "youtube:trending", run: () => fromYouTubeHtml(geo, "/feed/trending") },
-      { id: "youtube:home", run: () => fromYouTubeHtml(geo, "/") },
+      { id: "youtube:trending", run: () => fromYouTubeHtml(geoFb, "/feed/trending") },
+      { id: "youtube:home", run: () => fromYouTubeHtml(geoFb, "/") },
     ],
     attempts
   );
@@ -304,6 +315,23 @@ async function fromDataApi(keyRaw, geo) {
     })),
     { keepOrder: true } // API ส่งมาเป็นอันดับทางการอยู่แล้ว ไม่ต้องเรียงเอง
   );
+}
+
+// ทั่วโลก = รวมหลายประเทศหลัก ยิงพร้อมกันแล้วยุบคลิปซ้ำ
+async function fromDataApiWorld(key) {
+  const lists = await Promise.all(
+    WORLD_REGIONS.map((r) => fromDataApi(key, r).catch(() => []))
+  );
+  const best = new Map();
+  for (const list of lists) {
+    for (const it of list) {
+      const prev = best.get(it.id);
+      // คลิปเดียวกันโผล่ได้หลายประเทศ — เก็บอันที่ยอดวิวสูงสุดไว้ (ข้อมูลสดที่สุด)
+      if (!prev || it.views > prev.views) best.set(it.id, it);
+    }
+  }
+  const merged = [...best.values()].sort((a, b) => (a.live !== b.live ? (a.live ? 1 : -1) : b.views - a.views));
+  return merged.slice(0, MAX_ITEMS).map((it, i) => ({ ...it, rank: i + 1 }));
 }
 
 async function fromInvidious(host, geo) {
