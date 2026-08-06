@@ -19,11 +19,11 @@ const AI_BATCH = 10;            // ก้อนเล็กแม่นกว่
 const AI_MAX_CALLS = 12;        // กันเรียกรัวตอนแบ่งก้อนย่อย (โควตา Workers AI มีจำกัด)
 const CAT_TTL = 7 * 24 * 3600;  // หมวดของแท็กไม่ค่อยเปลี่ยน เก็บยาวได้
 // ⚠️ บวกเลขนี้เมื่อแก้วิธีจัดหมวด ไม่งั้น response เดิม (ที่ยังติดหมวดผิด) ถูกเสิร์ฟต่อ
-const DATA_VER = "4";
+const DATA_VER = "5";
 const CATS = ["ent", "sport", "pol", "biz", "news", "other"];
 // ⚠️ บวกเลขต่อท้ายเมื่อแก้วิธีจัดหมวด — หมวดที่จัดผิดถูก cache ไว้ 7 วัน
 // ถ้าไม่เปลี่ยน key ของผิดเดิมจะถูกเสิร์ฟต่อไปทั้งที่แก้โค้ดแล้ว
-const CAT_MAP_KEY = "xcatmap2"; // เก็บหมวดของทุกแท็กรวมใน key เดียว
+const CAT_MAP_KEY = "xcatmap3"; // เก็บหมวดของทุกแท็กรวมใน key เดียว
 
 // เดาหมวดจากคำก่อน ประหยัด AI call (ตัวที่เดาไม่ได้ค่อยส่งไปถาม)
 //
@@ -38,9 +38,23 @@ const CAT_RE = [
   ["ent",   /concert|world ?tour|fanmeet|fansign|debut|comeback|\bmv\b|\bost\b|selca|\bhbd\b|birthday|spoiler|teaser|trailer|\bep\s?\d|\bตอน\s?\d|คอนเสิร์ต|ซีรีส์|ละคร|หนัง|เพลง|แฟนมีต|แฟนไซน์|เดบิวต์|คัมแบ็ก|ตอนพิเศษ|ปิดกล้อง|บวงสรวง|วันเกิด/i],
 ];
 
+const CAT_RE_MAP = Object.fromEntries(CAT_RE);
+
 function guessCat(name) {
   for (const [k, re] of CAT_RE) if (re.test(name)) return k;
   return null;
+}
+
+// ตรวจคำตอบของ AI อีกชั้น
+//
+// ⚠️ โมเดลเล็กชอบโยนแฮชแท็กแฟนด้อมไทยไปเป็น "การเมือง/ข่าว" เพราะไม่รู้จักชื่อคน
+// เจอจริง: #JoongArchen · #จีบเอสเสรี · #NuNewClue02 ถูกจัดเป็นการเมือง/ข่าว
+// สองหมวดนี้ต่างจากหมวดอื่นตรงที่ "มีคำเฉพาะของมันชัดเจน" (ศาล/รัฐบาล/ด่วน/จับกุม)
+// ถ้าไม่มีคำพวกนั้นอยู่เลย = ไม่มีหลักฐาน อย่าเชื่อโมเดล ให้ตกไปเป็นบันเทิงซึ่ง
+// เป็นค่าที่ถูกที่สุดสำหรับเทรนด์ X ไทยโดยธรรมชาติ
+function vetoCat(name, cat) {
+  if ((cat === "pol" || cat === "news") && !CAT_RE_MAP[cat].test(name)) return "ent";
+  return cat;
 }
 
 // ถาม AI เป็นชุด — คืน array หมวดตามลำดับที่ส่งไป
@@ -54,7 +68,11 @@ async function classifyBatch(env, names) {
     "biz = brands, products, sales, promotions, collaborations, business\n" +
     "news = breaking news, accidents, disasters, crime\n" +
     "other = none of the above\n" +
-    "Most Thai trending hashtags are fandom/entertainment — prefer ent when it names a person, show or fan event.\n" +
+    "MOST Thai trending hashtags are fandom: artist names, ship names, fan events. Prefer ent by default.\n" +
+    "Use pol ONLY for actual government/court/protest topics, and news ONLY for actual breaking events.\n" +
+    "A Thai personal name you do not recognise is almost never politics — it is an artist. Use ent.\n" +
+    "Examples: \"#JoongArchen\" = ent (actor pair) · \"#LinglingxKwongPastry\" = biz (artist x brand) · " +
+    "\"#NuNewClue02\" = ent (fan event) · \"ยุบสภา\" = pol · \"แผ่นดินไหวเชียงราย\" = news\n" +
     `Output EXACTLY ${names.length} lines, one code per line, in the SAME order as the input.\n` +
     "Each line must contain ONLY the code word and nothing else. No numbering, no explanation, no blank lines.\n\n" +
     list;
@@ -145,7 +163,7 @@ async function classifyInto(env, chunk, map, diag, st, depth) {
   try {
     const cats = await classifyBatch(env, chunk.map((x) => x.name));
     chunk.forEach((t, j) => {
-      const c = cats[j];
+      const c = vetoCat(t.name, cats[j]);
       if (!c || !CATS.includes(c)) return;
       t.cat = c;
       map[t.name] = c;
