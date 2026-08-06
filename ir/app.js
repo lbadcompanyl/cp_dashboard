@@ -365,7 +365,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 30; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 31; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now();
@@ -402,6 +402,9 @@ async function checkForUpdate() {
   } catch {}
 }
 function maybeCheckForUpdate() { if (Date.now() - lastCodeCheck >= CODE_CHECK_MS) checkForUpdate(); }
+// กลับเข้าแอป = จังหวะที่ควรเช็คที่สุด ไม่ต้องรอครบรอบ (กันกดสลับไปมารัวๆ ด้วย 60 วิ)
+const RESUME_MIN_GAP = 60 * 1000;
+function checkOnResume() { if (Date.now() - lastCodeCheck >= RESUME_MIN_GAP) checkForUpdate(); }
 // ข้อมูล: รีเฟรชเงียบทุก 3 นาที
 setInterval(() => { if (!document.hidden) load({ silent: true }); }, 3 * 60 * 1000);
 // โค้ด: เช็คชั่วโมงละครั้ง แต่ยิงจริงเมื่อครบ 24 ชม.
@@ -410,5 +413,5 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
   if (updateReady) { location.reload(); return; }
   if (state.data && Date.now() - (new Date(state.data.generatedAt || 0)).getTime() > 3 * 60 * 1000) load({ silent: true });
-  maybeCheckForUpdate();
+  checkOnResume();
 });

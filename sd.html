@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SD Trends — Google Trends ด้านความยั่งยืน</title>
 <!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ไฟล์นี้ — เครื่องที่ติดตั้งเป็นแอปใช้เช็คว่ามีของใหม่ -->
-<meta name="page-ver" content="8" />
+<meta name="page-ver" content="9" />
 <!-- PWA: ติดตั้งเป็นแอปได้จากทุกหน้า ไม่ใช่แค่หน้าแรก -->
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#0d0d0d" />
@@ -419,7 +419,7 @@ document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFro
 <script>
   // เช็คของใหม่ — กลไกเดียวกับหน้าอื่นทุกหน้า (landing / trend / ir / issue)
   (function(){
-    var VER = 8; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
+    var VER = 9; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
     var CHECK_MS = 24 * 60 * 60 * 1000;
     var last = 0, ready = false;
     function banner(){
@@ -457,7 +457,7 @@ document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFro
     document.addEventListener("visibilitychange", function(){
       if (document.hidden) return;
       if (ready) { location.reload(); return; }
-      check();
+      check(60000); // กลับเข้าแอป = เช็คเลย (กันกดสลับรัวๆ ด้วย 60 วิ)
     });
   })();
 </script>
