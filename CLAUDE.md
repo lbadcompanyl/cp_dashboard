@@ -127,6 +127,9 @@ functions/api/  Cloudflare Pages Functions (trend / ir / sd / flags)
 2. ต้องบวก `SW_VERSION` ด้วย ไม่งั้นเบราว์เซอร์ไม่ติดตั้งตัวใหม่ (มันเทียบ byte)
 3. ห้ามส่ง Request ที่ `mode=navigate` เข้า `fetch()` พร้อม init — สเปคจะลดระดับ
    mode เป็น `same-origin` เงียบๆ ให้ยิงด้วย `req.url` ตรงๆ แทน
+4. ลงทะเบียนด้วย `{updateViaCache:"none"}` + เรียก `registration.update()` ทั้งตอน
+   เปิดหน้าและตอน `visibilitychange` — ผู้ใช้จะได้ของใหม่เองโดยไม่ต้องทำอะไรเลย
+   **ห้ามบอกผู้ใช้ให้ล้าง cache หรือถอนแอปติดตั้งใหม่** ถ้าต้องบอก แปลว่ากลไกยังผิด
 
 **โหมดสว่าง/มืด — เจ้าของบอกว่าไม่ต้องทำ** มีแค่ `index.html` กับ `sd.html`
 ส่วน `/trend/` `/ir/` `/issue/` เป็นโหมดมืดล้วน **อย่าไปเพิ่มเอง**
