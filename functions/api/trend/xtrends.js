@@ -194,12 +194,19 @@ export async function onRequest(context) {
   // จำกัดเป็น slug ปลอดภัย — ค่านี้ถูกต่อเข้า URL ปลายทาง อย่าปล่อยให้ใส่อะไรก็ได้
   const geo = (url.searchParams.get("geo") || "thailand").toLowerCase().replace(/[^a-z-]/g, "").slice(0, 40) || "thailand";
 
+  const env = context.env || {};
+
+  // ⚠️ ใส่สถานะ "ผูก Workers AI แล้วหรือยัง" ลงใน cache key ด้วย
+  // ไม่งั้นพอเพิ่งผูก binding เข้าไป ผลลัพธ์เดิม (ที่ยังไม่มีหมวด) จะถูกเสิร์ฟต่ออีก 15 นาที
+  // แล้วดูเหมือนผูกไม่สำเร็จ — เคยเจอกับ YT_API_KEY มาแล้วครั้งหนึ่ง
   const cache = caches.default;
-  const key = new Request(url.origin + `/api/trend/xtrends?geo=${geo}&_v=${DATA_VER}`, { method: "GET" });
+  const key = new Request(
+    url.origin + `/api/trend/xtrends?geo=${geo}&_v=${DATA_VER}&_ai=${env.AI ? 1 : 0}`,
+    { method: "GET" }
+  );
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
-  const env = context.env || {};
   const kv = env.FLAGS_KV;
   const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `xtrends:${geo}`;
 
