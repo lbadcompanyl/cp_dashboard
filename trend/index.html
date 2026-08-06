@@ -4,22 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Trend Dashboard</title>
-<script>/* ต้องเป็น ES5 ล้วน — IE ต้อง parse ผ่านถึงจะแสดงข้อความนี้ได้ */
-(function(){
-  var ok = ("fetch" in window) && ("Promise" in window)
-    && (typeof CSS !== "undefined" && CSS.supports && CSS.supports("color", "var(--x)"));
-  if (ok) return;
-  function show(){
-    if (!document.body) return;
-    var d = document.createElement("div");
-    d.setAttribute("style", "position:fixed;left:0;right:0;top:0;z-index:99999;background:#7f1d1d;color:#fff;font:14px/1.55 system-ui,sans-serif;padding:14px 18px;text-align:center");
-    d.innerHTML = "\u26A0\uFE0F <b>เบราว์เซอร์นี้เก่าเกินไป</b> \u2014 แดชบอร์ดจะแสดงผลไม่ครบ<br>กรุณาเปิดด้วย <b>Chrome</b>, <b>Microsoft Edge</b> หรือ <b>Safari</b> รุ่นใหม่";
-    document.body.insertBefore(d, document.body.firstChild);
-  }
-  if (document.readyState !== "loading") show();
-  else if (document.addEventListener) document.addEventListener("DOMContentLoaded", show);
-  else if (window.attachEvent) window.attachEvent("onload", show);
-})();</script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>" />
 <!-- PWA: ติดตั้งเป็นแอปได้จากทุกหน้า ไม่ใช่แค่หน้าแรก -->
 <link rel="manifest" href="/manifest.webmanifest" />
