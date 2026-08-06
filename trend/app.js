@@ -9,6 +9,8 @@ const state = {
   xCat: null,        // หมวดที่เลือกในคอลัมน์ X (null = ทุกหมวด)
   xGeo: "thailand",  // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
   ytGeo: "TH",       // ประเทศของคอลัมน์ YouTube (รหัส ISO 2 ตัว)
+  ytCat: null,       // หมวดที่เลือกในคอลัมน์ YouTube (null = ทุกหมวด)
+  ytSort: "views",   // "views" = คนดูมากสุด · "new" = ใหม่ล่าสุด
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -237,9 +239,53 @@ async function fetchYTTrends(geo) {
     error: d.error || null,
     stale: !!d.stale,
     source: d.source || "",
+    mode: d.mode || "",
     fetchedAt: d.fetchedAt || null,
     attempts: (d.meta && d.meta.attempts) || [],
   };
+}
+
+// หมวดของคลิป — เดาจากชื่อคลิป+ชื่อช่อง (ต้นทางไม่ได้ส่งหมวดมาให้)
+// ใช้วิธีเดียวกับหมวดข่าวใน news/alert1 ที่ใช้อยู่แล้ว จะได้ไม่ต้องพึ่ง AI ให้เปลืองโควตา
+const YT_CATS = [
+  { key: "music",  label: "🎵 เพลง",     kw: ["mv","official audio","เพลง","เนื้อเพลง","cover","ost","ep.","อัลบั้ม","music video","lyrics","feat.","ft.","นักร้อง","แดนซ์"] },
+  { key: "game",   label: "🎮 เกม",      kw: ["เกม","game","gaming","gta","roblox","minecraft","freefire","free fire","rov","valorant","pubg","เซิฟ","เซิร์ฟ","gameplay","efootball","fifa","มายคราฟ","สปีดรัน"] },
+  { key: "sport",  label: "⚽ กีฬา",     kw: ["ฟุตบอล","บอล","วอลเลย์","มวย","แข่ง","ไฮไลท์","highlight","ทีมชาติ","ลีก","league","ซีเกมส์","โอลิมปิก","แบดมินตัน","นักเตะ","u17","u19"] },
+  { key: "news",   label: "📰 ข่าว",     kw: ["ข่าว","news","ด่วน","ล่าสุด","รายงาน","สัมภาษณ์","ประชุม","แถลง","คดี","จับกุม","ศาล","เลือกตั้ง","นายก","รัฐบาล"] },
+  { key: "food",   label: "🍜 อาหาร",    kw: ["กิน","อาหาร","ทำอาหาร","ร้าน","เมนู","รีวิวร้าน","หมู","ไก่","ก๋วยเตี๋ยว","ขนม","คาเฟ่","บุฟเฟ่","ชาบู","หม่าล่า","สูตร","ครัว","อร่อย"] },
+  { key: "ent",    label: "🎬 บันเทิง",  kw: ["ละคร","ซีรีส์","หนัง","ตัวอย่าง","trailer","ตอนที่","นักแสดง","ดารา","รายการ","วาไรตี้","ตลก","แซว","live","ไลฟ์","vlog","challenge"] },
+];
+const YT_MAP = Object.fromEntries(YT_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+function ytCatOf(it) {
+  const hay = ((it.title || "") + " " + (it.channel || "")).toLowerCase();
+  for (const c of YT_CATS) if (YT_MAP[c.key].some((k) => hay.includes(k))) return c.key;
+  return "other";
+}
+
+// แถวปุ่มหมวด — โชว์เฉพาะหมวดที่มีคลิปจริง พร้อมจำนวน (โครงเดียวกับคอลัมน์ X)
+function renderYTCats(panel, all) {
+  let row = $(".xcats", panel);
+  if (!row) {
+    row = document.createElement("div");
+    row.className = "xcats";
+    $(".filters", panel).after(row);
+    row.addEventListener("click", (e) => {
+      const b = e.target.closest(".cat");
+      if (!b) return;
+      state.ytCat = b.dataset.cat || null;
+      renderYTTrends(panel);
+    });
+  }
+  const n = {};
+  all.forEach((it) => { const k = ytCatOf(it); n[k] = (n[k] || 0) + 1; });
+  const chips = [`<button class="cat${state.ytCat ? "" : " on"}" data-cat="">ทั้งหมด ${all.length}</button>`]
+    .concat(
+      YT_CATS.filter((c) => n[c.key]).map(
+        (c) => `<button class="cat${state.ytCat === c.key ? " on" : ""}" data-cat="${c.key}">${c.label} ${n[c.key]}</button>`
+      )
+    )
+    .concat(n.other ? [`<button class="cat${state.ytCat === "other" ? " on" : ""}" data-cat="other">❓ อื่นๆ ${n.other}</button>`] : []);
+  row.innerHTML = chips.join("");
 }
 
 async function reloadYTTrends(opts = {}) {
@@ -275,9 +321,12 @@ function renderYTTrends(panel) {
   const bucket = state.data?.sources?.yttrends;
   if (!bucket) return;
   const kw = (state.gkw || "").trim().toLowerCase(); // global search ใช้คำเดียวกับคอลัมน์อื่น
-  const items = bucket.items.filter(
+  const all = bucket.items.filter(
     (it) => !kw || ((it.title || "") + " " + (it.channel || "")).toLowerCase().includes(kw)
   );
+  const items = (state.ytCat ? all.filter((it) => ytCatOf(it) === state.ytCat) : all).slice();
+  // "ใหม่ล่าสุด" ใช้ได้เฉพาะคลิปที่ต้นทางบอกเวลามา ตัวที่ไม่รู้เวลาให้ไปอยู่ท้าย
+  if (state.ytSort === "new") items.sort((a, b) => (b.published || 0) - (a.published || 0));
 
   const countEl = $("[data-count]", panel);
   if (bucket.error && bucket.items.length === 0) {
@@ -297,11 +346,19 @@ function renderYTTrends(panel) {
     fresh.className = "xfresh";
     $(".phead", panel).after(fresh);
   }
+  // ต้นทางสำรอง (หน้า YouTube รายประเทศ) ไม่ใช่อันดับมาแรงทางการ — ต้องบอกให้รู้
+  // ไม่งั้นผู้ใช้จะอ่านคลิป 900 วิวเป็น "คลิปมาแรงอันดับ 1 ของประเทศ"
+  const modeNote =
+    bucket.mode === "browse"
+      ? `<span class="warn">⚠ ต้นทางอันดับทางการล่ม — นี่คือคลิปจากหน้า YouTube ของประเทศนี้ เรียงตามยอดวิว ไม่ใช่อันดับมาแรงทางการ</span>`
+      : "";
   fresh.innerHTML = !bucket.items.length
     ? ""
     : bucket.stale
     ? `<span class="warn">⚠ ข้อมูลค้างจากรอบก่อน — ต้นทางดึงไม่ได้ชั่วคราว</span>`
-    : `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
+    : modeNote || `<span>🕒 ${bucket.fetchedAt ? "ดึงเมื่อ " + timeAgo(bucket.fetchedAt) : ""}</span>`;
+
+  if (bucket.items.length) renderYTCats(panel, all);
 
   const list = $("[data-list]", panel);
   if (items.length === 0) {
@@ -321,14 +378,22 @@ function renderYTTrends(panel) {
   }
   list.innerHTML = items
     .map((it, i) => {
-      const sub = [it.channel, viewsTh(it.views)].filter(Boolean);
+      // ไลฟ์: ยอดที่เห็นคือคนดูอยู่ตอนนี้ ไม่ใช่ยอดวิวสะสม จึงเขียนให้ต่างกัน
+      const sub = [
+        it.channel,
+        it.live ? (it.views ? viewsTh(it.views).replace(" วิว", " คนดูอยู่") : "") : viewsTh(it.views),
+        it.published ? timeAgo(new Date(it.published).toISOString()) : "",
+      ].filter(Boolean);
       return `<a class="yrow" href="${escapeHtml(it.url)}" target="_blank" rel="noopener" title="เปิดคลิปบน YouTube">
         <span class="rank">${i + 1}</span>
-        <img class="ythumb" src="${escapeHtml(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+        <span class="ythumbwrap">
+          <img class="ythumb" src="${escapeHtml(it.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+          ${it.live ? '<span class="ylive">LIVE</span>' : ""}
+        </span>
         <span class="ymeta">
           <span class="ytitle">${escapeHtml(it.title)}</span>
           <span class="ysub"><span class="ych">${escapeHtml(sub[0] || "")}</span>${
-            sub[1] ? " · " + escapeHtml(sub[1]) : ""
+            sub.length > 1 ? " · " + escapeHtml(sub.slice(1).join(" · ")) : ""
           }</span>
         </span>
       </a>`;
@@ -757,6 +822,12 @@ function wire() {
         state.ytGeo = e.target.value;
         reloadYTTrends();
       });
+    const ytsortEl = $("[data-ytsort]", panel);
+    if (ytsortEl)
+      ytsortEl.addEventListener("change", (e) => {
+        state.ytSort = e.target.value;
+        renderPanel(panel); // เรียงใหม่ฝั่งหน้าเว็บ ไม่ต้องยิงต้นทางซ้ำ
+      });
     const hoursEl = $("[data-hours]", panel);
     if (hoursEl)
       hoursEl.addEventListener("change", (e) => {
@@ -837,7 +908,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 42; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 43; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

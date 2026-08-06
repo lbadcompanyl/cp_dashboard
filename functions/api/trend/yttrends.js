@@ -73,6 +73,7 @@ export async function onRequest(context) {
     const body = {
       geo,
       source: won.id,
+      mode: modeOf(won.id),
       fetchedAt: new Date().toISOString(),
       count: won.items.length,
       items: won.items,
@@ -201,6 +202,7 @@ async function fromInvidious(host, geo) {
     channel: (v && v.author) || "",
     views: num(v && v.viewCount),
     published: num(v && v.published) ? num(v.published) * 1000 : 0,
+    live: !!(v && v.liveNow),
   })));
 }
 
@@ -214,6 +216,7 @@ async function fromPiped(host, geo) {
     channel: (v && v.uploaderName) || "",
     views: num(v && v.views),
     published: num(v && v.uploaded),
+    live: num(v && v.duration) < 0, // Piped ส่ง duration = -1 เมื่อเป็นไลฟ์
   })));
 }
 
@@ -235,16 +238,39 @@ async function fromYouTubeHtml(geo, path = "/feed/trending") {
     if (!tm) continue;
     const cm = c.match(/"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/);
     const vm = c.match(/"viewCountText":\{"simpleText":"((?:[^"\\]|\\.)*)"/);
+    const pm = c.match(/"publishedTimeText":\{"simpleText":"((?:[^"\\]|\\.)*)"/);
+    // ไลฟ์สด: ยอด "วิว" คือคนดูอยู่ตอนนี้ เทียบกับคลิปปกติไม่ได้ ต้องแยกออกมา
+    const live = /"(?:BADGE_STYLE_TYPE_LIVE_NOW|LIVE)"/.test(c) || /watching|กำลังดู/i.test(vm ? vm[1] : "");
     seen.add(idm[1]);
     out.push({
       id: idm[1],
       title: unesc(tm[1]),
       channel: cm ? unesc(cm[1]) : "",
       views: vm ? num(unesc(vm[1]).replace(/[^\d]/g, "")) : 0,
-      published: 0,
+      published: pm ? relativeToMs(unesc(pm[1])) : 0,
+      live,
     });
   }
   return normalize(out);
+}
+
+// "3 ชั่วโมงที่ผ่านมา" / "2 days ago" → เวลาโดยประมาณเป็น ms
+// หน้า YouTube ไม่ให้วันที่จริง ให้มาเป็นข้อความสัมพัทธ์เท่านั้น จึงได้แค่ประมาณ
+const REL_UNITS = [
+  [/วินาที|second/i, 1000],
+  [/นาที|minute/i, 60000],
+  [/ชั่วโมง|hour/i, 3600000],
+  [/วัน|day/i, 86400000],
+  [/สัปดาห์|week/i, 7 * 86400000],
+  [/เดือน|month/i, 30 * 86400000],
+  [/ปี|year/i, 365 * 86400000],
+];
+function relativeToMs(text) {
+  const s = String(text || "");
+  const n = num((s.match(/\d+/) || [])[0]);
+  if (!n) return 0;
+  for (const [re, ms] of REL_UNITS) if (re.test(s)) return Date.now() - n * ms;
+  return 0;
 }
 
 /* ---------- ทำให้เป็นรูปเดียวกัน ---------- */
@@ -259,18 +285,30 @@ function normalize(raw) {
     if (seen.has(id)) continue;
     seen.add(id);
     out.push({
-      rank: out.length + 1,
       id,
       title,
       channel: collapse(r.channel).slice(0, 80),
       views: Number.isFinite(r.views) && r.views > 0 ? r.views : 0,
       published: Number.isFinite(r.published) && r.published > 0 ? r.published : 0,
+      live: !!r.live,
       url: `https://www.youtube.com/watch?v=${id}`,
       thumb: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
     });
-    if (out.length >= MAX_ITEMS) break;
   }
-  return out;
+
+  // ⚠️ ลำดับที่ต้นทางส่งมา "ไม่ใช่" อันดับคนดูเสมอไป — หน้า YouTube รายประเทศ
+  // ส่งมาตามลำดับที่จัดหน้าเว็บ ทำให้คลิป 900 วิวมาอยู่อันดับ 1 ได้ (เจอจริง)
+  // จึงเรียงตามยอดวิวเองทุกครั้ง และดันไลฟ์ไปท้าย เพราะ "วิว" ของไลฟ์คือคนดูสดตอนนั้น
+  // เอามาเทียบกับยอดวิวสะสมของคลิปปกติไม่ได้
+  out.sort((a, b) => (a.live !== b.live ? (a.live ? 1 : -1) : b.views - a.views));
+  const top = out.slice(0, MAX_ITEMS);
+  top.forEach((it, i) => { it.rank = i + 1; });
+  return top;
+}
+
+// แหล่งไหนเป็น "อันดับมาแรงจริง" แหล่งไหนแค่ "คลิปจากหน้าเว็บ" — ผู้ใช้ต้องรู้ว่ากำลังดูอะไร
+function modeOf(sourceId) {
+  return /^(invidious|piped)/.test(sourceId) ? "trending" : "browse";
 }
 
 function idFromUrl(u) {

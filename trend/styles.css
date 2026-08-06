@@ -430,7 +430,10 @@ body {
 .yrow:hover .ytitle { text-decoration: underline; }
 .yrow .rank { flex: 0 0 20px; text-align: right; font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; padding-top: 14px; }
 /* ขนาดคงที่ + aspect-ratio กัน layout กระตุกตอนรูปยังไม่มา */
-.yrow .ythumb { flex: 0 0 84px; width: 84px; aspect-ratio: 16 / 9; border-radius: 6px; object-fit: cover; background: var(--border); }
+.yrow .ythumbwrap { flex: 0 0 84px; position: relative; line-height: 0; }
+.yrow .ythumb { width: 84px; aspect-ratio: 16 / 9; border-radius: 6px; object-fit: cover; background: var(--border); }
+/* ไลฟ์สด — ยอดที่เห็นคือคนดูตอนนี้ ไม่ใช่ยอดวิวสะสม จึงต้องแยกให้ออกด้วยตา */
+.yrow .ylive { position: absolute; left: 3px; bottom: 4px; padding: 0 4px; border-radius: 3px; background: #dc2626; color: #fff; font-size: 9px; font-weight: 700; line-height: 14px; letter-spacing: .3px; }
 .yrow .ymeta { flex: 1; min-width: 0; }
 /* ชื่อคลิปกดได้ → สีน้ำเงินเดียวกับคอลัมน์ X · ชื่อช่องเป็นสีจางเพราะกดไม่ได้ */
 .yrow .ytitle { color: var(--link); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
