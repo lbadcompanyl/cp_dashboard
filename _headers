@@ -13,3 +13,11 @@
   Cache-Control: no-cache
 /*.html
   Cache-Control: no-cache
+
+# ⭐ สำคัญกับเครื่องที่ติดตั้งเป็นแอป — sw.js คือช่องทางเดียวที่ไปถึงเครื่องที่ค้างอยู่
+# ถ้าปล่อยให้ cache เบราว์เซอร์จะรอถึง 24 ชม. ก่อนไปเช็คตัวใหม่
+# ใส่ no-cache แล้วมันจะเช็คทุกครั้งที่เปิดแอป -> ได้ของใหม่ทันที ไม่ต้องถอนติดตั้ง
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
