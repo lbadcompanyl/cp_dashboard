@@ -15,10 +15,11 @@ const MAX_TRENDS = 50;
 
 // จัดหมวดด้วย Workers AI (โมเดลเดียวกับที่ /api/ir/feeds ใช้จัดหมวดข่าว)
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct";
-const AI_BATCH = 25;            // รวมหลายคำต่อ 1 call
+const AI_BATCH = 10;            // ก้อนเล็กแม่นกว่า — โมเดล 3B หลุดลำดับง่ายถ้าขอทีละ 25
+const AI_MAX_CALLS = 12;        // กันเรียกรัวตอนแบ่งก้อนย่อย (โควตา Workers AI มีจำกัด)
 const CAT_TTL = 7 * 24 * 3600;  // หมวดของแท็กไม่ค่อยเปลี่ยน เก็บยาวได้
 // ⚠️ บวกเลขนี้เมื่อแก้วิธีจัดหมวด ไม่งั้น response เดิม (ที่ยังติดหมวดผิด) ถูกเสิร์ฟต่อ
-const DATA_VER = "2";
+const DATA_VER = "3";
 const CATS = ["ent", "sport", "pol", "biz", "news", "other"];
 // ⚠️ บวกเลขต่อท้ายเมื่อแก้วิธีจัดหมวด — หมวดที่จัดผิดถูก cache ไว้ 7 วัน
 // ถ้าไม่เปลี่ยน key ของผิดเดิมจะถูกเสิร์ฟต่อไปทั้งที่แก้โค้ดแล้ว
@@ -32,9 +33,9 @@ const CAT_MAP_KEY = "xcatmap2"; // เก็บหมวดของทุกแ
 const CAT_RE = [
   ["pol",   /ศาล|รัฐบาล|นายก|สภา|เลือกตั้ง|ม็อบ|พรรค|รัฐมนตรี|กฎหมาย|อภิปราย|ยุบสภา|ครม/i],
   ["news",  /ด่วน|อุบัติเหตุ|ไฟไหม้|แผ่นดินไหว|น้ำท่วม|เสียชีวิต|จับกุม|คดี|ชันสูตร/i],
-  ["sport", /\bfc\b|\bcup\b|league|\bmatch\b|\bvs\b|tournament|ฟุตบอล|วอลเลย์|มวย|ทีมชาติ|ลีก|แข่งขัน/i],
+  ["sport", /\bfc\b|\bcup\b|world ?cup|league|\bmatch\b|\bvs\b|tournament|ฟุตบอล|วอลเลย์|มวย|ทีมชาติ|ลีก|แข่งขัน/i],
   ["biz",   /\bsale\b|promotion|collection|collab|โปรโมชั่น|ลดราคา|เปิดตัว|คอลแลบ/i],
-  ["ent",   /concert|world ?tour|fanmeet|fansign|debut|comeback|\bmv\b|\bost\b|selca|\bhbd\b|birthday|คอนเสิร์ต|ซีรีส์|ละคร|หนัง|เพลง|แฟนมีต|แฟนไซน์|เดบิวต์|คัมแบ็ก|ตอนพิเศษ|ปิดกล้อง|บวงสรวง|วันเกิด/i],
+  ["ent",   /concert|world ?tour|fanmeet|fansign|debut|comeback|\bmv\b|\bost\b|selca|\bhbd\b|birthday|spoiler|teaser|trailer|\bep\s?\d|\bตอน\s?\d|คอนเสิร์ต|ซีรีส์|ละคร|หนัง|เพลง|แฟนมีต|แฟนไซน์|เดบิวต์|คัมแบ็ก|ตอนพิเศษ|ปิดกล้อง|บวงสรวง|วันเกิด/i],
 ];
 
 function guessCat(name) {
@@ -54,7 +55,8 @@ async function classifyBatch(env, names) {
     "news = breaking news, accidents, disasters, crime\n" +
     "other = none of the above\n" +
     "Most Thai trending hashtags are fandom/entertainment — prefer ent when it names a person, show or fan event.\n" +
-    "Reply with ONLY the codes, one per line, in the SAME order. No numbers, no other text.\n\n" +
+    `Output EXACTLY ${names.length} lines, one code per line, in the SAME order as the input.\n` +
+    "Each line must contain ONLY the code word and nothing else. No numbering, no explanation, no blank lines.\n\n" +
     list;
   const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 400 });
   const text = String((out && (out.response || out.result)) || "").toLowerCase();
@@ -63,9 +65,11 @@ async function classifyBatch(env, names) {
   // เดิมใช้ text.match() กวาดทั้งข้อความ ถ้า AI แถมคำนำหน้าหรือตอบไม่ครบ
   // ลำดับจะเลื่อนทั้งชุด แล้วทุกแท็กหลังจากนั้นได้หมวดของตัวอื่นไปแทน
   // (เจอจริง: #ออฟโรด · ENGFA · #รักษ์ ถูกจัดเป็น "การเมือง" ทั้งหมด)
+  // รับเฉพาะบรรทัดที่เป็น "โค้ดล้วนๆ" (เผื่อเลขลำดับนำหน้า) — บรรทัดอธิบายอย่าง
+  // "Here are the news categories:" จะถูกทิ้ง ไม่ถูกนับเป็นคำตอบจนลำดับเลื่อน
   const codes = [];
   for (const line of text.split(/\r?\n/)) {
-    const m = line.match(/\b(ent|sport|pol|biz|news|other)\b/);
+    const m = line.trim().match(/^(?:\d+[.)]\s*)?(ent|sport|pol|biz|news|other)\b[\s.]*$/);
     if (m) codes.push(m[1]);
   }
   // จำนวนไม่ตรง = จับคู่ไม่ได้อย่างมั่นใจ → ทิ้งทั้งชุดดีกว่าเดาผิดแล้ว cache ไว้ 7 วัน
@@ -103,22 +107,14 @@ async function addCategories(trends, env, ctx, diag) {
   diag.cached = trends.length - ask.length;
   diag.asked = 0;
 
+  const st = { dirty, calls: 0 };
   if (env.AI && ask.length) {
     for (let i = 0; i < ask.length; i += AI_BATCH) {
-      const chunk = ask.slice(i, i + AI_BATCH);
-      try {
-        const cats = await classifyBatch(env, chunk.map((x) => x.name));
-        chunk.forEach((t, j) => {
-          const c = cats[j];
-          if (!c || !CATS.includes(c)) return;
-          t.cat = c;
-          map[t.name] = c;
-          dirty = true;
-          diag.asked++;
-        });
-      } catch (e) { diag.aiErr = String((e && e.message) || e).slice(0, 100); }
+      await classifyInto(env, ask.slice(i, i + AI_BATCH), map, diag, st, 0);
     }
   }
+  dirty = st.dirty;
+  diag.aiCalls = st.calls;
 
   // ตัดของเก่าทิ้งไม่ให้ blob โตไม่รู้จบ (KV จำกัด 25MB/ค่า แต่ยิ่งเล็กยิ่งเร็ว)
   const keys = Object.keys(map);
@@ -132,6 +128,33 @@ async function addCategories(trends, env, ctx, diag) {
 
   if (kv && dirty) {
     ctx.waitUntil(kv.put(mapKey, JSON.stringify(map), { expirationTtl: CAT_TTL }).catch(() => {}));
+  }
+}
+
+// จัดหมวดก้อนหนึ่ง — ถ้าคำตอบไม่ตรงจำนวน ให้ผ่าครึ่งแล้วลองใหม่แทนที่จะทิ้งทั้งชุด
+//
+// ⚠️ เคยทิ้งทั้งชุดเมื่อจำนวนไม่ตรง ผลคือแท็ก 48 จาก 50 ตกไปอยู่ "อื่นๆ" หมด
+// การทิ้งกันหมวดผิดได้จริง แต่ถ้าไม่มีทางกู้เลยก็เท่ากับไม่มีหมวด — ต้องมีทั้งสองอย่าง
+async function classifyInto(env, chunk, map, diag, st, depth) {
+  if (!chunk.length || st.calls >= AI_MAX_CALLS) return;
+  st.calls++;
+  try {
+    const cats = await classifyBatch(env, chunk.map((x) => x.name));
+    chunk.forEach((t, j) => {
+      const c = cats[j];
+      if (!c || !CATS.includes(c)) return;
+      t.cat = c;
+      map[t.name] = c;
+      st.dirty = true;
+      diag.asked++;
+    });
+  } catch (e) {
+    diag.aiErr = String((e && e.message) || e).slice(0, 100);
+    if (depth >= 2 || chunk.length <= 2) return; // ก้อนเล็กมากแล้วยังไม่ได้ ก็ปล่อยเป็น "อื่นๆ"
+    const mid = Math.ceil(chunk.length / 2);
+    diag.splits = (diag.splits || 0) + 1;
+    await classifyInto(env, chunk.slice(0, mid), map, diag, st, depth + 1);
+    await classifyInto(env, chunk.slice(mid), map, diag, st, depth + 1);
   }
 }
 
