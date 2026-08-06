@@ -392,7 +392,7 @@ body {
 /* บอร์ดเป็น 4 คอลัมน์ → อันละ 2 ช่อง = ครึ่งความกว้าง อยู่ข้างกันพอดี
    จอ ≤1200px บอร์ดเหลือ 2 คอลัมน์ → span 2 กลายเป็นเต็มแถว ซ้อนกันเองอัตโนมัติ */
 .panel[data-source="xtrends"],
-.panel[data-source="yttrends"] { grid-column: span 2; max-height: 440px; }
+.panel[data-source="yttrends"] { grid-column: span 2; max-height: clamp(420px, 68vh, 760px); }
 .panel[data-source="xtrends"] .list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

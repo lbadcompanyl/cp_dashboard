@@ -19,18 +19,18 @@
 // ⚠️ บวกเลขนี้ทุกครั้งที่ "โครงของ items เปลี่ยน" (เพิ่ม/แก้ field, เปลี่ยนวิธีเรียง)
 // ไม่งั้นของเก่าใน KV/edge cache จะถูกเสิร์ฟต่ออีกเป็นชั่วโมงทั้งที่โค้ดใหม่ขึ้นไปแล้ว
 // เคยพลาดมาแล้ว: แก้วิธีเรียง + เพิ่มธง live แต่ผู้ใช้ยังเห็นของเก่าเรียงผิดอยู่ 1 ชม.
-const DATA_VER = "5";
+const DATA_VER = "6";
 
 const FETCH_TIMEOUT = 7000;
 const EDGE_TTL = 1800;          // 30 นาที — คลิปมาแรงขยับช้า
 const KV_FRESH = 60 * 60 * 1000; // ของใน KV อายุไม่เกิน 1 ชม. = ยังสด ไม่ต้องยิงใหม่
-const KV_TTL = 4 * 24 * 3600;    // ต้องเก็บนานกว่า 48 ชม. เพราะใช้เทียบยอดวิวย้อนหลัง
+const KV_TTL = 9 * 24 * 3600;    // ต้องเก็บนานกว่า 7 วัน เพราะใช้เทียบยอดวิวย้อนหลัง
 const MAX_ITEMS = 30;
 
 // ช่วงเวลาที่ใช้วัด "วิวเพิ่มขึ้นเท่าไหร่" (ชั่วโมง)
-const WINDOWS = [4, 24, 48];
-const HIST_KEEP_MS = 50 * 3600 * 1000; // เก็บสถิติย้อนหลังพอสำหรับหน้าต่าง 48 ชม.
-const HIST_MAX = 60;
+const WINDOWS = [4, 24, 48, 72, 168];
+const HIST_KEEP_MS = 175 * 3600 * 1000; // เก็บสถิติย้อนหลังพอสำหรับหน้าต่าง 7 วัน
+const HIST_MAX = 200;                   // เก็บชั่วโมงละครั้ง 7 วัน = ~168 ครั้ง เผื่อไว้เล็กน้อย
 
 // instance สาธารณะ — ล่มได้เป็นเรื่องปกติ จึงใส่ไว้หลายตัวและมี YouTube ตรงปิดท้าย
 //
@@ -140,7 +140,10 @@ function withDeltas(items, hist, now) {
     const d = {};
     for (const w of WINDOWS) {
       const target = now - w * 3600000;
-      const snap = nearestSnap(hist, target, w * 3600000 * 0.4);
+      // ยอมให้ภาพที่ใช้เทียบเหลื่อมได้ 15% ของช่วง (อย่างน้อย 1.5 ชม.)
+      // เดิมใช้ 40% ซึ่งหน้าต่าง 7 วันจะเหลื่อมได้ถึง ±67 ชม. = ตัวเลขเพี้ยนโดยไม่รู้ตัว
+      const tol = Math.max(1.5 * 3600000, w * 3600000 * 0.15);
+      const snap = nearestSnap(hist, target, tol);
       if (snap && Number.isFinite(snap.v[it.id])) {
         d["d" + w] = Math.max(0, it.views - snap.v[it.id]);
       } else if (it.published && it.published >= target) {
