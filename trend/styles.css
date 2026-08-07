@@ -439,7 +439,8 @@ body {
 .xrow:hover .xname { text-decoration: underline; }
 
 /* ---- คอลัมน์ X: ปุ่มหมวด + ป้ายความสด ---- */
-.xfresh { padding: 5px 14px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); }
+/* อยู่ล่างสุดของคอลัมน์แล้ว เส้นคั่นจึงต้องอยู่ด้านบนแทนด้านล่าง */
+.xfresh { padding: 5px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
 .xfresh .warn { color: #f59e0b; }
 
 .xcats { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); }

@@ -228,8 +228,11 @@ function renderXTrends(panel) {
   if (!fresh) {
     fresh = document.createElement("div");
     fresh.className = "xfresh";
-    $(".phead", panel).after(fresh);
   }
+  // ไว้ล่างสุดของคอลัมน์ ไม่ใช่ใต้หัวเรื่อง — ข้อความพวกนี้เป็นหมายเหตุ ไม่ใช่ของที่ต้องอ่านก่อน
+  // เอาไว้บนจะเบียดพื้นที่อ่านทุกวินาที ทั้งที่อ่านครั้งเดียวก็พอ
+  // appendChild ย้ายตัวเดิมได้ด้วย — เครื่องที่ค้าง DOM รุ่นก่อนไว้จะถูกย้ายลงล่างให้เอง
+  panel.appendChild(fresh);
   if (bucket.items.length) {
     const src = bucket.sourceUpdatedAt ? `ต้นทางอัปเดต ${timeAgo(bucket.sourceUpdatedAt)}` : "";
     const got = bucket.fetchedAt ? `ดึงเมื่อ ${timeAgo(bucket.fetchedAt)}` : "";
@@ -422,8 +425,11 @@ function renderYTTrends(panel) {
   if (!fresh) {
     fresh = document.createElement("div");
     fresh.className = "xfresh";
-    $(".phead", panel).after(fresh);
   }
+  // ไว้ล่างสุดของคอลัมน์ ไม่ใช่ใต้หัวเรื่อง — ข้อความพวกนี้เป็นหมายเหตุ ไม่ใช่ของที่ต้องอ่านก่อน
+  // เอาไว้บนจะเบียดพื้นที่อ่านทุกวินาที ทั้งที่อ่านครั้งเดียวก็พอ
+  // appendChild ย้ายตัวเดิมได้ด้วย — เครื่องที่ค้าง DOM รุ่นก่อนไว้จะถูกย้ายลงล่างให้เอง
+  panel.appendChild(fresh);
   // ต้นทางสำรอง (หน้า YouTube รายประเทศ) ไม่ใช่อันดับมาแรงทางการ — ต้องบอกให้รู้
   // ไม่งั้นผู้ใช้จะอ่านคลิป 900 วิวเป็น "คลิปมาแรงอันดับ 1 ของประเทศ"
   const needMore = isGrowth && !hasDelta;
@@ -1102,7 +1108,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 72; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 73; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
