@@ -61,6 +61,7 @@ body {
   gap: 16px;
   padding: 16px;
   align-items: start;
+  max-width: 880px; /* จอกว้างๆ ไม่ต้องยืดเต็ม อ่านยาก */
 }
 .card {
   background: #16181d;

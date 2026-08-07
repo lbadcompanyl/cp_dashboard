@@ -298,9 +298,13 @@
     panel.className = "flg-panel" + (isAdmin() ? " flg-inline" : "");
     (isAdmin() && mountCut ? mountCut : document.body).appendChild(panel);
 
-    kwPanel = document.createElement("div");
-    kwPanel.className = "flg-panel" + (isAdmin() ? " flg-inline" : "");
-    (isAdmin() && mountKw ? mountKw : document.body).appendChild(kwPanel);
+    // โหมด admin: สร้างกล่อง ➕ เพิ่ม keyword เฉพาะเมื่อมีที่ให้วางจริง
+    // (หน้า admin ตอนนี้ไม่มีกล่องนี้แล้ว — ➕ อยู่บนแดชบอร์ดที่เดียว)
+    if (!isAdmin() || mountKw) {
+      kwPanel = document.createElement("div");
+      kwPanel.className = "flg-panel" + (isAdmin() ? " flg-inline" : "");
+      (isAdmin() && mountKw ? mountKw : document.body).appendChild(kwPanel);
+    }
 
     catPicker = document.createElement("div");
     catPicker.className = "flg-catpick";
@@ -380,6 +384,7 @@
   function openKw(source) {
     if (UI === "none") return; // แดชบอร์ดไม่มีกล่องนี้แล้ว — ย้ายไปหน้า /admin/
     ensureUi();
+    if (!kwPanel) return; // หน้านี้ไม่มีกล่องนี้
     if (!isAdmin()) closePanel(); // admin กางคู่กันได้ ไม่ต้องไล่ปิดอีกกล่อง
     const alerts = alertSources();
     if (!source || !alerts.includes(source)) source = alerts[0];

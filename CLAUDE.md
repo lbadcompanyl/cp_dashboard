@@ -87,7 +87,7 @@ index.html      landing — การ์ดลิงก์ทุกแดชบ�
 trend/          PR Trend Dashboard — Google Alerts + Google Trends   ← งานฝั่ง PR
 ir/             IR News Monitor — ข่าวนักลงทุนสัมพันธ์
 issue/          Issue Dashboard — CP + หัวข้อที่จับตามอง
-admin/          หน้าจัดการ — 🚩 คำแนะนำตัดข่าว + ➕ เพิ่ม keyword (ไม่มีลิงก์จาก landing)
+admin/          หน้าจัดการ — 🚩 คำแนะนำตัดข่าว อย่างเดียว (ไม่มีลิงก์จาก landing)
 sd.html         SD Trends — ความยั่งยืน
 trends.html     Trends Explorer (เก่า) — ไม่มีลิงก์จาก landing แล้ว
 functions/api/  Cloudflare Pages Functions (trend / ir / sd / flags)
@@ -109,7 +109,8 @@ functions/api/  Cloudflare Pages Functions (trend / ir / sd / flags)
   `"fab"` ปุ่มลอยทั้ง 2 ปุ่ม (ของเดิม) · `"kw"` เหลือแต่ ➕ เพิ่ม keyword ← **แดชบอร์ดใช้อันนี้**
   · `"none"` ไม่มีปุ่มลอยเลย · `"admin"` กางในหน้า
 - ⚠️ **ย้ายไป admin แค่ 🚩 คำแนะนำตัดข่าว เท่านั้น** — เจ้าของสั่งให้ **➕ เพิ่ม keyword อยู่บน
-  แดชบอร์ดต่อ** (ใช้บ่อย ต้องกดได้ทันทีตอนอ่านข่าว) หน้า admin มีให้ด้วยเป็นทางที่สอง
+  แดชบอร์ดที่เดียว** (ใช้บ่อย ต้องกดได้ทันทีตอนอ่านข่าว) และสั่งเอาออกจากหน้า admin แล้ว
+  หน้า admin จึงไม่ส่ง `mountKw` → `flags.js` ไม่สร้างกล่องนั้นเลย
 - **ปุ่ม ⚑ กับ 🗂 บนการ์ดยังอยู่บนแดชบอร์ด** — เป็นทางเดียวที่ข่าวจะเข้ากอง "คำแนะนำตัดข่าว"
   ถอดออกเมื่อไหร่ = ฟีเจอร์ตายทั้งอัน
 - หน้า admin ไม่มี `.panel` ให้ `flags.js` อ่านชื่อคอลัมน์เอง จึงมีตาราง `SCOPES` ใน `admin/app.js`
