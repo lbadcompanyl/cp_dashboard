@@ -35,6 +35,15 @@ body {
 .home:hover { border-color: #2a78d6; color: #6fb0ff; }
 .vtag { margin-left: auto; font-size: 11px; opacity: .5; white-space: nowrap; }
 
+/* คอลัมน์เนื้อหาอยู่กลางจอ — แถบบนยังกินเต็มความกว้างตามปกติ
+   body เป็น block ไม่ใช่ flex ตรงนี้ margin auto จึงใช้ได้ (ดูกับดัก auto-margin ใน CLAUDE.md) */
+.scopes, .wrap, .foot {
+  width: 100%;
+  max-width: 1040px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .scopes {
   display: flex;
   flex-wrap: wrap;
@@ -61,7 +70,6 @@ body {
   gap: 16px;
   padding: 16px;
   align-items: start;
-  max-width: 880px; /* จอกว้างๆ ไม่ต้องยืดเต็ม อ่านยาก */
 }
 .card {
   background: #16181d;
