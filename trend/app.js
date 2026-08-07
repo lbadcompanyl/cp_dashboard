@@ -20,6 +20,9 @@ const state = {
   ytSort: "rank",
   ytWin: 24,         // ช่วงเวลาที่ใช้วัด "มาแรง" (ชม.) — ใช้เฉพาะตอน ytSort = "growth"
   ytHideLive: true,  // ไลฟ์ไม่มียอดวิวสะสมให้เทียบ ปกติจึงซ่อนไว้
+  // คอลัมน์ "เช็คคำ" — ผลของคำที่เพิ่งเช็ค เก็บใน state เพราะ renderAll() ทุก 3 นาที
+  // สร้าง innerHTML ใหม่ทั้งก้อน ถ้าเก็บไว้ใน DOM อย่างเดียวผลจะหายทุกรอบ
+  kwq: "", kwGeo: "TH", kwTime: "today 12-m", kwRes: null, kwBusy: false,
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -74,13 +77,21 @@ function withinRecency(iso, hours) {
 }
 
 // ---------- data ----------
+// คอลัมน์ที่ "ไม่ได้" มาจากรอบโหลดนี้ — โหลดเองแยก หรือรอผู้ใช้สั่ง
+//   yttrends : โหลดแยกเพราะต้นทางสาธารณะอืด และเขียน skeleton/error ของตัวเองอยู่แล้ว
+//   kwcheck  : ไม่มีข้อมูลอัตโนมัติเลย รอผู้ใช้พิมพ์คำ
+// ⚠️ ถ้าเหวี่ยง skeleton/error ใส่ทุกคอลัมน์ สองอันนี้จะขึ้น "ดึงข้อมูลไม่สำเร็จ"
+// ทั้งที่ตัวเองไม่ได้พังและยังกดใช้ได้ตามปกติ
+const SELF_LOADING = new Set(["yttrends", "kwcheck"]);
+const feedPanels = () => $$(".panel").filter((p) => !SELF_LOADING.has(p.dataset.source));
+
 async function load(opts = {}) {
   const silent = !!opts.silent; // auto-refresh: ไม่ล้างเป็น skeleton / ไม่กระโดด scroll
   const btn = $("#refresh");
   btn.disabled = true;
   if (!silent) {
     $("#updated").textContent = "กำลังโหลด…";
-    $$(".panel").forEach((p) => {
+    feedPanels().forEach((p) => {
       $("[data-list]", p).innerHTML = `<div class="state skeleton">กำลังดึงข้อมูล…</div>`;
     });
   }
@@ -111,7 +122,7 @@ async function load(opts = {}) {
   } catch (e) {
     if (!silent) {
       $("#updated").textContent = "โหลดไม่สำเร็จ";
-      $$(".panel").forEach((p) => {
+      feedPanels().forEach((p) => {
         $("[data-list]", p).innerHTML = `<div class="state error">ดึงข้อมูลไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
       });
     }
@@ -676,11 +687,121 @@ function injectCatChips(panel, cats, allLabel) {
   });
 }
 
+// ---------- เช็คคำ: คนสนใจแค่ไหน ก่อนเอาเข้า Alert ----------
+const KW_DIR = { up: { icon: "📈", label: "กำลังมา", cls: "up" }, down: { icon: "📉", label: "ซาลง", cls: "down" }, flat: { icon: "➡️", label: "ทรงตัว", cls: "flat" } };
+
+async function runKwCheck() {
+  const panel = $('.panel[data-source="kwcheck"]');
+  if (!panel || state.kwBusy) return;
+  const q = (state.kwq || "").trim();
+  if (!q) return;
+  state.kwBusy = true;
+  state.kwRes = null;
+  renderKwCheck(panel);
+  try {
+    const res = await fetch(
+      `/api/trend/kwcheck?q=${encodeURIComponent(q)}&geo=${encodeURIComponent(state.kwGeo)}&time=${encodeURIComponent(state.kwTime)}`
+    );
+    state.kwRes = await res.json();
+  } catch (e) {
+    state.kwRes = { q, error: e.message };
+  }
+  state.kwBusy = false;
+  renderKwCheck(panel);
+}
+
+// กราฟเส้นเล็กๆ วาดเอง — ค่า 0-100 ของ Google Trends ไม่ต้องมีแกน แค่ให้เห็นรูปทรง
+function kwSpark(points) {
+  if (!points || points.length < 2) return "";
+  const w = 260, h = 44, max = Math.max(...points.map((p) => p.v), 1);
+  const step = w / (points.length - 1);
+  const d = points.map((p, i) => `${i ? "L" : "M"}${(i * step).toFixed(1)},${(h - (p.v / max) * h).toFixed(1)}`).join("");
+  return `<svg class="kwspark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"/></svg>`;
+}
+
+function renderKwCheck(panel) {
+  const list = $("[data-list]", panel);
+  const countEl = $("[data-count]", panel);
+  const r = state.kwRes;
+
+  if (state.kwBusy) {
+    countEl.className = "pcount"; countEl.textContent = "กำลังเช็ค…";
+    list.innerHTML = `<div class="state skeleton">กำลังถาม Google Trends…</div>`;
+    return;
+  }
+  if (!r) {
+    countEl.className = "pcount"; countEl.textContent = "—";
+    list.innerHTML = `<div class="state">พิมพ์คำแล้วกด "เช็ค" — จะได้ระดับความสนใจย้อนหลัง คำที่คนค้นคู่กัน และคำใกล้เคียงที่กำลังมา<br><br>ใช้เทียบว่าคำใหม่น่าเอาเข้า Alert ไหม โดยลองเช็คคำที่มีอยู่แล้วเทียบดู</div>`;
+    return;
+  }
+  if (r.error) {
+    countEl.className = "errbadge"; countEl.textContent = "⚠ เช็คไม่ได้";
+    list.innerHTML = `<div class="state error">เช็คไม่สำเร็จ: ${escapeHtml(r.error)}</div>`;
+    return;
+  }
+
+  const i = r.interest;
+  countEl.className = "pcount";
+  countEl.textContent = i ? `เฉลี่ย ${i.avg}/100` : "ไม่มีข้อมูล";
+
+  const parts = [];
+  parts.push(`<div class="kwterm">${escapeHtml(r.q)}</div>`);
+
+  if (i) {
+    const dir = KW_DIR[i.direction] || KW_DIR.flat;
+    parts.push(`<div class="kwbox">
+      <div class="kwrow"><span class="kwbig">${i.avg}</span><span class="kwunit">/100 เฉลี่ย</span>
+        <span class="kwdir ${dir.cls}">${dir.icon} ${dir.label}${i.changePct != null ? ` ${i.changePct > 0 ? "+" : ""}${i.changePct}%` : ""}</span></div>
+      ${kwSpark(i.points)}
+      <div class="kwmeta">สูงสุด ${i.peak} · ล่าสุด ${i.latest} · ${escapeHtml(r.q)} เทียบกับตัวเองในช่วงที่เลือก (100 = จุดที่ค้นเยอะสุด)</div>
+    </div>`);
+  } else if (r.empty) {
+    // สำคัญ: "ไม่มีใครค้น" ไม่ใช่ "ระบบพัง" — ตอบคำถามผู้ใช้ได้เลยว่าคำนี้ไม่ต้องเอาเข้า Alert
+    parts.push(`<div class="kwbox"><div class="kwmeta">Google ไม่มีข้อมูลพอสำหรับคำนี้ — แปลว่าคนค้นน้อยมากจนวัดไม่ได้ ไม่คุ้มเอาเข้า Alert</div></div>`);
+  }
+
+  // ยอดค้นหาจริงต่อเดือน — มีต่อเมื่อ token ของ Google Ads พร้อม
+  const v = r.volume || {};
+  if (v.available && v.avgMonthly) {
+    parts.push(`<div class="kwbox">
+      <div class="kwrow"><span class="kwbig">${v.avgMonthly.toLocaleString("th-TH")}</span><span class="kwunit">ครั้ง/เดือน (เฉลี่ย)</span></div>
+      <div class="kwmeta">การแข่งขันโฆษณา: ${escapeHtml(v.competition || "-")}${v.competitionIndex != null ? ` (${v.competitionIndex}/100)` : ""}</div>
+    </div>`);
+  } else if (!v.available) {
+    parts.push(`<div class="kwnote">ℹ️ ยอดค้นหาจริงต่อเดือนยังไม่เปิด — รอ developer token ของ Google Ads${(v.missing || []).length ? ` (ยังขาด ${v.missing.length} ค่า)` : ""}</div>`);
+  }
+
+  const chips = (arr, title) =>
+    arr && arr.length
+      ? `<div class="kwsec"><div class="kwsectitle">${title}</div><div class="kwchips">${arr
+          .map((k) => `<button type="button" class="kwchip" data-kwtry="${escapeHtml(k.query)}">${escapeHtml(k.query)}<span>${escapeHtml(k.label)}</span></button>`)
+          .join("")}</div></div>`
+      : "";
+  parts.push(chips(r.related?.rising, "🔥 คำใกล้เคียงที่กำลังมา"));
+  parts.push(chips(r.related?.top, "🔁 คนค้นคู่กันบ่อย"));
+
+  if ((r.errors || []).length) {
+    parts.push(`<div class="kwnote">⚠ บางส่วนดึงไม่ได้: ${escapeHtml(r.errors.join(" · "))}</div>`);
+  }
+  list.innerHTML = parts.filter(Boolean).join("");
+
+  // กดคำที่แนะนำ = เช็คคำนั้นต่อทันที ไม่ต้องพิมพ์เอง
+  $$("[data-kwtry]", list).forEach((b) =>
+    b.addEventListener("click", () => {
+      state.kwq = b.dataset.kwtry;
+      const inp = $("[data-kwq]", panel);
+      if (inp) inp.value = state.kwq;
+      runKwCheck();
+    })
+  );
+}
+
 function renderPanel(panel) {
   const source = panel.dataset.source;
   if (source === "trends") return renderTrends(panel);
   if (source === "xtrends") return renderXTrends(panel);
   if (source === "yttrends") return renderYTTrends(panel);
+  if (source === "kwcheck") return renderKwCheck(panel);
 
   const bucket = state.data?.sources?.[source] || { items: [] };
   const f = state.filters[source] || { kw: "", rc: "all" };
@@ -984,6 +1105,20 @@ function wire() {
         state.xCat = null; // หมวดที่เลือกไว้อาจไม่มีอยู่ในโหมดใหม่ ล้างทิ้งกันคอลัมน์ว่างเปล่า
         renderPanel(panel);
       });
+    // ---- คอลัมน์เช็คคำ ----
+    const kwqEl = $("[data-kwq]", panel);
+    if (kwqEl) {
+      kwqEl.addEventListener("input", (e) => { state.kwq = e.target.value; });
+      kwqEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runKwCheck(); } });
+    }
+    const kwgoEl = $("[data-kwgo]", panel);
+    if (kwgoEl) kwgoEl.addEventListener("click", () => runKwCheck());
+    const kwgeoEl = $("[data-kwgeo]", panel);
+    // เปลี่ยนประเทศ/ช่วงเวลาแล้วเช็คซ้ำให้เลย ถ้าเคยเช็คคำไว้แล้ว — ไม่ต้องกดซ้ำเอง
+    if (kwgeoEl) kwgeoEl.addEventListener("change", (e) => { state.kwGeo = e.target.value; if (state.kwRes) runKwCheck(); });
+    const kwtimeEl = $("[data-kwtime]", panel);
+    if (kwtimeEl) kwtimeEl.addEventListener("change", (e) => { state.kwTime = e.target.value; if (state.kwRes) runKwCheck(); });
+
     const ytkindEl = $("[data-ytkind]", panel);
     if (ytkindEl)
       ytkindEl.addEventListener("click", (e) => {
@@ -1107,10 +1242,16 @@ if (window.Flags) {
   Flags.setKeywords(HARD_KW); // แสดงทันทีก่อนโหลด
 }
 wire();
+// คอลัมน์เช็คคำไม่ได้ผูกกับ load() — ต้องวาดครั้งแรกเอง
+// ไม่งั้นถ้า load() ล้ม renderAll() จะไม่ถูกเรียก แล้วคอลัมน์นี้จะว่างเปล่าโดยไม่บอกอะไรเลย
+{
+  const kwPanel = $('.panel[data-source="kwcheck"]');
+  if (kwPanel) renderKwCheck(kwPanel);
+}
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 74; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 75; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

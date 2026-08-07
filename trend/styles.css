@@ -9,6 +9,7 @@
   --trends: #ea580c;
   --xtrends: #7c3aed;
   --yttrends: #dc2626;
+  --kwcheck: #0891b2;
   --link: #2563eb; /* สีของอะไรที่กดได้ ใช้ให้เหมือนกันทุกคอลัมน์ */
   --shadow: 0 1px 3px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
   --radius: 12px;
@@ -156,6 +157,7 @@ body {
 .dot.alert { background: var(--alert); }
 .dot.trends { background: var(--trends); }
 .dot.xtrends { background: var(--xtrends); }
+.dot.kwcheck { background: var(--kwcheck); }
 .panel[data-source="news"] .phead { border-bottom-color: var(--news); }
 .panel[data-source="alert"] .phead { border-bottom-color: var(--alert); }
 .panel[data-source="trends"] .phead { border-bottom-color: var(--trends); }
@@ -533,3 +535,28 @@ body {
 @media (prefers-reduced-motion: reduce) { #scrollcue .cuearrow { animation: none; } }
 /* มือถือเป็น carousel ปัดซ้ายขวา หน้าไม่ได้เลื่อนลง จึงไม่ต้องมีปุ่มนี้ */
 @media (max-width: 640px) { #scrollcue { display: none !important; } }
+
+/* ---- คอลัมน์เช็คคำ ---- */
+.panel[data-source="kwcheck"] .phead { border-bottom-color: var(--kwcheck); }
+.panel[data-source="kwcheck"] .kw { min-width: 140px; }
+.panel[data-source="kwcheck"] .filters [data-kwgo] { background: var(--kwcheck); border-color: var(--kwcheck); color: #fff; font-weight: 600; }
+.kwterm { font-size: 15px; font-weight: 700; padding: 2px 4px 8px; }
+.kwbox { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.kwrow { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.kwbig { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.kwunit { font-size: 12px; color: var(--muted); }
+.kwdir { margin-left: auto; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.kwdir.up { color: var(--news); }
+.kwdir.down { color: #dc2626; }
+.kwdir.flat { color: var(--muted); }
+/* เส้นกราฟยืดเต็มกว้างเสมอ — ไม่มีแกน จึงไม่ต้องรักษาสัดส่วน */
+.kwspark { display: block; width: 100%; height: 44px; margin: 8px 0 4px; }
+.kwspark path { fill: none; stroke: var(--kwcheck); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.kwmeta { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.kwnote { font-size: 11.5px; color: var(--muted); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; }
+.kwsec { margin-top: 10px; }
+.kwsectitle { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.kwchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.kwchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--link); border-radius: 999px; padding: 4px 10px; font-size: 12px; font-family: inherit; cursor: pointer; }
+.kwchip span { color: var(--muted); font-size: 10.5px; }
+.kwchip:hover { border-color: var(--kwcheck); }

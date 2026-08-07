@@ -114,6 +114,84 @@ function fmtVolume(n) {
   return n + "+";
 }
 
+// ---------- เช็คคำเดียว: ความสนใจตามเวลา + คำที่เกี่ยวข้อง ----------
+//
+// ใช้ explore ครั้งเดียวแล้วหยิบ 2 widget ต่อจากนั้น — explore คือขั้นที่โดน rate limit ง่ายสุด
+// (ต้องขอ token ใหม่ทุกครั้ง) ยิงรอบเดียวแล้วใช้ทั้งคู่จึงประหยัดกว่าเรียก fetchRelated ซ้ำ
+//
+// time ที่ Google รับ: "now 7-d" · "today 1-m" · "today 3-m" · "today 12-m" · "today 5-y"
+export async function fetchKeywordCheck(keyword, geo = "TH", time = "today 12-m") {
+  const cookie = await getCookie();
+  const hdr = { "User-Agent": UA, "Accept-Language": "th,en", ...(cookie ? { Cookie: cookie } : {}) };
+  const tz = -420;
+  const req = { comparisonItem: [{ keyword, geo, time }], category: 0, property: "" };
+
+  const er = await fetch(
+    `https://trends.google.com/trends/api/explore?hl=th&tz=${tz}&req=` + encodeURIComponent(JSON.stringify(req)),
+    { headers: hdr }
+  );
+  if (!er.ok) throw new Error("explore HTTP " + er.status);
+  const widgets = JSON.parse(strip(await er.text())).widgets;
+
+  const widgetData = async (w, path) => {
+    if (!w) return null;
+    const r = await fetch(
+      `https://trends.google.com/trends/api/widgetdata/${path}?hl=th&tz=${tz}&req=` +
+        encodeURIComponent(JSON.stringify(w.request)) + `&token=${w.token}`,
+      { headers: hdr }
+    );
+    if (!r.ok) throw new Error(`${path} HTTP ${r.status}`);
+    return JSON.parse(strip(await r.text()));
+  };
+
+  // ทั้งสอง widget ไม่ขึ้นต่อกัน ยิงพร้อมกันได้ · อันไหนพังไม่ต้องลากอีกอันตกไปด้วย
+  const [tsRes, rqRes] = await Promise.allSettled([
+    widgetData(widgets.find((x) => x.id === "TIMESERIES"), "multiline"),
+    widgetData(widgets.find((x) => x.id === "RELATED_QUERIES"), "relatedsearches"),
+  ]);
+
+  let interest = null;
+  if (tsRes.status === "fulfilled" && tsRes.value) {
+    const rows = tsRes.value.default?.timelineData || [];
+    // value เป็น array (รองรับเทียบหลายคำ) — เราส่งคำเดียว จึงเอาช่องแรก
+    const pts = rows
+      .filter((r) => Array.isArray(r.value) && Number.isFinite(r.value[0]))
+      .map((r) => ({ t: Number(r.time) * 1000, label: r.formattedAxisTime || "", v: r.value[0] }));
+    if (pts.length) {
+      const vals = pts.map((p) => p.v);
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      // เทียบ 1/4 ท้ายกับ 1/4 แรก — บอกทิศทางได้โดยไม่แกว่งตามจุดเดียว
+      const q = Math.max(1, Math.floor(pts.length / 4));
+      const head = vals.slice(0, q).reduce((a, b) => a + b, 0) / q;
+      const tail = vals.slice(-q).reduce((a, b) => a + b, 0) / q;
+      interest = {
+        points: pts,
+        avg: Math.round(avg),
+        peak: Math.max(...vals),
+        latest: vals[vals.length - 1],
+        // เลี่ยงหารศูนย์: ช่วงแรกเป็น 0 แปลว่า "ไม่เคยมีใครค้น" การคิด % ไม่มีความหมาย
+        changePct: head > 0 ? Math.round(((tail - head) / head) * 100) : null,
+        direction: tail > head * 1.15 ? "up" : tail < head * 0.85 ? "down" : "flat",
+      };
+    }
+  }
+
+  let related = { top: [], rising: [] };
+  if (rqRes.status === "fulfilled" && rqRes.value) {
+    const ranked = rqRes.value.default?.rankedList || [];
+    const map = (arr) => (arr || []).slice(0, 10).map((k) => ({ query: k.query, label: k.formattedValue || String(k.value) }));
+    related = { top: map(ranked[0]?.rankedKeyword), rising: map(ranked[1]?.rankedKeyword) };
+  }
+
+  return {
+    interest,
+    related,
+    // ไม่มีข้อมูลเลย ≠ พัง — คำที่ไม่มีใครค้นก็ได้ผลว่างแบบนี้ ต้องแยกให้ออกจาก error
+    empty: !interest && !related.top.length && !related.rising.length,
+    errors: [tsRes, rqRes].filter((r) => r.status === "rejected").map((r) => String(r.reason?.message || r.reason).slice(0, 120)),
+  };
+}
+
 // time: "now 1-d" (24 ชม.) | "now 7-d" (7 วัน)
 export async function fetchRelated(keyword, geo = "TH", time = "now 1-d") {
   const cookie = await getCookie();
