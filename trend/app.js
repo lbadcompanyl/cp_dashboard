@@ -15,9 +15,9 @@ const state = {
   xKind: "all",
   ytKind: "news",
   ytGeo: "TH",       // ประเทศของคอลัมน์ YouTube (รหัส ISO 2 ตัว)
-  // ปุ่มที่กดได้: "rank" (ตั้งต้น) · "growth" (มาแรง) · "new" (ใหม่ล่าสุด)
+  // ปุ่มที่กดได้: "growth" (มาแรง — ตั้งต้น) · "rank" (อันดับจาก YouTube) · "new" (ใหม่ล่าสุด)
   // "views" ไม่มีปุ่มแล้ว แต่โค้ดยังต้องรองรับ — ใช้เป็นตัวถอยเวลาสถิติยังไม่พอเทียบ "มาแรง"
-  ytSort: "rank",
+  ytSort: "growth",
   ytWin: 24,         // ช่วงเวลาที่ใช้วัด "มาแรง" (ชม.) — ใช้เฉพาะตอน ytSort = "growth"
   ytHideLive: true,  // ไลฟ์ไม่มียอดวิวสะสมให้เทียบ ปกติจึงซ่อนไว้
   // คอลัมน์ "เช็ค Trend" — ผลของคำที่เพิ่งเช็ค เก็บใน state เพราะ renderAll() ทุก 3 นาที
@@ -1274,7 +1274,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 78; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 79; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
