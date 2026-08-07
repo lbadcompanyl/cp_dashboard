@@ -15,9 +15,16 @@ const state = {
   xKind: "all",
   ytKind: "news",
   ytGeo: "TH",       // ประเทศของคอลัมน์ YouTube (รหัส ISO 2 ตัว)
-  ytSort: "rank",    // "rank" = อันดับจาก YouTube (ค่าตั้งต้น) · "growth" = มาแรง · "views" · "new"
+  // ปุ่มที่กดได้: "rank" (ตั้งต้น) · "growth" (มาแรง) · "new" (ใหม่ล่าสุด)
+  // "views" ไม่มีปุ่มแล้ว แต่โค้ดยังต้องรองรับ — ใช้เป็นตัวถอยเวลาสถิติยังไม่พอเทียบ "มาแรง"
+  ytSort: "rank",
   ytWin: 24,         // ช่วงเวลาที่ใช้วัด "มาแรง" (ชม.) — ใช้เฉพาะตอน ytSort = "growth"
   ytHideLive: true,  // ไลฟ์ไม่มียอดวิวสะสมให้เทียบ ปกติจึงซ่อนไว้
+  // คอลัมน์ "เช็คคำ" — ผลของคำที่เพิ่งเช็ค เก็บใน state เพราะ renderAll() ทุก 3 นาที
+  // สร้าง innerHTML ใหม่ทั้งก้อน ถ้าเก็บไว้ใน DOM อย่างเดียวผลจะหายทุกรอบ
+  kwq: "", kwGeo: "TH", kwTime: "today 12-m",
+  kwShown: null, // { q, geo, time } ของคำที่กำลังแสดงอยู่ · kwRes = ตัวเลขจาก Keyword Planner (ถ้ามี)
+  kwRes: null,
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -72,13 +79,21 @@ function withinRecency(iso, hours) {
 }
 
 // ---------- data ----------
+// คอลัมน์ที่ "ไม่ได้" มาจากรอบโหลดนี้ — โหลดเองแยก หรือรอผู้ใช้สั่ง
+//   yttrends : โหลดแยกเพราะต้นทางสาธารณะอืด และเขียน skeleton/error ของตัวเองอยู่แล้ว
+//   kwcheck  : ไม่มีข้อมูลอัตโนมัติเลย รอผู้ใช้พิมพ์คำ
+// ⚠️ ถ้าเหวี่ยง skeleton/error ใส่ทุกคอลัมน์ สองอันนี้จะขึ้น "ดึงข้อมูลไม่สำเร็จ"
+// ทั้งที่ตัวเองไม่ได้พังและยังกดใช้ได้ตามปกติ
+const SELF_LOADING = new Set(["yttrends", "kwcheck"]);
+const feedPanels = () => $$(".panel").filter((p) => !SELF_LOADING.has(p.dataset.source));
+
 async function load(opts = {}) {
   const silent = !!opts.silent; // auto-refresh: ไม่ล้างเป็น skeleton / ไม่กระโดด scroll
   const btn = $("#refresh");
   btn.disabled = true;
   if (!silent) {
     $("#updated").textContent = "กำลังโหลด…";
-    $$(".panel").forEach((p) => {
+    feedPanels().forEach((p) => {
       $("[data-list]", p).innerHTML = `<div class="state skeleton">กำลังดึงข้อมูล…</div>`;
     });
   }
@@ -109,7 +124,7 @@ async function load(opts = {}) {
   } catch (e) {
     if (!silent) {
       $("#updated").textContent = "โหลดไม่สำเร็จ";
-      $$(".panel").forEach((p) => {
+      feedPanels().forEach((p) => {
         $("[data-list]", p).innerHTML = `<div class="state error">ดึงข้อมูลไม่สำเร็จ: ${escapeHtml(e.message)}</div>`;
       });
     }
@@ -388,7 +403,7 @@ function renderYTTrends(panel) {
   const dkey = isGrowth ? "d" + winH : null;
   // ถ้ายังไม่มีสถิติย้อนหลังพอ การเรียงตาม "วิวเพิ่ม" จะไม่มีความหมาย → ถอยไปใช้ยอดรวม
   const hasDelta = isGrowth && shown.some((it) => it[dkey] != null);
-  const sortBy = isGrowth && !hasDelta ? "views" : state.ytSort;
+  const sortBy = isGrowth && !hasDelta ? "views" : state.ytSort; // ไม่มีสถิติพอ → เรียงยอดรวมไปก่อน
 
   if (sortBy === "rank") {
     // API ส่งลำดับมาเป็นอันดับมาแรงทางการอยู่แล้ว — เรียงคืนตามนั้น
@@ -674,11 +689,140 @@ function injectCatChips(panel, cats, allLabel) {
   });
 }
 
+// ---------- เช็คคำ: คนสนใจแค่ไหน ก่อนเอาเข้า Alert ----------
+// ---------- Google Trends embed ----------
+// ⚠️ ทำไมต้องใช้ embed แทนการยิงจาก Worker
+// Cloudflare Worker ออกเน็ตจาก IP ที่ใช้ร่วมกับคนทั้งโลก Google Trends จึงตอบ 429 แทบทุกครั้ง
+// ลองซ้ำก็ไม่ช่วยเพราะไม่ใช่การชนกันชั่วขณะ — วัดจากการใช้จริงแล้วว่าพิมพ์กี่คำก็ไม่ผ่าน
+// embed ทำงานในเบราว์เซอร์ของผู้ใช้เอง = ใช้โควตาของเครื่องผู้ใช้ ซึ่งไม่มีปัญหานี้
+const TRENDS_EMBED = "https://ssl.gstatic.com/trends_nrtr/3603_RC01/embed_loader.js";
+const TRENDS_GUEST = "https://trends.google.com:443/trends/embed/";
+let trendsEmbedP = null;
+function loadTrendsEmbed() {
+  if (window.trends?.embed?.renderExploreWidgetTo) return Promise.resolve(true);
+  if (trendsEmbedP) return trendsEmbedP;
+  trendsEmbedP = new Promise((resolve) => {
+    const sc = document.createElement("script");
+    sc.src = TRENDS_EMBED;
+    sc.async = true;
+    // สคริปต์เซ็ต window.trends ทีหลัง onload เล็กน้อย จึงต้องรอเป็นรอบๆ
+    sc.onload = () => {
+      let tries = 0;
+      const tick = () => {
+        if (window.trends?.embed?.renderExploreWidgetTo) return resolve(true);
+        if (++tries > 40) return resolve(false);
+        setTimeout(tick, 100);
+      };
+      tick();
+    };
+    sc.onerror = () => resolve(false); // ตัวบล็อกโฆษณา/เน็ตองค์กรบล็อก gstatic ได้
+    document.head.appendChild(sc);
+  });
+  return trendsEmbedP;
+}
+
+
+async function runKwCheck() {
+  const panel = $('.panel[data-source="kwcheck"]');
+  if (!panel) return;
+  const q = (state.kwq || "").trim();
+  if (!q) return;
+  state.kwShown = { q, geo: state.kwGeo, time: state.kwTime };
+  state.kwRes = null;
+  renderKwCheck(panel);           // วาดกรอบ + สั่ง embed ทำงานทันที ไม่ต้องรอ server
+  fetchKwVolume(q, panel);        // ตัวเลขยอดค้นหาจริงเป็นของแถม มาทีหลังได้
+}
+
+// ยิง server เพื่อเอา "ยอดค้นหาต่อเดือน" จาก Keyword Planner เท่านั้น
+// (ส่วน Google Trends ไม่พึ่ง server แล้ว — embed ทำเองในเบราว์เซอร์)
+// ตอนนี้ยังไม่มี token จึงยังไม่ได้อะไรกลับมา แต่พอ token มาถึงตัวเลขจะขึ้นเอง
+async function fetchKwVolume(q, panel) {
+  try {
+    const res = await fetch(
+      `/api/trend/kwcheck?q=${encodeURIComponent(q)}&geo=${encodeURIComponent(state.kwGeo)}&time=${encodeURIComponent(state.kwTime)}`
+    );
+    const d = await res.json();
+    // ถ้าผู้ใช้เปลี่ยนคำไปแล้วระหว่างรอ อย่าเอาผลเก่ามาทับ
+    if (state.kwShown?.q !== q) return;
+    state.kwRes = d;
+    renderKwCheck(panel);
+  } catch {}
+}
+
+
+function renderKwCheck(panel) {
+  const list = $("[data-list]", panel);
+  const countEl = $("[data-count]", panel);
+  const shown = state.kwShown;
+
+  if (!shown) {
+    countEl.className = "pcount"; countEl.textContent = "—";
+    list.innerHTML = `<div class="state">พิมพ์คำแล้วกด "เช็ค" — จะได้กราฟความสนใจย้อนหลังและคำที่คนค้นคู่กัน จาก Google Trends โดยตรง<br><br>ใช้เทียบว่าคำใหม่น่าเอาเข้า Alert ไหม โดยลองเช็คคำที่มีอยู่แล้วเทียบดู</div>`;
+    return;
+  }
+
+  countEl.className = "pcount";
+  countEl.textContent = shown.q.length > 14 ? shown.q.slice(0, 14) + "…" : shown.q;
+
+  const v = (state.kwRes || {}).volume || {};
+  const volBox = v.available && v.avgMonthly
+    ? `<div class="kwbox">
+        <div class="kwrow"><span class="kwbig">${v.avgMonthly.toLocaleString("th-TH")}</span><span class="kwunit">ครั้ง/เดือน (เฉลี่ย)</span></div>
+        <div class="kwmeta">การแข่งขันโฆษณา: ${escapeHtml(v.competition || "-")}${v.competitionIndex != null ? ` (${v.competitionIndex}/100)` : ""}</div>
+      </div>`
+    : "";
+
+  const exploreUrl =
+    `https://trends.google.com/trends/explore?date=${encodeURIComponent(shown.time)}` +
+    `&geo=${encodeURIComponent(shown.geo)}&q=${encodeURIComponent(shown.q)}&hl=th`;
+
+  list.innerHTML =
+    `<div class="kwterm">${escapeHtml(shown.q)}</div>` +
+    volBox +
+    `<div class="kwsec"><div class="kwsectitle">📈 ความสนใจตามช่วงเวลา</div>
+       <div class="kwembed" data-kwts><div class="kwmeta">กำลังโหลดจาก Google Trends…</div></div></div>
+     <div class="kwsec"><div class="kwsectitle">🔁 คำที่คนค้นคู่กัน</div>
+       <div class="kwembed kwembed-tall" data-kwrq><div class="kwmeta">กำลังโหลด…</div></div></div>
+     <a class="kwchip" href="${escapeHtml(exploreUrl)}" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a>`;
+
+  renderKwEmbeds(panel, shown);
+}
+
+// วาด widget ของ Google ลงในกล่องที่เตรียมไว้
+// ⚠️ ต้องเรียกใหม่ทุกครั้งที่ renderKwCheck สร้าง innerHTML ใหม่ — iframe เดิมหายไปกับ DOM
+function renderKwEmbeds(panel, shown) {
+  const jobs = [["[data-kwts]", "TIMESERIES"], ["[data-kwrq]", "RELATED_QUERIES"]];
+  loadTrendsEmbed().then((okLoaded) => {
+    // ผู้ใช้เปลี่ยนคำระหว่างรอสคริปต์โหลด → อย่าวาดของเก่าทับ
+    if (state.kwShown?.q !== shown.q) return;
+    if (!okLoaded) {
+      jobs.forEach(([sel]) => {
+        const box = $(sel, panel);
+        if (box) box.innerHTML = `<div class="kwmeta">โหลด Google Trends ไม่ได้ — อาจโดนตัวบล็อกโฆษณาหรือเน็ตองค์กรบล็อกไว้ · กด "เปิดใน Google Trends" ด้านล่างแทนได้</div>`;
+      });
+      return;
+    }
+    const common = { comparisonItem: [{ keyword: shown.q, geo: shown.geo, time: shown.time }], category: 0, property: "" };
+    const opts = {
+      exploreQuery: `date=${shown.time}&geo=${shown.geo}&q=${encodeURIComponent(shown.q)}&hl=th`,
+      guestPath: TRENDS_GUEST,
+    };
+    jobs.forEach(([sel, type]) => {
+      const box = $(sel, panel);
+      if (!box) return;
+      box.innerHTML = "";
+      try { window.trends.embed.renderExploreWidgetTo(box, type, common, opts); }
+      catch { box.innerHTML = `<div class="kwmeta">วาดกราฟไม่สำเร็จ</div>`; }
+    });
+  });
+}
+
 function renderPanel(panel) {
   const source = panel.dataset.source;
   if (source === "trends") return renderTrends(panel);
   if (source === "xtrends") return renderXTrends(panel);
   if (source === "yttrends") return renderYTTrends(panel);
+  if (source === "kwcheck") return renderKwCheck(panel);
 
   const bucket = state.data?.sources?.[source] || { items: [] };
   const f = state.filters[source] || { kw: "", rc: "all" };
@@ -982,6 +1126,22 @@ function wire() {
         state.xCat = null; // หมวดที่เลือกไว้อาจไม่มีอยู่ในโหมดใหม่ ล้างทิ้งกันคอลัมน์ว่างเปล่า
         renderPanel(panel);
       });
+    // ---- คอลัมน์เช็คคำ ----
+    const kwqEl = $("[data-kwq]", panel);
+    if (kwqEl) {
+      kwqEl.addEventListener("input", (e) => { state.kwq = e.target.value; });
+      kwqEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runKwCheck(); } });
+    }
+    const kwgoEl = $("[data-kwgo]", panel);
+    if (kwgoEl) kwgoEl.addEventListener("click", () => runKwCheck());
+    const kwgeoEl = $("[data-kwgeo]", panel);
+    // เปลี่ยนประเทศ/ช่วงเวลาแล้วเช็คซ้ำให้เลย ถ้าเคยเช็คคำไว้แล้ว — ไม่ต้องกดซ้ำเอง
+    // เงื่อนไขต้องดูว่า "มีคำที่กำลังแสดงอยู่ไหม" (kwShown) ไม่ใช่ดูผลจาก server (kwRes)
+    // เพราะ kwRes จะมีก็ต่อเมื่อ Keyword Planner พร้อมแล้วเท่านั้น ซึ่งตอนนี้ยังไม่มี
+    if (kwgeoEl) kwgeoEl.addEventListener("change", (e) => { state.kwGeo = e.target.value; if (state.kwShown) runKwCheck(); });
+    const kwtimeEl = $("[data-kwtime]", panel);
+    if (kwtimeEl) kwtimeEl.addEventListener("change", (e) => { state.kwTime = e.target.value; if (state.kwShown) runKwCheck(); });
+
     const ytkindEl = $("[data-ytkind]", panel);
     if (ytkindEl)
       ytkindEl.addEventListener("click", (e) => {
@@ -1105,10 +1265,16 @@ if (window.Flags) {
   Flags.setKeywords(HARD_KW); // แสดงทันทีก่อนโหลด
 }
 wire();
+// คอลัมน์เช็คคำไม่ได้ผูกกับ load() — ต้องวาดครั้งแรกเอง
+// ไม่งั้นถ้า load() ล้ม renderAll() จะไม่ถูกเรียก แล้วคอลัมน์นี้จะว่างเปล่าโดยไม่บอกอะไรเลย
+{
+  const kwPanel = $('.panel[data-source="kwcheck"]');
+  if (kwPanel) renderKwCheck(kwPanel);
+}
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 73; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 77; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

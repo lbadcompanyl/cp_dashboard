@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;r.update();document.addEventListener("visibilitychange",function(){if(!document.hidden)r.update();});}).catch(function(){});});navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
-  <link rel="stylesheet" href="./styles.css?v=54" />
+  <link rel="stylesheet" href="./styles.css?v=56" />
 </head>
 <body>
   <header class="topbar">
@@ -36,7 +36,7 @@
   <div class="swipe-dots" id="swipeDots"></div>
 
   <main class="board" id="board">
-    <!-- 6 panels: News · Alert 1 · Alert 2 · Google Trends · X · YouTube -->
+    <!-- 7 panels: News · Alert 1 · Alert 2 · Google Trends · X · YouTube · เช็คคำ -->
     <section class="panel" data-source="news">
       <div class="phead">
         <span class="ptitle"><span class="dot news"></span>📰 Google News</span>
@@ -186,9 +186,37 @@
               <option value="168">7 วัน</option>
             </select>
           </label>
-          <button type="button" class="cat" data-sort="views">👁️ ยอดวิวรวม</button>
           <button type="button" class="cat" data-sort="new">🕒 ใหม่ล่าสุด</button>
         </div>
+      </div>
+      <div class="list" data-list></div>
+    </section>
+    <!-- เช็คว่าคำหนึ่งคนสนใจแค่ไหน ก่อนตัดสินใจเอาเข้า Alert -->
+    <section class="panel" data-source="kwcheck">
+      <div class="phead">
+        <span class="ptitle"><span class="dot kwcheck"></span>🔎 เช็คคำ</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <input class="kw" data-kwq type="search" placeholder="พิมพ์คำที่อยากเช็ค…" autocomplete="off" />
+        <select class="rc" data-kwgeo title="เลือกประเทศ">
+          <option value="TH">🇹🇭 ไทย</option>
+          <option value="">🌏 ทั่วโลก</option>
+          <option value="US">🇺🇸 สหรัฐฯ</option>
+          <option value="GB">🇬🇧 อังกฤษ</option>
+          <option value="JP">🇯🇵 ญี่ปุ่น</option>
+          <option value="KR">🇰🇷 เกาหลี</option>
+          <option value="SG">🇸🇬 สิงคโปร์</option>
+          <option value="IN">🇮🇳 อินเดีย</option>
+        </select>
+        <select class="rc" data-kwtime title="ช่วงเวลาที่ดูย้อนหลัง">
+          <option value="now 7-d">7 วัน</option>
+          <option value="today 1-m">1 เดือน</option>
+          <option value="today 3-m">3 เดือน</option>
+          <option value="today 12-m" selected>12 เดือน</option>
+          <option value="today 5-y">5 ปี</option>
+        </select>
+        <button type="button" class="cat on" data-kwgo>เช็ค</button>
       </div>
       <div class="list" data-list></div>
     </section>
@@ -197,6 +225,6 @@
   <button id="scrollcue" type="button" hidden><span class="cuearrow">▼</span> เลื่อนเพื่อดู Trend · X · YouTube</button>
 
   <script src="/flags.js?v=24"></script>
-  <script src="./app.js?v=73"></script>
+  <script src="./app.js?v=77"></script>
 </body>
 </html>
