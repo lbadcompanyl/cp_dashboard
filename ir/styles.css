@@ -117,7 +117,9 @@ body {
     height: auto;
   }
   html { height: 100%; }
-  body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+  /* 100vh เป็นตัวสำรองของ Safari ก่อน 15.4 ที่ยังไม่รู้จัก dvh — ถ้าไม่ใส่ บรรทัดนี้จะกลายเป็น
+     ค่าไม่ถูกต้องแล้วถูกทิ้งทั้งบรรทัด body จะไม่มีความสูง บอร์ดที่กิน "ที่ที่เหลือ" เลยเหลือศูนย์ */
+  body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden; }
   .topbar, .gsearch, .swipe-dots { flex: 0 0 auto; }
   /* ⚠️ body เป็น flex column แล้ว ลูกที่มี margin: 0 auto (จากกฎเดสก์ท็อป) จะไม่ยืดเต็มจอ
      — auto margin บนแกนขวางทำให้ stretch ไม่ทำงาน ความกว้างเลยกลายเป็นเท่าเนื้อหา/ค่า max-width
