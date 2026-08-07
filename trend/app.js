@@ -273,7 +273,8 @@ function renderXTrends(panel) {
 
   const list = $("[data-list]", panel);
   if (items.length === 0) {
-    list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : "ไม่พบคำที่ตรงกับตัวกรอง"}</div>`;
+    // ยังไม่มีข้อมูลเลย ≠ กรองแล้วไม่เจอ — ตอนเพิ่งเปิดหน้ายังไม่มีอะไรมา ให้บอกว่ารอก่อน
+    list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : all.length === 0 ? "กรุณารอซักครู่" : "ไม่พบคำที่ตรงกับตัวกรอง"}</div>`;
     return;
   }
   // กดที่เทรนด์ = เปิดหน้าค้นหาบน X ซึ่งคือโพสต์จริงของเทรนด์นั้น
@@ -483,7 +484,7 @@ function renderYTTrends(panel) {
   const list = $("[data-list]", panel);
   if (items.length === 0) {
     if (!bucket.error) {
-      list.innerHTML = `<div class="state">ไม่พบคลิปที่ตรงกับตัวกรอง</div>`;
+      list.innerHTML = `<div class="state">${all.length === 0 ? "กรุณารอซักครู่" : "ไม่พบคลิปที่ตรงกับตัวกรอง"}</div>`;
       return;
     }
     // ดึงไม่ได้ = บอกไปเลยว่าแหล่งไหนพังเพราะอะไร ไม่ต้องให้ผู้ใช้ไปเปิด API เอง
@@ -924,7 +925,7 @@ function renderTrends(panel) {
 
   const list = $("[data-list]", panel);
   if (items.length === 0) {
-    list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : kw ? "ไม่พบคำที่ตรงกับตัวกรอง" : "ยังไม่มีข้อมูล"}</div>`;
+    list.innerHTML = `<div class="state">${bucket.error ? "ดึงเทรนด์ไม่ได้" : kw ? "ไม่พบคำที่ตรงกับตัวกรอง" : "กรุณารอซักครู่"}</div>`;
     return;
   }
 
@@ -1070,7 +1071,7 @@ function emptyState(source, bucket, filtered) {
       <a href="https://www.google.com/alerts" target="_blank" rel="noopener">เปิด Google Alerts →</a>
     </div>`;
   }
-  return `<div class="state">ยังไม่มีรายการ</div>`;
+  return `<div class="state">กรุณารอซักครู่</div>`;
 }
 
 // ---------- wire ----------
@@ -1274,7 +1275,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 79; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 80; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
