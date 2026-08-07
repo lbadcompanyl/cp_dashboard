@@ -34,6 +34,16 @@
   let catList = []; // [{ key, label }] หมวดที่เลือกได้ (ส่งมาจาก app.js ตอน init)
   let keywordsBySource = {}; // { source: [keyword, ...] } รายการคำที่ตั้งไว้ใน Alert (แกะจาก query)
 
+  // โหมดหน้าตา — ตัวเดียวกันนี้ใช้ได้ทั้งบนแดชบอร์ดและบนหน้า admin
+  //   "fab"   = ปุ่มลอยมุมขวาล่างทั้ง 2 ปุ่ม (ของเดิม)
+  //   "kw"    = เหลือแต่ ➕ เพิ่ม keyword · ไม่มี 🚩 คำแนะนำตัดข่าว  ← แดชบอร์ดใช้อันนี้
+  //   "none"  = ไม่มีปุ่มลอยเลย · ปุ่ม ⚑ / 🗂 บนการ์ดยังใช้ได้ตามปกติ
+  //   "admin" = กาง 2 กล่องไว้ในหน้าเลย ไม่มีปุ่มลอย ไม่มีฉากดำ ปิดไม่ได้ ← /admin/ ใช้อันนี้
+  let UI = "fab";
+  let mountCut = null, mountKw = null; // element ที่จะเอากล่องไปวางในโหมด admin
+  // หน้า admin ไม่มี .panel ของแดชบอร์ดให้อ่านชื่อคอลัมน์ จึงส่งรายชื่อมาเองได้
+  let alertsOverride = []; // [{ source, label }]
+
   // แกะ Google Alert query → คำ ๆ (ตัด OR / "" / () / -exclude ออก) + ตัดซ้ำ
   function kwFromQuery(q) {
     const seen = new Set(), out = [];
@@ -139,11 +149,14 @@
     return [...new Set(records.map((r) => r.source))];
   }
   function alertSources() {
-    return $$(".panel[data-source]").map((p) => p.dataset.source).filter((s) => s.startsWith("alert"));
+    const fromDom = $$(".panel[data-source]").map((p) => p.dataset.source).filter((s) => s.startsWith("alert"));
+    return fromDom.length ? fromDom : alertsOverride.map((a) => a.source);
   }
   function labelOf(source) {
     const p = $(`.panel[data-source="${source}"] .ptitle`);
-    return p ? p.textContent.trim() : source;
+    if (p) return p.textContent.trim();
+    const o = alertsOverride.find((a) => a.source === source);
+    return o ? o.label : source;
   }
 
   // ---------- flag / undo ----------
@@ -246,44 +259,58 @@
 
   // ---------- FAB + panel ----------
   let fab, kwFab, fabWrap, mask, panel, kwPanel, catPicker;
+  let uiReady = false;
+  const isAdmin = () => UI === "admin";
   function closeAll() { closePanel(); closeKw(); closeCat(); }
   function ensureUi() {
-    if (fabWrap) return;
-    fabWrap = document.createElement("div");
-    fabWrap.className = "flg-fabwrap";
-    document.body.appendChild(fabWrap);
+    if (uiReady) return;
+    uiReady = true;
 
-    kwFab = document.createElement("button");
-    kwFab.type = "button";
-    kwFab.className = "flg-fab kw";
-    kwFab.innerHTML = '➕<span class="flg-fab-label"> เพิ่ม keyword</span>';
-    kwFab.addEventListener("click", () => openKw());
-    fabWrap.appendChild(kwFab);
+    if (UI === "fab" || UI === "kw") {
+      fabWrap = document.createElement("div");
+      fabWrap.className = "flg-fabwrap";
+      document.body.appendChild(fabWrap);
 
-    fab = document.createElement("button");
-    fab.className = "flg-fab";
-    fab.type = "button";
-    fab.addEventListener("click", () => openPanel());
-    fabWrap.appendChild(fab);
+      kwFab = document.createElement("button");
+      kwFab.type = "button";
+      kwFab.className = "flg-fab kw";
+      kwFab.innerHTML = '➕<span class="flg-fab-label"> เพิ่ม keyword</span>';
+      kwFab.addEventListener("click", () => openKw());
+      fabWrap.appendChild(kwFab);
+    }
+    if (UI === "fab") {
+      fab = document.createElement("button");
+      fab.className = "flg-fab";
+      fab.type = "button";
+      fab.addEventListener("click", () => openPanel());
+      fabWrap.appendChild(fab);
+    }
 
-    mask = document.createElement("div");
-    mask.className = "flg-mask";
-    mask.addEventListener("click", closeAll);
-    document.body.appendChild(mask);
+    // ฉากดำมีไว้ให้กดปิดกล่องลอย — โหมด admin กางไว้ในหน้าอยู่แล้ว ไม่ต้องมี
+    if (!isAdmin()) {
+      mask = document.createElement("div");
+      mask.className = "flg-mask";
+      mask.addEventListener("click", closeAll);
+      document.body.appendChild(mask);
+    }
 
     panel = document.createElement("div");
-    panel.className = "flg-panel";
-    document.body.appendChild(panel);
+    panel.className = "flg-panel" + (isAdmin() ? " flg-inline" : "");
+    (isAdmin() && mountCut ? mountCut : document.body).appendChild(panel);
 
-    kwPanel = document.createElement("div");
-    kwPanel.className = "flg-panel";
-    document.body.appendChild(kwPanel);
+    // โหมด admin: สร้างกล่อง ➕ เพิ่ม keyword เฉพาะเมื่อมีที่ให้วางจริง
+    // (หน้า admin ตอนนี้ไม่มีกล่องนี้แล้ว — ➕ อยู่บนแดชบอร์ดที่เดียว)
+    if (!isAdmin() || mountKw) {
+      kwPanel = document.createElement("div");
+      kwPanel.className = "flg-panel" + (isAdmin() ? " flg-inline" : "");
+      (isAdmin() && mountKw ? mountKw : document.body).appendChild(kwPanel);
+    }
 
     catPicker = document.createElement("div");
     catPicker.className = "flg-catpick";
     document.body.appendChild(catPicker);
 
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
+    if (!isAdmin()) document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
   }
 
   // ---------- ตัวเลือกจัดหมวดข่าว (popup แบบ flag) ----------
@@ -302,7 +329,7 @@
     catPicker.dataset.link = link;
     catPicker.dataset.title = title || "";
     catPicker.classList.add("open");
-    mask.style.display = "block";
+    if (mask) mask.style.display = "block";
     catPicker.style.display = "block";
     $("[data-catclose]", catPicker)?.addEventListener("click", closeCat);
     $$("[data-setcat]", catPicker).forEach((b) =>
@@ -316,7 +343,7 @@
     if (!catPicker) return;
     catPicker.classList.remove("open");
     catPicker.style.display = "none";
-    if ((!panel || !panel.classList.contains("open")) && (!kwPanel || !kwPanel.classList.contains("open")))
+    if (mask && (!panel || !panel.classList.contains("open")) && (!kwPanel || !kwPanel.classList.contains("open")))
       mask.style.display = "none";
   }
 
@@ -349,69 +376,93 @@
            <div class="flg-matchwrap">${words.map((w) => `<span class="flg-mchip">${esc(w)}</span>`).join("")}</div>`
         : `<div class="flg-matchnote">ยังไม่ได้ตั้งรายการ keyword สำหรับ Alert นี้</div>`);
     catPicker.classList.add("open");
-    mask.style.display = "block";
+    if (mask) mask.style.display = "block";
     catPicker.style.display = "block";
     $("[data-catclose]", catPicker)?.addEventListener("click", closeCat);
   }
 
   function openKw(source) {
+    if (UI === "none") return; // แดชบอร์ดไม่มีกล่องนี้แล้ว — ย้ายไปหน้า /admin/
     ensureUi();
-    closePanel();
+    if (!kwPanel) return; // หน้านี้ไม่มีกล่องนี้
+    if (!isAdmin()) closePanel(); // admin กางคู่กันได้ ไม่ต้องไล่ปิดอีกกล่อง
     const alerts = alertSources();
-    if (!source) source = alerts[0];
-    if (!source) return;
+    if (!source || !alerts.includes(source)) source = alerts[0];
+    if (!source) {
+      // ไม่มีคอลัมน์ Alert ให้เพิ่มคำ — บนหน้า admin ต้องบอก ไม่ใช่ปล่อยกล่องค้างของเดิมไว้
+      if (isAdmin()) kwPanel.innerHTML = `<div class="flg-empty">แดชบอร์ดนี้ไม่มีคอลัมน์ Alert</div>`;
+      return;
+    }
     const terms = kwStore[source] || [];
     const tabs = alerts.length > 1
       ? `<div class="flg-kwtabs">${alerts.map((s) => `<button type="button" class="flg-kwtab${s === source ? " on" : ""}" data-tab="${esc(s)}">${esc(labelOf(s))}</button>`).join("")}</div>`
       : "";
     kwPanel.dataset.source = source;
+
+    // แบ่งหน้าที่กันคนละที่ตามที่เจ้าของสั่ง:
+    //   แดชบอร์ด = เก็บคำอย่างเดียว (อ่านข่าวอยู่ นึกคำได้ก็พิมพ์ใส่ทันที)
+    //   /admin/   = เอาคำที่เก็บไว้มาประกอบเป็น query แล้วคัดลอกไปแปะใน Google Alert
+    const adminMode = isAdmin();
+    const chips = `<div class="flg-rows flg-kwchips">${
+      terms.length
+        ? terms.map((t, i) => `<span class="flg-kwchip">${esc(t)}<button type="button" data-rm="${i}" title="ลบ">✕</button></span>`).join("")
+        : `<span class="flg-thin">${adminMode ? "ยังไม่มีคำ — ไปพิมพ์เพิ่มที่ปุ่ม ➕ บนแดชบอร์ด" : "ยังไม่มีคำ — พิมพ์ด้านบน"}</span>`
+    }</div>`;
+
     kwPanel.innerHTML = `
-      <div class="flg-head"><b>➕ เพิ่ม keyword${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
-      ${tabs}
-      <p class="flg-note">พิมพ์คำ → ประกอบเป็น OR string → คัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
-      <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
-      <div class="flg-rows flg-kwchips">${terms.length ? terms.map((t, i) => `<span class="flg-kwchip">${esc(t)}<button type="button" data-rm="${i}" title="ลบ">✕</button></span>`).join("") : '<span class="flg-thin">ยังไม่มีคำ — พิมพ์ด้านบน</span>'}</div>
-      <div class="flg-sub">คำค้นที่ประกอบได้ <span class="flg-hint">(แก้ได้)</span>:</div>
-      <div class="flg-ex"><textarea id="flgkwta" rows="2" placeholder='เช่น "ราคาหมู" OR สุกร'>${esc(buildKw(terms))}</textarea><button type="button" class="flg-copy" data-kwcopy>📋 คัดลอก</button></div>
-      <div class="flg-actions"><a href="https://www.google.com/alerts" target="_blank" rel="noopener">🔗 เปิด Google Alerts → แก้ query → Update</a><button type="button" class="flg-clear" data-kwclear>ล้างคำทั้งหมด</button></div>`;
+      <div class="flg-head"><b>➕ ${adminMode ? "keyword ที่เก็บไว้" : "เพิ่ม keyword"}${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
+      ${tabs}` +
+      (adminMode
+        ? `<p class="flg-note">คำที่เก็บไว้จากปุ่ม ➕ บนแดชบอร์ด — ประกอบเป็น OR string แล้วคัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
+           ${chips}
+           <div class="flg-sub">คำค้นที่ประกอบได้ <span class="flg-hint">(แก้ได้)</span>:</div>
+           <div class="flg-ex"><textarea id="flgkwta" rows="2" placeholder='เช่น "ราคาหมู" OR สุกร'>${esc(buildKw(terms))}</textarea><button type="button" class="flg-copy" data-kwcopy>📋 คัดลอก</button></div>
+           <div class="flg-actions"><a href="https://www.google.com/alerts" target="_blank" rel="noopener">🔗 เปิด Google Alerts → แก้ query → Update</a><button type="button" class="flg-clear" data-kwclear>ล้างคำทั้งหมด</button></div>`
+        : `<p class="flg-note">พิมพ์คำที่อยากเพิ่มเก็บไว้ก่อน — เอาไปแปะใน Google Alert ทีเดียวได้ที่หน้า <a href="/admin/" target="_blank" rel="noopener">จัดการ</a></p>
+           <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
+           ${chips}`);
     kwPanel.classList.add("open");
     kwPanel.style.display = "block";
-    mask.style.display = "block";
+    if (mask) mask.style.display = "block";
 
     const field = $(".flg-kwfield", kwPanel);
-    const doAdd = () => {
-      const v = field.value.trim();
-      if (!v) return;
-      const arr = kwStore[source] || (kwStore[source] = []);
-      if (!arr.includes(v)) arr.push(v);
-      save(key(LS_KW), kwStore);
-      pushOp({ op: "setKw", source, terms: kwStore[source] });
-      openKw(source);
-    };
-    field.focus();
-    $(".flg-kwadd", kwPanel).addEventListener("click", doAdd);
-    field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+    if (field) {
+      const doAdd = () => {
+        const v = field.value.trim();
+        if (!v) return;
+        const arr = kwStore[source] || (kwStore[source] = []);
+        if (!arr.includes(v)) arr.push(v);
+        save(key(LS_KW), kwStore);
+        pushOp({ op: "setKw", source, terms: kwStore[source] });
+        openKw(source);
+      };
+      field.focus();
+      $(".flg-kwadd", kwPanel).addEventListener("click", doAdd);
+      field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+    }
     $$("[data-rm]", kwPanel).forEach((b) =>
       b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: kwStore[source] }); openKw(source); })
     );
     $$("[data-tab]", kwPanel).forEach((b) => b.addEventListener("click", () => openKw(b.dataset.tab)));
     $("[data-kwclose]", kwPanel).addEventListener("click", closeKw);
-    $("[data-kwcopy]", kwPanel).addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
-    $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: [] }); openKw(source); });
+    $("[data-kwcopy]", kwPanel)?.addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
+    $("[data-kwclear]", kwPanel)?.addEventListener("click", () => { kwStore[source] = []; save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: [] }); openKw(source); });
   }
   function closeKw() {
-    if (!kwPanel) return;
+    if (!kwPanel || isAdmin()) return; // admin: กางค้างไว้ตลอด ปิดไม่ได้
     kwPanel.classList.remove("open");
     kwPanel.style.display = "none";
-    if (panel && !panel.classList.contains("open")) mask.style.display = "none";
+    if (mask && panel && !panel.classList.contains("open")) mask.style.display = "none";
   }
   function refresh() {
     ensureUi();
     const total = records.length;
-    fab.style.display = total > 0 ? "inline-flex" : "none";
-    fab.classList.toggle("ready", totalReady());
-    fab.innerHTML = `🚩<span class="flg-fab-label"> คำแนะนำตัดข่าว</span> <b>${total}</b>${totalReady() ? ' <span class="fdot"></span>' : ""}`;
-    kwFab.style.display = alertSources().length ? "inline-flex" : "none";
+    if (fab) {
+      fab.style.display = total > 0 ? "inline-flex" : "none";
+      fab.classList.toggle("ready", totalReady());
+      fab.innerHTML = `🚩<span class="flg-fab-label"> คำแนะนำตัดข่าว</span> <b>${total}</b>${totalReady() ? ' <span class="fdot"></span>' : ""}`;
+    }
+    if (kwFab) kwFab.style.display = alertSources().length ? "inline-flex" : "none";
     injectKwButtons();
     // live-update panel ที่เปิดอยู่ — แต่ไม่ทับ "เฉพาะตอนกำลังพิมพ์" ในช่อง input/textarea (ปุ่มที่ได้ focus ไม่นับ)
     const ae = document.activeElement;
@@ -421,8 +472,9 @@
       openKw(kwPanel.dataset.source);
   }
   function openPanel() {
+    if (UI !== "fab" && UI !== "admin") return; // แดชบอร์ดไม่มีกล่องนี้แล้ว — ย้ายไปหน้า /admin/
     ensureUi();
-    closeKw();
+    if (!isAdmin()) closeKw();
     const srcs = sources();
     let html = `<div class="flg-head"><b>🚩 คำแนะนำตัดข่าว${scopeName() ? " · " + scopeName() : ""}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-close>✕</button></div>
       <p class="flg-note">flag = ซ่อนที่นี่ + สรุปคำที่ควรตัด แล้ว <u>คุณ</u> เอา exclusion ไปแปะใน Google Alert (กด Update) — Google ไม่มี API เทรนตรง วิธีนี้ได้ผลจริงสุด</p>`;
@@ -463,7 +515,7 @@
 
     panel.innerHTML = html;
     panel.classList.add("open");
-    mask.style.display = "block";
+    if (mask) mask.style.display = "block";
     panel.style.display = "block";
 
     $("[data-close]", panel)?.addEventListener("click", closePanel);
@@ -488,10 +540,10 @@
     $$("[data-clear]", panel).forEach((b) => b.addEventListener("click", () => clearSource(b.dataset.clear)));
   }
   function closePanel() {
-    if (!panel) return;
+    if (!panel || isAdmin()) return; // admin: กางค้างไว้ตลอด ปิดไม่ได้
     panel.classList.remove("open");
     panel.style.display = "none";
-    if (kwPanel && !kwPanel.classList.contains("open")) mask.style.display = "none";
+    if (mask && kwPanel && !kwPanel.classList.contains("open")) mask.style.display = "none";
   }
   function copy(text, btn) {
     const done = () => { const o = btn.textContent; btn.textContent = "✓ คัดลอกแล้ว"; setTimeout(() => (btn.textContent = o), 1500); };
@@ -592,6 +644,10 @@
     .flg-kwchip{background:rgba(42,120,214,.18);border:1px solid rgba(42,120,214,.4);border-radius:7px;padding:3px 6px 3px 9px;font-size:12px;display:inline-flex;gap:7px;align-items:center}
     .flg-kwchip button{background:none;border:none;color:inherit;cursor:pointer;opacity:.55;font-size:11px;padding:0;line-height:1}
     .flg-kwchip button:hover{opacity:1}
+    /* โหมด admin — กล่องเดียวกันนี้กางอยู่ในหน้าเลย ไม่ลอย ไม่มีปุ่มปิด */
+    .flg-panel.flg-inline{position:static;width:auto;max-width:none;max-height:none;right:auto;bottom:auto;box-shadow:none;border:0;padding:0;background:transparent;display:block;overflow:visible}
+    .flg-panel.flg-inline .flg-x{display:none}
+    .flg-panel.flg-inline .flg-items{max-height:52vh}
     @media (max-width:640px){
       .flg-kw-btn{display:none}
       .flg-fab{padding:8px 13px;font-size:12px}
@@ -608,6 +664,10 @@
   const Flags = {
     init(opts = {}) {
       onChange = opts.onChange || (() => {});
+      UI = opts.ui || "fab";
+      mountCut = opts.mountCut || null;
+      mountKw = opts.mountKw || null;
+      alertsOverride = Array.isArray(opts.alerts) ? opts.alerts : [];
       SCOPE = opts.scope || deriveScope();
       records = load(key(LS_RECS), []);
       dismissed = load(key(LS_DISM), []);
@@ -625,11 +685,27 @@
         if (cb) { e.preventDefault(); e.stopPropagation(); openCatPicker(cb.dataset.link, cb.dataset.title, cb.dataset.source); }
       });
       refresh();
+      if (isAdmin()) { openPanel(); openKw(); }
       // sync กับ server (ถ้า bind KV) — ดึงตอนเปิด, ทุก 25 วิ, และตอนกลับมาโฟกัสแท็บ
       syncPull();
       setInterval(syncPull, 25000);
       window.addEventListener("focus", syncPull);
     },
+    // สลับแดชบอร์ดที่กำลังดูอยู่บนหน้า admin (PR / IR / Issue เก็บ flag คนละกอง)
+    // ⚠️ ห้ามเรียก init() ซ้ำเพื่อสลับ — จะได้ listener + setInterval ซ้อนกันเพิ่มทุกครั้งที่กด
+    setScope(scope, alerts) {
+      SCOPE = scope || "root";
+      alertsOverride = Array.isArray(alerts) ? alerts : [];
+      records = load(key(LS_RECS), []);
+      dismissed = load(key(LS_DISM), []);
+      kwStore = load(key(LS_KW), {});
+      catStore = load(key(LS_CAT), {});
+      rebuildHidden();
+      refresh();
+      if (isAdmin()) { openPanel(); openKw(); }
+      syncPull(); // ของจริงอยู่บน KV — ค่า local เป็นแค่ภาพชั่วคราวระหว่างรอ
+    },
+    scope() { return SCOPE; },
     isHidden(link) { return !!hidden[link]; },
     getCat,
     parseKw: kwFromQuery, // ให้ app.js แกะ query → คำ ๆ ได้ (ใช้เทียบ feed vs hardcode)

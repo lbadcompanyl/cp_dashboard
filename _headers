@@ -11,6 +11,8 @@
   Cache-Control: no-cache
 /issue/
   Cache-Control: no-cache
+/admin/
+  Cache-Control: no-cache
 /*.html
   Cache-Control: no-cache
 
