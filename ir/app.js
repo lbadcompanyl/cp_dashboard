@@ -358,14 +358,14 @@ function applyKeywords() {
   Flags.setKeywords(map);
 }
 if (window.Flags) {
-  Flags.init({ onChange: renderAll, cats: CATS, ui: "none" }); // ปุ่มลอย 🚩/➕ ย้ายไป /admin/ แล้ว
+  Flags.init({ onChange: renderAll, cats: CATS, ui: "kw" }); // เหลือแต่ปุ่ม ➕ เพิ่ม keyword · 🚩 คำแนะนำตัดข่าว ย้ายไป /admin/
   Flags.setKeywords(HARD_KW); // แสดงทันทีก่อนโหลด
 }
 wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 38; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 39; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now();

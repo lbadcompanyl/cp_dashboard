@@ -35,8 +35,9 @@
   let keywordsBySource = {}; // { source: [keyword, ...] } รายการคำที่ตั้งไว้ใน Alert (แกะจาก query)
 
   // โหมดหน้าตา — ตัวเดียวกันนี้ใช้ได้ทั้งบนแดชบอร์ดและบนหน้า admin
-  //   "fab"   = ปุ่มลอยมุมขวาล่าง (ของเดิม)
-  //   "none"  = ไม่มีปุ่มลอยเลย · ปุ่ม ⚑ / 🗂 บนการ์ดยังใช้ได้ตามปกติ  ← แดชบอร์ดใช้อันนี้
+  //   "fab"   = ปุ่มลอยมุมขวาล่างทั้ง 2 ปุ่ม (ของเดิม)
+  //   "kw"    = เหลือแต่ ➕ เพิ่ม keyword · ไม่มี 🚩 คำแนะนำตัดข่าว  ← แดชบอร์ดใช้อันนี้
+  //   "none"  = ไม่มีปุ่มลอยเลย · ปุ่ม ⚑ / 🗂 บนการ์ดยังใช้ได้ตามปกติ
   //   "admin" = กาง 2 กล่องไว้ในหน้าเลย ไม่มีปุ่มลอย ไม่มีฉากดำ ปิดไม่ได้ ← /admin/ ใช้อันนี้
   let UI = "fab";
   let mountCut = null, mountKw = null; // element ที่จะเอากล่องไปวางในโหมด admin
@@ -265,7 +266,7 @@
     if (uiReady) return;
     uiReady = true;
 
-    if (UI === "fab") {
+    if (UI === "fab" || UI === "kw") {
       fabWrap = document.createElement("div");
       fabWrap.className = "flg-fabwrap";
       document.body.appendChild(fabWrap);
@@ -276,7 +277,8 @@
       kwFab.innerHTML = '➕<span class="flg-fab-label"> เพิ่ม keyword</span>';
       kwFab.addEventListener("click", () => openKw());
       fabWrap.appendChild(kwFab);
-
+    }
+    if (UI === "fab") {
       fab = document.createElement("button");
       fab.className = "flg-fab";
       fab.type = "button";
@@ -451,7 +453,7 @@
       openKw(kwPanel.dataset.source);
   }
   function openPanel() {
-    if (UI === "none") return; // แดชบอร์ดไม่มีกล่องนี้แล้ว — ย้ายไปหน้า /admin/
+    if (UI !== "fab" && UI !== "admin") return; // แดชบอร์ดไม่มีกล่องนี้แล้ว — ย้ายไปหน้า /admin/
     ensureUi();
     if (!isAdmin()) closeKw();
     const srcs = sources();
