@@ -39,11 +39,19 @@ Cloudflare → cp-dashboard → Settings → Build → Branch control → Produc
 
 เจ้าของสั่งให้ **กันไว้ก่อน** ตอน release 7 ส.ค. · ของอยู่ครบบน `dev` แล้ว รอคำสั่งอย่างเดียว
 
-**ตอนนี้ `dev` = `main` + commit เดียวที่มีแต่เรื่อง keyword** — จันทร์แค่ merge ตรงๆ ไม่มี conflict
+`dev` เรียงไว้ให้ปล่อยแยกกันได้ — **commit keyword อยู่บนสุดเสมอ** ของอื่นอยู่ข้างล่าง
 
 ```
-git checkout main && git merge dev && git push -u origin main
+dev  ┬─ (บนสุด) keyword ชุดใหม่ 74 คำ   ← ปล่อยจันทร์
+     └─ ของอื่นที่ทำระหว่างสัปดาห์      ← ปล่อยก่อนได้ ด้วย git merge <sha ของ commit นั้น>
+main ─ production ตอนนี้
 ```
+
+จันทร์ปล่อยทั้งหมด: `git checkout main && git merge dev && git push -u origin main`
+
+> ⚠️ **มีของใหม่ระหว่างสัปดาห์ ให้แทรกไว้ใต้ commit keyword เสมอ** (`reset` แล้ว `cherry-pick`
+> commit keyword กลับขึ้นบนสุด) ไม่งั้นจะปล่อยของอื่นก่อนโดยไม่ลาก keyword ไปด้วยไม่ได้
+> · ตอน cherry-pick อย่าลืม**เลื่อนเลขเวอร์ชันของ commit keyword ให้สูงกว่าอันล่าง** ไม่งั้นเลขชนกัน
 
 > ⚠️ **ห้ามกลับไปใช้วิธี "merge แล้วค่อย revert" อีก** — เคยทำ 2 รอบแล้วติดกับดัก:
 > พอ main มี commit ที่ revert ทับไว้ ครั้งต่อไป git จะมองว่า "main แก้ dev ไม่ได้แก้"
