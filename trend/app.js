@@ -698,11 +698,17 @@ function renderPanel(panel) {
 const PIN_FALSE_RE = /บีแอลซีพี|blcp|ซีพีเอ็นจ?|cpn |บีซีพีจี|bcpg|บีซีพี|bcp /gi;
 const PIN_CP_RE = /ซีพี|\bcpf\b|cp ?all|ซีพีเอฟ|เซเว่น|7-?eleven|แม็คโคร|makro|โลตัส|lotus|เจียไต๋|แอ็กซ์ตร้า|cpaxt|ทรู|true ?money|true ?corp/i;
 // หมู(?!่) กัน "หมู่บ้าน" · เนื้อ(?!หา) กัน "เนื้อหา"
-const PIN_FOOD_RE = /อาหาร|หมู(?!่)|ไก่|ไข่|กุ้ง|เนื้อ(?!หา)|ปศุสัตว์|ฟาร์ม|สุกร|บุฟเฟ่?ต์|ร้านอาหาร|เมนู|ขนม|กาแฟ|ชานม|ราคาหมู|วัตถุดิบ|ผลไม้|ผัก(?!ผ่อน)|เครื่องดื่ม|\bนม\b|เบเกอ(?:รี่|อรี่)|ข้าว(?!ของ)|ปลา(?!ย)|ทะเล|ทุเรียน|มะม่วง|กล้วย|แตงโม|ส้มตำ|ชาบู|หม่าล่า|ปิ้งย่าง|\bfood\b|buffet|restaurant|cafe/i;
+const PIN_FOOD_RE = /อาหาร|หมู(?!่)|ไก่|ไข่|กุ้ง|เนื้อ(?!หา)|ปศุสัตว์|ฟาร์ม|สุกร|บุฟเฟ่?ต์|ร้านอาหาร|เมนู|ขนม|กาแฟ|ชานม|ราคาหมู|วัตถุดิบ|ผลไม้|ผัก(?!ผ่อน)|เครื่องดื่ม|\bนม\b|เบเกอ(?:รี่|อรี่)|ข้าว(?!ของ)|ปลา(?!ย)|ทะเล|ทุเรียน|มะม่วง|กล้วย|แตงโม|ส้มตำ|ชาบู|หม่าล่า|ปิ้งย่าง|\bfood\b|buffet|restaurant|cafe|starbucks|สตาร์บัคส์|\bkfc\b|mcdonald|แมคโดนัลด์|ชาตรามือ|มิสเตอร์โดนัท|ดังกิ้น|โออิชิ|ซูชิ|พิซซ่า|pizza|burger|เบอร์เกอร์|ไอศ/i;
+// หมวด "อาหาร/เครื่องดื่ม" ของ Google Trends — เลขเดียวกับ dropdown เลือกหมวดด้านบน
+const FOOD_CAT = 5;
 function pinScore(it) {
   const hay = (it.title + " " + (it.snippet || "") + " " + ((it.related || []).map((r) => r.term || r).join(" ")))
     .toLowerCase().replace(PIN_FALSE_RE, " ");
   if (PIN_CP_RE.test(hay)) return 2;   // เครือ CP มาก่อน
+  // Google ติดหมวดมากับเทรนด์อยู่แล้ว (it.topics) — เชื่ออันนั้นก่อนลิสต์คำที่เขียนเอง
+  // ลิสต์คำไล่ตามชื่อแบรนด์ไม่มีวันครบ (starbucks ไม่มีคำว่ากาแฟหรืออาหารอยู่ในชื่อเลย
+  // และไม่มี breakdown มาด้วย จึงตกไปอยู่กลางลิสต์ทั้งที่ Google จัดเป็นหมวดอาหาร)
+  if (Array.isArray(it.topics) && it.topics.includes(FOOD_CAT)) return 1;
   if (PIN_FOOD_RE.test(hay)) return 1; // แล้วค่อยอาหาร
   return 0;
 }
@@ -1038,7 +1044,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 66; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 67; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
