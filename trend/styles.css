@@ -443,6 +443,8 @@ body {
 .xfresh .warn { color: #f59e0b; }
 
 .xcats { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+/* มือถือ: ให้เลื่อนซ้าย-ขวาแทนการพับหลายบรรทัด — พับแล้วกินพื้นที่อ่านไป 2-3 แถว */
+@media (max-width: 640px) { .xcats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 5px 10px; gap: 5px; } .xcats::-webkit-scrollbar { display: none; } }
 .xcats .cat { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 999px; padding: 4px 10px; font-size: 11.5px; cursor: pointer; font-family: inherit; white-space: nowrap; }
 .xcats .cat:hover { color: var(--ink); }
 .xcats .cat.on { background: var(--xtrends); border-color: var(--xtrends); color: #fff; }

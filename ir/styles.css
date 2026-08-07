@@ -147,9 +147,6 @@ body {
   .filters { padding: 6px 12px; gap: 6px; }
   .kw { padding: 6px 9px; font-size: 12px; }
   .rc { padding: 6px 6px; font-size: 11px; }
-  .cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 5px 10px; gap: 5px; }
-  .cats::-webkit-scrollbar { display: none; }
-  .cat { padding: 2px 8px; font-size: 10.5px; }
   .list { padding: 6px; }
   .card { padding: 9px 11px; margin-bottom: 6px; }
 }
@@ -378,6 +375,13 @@ body {
 
 /* ชิพหมวดข่าว (filter แยกหมวด) ในคอลัมน์ข่าว */
 .cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+/* ⚠️ กฎมือถือของ .cats ต้องอยู่ "หลัง" กฎพื้นฐาน — เดิมเขียนไว้ในบล็อกมือถือด้านบน
+   ซึ่งมาก่อนบรรทัดนี้ ความเฉพาะเจาะจงเท่ากันแต่มาก่อน กฎ flex-wrap: wrap จึงชนะเสมอ
+   ผลคือแถวหมวดพับเป็น 3 บรรทัด สูง 110px กินพื้นที่อ่านไปฟรีๆ (วัดที่จอ 390×844) */
+@media (max-width: 640px) {
+  .cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 5px 10px; gap: 5px; }
+  .cats::-webkit-scrollbar { display: none; }
+}
 .cat {
   border: 1px solid var(--border); background: var(--bg); color: var(--muted);
   border-radius: 20px; padding: 3px 10px; font-size: 12px; cursor: pointer;
@@ -385,6 +389,8 @@ body {
 }
 .cat:hover { border-color: var(--news); }
 .cat.on { background: var(--news); color: #fff; border-color: var(--news); }
+/* ย่อชิพบนมือถือ — ต้องอยู่หลังกฎพื้นฐานเช่นกัน */
+@media (max-width: 640px) { .cat { padding: 2px 8px; font-size: 10.5px; } }
 
 /* ป้ายชนิดคอลัมน์ (News / Alert) หน้าหัวข้อ */
 .ptag {

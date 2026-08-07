@@ -15,7 +15,6 @@ const state = {
   xKind: "all",
   ytKind: "news",
   ytGeo: "TH",       // ประเทศของคอลัมน์ YouTube (รหัส ISO 2 ตัว)
-  ytCat: null,       // หมวดที่เลือกในคอลัมน์ YouTube (null = ทุกหมวด)
   ytSort: "rank",    // "rank" = อันดับจาก YouTube (ค่าตั้งต้น) · "growth" = มาแรง · "views" · "new"
   ytWin: 24,         // ช่วงเวลาที่ใช้วัด "มาแรง" (ชม.) — ใช้เฉพาะตอน ytSort = "growth"
   ytHideLive: true,  // ไลฟ์ไม่มียอดวิวสะสมให้เทียบ ปกติจึงซ่อนไว้
@@ -310,38 +309,25 @@ function ytCatOf(it) {
   return "other";
 }
 
-// แถวปุ่มหมวด — โชว์เฉพาะหมวดที่มีคลิปจริง พร้อมจำนวน (โครงเดียวกับคอลัมน์ X)
-function renderYTCats(panel, shown, all) {
-  let row = $(".xcats", panel);
-  if (!row) {
-    row = document.createElement("div");
-    row.className = "xcats";
-    $(".filters", panel).after(row);
-    row.addEventListener("click", (e) => {
-      const b = e.target.closest(".cat");
-      if (!b) return;
-      if (b.dataset.live != null) state.ytHideLive = !state.ytHideLive;
-      else state.ytCat = b.dataset.cat || null;
-      renderYTTrends(panel);
-    });
-  }
-  const n = {};
-  shown.forEach((it) => { const k = ytCatOf(it); n[k] = (n[k] || 0) + 1; });
-  const chips = [`<button class="cat${state.ytCat ? "" : " on"}" data-cat="">ทั้งหมด ${shown.length}</button>`]
-    .concat(
-      YT_CATS.filter((c) => n[c.key]).map(
-        (c) => `<button class="cat${state.ytCat === c.key ? " on" : ""}" data-cat="${c.key}">${c.label} ${n[c.key]}</button>`
-      )
-    )
-    .concat(n.other ? [`<button class="cat${state.ytCat === "other" ? " on" : ""}" data-cat="other">❓ อื่นๆ ${n.other}</button>`] : []);
-  // ไลฟ์นับวิวคนละแบบ ปกติจึงซ่อน แต่ให้กดดูได้ถ้าอยากดู
+// คอลัมน์ YouTube ไม่มีแถวปุ่มหมวดแล้ว — ปุ่ม ข่าว/ทั่วไป ทำหน้าที่นั้นแทน
+// แถวนั้นกินความสูงไปเปล่าๆ ราว 45px บนมือถือ ซึ่งเป็นพื้นที่อ่านที่หายไป
+//
+// เหลือไว้อย่างเดียวคือปุ่มไลฟ์ ย้ายไปต่อท้ายแถวปุ่มเรียงลำดับ (ที่เลื่อนซ้าย-ขวาได้อยู่แล้ว)
+// จะได้ไม่เสียความสามารถไปและไม่เพิ่มแถวใหม่ — ไลฟ์นับวิวคนละแบบกับคลิปปกติ ปกติจึงซ่อนไว้
+function renderYTLive(panel, all) {
+  const row = $("[data-ysort]", panel);
+  if (!row) return;
   const nLive = all.filter((it) => it.live).length;
-  if (nLive) {
-    chips.push(
-      `<button class="cat${state.ytHideLive ? "" : " on"}" data-live="1">${state.ytHideLive ? "🔴 โชว์ไลฟ์" : "🔴 ซ่อนไลฟ์"} ${nLive}</button>`
-    );
+  let btn = $("[data-live]", row);
+  if (!nLive) { if (btn) btn.remove(); return; }
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.live = "1";
+    row.appendChild(btn);
   }
-  row.innerHTML = chips.join("");
+  btn.className = "cat" + (state.ytHideLive ? "" : " on");
+  btn.textContent = `${state.ytHideLive ? "🔴 โชว์ไลฟ์" : "🔴 ซ่อนไลฟ์"} ${nLive}`;
 }
 
 async function reloadYTTrends(opts = {}) {
@@ -391,7 +377,7 @@ function renderYTTrends(panel) {
   const filterBroken = state.ytHideLive && all.length >= 6 && noLive.length < 3;
   const shown = state.ytHideLive && !filterBroken ? noLive : all;
   syncKindToggle(panel, "[data-ytkind]", state.ytKind);
-  const items = (state.ytCat ? shown.filter((it) => ytCatOf(it) === state.ytCat) : shown).slice();
+  const items = shown.slice();
 
   // "มาแรง" = วิวที่เพิ่มในช่วงที่เลือก · ช่วงเวลามาจากช่องแยกต่างหาก (state.ytWin)
   const isGrowth = state.ytSort === "growth";
@@ -468,7 +454,10 @@ function renderYTTrends(panel) {
     b.classList.toggle("on", b.dataset.sort === state.ytSort)
   );
 
-  if (bucket.items.length) renderYTCats(panel, shown, all);
+  renderYTLive(panel, all);
+  // เผื่อเครื่องที่เคยเปิดรุ่นก่อนแล้วมีแถวหมวดค้างอยู่ใน DOM
+  const oldCats = $(".xcats", panel);
+  if (oldCats) oldCats.remove();
 
   const list = $("[data-list]", panel);
   if (items.length === 0) {
@@ -993,13 +982,15 @@ function wire() {
         const b = e.target.closest("[data-k]");
         if (!b || state.ytKind === b.dataset.k) return;
         state.ytKind = b.dataset.k;
-        state.ytCat = null;
         syncKindToggle(panel, "[data-ytkind]", state.ytKind); // ให้ปุ่มเปลี่ยนทันที ไม่ต้องรอโหลดเสร็จ
         reloadYTTrends();
       });
     const ysortEl = $("[data-ysort]", panel);
     if (ysortEl)
       ysortEl.addEventListener("click", (e) => {
+        // ปุ่มไลฟ์อยู่แถวเดียวกันแล้ว ต้องแยกให้ออกก่อน
+        const live = e.target.closest("[data-live]");
+        if (live) { state.ytHideLive = !state.ytHideLive; renderPanel(panel); return; }
         const b = e.target.closest("[data-sort]");
         if (!b) return;
         state.ytSort = b.dataset.sort;
@@ -1111,7 +1102,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 71; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 72; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
