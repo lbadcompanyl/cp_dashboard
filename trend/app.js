@@ -22,7 +22,9 @@ const state = {
   ytHideLive: true,  // ไลฟ์ไม่มียอดวิวสะสมให้เทียบ ปกติจึงซ่อนไว้
   // คอลัมน์ "เช็คคำ" — ผลของคำที่เพิ่งเช็ค เก็บใน state เพราะ renderAll() ทุก 3 นาที
   // สร้าง innerHTML ใหม่ทั้งก้อน ถ้าเก็บไว้ใน DOM อย่างเดียวผลจะหายทุกรอบ
-  kwq: "", kwGeo: "TH", kwTime: "today 12-m", kwRes: null, kwBusy: false,
+  kwq: "", kwGeo: "TH", kwTime: "today 12-m",
+  kwShown: null, // { q, geo, time } ของคำที่กำลังแสดงอยู่ · kwRes = ตัวเลขจาก Keyword Planner (ถ้ามี)
+  kwRes: null,
   related: {}, // cache related-queries responses keyed by geo|time|query
   trendBreakdown: {}, // title -> [คำที่เกี่ยวข้อง] จาก Trending Now (fallback)
   trendNewsIds: {}, // title -> article id triplets
@@ -688,124 +690,131 @@ function injectCatChips(panel, cats, allLabel) {
 }
 
 // ---------- เช็คคำ: คนสนใจแค่ไหน ก่อนเอาเข้า Alert ----------
-const KW_DIR = { up: { icon: "📈", label: "กำลังมา", cls: "up" }, down: { icon: "📉", label: "ซาลง", cls: "down" }, flat: { icon: "➡️", label: "ทรงตัว", cls: "flat" } };
+// ---------- Google Trends embed ----------
+// ⚠️ ทำไมต้องใช้ embed แทนการยิงจาก Worker
+// Cloudflare Worker ออกเน็ตจาก IP ที่ใช้ร่วมกับคนทั้งโลก Google Trends จึงตอบ 429 แทบทุกครั้ง
+// ลองซ้ำก็ไม่ช่วยเพราะไม่ใช่การชนกันชั่วขณะ — วัดจากการใช้จริงแล้วว่าพิมพ์กี่คำก็ไม่ผ่าน
+// embed ทำงานในเบราว์เซอร์ของผู้ใช้เอง = ใช้โควตาของเครื่องผู้ใช้ ซึ่งไม่มีปัญหานี้
+const TRENDS_EMBED = "https://ssl.gstatic.com/trends_nrtr/3603_RC01/embed_loader.js";
+const TRENDS_GUEST = "https://trends.google.com:443/trends/embed/";
+let trendsEmbedP = null;
+function loadTrendsEmbed() {
+  if (window.trends?.embed?.renderExploreWidgetTo) return Promise.resolve(true);
+  if (trendsEmbedP) return trendsEmbedP;
+  trendsEmbedP = new Promise((resolve) => {
+    const sc = document.createElement("script");
+    sc.src = TRENDS_EMBED;
+    sc.async = true;
+    // สคริปต์เซ็ต window.trends ทีหลัง onload เล็กน้อย จึงต้องรอเป็นรอบๆ
+    sc.onload = () => {
+      let tries = 0;
+      const tick = () => {
+        if (window.trends?.embed?.renderExploreWidgetTo) return resolve(true);
+        if (++tries > 40) return resolve(false);
+        setTimeout(tick, 100);
+      };
+      tick();
+    };
+    sc.onerror = () => resolve(false); // ตัวบล็อกโฆษณา/เน็ตองค์กรบล็อก gstatic ได้
+    document.head.appendChild(sc);
+  });
+  return trendsEmbedP;
+}
+
 
 async function runKwCheck() {
   const panel = $('.panel[data-source="kwcheck"]');
-  if (!panel || state.kwBusy) return;
+  if (!panel) return;
   const q = (state.kwq || "").trim();
   if (!q) return;
-  state.kwBusy = true;
+  state.kwShown = { q, geo: state.kwGeo, time: state.kwTime };
   state.kwRes = null;
-  renderKwCheck(panel);
+  renderKwCheck(panel);           // วาดกรอบ + สั่ง embed ทำงานทันที ไม่ต้องรอ server
+  fetchKwVolume(q, panel);        // ตัวเลขยอดค้นหาจริงเป็นของแถม มาทีหลังได้
+}
+
+// ยิง server เพื่อเอา "ยอดค้นหาต่อเดือน" จาก Keyword Planner เท่านั้น
+// (ส่วน Google Trends ไม่พึ่ง server แล้ว — embed ทำเองในเบราว์เซอร์)
+// ตอนนี้ยังไม่มี token จึงยังไม่ได้อะไรกลับมา แต่พอ token มาถึงตัวเลขจะขึ้นเอง
+async function fetchKwVolume(q, panel) {
   try {
     const res = await fetch(
       `/api/trend/kwcheck?q=${encodeURIComponent(q)}&geo=${encodeURIComponent(state.kwGeo)}&time=${encodeURIComponent(state.kwTime)}`
     );
-    state.kwRes = await res.json();
-  } catch (e) {
-    state.kwRes = { q, error: e.message };
-  }
-  state.kwBusy = false;
-  renderKwCheck(panel);
+    const d = await res.json();
+    // ถ้าผู้ใช้เปลี่ยนคำไปแล้วระหว่างรอ อย่าเอาผลเก่ามาทับ
+    if (state.kwShown?.q !== q) return;
+    state.kwRes = d;
+    renderKwCheck(panel);
+  } catch {}
 }
 
-// กราฟเส้นเล็กๆ วาดเอง — ค่า 0-100 ของ Google Trends ไม่ต้องมีแกน แค่ให้เห็นรูปทรง
-function kwSpark(points) {
-  if (!points || points.length < 2) return "";
-  const w = 260, h = 44, max = Math.max(...points.map((p) => p.v), 1);
-  const step = w / (points.length - 1);
-  const d = points.map((p, i) => `${i ? "L" : "M"}${(i * step).toFixed(1)},${(h - (p.v / max) * h).toFixed(1)}`).join("");
-  return `<svg class="kwspark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"/></svg>`;
-}
 
 function renderKwCheck(panel) {
   const list = $("[data-list]", panel);
   const countEl = $("[data-count]", panel);
-  const r = state.kwRes;
+  const shown = state.kwShown;
 
-  if (state.kwBusy) {
-    countEl.className = "pcount"; countEl.textContent = "กำลังเช็ค…";
-    list.innerHTML = `<div class="state skeleton">กำลังถาม Google Trends…</div>`;
-    return;
-  }
-  if (!r) {
+  if (!shown) {
     countEl.className = "pcount"; countEl.textContent = "—";
-    list.innerHTML = `<div class="state">พิมพ์คำแล้วกด "เช็ค" — จะได้ระดับความสนใจย้อนหลัง คำที่คนค้นคู่กัน และคำใกล้เคียงที่กำลังมา<br><br>ใช้เทียบว่าคำใหม่น่าเอาเข้า Alert ไหม โดยลองเช็คคำที่มีอยู่แล้วเทียบดู</div>`;
-    return;
-  }
-  if (r.error) {
-    countEl.className = "errbadge"; countEl.textContent = "⚠ เช็คไม่ได้";
-    list.innerHTML = `<div class="state error">เช็คไม่สำเร็จ: ${escapeHtml(r.error)}</div>`;
+    list.innerHTML = `<div class="state">พิมพ์คำแล้วกด "เช็ค" — จะได้กราฟความสนใจย้อนหลังและคำที่คนค้นคู่กัน จาก Google Trends โดยตรง<br><br>ใช้เทียบว่าคำใหม่น่าเอาเข้า Alert ไหม โดยลองเช็คคำที่มีอยู่แล้วเทียบดู</div>`;
     return;
   }
 
-  const i = r.interest;
   countEl.className = "pcount";
-  countEl.textContent = i ? `เฉลี่ย ${i.avg}/100` : "ไม่มีข้อมูล";
+  countEl.textContent = shown.q.length > 14 ? shown.q.slice(0, 14) + "…" : shown.q;
 
-  const parts = [];
-  parts.push(`<div class="kwterm">${escapeHtml(r.q)}</div>`);
+  const v = (state.kwRes || {}).volume || {};
+  const volBox = v.available && v.avgMonthly
+    ? `<div class="kwbox">
+        <div class="kwrow"><span class="kwbig">${v.avgMonthly.toLocaleString("th-TH")}</span><span class="kwunit">ครั้ง/เดือน (เฉลี่ย)</span></div>
+        <div class="kwmeta">การแข่งขันโฆษณา: ${escapeHtml(v.competition || "-")}${v.competitionIndex != null ? ` (${v.competitionIndex}/100)` : ""}</div>
+      </div>`
+    : "";
 
-  if (i) {
-    const dir = KW_DIR[i.direction] || KW_DIR.flat;
-    parts.push(`<div class="kwbox">
-      <div class="kwrow"><span class="kwbig">${i.avg}</span><span class="kwunit">/100 เฉลี่ย</span>
-        <span class="kwdir ${dir.cls}">${dir.icon} ${dir.label}${i.changePct != null ? ` ${i.changePct > 0 ? "+" : ""}${i.changePct}%` : ""}</span></div>
-      ${kwSpark(i.points)}
-      <div class="kwmeta">สูงสุด ${i.peak} · ล่าสุด ${i.latest} · ${escapeHtml(r.q)} เทียบกับตัวเองในช่วงที่เลือก (100 = จุดที่ค้นเยอะสุด)</div>
-    </div>`);
-  } else if (r.rateLimited) {
-    // ⚠️ ห้ามสรุปว่า "ไม่มีคนค้น" ตอนที่ Google ไม่ยอมตอบ — คนละเรื่องกันคนละขั้ว
-    // ถ้าบอกผิด ผู้ใช้อาจตัดคำที่ดีทิ้งเพราะข้อสรุปที่เราเดาเอาเอง
-    parts.push(`<div class="kwbox"><div class="kwmeta">⏳ Google จำกัดจำนวนครั้งชั่วคราว (429) — <b>ยังไม่รู้ว่าคำนี้คนค้นเยอะแค่ไหน</b><br>รอสัก 1 นาทีแล้วกดใหม่ (กดรัวๆ จะยิ่งโดนจำกัดนานขึ้น)</div>
-      <button type="button" class="kwchip" data-kwretry style="margin-top:8px">🔄 ลองใหม่</button></div>`);
-  } else if (r.empty) {
-    // ถึงตรงนี้ = Google ตอบมาแล้วจริงๆ ว่าไม่มีข้อมูล ถึงจะสรุปได้
-    parts.push(`<div class="kwbox"><div class="kwmeta">Google ไม่มีข้อมูลพอสำหรับคำนี้ — แปลว่าคนค้นน้อยมากจนวัดไม่ได้ ไม่คุ้มเอาเข้า Alert</div></div>`);
-  } else if ((r.errors || []).length) {
-    parts.push(`<div class="kwbox"><div class="kwmeta">ดึงข้อมูลจาก Google ไม่สำเร็จ — <b>ยังไม่รู้ผลของคำนี้</b></div>
-      <button type="button" class="kwchip" data-kwretry style="margin-top:8px">🔄 ลองใหม่</button></div>`);
-  }
+  const exploreUrl =
+    `https://trends.google.com/trends/explore?date=${encodeURIComponent(shown.time)}` +
+    `&geo=${encodeURIComponent(shown.geo)}&q=${encodeURIComponent(shown.q)}&hl=th`;
 
-  // ยอดค้นหาจริงต่อเดือน — มีต่อเมื่อ token ของ Google Ads พร้อม
-  const v = r.volume || {};
-  if (v.available && v.avgMonthly) {
-    parts.push(`<div class="kwbox">
-      <div class="kwrow"><span class="kwbig">${v.avgMonthly.toLocaleString("th-TH")}</span><span class="kwunit">ครั้ง/เดือน (เฉลี่ย)</span></div>
-      <div class="kwmeta">การแข่งขันโฆษณา: ${escapeHtml(v.competition || "-")}${v.competitionIndex != null ? ` (${v.competitionIndex}/100)` : ""}</div>
-    </div>`);
-  } else if (!v.available) {
-    parts.push(`<div class="kwnote">ℹ️ ยอดค้นหาจริงต่อเดือนยังไม่เปิด — รอ developer token ของ Google Ads${(v.missing || []).length ? ` (ยังขาด ${v.missing.length} ค่า)` : ""}</div>`);
-  }
+  list.innerHTML =
+    `<div class="kwterm">${escapeHtml(shown.q)}</div>` +
+    volBox +
+    `<div class="kwsec"><div class="kwsectitle">📈 ความสนใจตามช่วงเวลา</div>
+       <div class="kwembed" data-kwts><div class="kwmeta">กำลังโหลดจาก Google Trends…</div></div></div>
+     <div class="kwsec"><div class="kwsectitle">🔁 คำที่คนค้นคู่กัน</div>
+       <div class="kwembed kwembed-tall" data-kwrq><div class="kwmeta">กำลังโหลด…</div></div></div>
+     <a class="kwchip" href="${escapeHtml(exploreUrl)}" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a>`;
 
-  const chips = (arr, title) =>
-    arr && arr.length
-      ? `<div class="kwsec"><div class="kwsectitle">${title}</div><div class="kwchips">${arr
-          .map((k) => `<button type="button" class="kwchip" data-kwtry="${escapeHtml(k.query)}">${escapeHtml(k.query)}<span>${escapeHtml(k.label)}</span></button>`)
-          .join("")}</div></div>`
-      : "";
-  parts.push(chips(r.related?.rising, "🔥 คำใกล้เคียงที่กำลังมา"));
-  parts.push(chips(r.related?.top, "🔁 คนค้นคู่กันบ่อย"));
+  renderKwEmbeds(panel, shown);
+}
 
-  // ย้ำรายละเอียดทางเทคนิคเฉพาะตอนที่ "ได้ข้อมูลมาบางส่วน" — ถ้าไม่ได้อะไรเลย กล่องข้างบนบอกไปแล้ว
-  if ((r.errors || []).length && (i || r.related?.top?.length)) {
-    parts.push(`<div class="kwnote">⚠ ได้ข้อมูลไม่ครบ: ${escapeHtml(r.errors.join(" · "))}</div>`);
-  }
-  list.innerHTML = parts.filter(Boolean).join("");
-
-  const retry = $("[data-kwretry]", list);
-  if (retry) retry.addEventListener("click", () => runKwCheck());
-
-  // กดคำที่แนะนำ = เช็คคำนั้นต่อทันที ไม่ต้องพิมพ์เอง
-  $$("[data-kwtry]", list).forEach((b) =>
-    b.addEventListener("click", () => {
-      state.kwq = b.dataset.kwtry;
-      const inp = $("[data-kwq]", panel);
-      if (inp) inp.value = state.kwq;
-      runKwCheck();
-    })
-  );
+// วาด widget ของ Google ลงในกล่องที่เตรียมไว้
+// ⚠️ ต้องเรียกใหม่ทุกครั้งที่ renderKwCheck สร้าง innerHTML ใหม่ — iframe เดิมหายไปกับ DOM
+function renderKwEmbeds(panel, shown) {
+  const jobs = [["[data-kwts]", "TIMESERIES"], ["[data-kwrq]", "RELATED_QUERIES"]];
+  loadTrendsEmbed().then((okLoaded) => {
+    // ผู้ใช้เปลี่ยนคำระหว่างรอสคริปต์โหลด → อย่าวาดของเก่าทับ
+    if (state.kwShown?.q !== shown.q) return;
+    if (!okLoaded) {
+      jobs.forEach(([sel]) => {
+        const box = $(sel, panel);
+        if (box) box.innerHTML = `<div class="kwmeta">โหลด Google Trends ไม่ได้ — อาจโดนตัวบล็อกโฆษณาหรือเน็ตองค์กรบล็อกไว้ · กด "เปิดใน Google Trends" ด้านล่างแทนได้</div>`;
+      });
+      return;
+    }
+    const common = { comparisonItem: [{ keyword: shown.q, geo: shown.geo, time: shown.time }], category: 0, property: "" };
+    const opts = {
+      exploreQuery: `date=${shown.time}&geo=${shown.geo}&q=${encodeURIComponent(shown.q)}&hl=th`,
+      guestPath: TRENDS_GUEST,
+    };
+    jobs.forEach(([sel, type]) => {
+      const box = $(sel, panel);
+      if (!box) return;
+      box.innerHTML = "";
+      try { window.trends.embed.renderExploreWidgetTo(box, type, common, opts); }
+      catch { box.innerHTML = `<div class="kwmeta">วาดกราฟไม่สำเร็จ</div>`; }
+    });
+  });
 }
 
 function renderPanel(panel) {
@@ -1127,9 +1136,11 @@ function wire() {
     if (kwgoEl) kwgoEl.addEventListener("click", () => runKwCheck());
     const kwgeoEl = $("[data-kwgeo]", panel);
     // เปลี่ยนประเทศ/ช่วงเวลาแล้วเช็คซ้ำให้เลย ถ้าเคยเช็คคำไว้แล้ว — ไม่ต้องกดซ้ำเอง
-    if (kwgeoEl) kwgeoEl.addEventListener("change", (e) => { state.kwGeo = e.target.value; if (state.kwRes) runKwCheck(); });
+    // เงื่อนไขต้องดูว่า "มีคำที่กำลังแสดงอยู่ไหม" (kwShown) ไม่ใช่ดูผลจาก server (kwRes)
+    // เพราะ kwRes จะมีก็ต่อเมื่อ Keyword Planner พร้อมแล้วเท่านั้น ซึ่งตอนนี้ยังไม่มี
+    if (kwgeoEl) kwgeoEl.addEventListener("change", (e) => { state.kwGeo = e.target.value; if (state.kwShown) runKwCheck(); });
     const kwtimeEl = $("[data-kwtime]", panel);
-    if (kwtimeEl) kwtimeEl.addEventListener("change", (e) => { state.kwTime = e.target.value; if (state.kwRes) runKwCheck(); });
+    if (kwtimeEl) kwtimeEl.addEventListener("change", (e) => { state.kwTime = e.target.value; if (state.kwShown) runKwCheck(); });
 
     const ytkindEl = $("[data-ytkind]", panel);
     if (ytkindEl)
@@ -1263,7 +1274,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 76; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 77; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

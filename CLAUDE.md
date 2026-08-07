@@ -348,10 +348,22 @@ Edge เป็น Chromium ตัวเดียวกับ Chrome — อะ�
 
 ข้อมูล 2 ชั้น ชั้นล่างไม่มีก็ไม่พัง:
 
-| ชั้น | ได้อะไร | สถานะ |
+| ชั้น | ได้อะไร | ดึงจากไหน |
 |---|---|---|
-| **Google Trends** | ความสนใจ 0-100 · ทิศทางขึ้น/ลง · คำที่เกี่ยวข้อง | ใช้ได้เลย ไม่ต้องมี key |
-| **Google Ads (Keyword Planner)** | ยอดค้นหาจริงต่อเดือน | ⏳ รอ developer token |
+| **Google Trends** | กราฟความสนใจ + คำที่เกี่ยวข้อง | **embed ในเบราว์เซอร์ผู้ใช้** |
+| **Google Ads (Keyword Planner)** | ยอดค้นหาจริงต่อเดือน | Worker · ⏳ รอ developer token |
+
+> 🚫 **เคยลองยิง Google Trends จาก Worker แล้วใช้ไม่ได้จริง — อย่าทำซ้ำ**
+> `/trends/api/explore` + `/widgetdata/*` ตอบ **429 ทุกครั้ง** เพราะ Cloudflare Worker
+> ออกเน็ตจาก IP ที่ใช้ร่วมกับคนทั้งโลก · ลองซ้ำ/หน่วงเวลาไม่ช่วย (ทดสอบจากการใช้จริง
+> พิมพ์กี่คำก็ไม่ผ่านสักคำ) · `fetchKeywordCheck()` ยังอยู่ในโค้ดแต่ไม่มีใครเรียกจากหน้าเว็บแล้ว
+>
+> ✅ ทางที่ใช้ได้คือ **embed ทางการของ Google** (`ssl.gstatic.com/trends_nrtr/.../embed_loader.js`)
+> เพราะทำงานในเบราว์เซอร์ของผู้ใช้ = ใช้โควตาของเครื่องผู้ใช้ ไม่ใช่ของ Cloudflare
+> แลกกับการที่หน้าตาเป็น UI ของ Google (พื้นขาว) และจัดสไตล์เองไม่ได้
+>
+> ⚠️ `/api/trend/trending` ที่ใช้ในคอลัมน์ Google Trends **ไม่เจอปัญหานี้** เพราะเป็นคนละ endpoint
+> (`batchexecute` RPC `i0OFE`) — อย่าเหมารวมว่า Trends ทั้งหมดยิงจาก Worker ไม่ได้
 
 **ยืนยันด้วยการยิงจริงแล้ว (7 ส.ค. 2026):**
 `POST googleads.googleapis.com/v21/customers/{id}:generateKeywordHistoricalMetrics` → `401 UNAUTHENTICATED`
