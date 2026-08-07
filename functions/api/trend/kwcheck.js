@@ -58,6 +58,7 @@ export async function onRequest(context) {
     out.interest = trendRes.value.interest;
     out.related = trendRes.value.related;
     out.empty = trendRes.value.empty;
+    out.rateLimited = !!trendRes.value.rateLimited;
     out.errors.push(...(trendRes.value.errors || []));
   } else {
     out.errors.push("trends: " + String(trendRes.reason?.message || trendRes.reason).slice(0, 160));
@@ -73,9 +74,11 @@ export async function onRequest(context) {
   }
 
   const ok = !!out.interest || out.related.top.length > 0 || out.empty;
-  const resp = json(out, 200, ok ? EDGE_TTL : 0);
-  // ดึงไม่ได้เลย = อย่า cache ไว้ ให้รอบหน้าลองใหม่
-  if (ok) context.waitUntil(cache.put(key, resp.clone()));
+  // ดึงไม่ได้ = cache สั้นๆ 60 วิ ไม่ใช่ไม่ cache เลย
+  // ถ้าไม่ cache ผู้ใช้กดซ้ำรัวๆ ตอนโดน 429 จะยิ่งไปกระทืบ Google ให้แบนนานขึ้น
+  // แต่ก็ต้องสั้นพอที่พอหายแบนแล้วกดใหม่ได้ผลทันที
+  const resp = json(out, 200, ok ? EDGE_TTL : 60);
+  context.waitUntil(cache.put(key, resp.clone()));
   return browserCopy(resp);
 }
 

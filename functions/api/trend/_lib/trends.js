@@ -133,15 +133,25 @@ export async function fetchKeywordCheck(keyword, geo = "TH", time = "today 12-m"
   if (!er.ok) throw new Error("explore HTTP " + er.status);
   const widgets = JSON.parse(strip(await er.text())).widgets;
 
+  // Google Trends จำกัดจำนวนครั้งต่อ IP และ Worker ออกเน็ตจาก IP ที่ใช้ร่วมกับคนอื่นทั้งโลก
+  // 429 จึงเป็นเรื่องที่เจอได้เป็นปกติ ไม่ใช่ความผิดปกติของคำที่ค้น
+  // ลองซ้ำอีกครั้งหลังเว้นสั้นๆ — ช่วยได้บางครั้งเมื่อเป็นการชนกันชั่วขณะ ไม่ใช่โดนแบนยาว
   const widgetData = async (w, path) => {
     if (!w) return null;
-    const r = await fetch(
+    const url =
       `https://trends.google.com/trends/api/widgetdata/${path}?hl=th&tz=${tz}&req=` +
-        encodeURIComponent(JSON.stringify(w.request)) + `&token=${w.token}`,
-      { headers: hdr }
-    );
-    if (!r.ok) throw new Error(`${path} HTTP ${r.status}`);
-    return JSON.parse(strip(await r.text()));
+      encodeURIComponent(JSON.stringify(w.request)) + `&token=${w.token}`;
+    let last = 0;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, 700));
+      const r = await fetch(url, { headers: hdr });
+      if (r.ok) return JSON.parse(strip(await r.text()));
+      last = r.status;
+      if (r.status !== 429) break; // ผิดพลาดอย่างอื่นลองซ้ำก็ไม่ช่วย
+    }
+    const err = new Error(`${path} HTTP ${last}`);
+    err.status = last;
+    throw err;
   };
 
   // ทั้งสอง widget ไม่ขึ้นต่อกัน ยิงพร้อมกันได้ · อันไหนพังไม่ต้องลากอีกอันตกไปด้วย
@@ -183,12 +193,16 @@ export async function fetchKeywordCheck(keyword, geo = "TH", time = "today 12-m"
     related = { top: map(ranked[0]?.rankedKeyword), rising: map(ranked[1]?.rankedKeyword) };
   }
 
+  const failed = [tsRes, rqRes].filter((r) => r.status === "rejected");
   return {
     interest,
     related,
-    // ไม่มีข้อมูลเลย ≠ พัง — คำที่ไม่มีใครค้นก็ได้ผลว่างแบบนี้ ต้องแยกให้ออกจาก error
-    empty: !interest && !related.top.length && !related.rising.length,
-    errors: [tsRes, rqRes].filter((r) => r.status === "rejected").map((r) => String(r.reason?.message || r.reason).slice(0, 120)),
+    // ⚠️ "ไม่มีข้อมูล" กับ "ดึงไม่ได้" ต้องแยกกันเด็ดขาด
+    // ถ้าดึงไม่ได้แล้วไปบอกผู้ใช้ว่าไม่มีใครค้นคำนี้ เขาอาจตัดคำที่ดีทิ้งเพราะข้อสรุปที่ผิด
+    // empty = Google ตอบมาแล้วจริงๆ ว่าไม่มีอะไร เท่านั้น
+    empty: failed.length === 0 && !interest && !related.top.length && !related.rising.length,
+    rateLimited: failed.some((r) => r.reason?.status === 429),
+    errors: failed.map((r) => String(r.reason?.message || r.reason).slice(0, 120)),
   };
 }
 

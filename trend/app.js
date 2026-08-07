@@ -755,9 +755,17 @@ function renderKwCheck(panel) {
       ${kwSpark(i.points)}
       <div class="kwmeta">สูงสุด ${i.peak} · ล่าสุด ${i.latest} · ${escapeHtml(r.q)} เทียบกับตัวเองในช่วงที่เลือก (100 = จุดที่ค้นเยอะสุด)</div>
     </div>`);
+  } else if (r.rateLimited) {
+    // ⚠️ ห้ามสรุปว่า "ไม่มีคนค้น" ตอนที่ Google ไม่ยอมตอบ — คนละเรื่องกันคนละขั้ว
+    // ถ้าบอกผิด ผู้ใช้อาจตัดคำที่ดีทิ้งเพราะข้อสรุปที่เราเดาเอาเอง
+    parts.push(`<div class="kwbox"><div class="kwmeta">⏳ Google จำกัดจำนวนครั้งชั่วคราว (429) — <b>ยังไม่รู้ว่าคำนี้คนค้นเยอะแค่ไหน</b><br>รอสัก 1 นาทีแล้วกดใหม่ (กดรัวๆ จะยิ่งโดนจำกัดนานขึ้น)</div>
+      <button type="button" class="kwchip" data-kwretry style="margin-top:8px">🔄 ลองใหม่</button></div>`);
   } else if (r.empty) {
-    // สำคัญ: "ไม่มีใครค้น" ไม่ใช่ "ระบบพัง" — ตอบคำถามผู้ใช้ได้เลยว่าคำนี้ไม่ต้องเอาเข้า Alert
+    // ถึงตรงนี้ = Google ตอบมาแล้วจริงๆ ว่าไม่มีข้อมูล ถึงจะสรุปได้
     parts.push(`<div class="kwbox"><div class="kwmeta">Google ไม่มีข้อมูลพอสำหรับคำนี้ — แปลว่าคนค้นน้อยมากจนวัดไม่ได้ ไม่คุ้มเอาเข้า Alert</div></div>`);
+  } else if ((r.errors || []).length) {
+    parts.push(`<div class="kwbox"><div class="kwmeta">ดึงข้อมูลจาก Google ไม่สำเร็จ — <b>ยังไม่รู้ผลของคำนี้</b></div>
+      <button type="button" class="kwchip" data-kwretry style="margin-top:8px">🔄 ลองใหม่</button></div>`);
   }
 
   // ยอดค้นหาจริงต่อเดือน — มีต่อเมื่อ token ของ Google Ads พร้อม
@@ -780,10 +788,14 @@ function renderKwCheck(panel) {
   parts.push(chips(r.related?.rising, "🔥 คำใกล้เคียงที่กำลังมา"));
   parts.push(chips(r.related?.top, "🔁 คนค้นคู่กันบ่อย"));
 
-  if ((r.errors || []).length) {
-    parts.push(`<div class="kwnote">⚠ บางส่วนดึงไม่ได้: ${escapeHtml(r.errors.join(" · "))}</div>`);
+  // ย้ำรายละเอียดทางเทคนิคเฉพาะตอนที่ "ได้ข้อมูลมาบางส่วน" — ถ้าไม่ได้อะไรเลย กล่องข้างบนบอกไปแล้ว
+  if ((r.errors || []).length && (i || r.related?.top?.length)) {
+    parts.push(`<div class="kwnote">⚠ ได้ข้อมูลไม่ครบ: ${escapeHtml(r.errors.join(" · "))}</div>`);
   }
   list.innerHTML = parts.filter(Boolean).join("");
+
+  const retry = $("[data-kwretry]", list);
+  if (retry) retry.addEventListener("click", () => runKwCheck());
 
   // กดคำที่แนะนำ = เช็คคำนั้นต่อทันที ไม่ต้องพิมพ์เอง
   $$("[data-kwtry]", list).forEach((b) =>
@@ -1251,7 +1263,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 75; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 76; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
