@@ -87,10 +87,36 @@ index.html      landing — การ์ดลิงก์ทุกแดชบ�
 trend/          PR Trend Dashboard — Google Alerts + Google Trends   ← งานฝั่ง PR
 ir/             IR News Monitor — ข่าวนักลงทุนสัมพันธ์
 issue/          Issue Dashboard — CP + หัวข้อที่จับตามอง
+admin/          หน้าจัดการ — 🚩 คำแนะนำตัดข่าว + ➕ เพิ่ม keyword (ไม่มีลิงก์จาก landing)
 sd.html         SD Trends — ความยั่งยืน
 trends.html     Trends Explorer (เก่า) — ไม่มีลิงก์จาก landing แล้ว
 functions/api/  Cloudflare Pages Functions (trend / ir / sd / flags)
 ```
+
+### 🛠 หน้า `/admin/` — ทำไมเป็น path ไม่ใช่ subdomain
+
+เจ้าของขอ `back.cp-dashboard-680.pages.dev` กับ `back.dev.cp-dashboard-680.pages.dev`
+**ทั้งสองอันทำไม่ได้** — `*.pages.dev` ให้ subdomain ได้ชั้นเดียว และชื่อนั้นผูกกับ **ชื่อ branch**
+(`dev.cp-dashboard-680.pages.dev` = branch ชื่อ `dev`) · ซ้อนสองชั้นอย่าง `back.dev.<project>`
+ทั้งชื่อและใบรับรอง https ไม่รองรับเลย · ถ้าอยากได้โดเมนแยกจริงต้องใช้ **โดเมนของตัวเอง** (Custom domain)
+
+ที่ใช้อยู่จึงเป็น `cp-dashboard-680.pages.dev/admin/` และ `dev.cp-dashboard-680.pages.dev/admin/`
+
+- **ไม่มีการ์ดบน landing โดยตั้งใจ** — เป็นเครื่องมือของเจ้าของ ไม่ใช่แดชบอร์ดให้คนทั่วไปดู
+- ⚠️ **ไม่มีระบบล็อกอิน** ใครรู้ลิงก์ก็เปิดได้ (มี `noindex` กัน Google เท่านั้น)
+  ถ้าจะจำกัดสิทธิ์จริงต้องตั้ง **Cloudflare Access** หน้า path นี้
+- โค้ดทำงานจริงอยู่ใน `flags.js` ไฟล์เดียวกับที่แดชบอร์ดใช้ — สั่งด้วย `ui:` ตอน `Flags.init()`
+  `"fab"` ปุ่มลอย (ของเดิม) · `"none"` ไม่มีปุ่มลอย ← แดชบอร์ดใช้อันนี้ · `"admin"` กางในหน้า
+- **ปุ่ม ⚑ กับ 🗂 บนการ์ดยังอยู่บนแดชบอร์ด** — เป็นทางเดียวที่ข่าวจะเข้ากอง "คำแนะนำตัดข่าว"
+  ถอดออกเมื่อไหร่ = ฟีเจอร์ตายทั้งอัน
+- หน้า admin ไม่มี `.panel` ให้ `flags.js` อ่านชื่อคอลัมน์เอง จึงมีตาราง `SCOPES` ใน `admin/app.js`
+  **เปลี่ยนชื่อคอลัมน์ alert ในแดชบอร์ดไหน ต้องมาแก้ที่นี่ด้วย** ไม่งั้นชื่อบน admin จะค้างของเก่า
+- flag ของแต่ละแดชบอร์ดเก็บคนละกอง: PR = `flags:pr` · IR = `flags:ir` · **Issue = `flags:root`**
+  (`deriveScope()` ดูจาก path — `/issue/` ไม่เข้าเงื่อนไขไหนเลยจึงตกเป็น `root`)
+
+> ⚠️ **ห้ามให้กล่องบนหน้า admin ชิงโฟกัสช่องพิมพ์เอง** — `refresh()` มีกฎว่า
+> "ถ้ากำลังพิมพ์อยู่ในกล่องไหน อย่าวาดทับกล่องนั้น" กล่องที่กางค้างแล้ว auto-focus
+> จะติดกฎนี้ตลอดเวลา ค่าที่ sync มาจาก KV เลยไม่ขึ้นสักที **ดูเหมือน sync พัง ทั้งที่ sync ถูก**
 
 เป็น static + Pages Functions ไม่มีขั้นตอน build
 
