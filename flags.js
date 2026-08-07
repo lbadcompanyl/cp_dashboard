@@ -398,41 +398,55 @@
       ? `<div class="flg-kwtabs">${alerts.map((s) => `<button type="button" class="flg-kwtab${s === source ? " on" : ""}" data-tab="${esc(s)}">${esc(labelOf(s))}</button>`).join("")}</div>`
       : "";
     kwPanel.dataset.source = source;
+
+    // แบ่งหน้าที่กันคนละที่ตามที่เจ้าของสั่ง:
+    //   แดชบอร์ด = เก็บคำอย่างเดียว (อ่านข่าวอยู่ นึกคำได้ก็พิมพ์ใส่ทันที)
+    //   /admin/   = เอาคำที่เก็บไว้มาประกอบเป็น query แล้วคัดลอกไปแปะใน Google Alert
+    const adminMode = isAdmin();
+    const chips = `<div class="flg-rows flg-kwchips">${
+      terms.length
+        ? terms.map((t, i) => `<span class="flg-kwchip">${esc(t)}<button type="button" data-rm="${i}" title="ลบ">✕</button></span>`).join("")
+        : `<span class="flg-thin">${adminMode ? "ยังไม่มีคำ — ไปพิมพ์เพิ่มที่ปุ่ม ➕ บนแดชบอร์ด" : "ยังไม่มีคำ — พิมพ์ด้านบน"}</span>`
+    }</div>`;
+
     kwPanel.innerHTML = `
-      <div class="flg-head"><b>➕ เพิ่ม keyword${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
-      ${tabs}
-      <p class="flg-note">พิมพ์คำ → ประกอบเป็น OR string → คัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
-      <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
-      <div class="flg-rows flg-kwchips">${terms.length ? terms.map((t, i) => `<span class="flg-kwchip">${esc(t)}<button type="button" data-rm="${i}" title="ลบ">✕</button></span>`).join("") : '<span class="flg-thin">ยังไม่มีคำ — พิมพ์ด้านบน</span>'}</div>
-      <div class="flg-sub">คำค้นที่ประกอบได้ <span class="flg-hint">(แก้ได้)</span>:</div>
-      <div class="flg-ex"><textarea id="flgkwta" rows="2" placeholder='เช่น "ราคาหมู" OR สุกร'>${esc(buildKw(terms))}</textarea><button type="button" class="flg-copy" data-kwcopy>📋 คัดลอก</button></div>
-      <div class="flg-actions"><a href="https://www.google.com/alerts" target="_blank" rel="noopener">🔗 เปิด Google Alerts → แก้ query → Update</a><button type="button" class="flg-clear" data-kwclear>ล้างคำทั้งหมด</button></div>`;
+      <div class="flg-head"><b>➕ ${adminMode ? "keyword ที่เก็บไว้" : "เพิ่ม keyword"}${scopeName() ? " · " + scopeName() : ""} · ${esc(labelOf(source))}${serverOn ? ' <span class="flg-sync">☁︎ sync</span>' : ""}</b><button type="button" class="flg-x" data-kwclose>✕</button></div>
+      ${tabs}` +
+      (adminMode
+        ? `<p class="flg-note">คำที่เก็บไว้จากปุ่ม ➕ บนแดชบอร์ด — ประกอบเป็น OR string แล้วคัดลอกไป <u>ต่อท้าย</u> query ใน Google Alert แล้วกด Update (Google ไม่มี API เพิ่มให้อัตโนมัติ)</p>
+           ${chips}
+           <div class="flg-sub">คำค้นที่ประกอบได้ <span class="flg-hint">(แก้ได้)</span>:</div>
+           <div class="flg-ex"><textarea id="flgkwta" rows="2" placeholder='เช่น "ราคาหมู" OR สุกร'>${esc(buildKw(terms))}</textarea><button type="button" class="flg-copy" data-kwcopy>📋 คัดลอก</button></div>
+           <div class="flg-actions"><a href="https://www.google.com/alerts" target="_blank" rel="noopener">🔗 เปิด Google Alerts → แก้ query → Update</a><button type="button" class="flg-clear" data-kwclear>ล้างคำทั้งหมด</button></div>`
+        : `<p class="flg-note">พิมพ์คำที่อยากเพิ่มเก็บไว้ก่อน — เอาไปแปะใน Google Alert ทีเดียวได้ที่หน้า <a href="/admin/" target="_blank" rel="noopener">จัดการ</a></p>
+           <div class="flg-kwin"><input type="text" class="flg-kwfield" placeholder="พิมพ์คำแล้วกด Enter…" autocomplete="off"><button type="button" class="flg-kwadd">เพิ่ม</button></div>
+           ${chips}`);
     kwPanel.classList.add("open");
     kwPanel.style.display = "block";
     if (mask) mask.style.display = "block";
 
     const field = $(".flg-kwfield", kwPanel);
-    const doAdd = () => {
-      const v = field.value.trim();
-      if (!v) return;
-      const arr = kwStore[source] || (kwStore[source] = []);
-      if (!arr.includes(v)) arr.push(v);
-      save(key(LS_KW), kwStore);
-      pushOp({ op: "setKw", source, terms: kwStore[source] });
-      openKw(source);
-    };
-    // โหมด admin กล่องนี้กางค้างอยู่ตลอด ห้ามชิงโฟกัสเอง —
-    // refresh() มองว่า "กำลังพิมพ์อยู่" แล้วเลี่ยงการวาดทับ ค่าที่ sync มาจาก KV เลยไม่ขึ้นสักที
-    if (!isAdmin()) field.focus();
-    $(".flg-kwadd", kwPanel).addEventListener("click", doAdd);
-    field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+    if (field) {
+      const doAdd = () => {
+        const v = field.value.trim();
+        if (!v) return;
+        const arr = kwStore[source] || (kwStore[source] = []);
+        if (!arr.includes(v)) arr.push(v);
+        save(key(LS_KW), kwStore);
+        pushOp({ op: "setKw", source, terms: kwStore[source] });
+        openKw(source);
+      };
+      field.focus();
+      $(".flg-kwadd", kwPanel).addEventListener("click", doAdd);
+      field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+    }
     $$("[data-rm]", kwPanel).forEach((b) =>
       b.addEventListener("click", () => { kwStore[source].splice(Number(b.dataset.rm), 1); save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: kwStore[source] }); openKw(source); })
     );
     $$("[data-tab]", kwPanel).forEach((b) => b.addEventListener("click", () => openKw(b.dataset.tab)));
     $("[data-kwclose]", kwPanel).addEventListener("click", closeKw);
-    $("[data-kwcopy]", kwPanel).addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
-    $("[data-kwclear]", kwPanel).addEventListener("click", () => { kwStore[source] = []; save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: [] }); openKw(source); });
+    $("[data-kwcopy]", kwPanel)?.addEventListener("click", () => { const ta = $("#flgkwta", kwPanel); if (ta) copy(ta.value, $("[data-kwcopy]", kwPanel)); });
+    $("[data-kwclear]", kwPanel)?.addEventListener("click", () => { kwStore[source] = []; save(key(LS_KW), kwStore); pushOp({ op: "setKw", source, terms: [] }); openKw(source); });
   }
   function closeKw() {
     if (!kwPanel || isAdmin()) return; // admin: กางค้างไว้ตลอด ปิดไม่ได้
