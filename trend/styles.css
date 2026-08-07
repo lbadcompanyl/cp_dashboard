@@ -112,6 +112,12 @@ body {
   html { height: 100%; }
   body { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
   .topbar, .gsearch, .swipe-dots { flex: 0 0 auto; }
+  /* ⚠️ body เป็น flex column แล้ว ลูกที่มี margin: 0 auto (จากกฎเดสก์ท็อป) จะไม่ยืดเต็มจอ
+     — auto margin บนแกนขวางทำให้ stretch ไม่ทำงาน ความกว้างเลยกลายเป็นเท่าเนื้อหา/ค่า max-width
+     ผลจริงที่วัดได้: แถบค้นหาหดเหลือ 231px ส่วนบอร์ดพองไปถึง max-width 1680px
+     แล้วเบราว์เซอร์มือถือขยาย viewport ตามจนทั้งหน้าซูมออก (390 → 1560)
+     ต้องบังคับความกว้างและล้าง margin ซ้าย/ขวาให้ลูกทุกตัวของ body */
+  .topbar, .gsearch, .swipe-dots, .board { width: 100%; max-width: none; margin-left: 0; margin-right: 0; }
   .board {
     display: flex; grid-template-columns: none; overflow-x: auto;
     scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none;

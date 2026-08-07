@@ -230,6 +230,27 @@ endpoint ที่เก็บผลลง KV + edge cache ต้องมี **
 **โหมดสว่าง/มืด — เจ้าของบอกว่าไม่ต้องทำ** มีแค่ `index.html` กับ `sd.html`
 ส่วน `/trend/` `/ir/` `/issue/` เป็นโหมดมืดล้วน **อย่าไปเพิ่มเอง**
 
+## 🖥️ วัดเลย์เอาต์ได้จริง อย่าเดาจาก CSS
+
+เครื่องที่รัน session มี **Chromium + Playwright ติดตั้งไว้แล้ว** ใช้เรนเดอร์หน้าจริงแล้ววัดได้เลย
+ไม่ต้องเดาว่า CSS จะออกมาเป็นยังไง
+
+```bash
+python3 -m http.server 8899 &          # เสิร์ฟไฟล์ static (API จะ error แต่เลย์เอาต์วัดได้)
+# playwright อยู่ใน node_modules ของ scratchpad
+# ต้องระบุ executablePath เอง: /opt/pw-browsers/chromium  (+ args ["--no-sandbox"])
+```
+
+สิ่งที่ควรวัดทุกครั้งที่แตะเลย์เอาต์มือถือ — เทียบกับ `innerWidth` / `innerHeight`:
+`document.scrollingElement.scrollWidth` · ความกว้าง+ตำแหน่งซ้ายของลูก `body` ทุกตัว · `.board` bottom
+
+> ⚠️ **กับดักที่เจอมาแล้ว: `margin: 0 auto` + `display: flex` ของ parent**
+> พอเปลี่ยน `body` เป็น flex column ลูกที่มี `margin: 0 auto` (จากกฎเดสก์ท็อป) จะ **ไม่ยืดเต็มจอ**
+> เพราะ auto margin บนแกนขวางทำให้ `stretch` ไม่ทำงาน ความกว้างกลายเป็นเท่าเนื้อหา/`max-width`
+> ผลที่วัดได้จริง: แถบค้นหาเหลือ 231px · `.board` พองไป 1680px · **เบราว์เซอร์มือถือขยาย viewport
+> ตามจนทั้งหน้าซูมออก (390 → 1560)** = หน้าตาพังทั้งหน้า
+> แก้ด้วยการบังคับ `width: 100%; max-width: none; margin-left: 0; margin-right: 0` ให้ลูกทุกตัว
+
 ## 📱 แพลตฟอร์มที่ต้องคำนึงถึงทุกครั้ง
 
 **ทุกอย่างที่เป็นฝั่งแอป (PWA / service worker / การอัปเดต / หน้าตาบนมือถือ)
