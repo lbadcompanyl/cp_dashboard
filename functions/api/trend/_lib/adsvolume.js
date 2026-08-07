@@ -2,7 +2,7 @@
 //
 // ⚠️ ยังไม่เปิดใช้ — รอ developer token ที่ผ่าน Basic access
 // ถ้า env ไม่ครบ โมดูลนี้จะคืน { available: false, missing: [...] } เฉยๆ ไม่โยน error
-// คอลัมน์เช็คคำจึงทำงานได้ตามปกติด้วยข้อมูล Google Trends ไปก่อน
+// คอลัมน์เช็ค Trend จึงทำงานได้ตามปกติด้วยข้อมูล Google Trends ไปก่อน
 //
 // ที่ยืนยันแล้วด้วยการยิงจริง (7 ส.ค. 2026):
 //   POST https://googleads.googleapis.com/v21/customers/{id}:generateKeywordHistoricalMetrics

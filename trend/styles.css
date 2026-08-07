@@ -536,7 +536,7 @@ body {
 /* มือถือเป็น carousel ปัดซ้ายขวา หน้าไม่ได้เลื่อนลง จึงไม่ต้องมีปุ่มนี้ */
 @media (max-width: 640px) { #scrollcue { display: none !important; } }
 
-/* ---- คอลัมน์เช็คคำ ---- */
+/* ---- คอลัมน์เช็ค Trend ---- */
 .panel[data-source="kwcheck"] .phead { border-bottom-color: var(--kwcheck); }
 .panel[data-source="kwcheck"] .kw { min-width: 140px; }
 .panel[data-source="kwcheck"] .filters [data-kwgo] { background: var(--kwcheck); border-color: var(--kwcheck); color: #fff; font-weight: 600; }

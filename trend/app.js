@@ -20,7 +20,7 @@ const state = {
   ytSort: "rank",
   ytWin: 24,         // ช่วงเวลาที่ใช้วัด "มาแรง" (ชม.) — ใช้เฉพาะตอน ytSort = "growth"
   ytHideLive: true,  // ไลฟ์ไม่มียอดวิวสะสมให้เทียบ ปกติจึงซ่อนไว้
-  // คอลัมน์ "เช็คคำ" — ผลของคำที่เพิ่งเช็ค เก็บใน state เพราะ renderAll() ทุก 3 นาที
+  // คอลัมน์ "เช็ค Trend" — ผลของคำที่เพิ่งเช็ค เก็บใน state เพราะ renderAll() ทุก 3 นาที
   // สร้าง innerHTML ใหม่ทั้งก้อน ถ้าเก็บไว้ใน DOM อย่างเดียวผลจะหายทุกรอบ
   kwq: "", kwGeo: "TH", kwTime: "today 12-m",
   kwShown: null, // { q, geo, time } ของคำที่กำลังแสดงอยู่ · kwRes = ตัวเลขจาก Keyword Planner (ถ้ามี)
@@ -689,7 +689,7 @@ function injectCatChips(panel, cats, allLabel) {
   });
 }
 
-// ---------- เช็คคำ: คนสนใจแค่ไหน ก่อนเอาเข้า Alert ----------
+// ---------- เช็ค Trend: คนสนใจแค่ไหน ก่อนเอาเข้า Alert ----------
 // ---------- Google Trends embed ----------
 // ⚠️ ทำไมต้องใช้ embed แทนการยิงจาก Worker
 // Cloudflare Worker ออกเน็ตจาก IP ที่ใช้ร่วมกับคนทั้งโลก Google Trends จึงตอบ 429 แทบทุกครั้ง
@@ -1126,7 +1126,7 @@ function wire() {
         state.xCat = null; // หมวดที่เลือกไว้อาจไม่มีอยู่ในโหมดใหม่ ล้างทิ้งกันคอลัมน์ว่างเปล่า
         renderPanel(panel);
       });
-    // ---- คอลัมน์เช็คคำ ----
+    // ---- คอลัมน์เช็ค Trend ----
     const kwqEl = $("[data-kwq]", panel);
     if (kwqEl) {
       kwqEl.addEventListener("input", (e) => { state.kwq = e.target.value; });
@@ -1135,7 +1135,7 @@ function wire() {
     const kwgoEl = $("[data-kwgo]", panel);
     if (kwgoEl) kwgoEl.addEventListener("click", () => runKwCheck());
     const kwgeoEl = $("[data-kwgeo]", panel);
-    // เปลี่ยนประเทศ/ช่วงเวลาแล้วเช็คซ้ำให้เลย ถ้าเคยเช็คคำไว้แล้ว — ไม่ต้องกดซ้ำเอง
+    // เปลี่ยนประเทศ/ช่วงเวลาแล้วเช็คซ้ำให้เลย ถ้าเคยเช็คไว้แล้ว — ไม่ต้องกดซ้ำเอง
     // เงื่อนไขต้องดูว่า "มีคำที่กำลังแสดงอยู่ไหม" (kwShown) ไม่ใช่ดูผลจาก server (kwRes)
     // เพราะ kwRes จะมีก็ต่อเมื่อ Keyword Planner พร้อมแล้วเท่านั้น ซึ่งตอนนี้ยังไม่มี
     if (kwgeoEl) kwgeoEl.addEventListener("change", (e) => { state.kwGeo = e.target.value; if (state.kwShown) runKwCheck(); });
@@ -1265,7 +1265,7 @@ if (window.Flags) {
   Flags.setKeywords(HARD_KW); // แสดงทันทีก่อนโหลด
 }
 wire();
-// คอลัมน์เช็คคำไม่ได้ผูกกับ load() — ต้องวาดครั้งแรกเอง
+// คอลัมน์เช็ค Trendไม่ได้ผูกกับ load() — ต้องวาดครั้งแรกเอง
 // ไม่งั้นถ้า load() ล้ม renderAll() จะไม่ถูกเรียก แล้วคอลัมน์นี้จะว่างเปล่าโดยไม่บอกอะไรเลย
 {
   const kwPanel = $('.panel[data-source="kwcheck"]');
@@ -1274,7 +1274,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 77; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 78; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
