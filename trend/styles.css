@@ -489,6 +489,12 @@ body {
 /* ---- เทรนด์ที่เกี่ยวกับเครือ CP / อาหาร — ดันขึ้นบนแล้วไฮไลต์ ---- */
 .trend.pin { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.08); border-radius: 8px; }
 .pinbadge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; color: #78350f; background: #fbbf24; vertical-align: 1px; white-space: nowrap; }
+/* ปุ่มสลับ ข่าว/ทั่วไป — ติดกันเป็นชิ้นเดียว ให้อ่านออกว่าเลือกได้อย่างเดียวจากสองอัน */
+.kindtog { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.kindtog .cat { border: 0; border-radius: 0; padding: 4px 11px; font-size: 12px; }
+.kindtog .cat + .cat { border-left: 1px solid var(--border); }
+.kindtog .cat.on { background: var(--alert); color: #fff; font-weight: 600; }
+
 /* หมวดที่ Google จัดให้ — เบากว่า pinbadge เพราะเป็นข้อมูลประกอบ ไม่ใช่การเน้น */
 .tcat { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--border); vertical-align: 1px; white-space: nowrap; }
 

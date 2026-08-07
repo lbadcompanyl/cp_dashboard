@@ -14,17 +14,21 @@
 // จึงมี KV ค้างของเก่าไว้เสิร์ฟแทนหน้าว่าง เหมือน xtrends.js
 //
 // 💧 งบ KV: edge cache 30 นาที + ถือว่าของใน KV ที่อายุไม่เกิน 60 นาทียังสด
+// ⚠️ แยก key ตามโหมด (ข่าว/ทั่วไป) แล้ว → เพดานเป็น 24 ครั้ง/วัน/ประเทศ/โหมด
+//    ใช้จริง 2 โหมด × ไทย/ทั่วโลก ≈ 96 ครั้ง/วัน ยังห่างจากเพดาน 1,000 ของทั้งโปรเจกต์
 // → เขียน KV อย่างมาก 24 ครั้ง/วัน/ประเทศ ไม่ว่าจะมี colo กี่ที่ก็ตาม
 
 // ⚠️ บวกเลขนี้ทุกครั้งที่ "โครงของ items เปลี่ยน" (เพิ่ม/แก้ field, เปลี่ยนวิธีเรียง)
 // ไม่งั้นของเก่าใน KV/edge cache จะถูกเสิร์ฟต่ออีกเป็นชั่วโมงทั้งที่โค้ดใหม่ขึ้นไปแล้ว
 // เคยพลาดมาแล้ว: แก้วิธีเรียง + เพิ่มธง live แต่ผู้ใช้ยังเห็นของเก่าเรียงผิดอยู่ 1 ชม.
-const DATA_VER = "7";
+const DATA_VER = "8"; // bump: แยกชาร์ตข่าว/ทั่วไป (kind) + ฟิลด์ catFiltered
 
 const FETCH_TIMEOUT = 7000;
 const EDGE_TTL = 1800;          // 30 นาที — คลิปมาแรงขยับช้า
 const KV_FRESH = 60 * 60 * 1000; // ของใน KV อายุไม่เกิน 1 ชม. = ยังสด ไม่ต้องยิงใหม่
 const KV_TTL = 9 * 24 * 3600;    // ต้องเก็บนานกว่า 7 วัน เพราะใช้เทียบยอดวิวย้อนหลัง
+// หมวด News & Politics ของ YouTube — เลขหมวดเป็นค่าคงที่ของ API ไม่ใช่ของเราเอง
+const NEWS_CAT = "25";
 const MAX_ITEMS = 50;  // 50 คือเพดานของ YouTube API (maxResults) ขอมากกว่านี้ไม่ได้
 
 // ช่วงเวลาที่ใช้วัด "วิวเพิ่มขึ้นเท่าไหร่" (ชั่วโมง)
@@ -57,6 +61,10 @@ export async function onRequest(context) {
   // รหัสประเทศ 2 ตัวเท่านั้น — ค่านี้ต่อเข้า URL ปลายทาง อย่าปล่อยให้ใส่อะไรก็ได้
   const geo = (url.searchParams.get("geo") || "TH").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2) || "TH";
 
+  // kind=news → ขอชาร์ตของหมวด News & Politics โดยตรง · ไม่ระบุ = ชาร์ตรวมทุกหมวด
+  const kind = url.searchParams.get("kind") === "news" ? "news" : "all";
+  const catId = kind === "news" ? NEWS_CAT : "";
+
   const env = context.env || {};
   const hasApiKey = !!env.YT_API_KEY;
 
@@ -65,14 +73,16 @@ export async function onRequest(context) {
   // ไปอีกเป็นชั่วโมง แล้วนึกว่าใส่ key ไม่สำเร็จ — เกิดขึ้นจริงมาแล้ว
   const cache = caches.default;
   const key = new Request(
-    url.origin + `/api/trend/yttrends?geo=${geo}&_v=${DATA_VER}&_k=${hasApiKey ? 1 : 0}`,
+    url.origin + `/api/trend/yttrends?geo=${geo}&kind=${kind}&_v=${DATA_VER}&_k=${hasApiKey ? 1 : 0}`,
     { method: "GET" }
   );
   const hit = await cache.match(key);
   if (hit) return browserCopy(hit);
 
   const kv = env.FLAGS_KV;
-  const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `yttrends:${DATA_VER}:${geo}`;
+  // แยก key ตามโหมด — สองโหมดเป็นคนละชาร์ต ถ้าใช้ key เดียวกันจะทับกันไปมา
+  // และสถิติยอดวิวย้อนหลังก็ต้องแยก เพราะเป็นคนละชุดคลิป
+  const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `yttrends:${DATA_VER}:${geo}:${kind}`;
 
   // ของใน KV ยังสดอยู่ไหม — ถ้าสด ใช้เลย ไม่ต้องยิงเน็ตและไม่ต้องเขียน KV
   let saved = null;
@@ -97,7 +107,7 @@ export async function onRequest(context) {
   );
 
   const attempts = [];
-  const won = await race(geo, attempts, env);
+  const won = await race(geo, attempts, env, catId);
   if (won) {
     const now = Date.now();
     // เก็บภาพยอดวิว ณ ตอนนี้ไว้เทียบรอบหน้า แล้วคำนวณ "วิวเพิ่ม" จากภาพเก่า
@@ -108,6 +118,10 @@ export async function onRequest(context) {
 
     const body = {
       geo,
+      kind,
+      // true = ที่ส่งไปคือชาร์ตของหมวดข่าวจริง หน้าเว็บไม่ต้องกรองซ้ำ
+      // false = ตกไปใช้ต้นทางสำรองที่ไม่มีหมวด หน้าเว็บต้องกรองด้วยคำเอง
+      catFiltered: kind === "news" && won.id === "youtube:api",
       source: won.id,
       mode: modeOf(won.id, won.items),
       fetchedAt: new Date(now).toISOString(),
@@ -133,7 +147,7 @@ export async function onRequest(context) {
   if (saved && saved.body && (saved.body.items || []).length) {
     return browserCopy(json({ ...saved.body, stale: true, meta: { ...(saved.body.meta || {}), attempts } }, 200, 300));
   }
-  return browserCopy(json({ geo, count: 0, items: [], error: "no source available", meta: { attempts } }, 200, 120));
+  return browserCopy(json({ geo, kind, catFiltered: false, count: 0, items: [], error: "no source available", meta: { attempts } }, 200, 120));
 }
 
 /* ---------- วิวเพิ่มขึ้นเท่าไหร่ในช่วง N ชั่วโมง ---------- */
@@ -177,18 +191,21 @@ function nearestSnap(hist, target, tolerance) {
 // ⚠️ ห้ามไล่ยิงทีละอันเด็ดขาด — instance อาสาสมัครล่มบ่อยและมักล่มแบบ "ค้าง" ไม่ใช่ตอบ error
 // ไล่ทีละอัน 5 แหล่ง × timeout 7 วิ = ผู้ใช้รอ 35 วินาทีก่อนเห็นอะไร
 // ยิงพร้อมกันแล้วเอาอันแรกที่ได้ = ช้าสุดเท่ากับ timeout เดียว
-async function race(geo, attempts, env = {}) {
+async function race(geo, attempts, env = {}, catId = "") {
   // รอบ 0 — API ทางการ ถ้ามี key (ตั้งใน Cloudflare env ชื่อ YT_API_KEY)
   // อันนี้คือของจริง: อันดับมาแรงทางการ · ยอดวิวจริง · เวลาอัปโหลดจริง
-  // ฟรี โควตา 10,000 หน่วย/วัน ส่วนนี้ใช้ราวๆ 24 หน่วย/วัน/ประเทศ
+  // ฟรี โควตา 10,000 หน่วย/วัน ส่วนนี้ใช้ราวๆ 24 หน่วย/วัน/ประเทศ/โหมด
   if (env.YT_API_KEY) {
     const run =
       geo === WORLD
-        ? () => fromDataApiWorld(env.YT_API_KEY)
-        : () => fromDataApi(env.YT_API_KEY, geo);
+        ? () => fromDataApiWorld(env.YT_API_KEY, catId)
+        : () => fromDataApi(env.YT_API_KEY, geo, catId);
     const won = await firstOk([{ id: "youtube:api", run }], attempts);
     if (won) return won;
   }
+  // ขอชาร์ตหมวดข่าวแล้วไม่ได้ (บางประเทศไม่มีชาร์ตของหมวดนี้ หรือได้น้อยกว่า 3 คลิป)
+  // → ตกไปใช้ต้นทางสำรองซึ่งไม่มีตัวกรองหมวด แล้วให้หน้าเว็บกรองด้วยคำแทน
+  // ตรงนี้ต้องบอกออกไปด้วย ไม่งั้นหน้าเว็บจะนึกว่าที่ได้มาคือชาร์ตข่าวจริง
 
   // รอบ 1 — instance ที่รู้จัก ไม่ต้องเสียเวลาถามไดเรกทอรีก่อน
   const geoFb = geo === WORLD ? "US" : geo; // ต้นทางสำรองรับแต่รหัสประเทศจริง
@@ -287,13 +304,17 @@ async function firstOk(runners, attempts) {
 /* ---------- แหล่งข้อมูล ---------- */
 
 // API ทางการ — chart=mostPopular ยังใช้ได้อยู่แม้ YouTube จะถอดหน้า Trending ออกไปแล้ว
-async function fromDataApi(keyRaw, geo) {
+async function fromDataApi(keyRaw, geo, catId = "") {
   const key = String(keyRaw || "").trim();
   if (!key) throw new Error("no api key");
   const u =
     "https://www.googleapis.com/youtube/v3/videos" +
     "?part=snippet,statistics&chart=mostPopular" +
-    `&regionCode=${geo}&maxResults=${MAX_ITEMS}&key=${encodeURIComponent(key)}`;
+    `&regionCode=${geo}&maxResults=${MAX_ITEMS}` +
+    // ระบุหมวด = ได้ชาร์ตของหมวดนั้นจริงๆ ไม่ใช่เอาชาร์ตรวมมากรอง
+    // (ชาร์ตรวมของไทยมีคลิปข่าวอยู่ไม่กี่คลิป กรองแล้วคอลัมน์แทบว่าง)
+    (catId ? `&videoCategoryId=${encodeURIComponent(catId)}` : "") +
+    `&key=${encodeURIComponent(key)}`;
   // ⚠️ อย่าใช้ fetchJson ตรงนี้ — มันโยน error ทันทีที่เห็น 403 ทำให้คำอธิบายจาก Google หายไป
   // Google บอกสาเหตุจริงมาในตัว body เสมอ (ยังไม่ได้ Enable API · key ถูกจำกัด · โควตาหมด)
   // ต้องอ่าน body ให้ได้ ไม่งั้นผู้ใช้เห็นแค่ "http 403" แล้วไล่ต่อไม่ถูก
@@ -318,9 +339,9 @@ async function fromDataApi(keyRaw, geo) {
 }
 
 // ทั่วโลก = รวมหลายประเทศหลัก ยิงพร้อมกันแล้วยุบคลิปซ้ำ
-async function fromDataApiWorld(key) {
+async function fromDataApiWorld(key, catId = "") {
   const lists = await Promise.all(
-    WORLD_REGIONS.map((r) => fromDataApi(key, r).catch(() => []))
+    WORLD_REGIONS.map((r) => fromDataApi(key, r, catId).catch(() => []))
   );
   const best = new Map();
   for (const list of lists) {

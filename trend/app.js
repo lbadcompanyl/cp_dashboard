@@ -8,6 +8,12 @@ const state = {
   trendsCat: 0, // หมวดหมู่ (แบบ Google Trends): 0 = ทุกหมวด
   xCat: null,        // หมวดที่เลือกในคอลัมน์ X (null = ทุกหมวด)
   xGeo: "thailand",  // ประเทศของคอลัมน์ X (เป็น slug ของเว็บมิเรอร์ ไม่ใช่รหัส ISO)
+  // ข่าว/ทั่วไป — ค่าตั้งต้นต่างกันโดยตั้งใจ ตามธรรมชาติของแต่ละแหล่ง
+  // X: ต้นทางให้ท็อป 50 มาชุดเดียว ขอชาร์ตข่าวแยกไม่ได้ และเทรนด์บน X ส่วนใหญ่
+  //    เป็นแฟนคลับ/ศิลปิน ถ้าตั้งต้นเป็นข่าวจะเหลือไม่กี่รายการ → ตั้งต้นทั่วไป
+  // YouTube: ขอชาร์ตหมวดข่าวจาก API ได้จริง จึงตั้งต้นเป็นข่าวได้เต็มคอลัมน์
+  xKind: "all",
+  ytKind: "news",
   ytGeo: "TH",       // ประเทศของคอลัมน์ YouTube (รหัส ISO 2 ตัว)
   ytCat: null,       // หมวดที่เลือกในคอลัมน์ YouTube (null = ทุกหมวด)
   ytSort: "rank",    // "rank" = อันดับจาก YouTube (ค่าตั้งต้น) · "growth" = มาแรง · "views" · "new"
@@ -152,6 +158,19 @@ async function reloadXTrends() {
   renderPanel(panel);
 }
 
+// ปุ่ม ข่าว/ทั่วไป อยู่ใน index.html แบบตายตัว — render รอบใหม่ไม่ได้เขียนทับให้
+// จึงต้องมาป้ายคลาส on ตาม state เอง ไม่งั้นปุ่มจะค้างที่ค่าตั้งต้นตลอด
+function syncKindToggle(panel, sel, cur) {
+  const row = $(sel, panel);
+  if (!row) return;
+  $$("[data-k]", row).forEach((b) => b.classList.toggle("on", b.dataset.k === cur));
+}
+
+// โหมด "ข่าว" = ตัดหมวดบันเทิงออก ตามที่ตกลงไว้: เกม เพลง บันเทิง กีฬา หนัง คลิปตลก
+// (หนังกับคลิปตลกอยู่ในหมวดบันเทิงของทั้งสองคอลัมน์อยู่แล้ว ไม่ได้แยกออกมา)
+const X_NEWS_SKIP = ["ent", "sport"];
+const YT_NEWS_SKIP = ["game", "music", "sport", "ent"];
+
 const X_CATS = [
   { k: "ent",   label: "🎬 บันเทิง" },
   { k: "biz",   label: "🛍️ แบรนด์/สินค้า" },
@@ -187,7 +206,11 @@ function renderXCats(panel, all) {
 function renderXTrends(panel) {
   const bucket = state.data?.sources?.xtrends || { items: [], error: null };
   const kw = (state.gkw || "").trim().toLowerCase(); // global search ใช้คำเดียวกับคอลัมน์อื่น
-  const all = bucket.items.filter((it) => !kw || it.name.toLowerCase().includes(kw));
+  const found = bucket.items.filter((it) => !kw || it.name.toLowerCase().includes(kw));
+  // X ไม่มีชาร์ตข่าวแยก จึงกรองจากหมวดที่จัดไว้แล้วฝั่งนี้
+  const all = state.xKind === "news"
+    ? found.filter((it) => !X_NEWS_SKIP.includes(it.cat || "other"))
+    : found;
   const items = state.xCat ? all.filter((it) => (it.cat || "other") === state.xCat) : all;
 
   const countEl = $("[data-count]", panel);
@@ -228,6 +251,7 @@ function renderXTrends(panel) {
     if (note) fresh.innerHTML = `<span class="warn">${escapeHtml(note)}</span>`;
   }
 
+  syncKindToggle(panel, "[data-xkind]", state.xKind);
   renderXCats(panel, all);
 
   const list = $("[data-list]", panel);
@@ -249,8 +273,8 @@ function renderXTrends(panel) {
 // ---------- คลิปมาแรงบน YouTube ----------
 // YouTube ปิดหน้า Trending ในเมนูไปแล้ว /api/trend/yttrends จึงไล่หลายแหล่ง
 // (Invidious → Piped → แกะหน้า YouTube เอง) แหล่งไหนได้ก่อนใช้อันนั้น
-async function fetchYTTrends(geo) {
-  const res = await fetch(`/api/trend/yttrends?geo=${encodeURIComponent(geo)}`);
+async function fetchYTTrends(geo, kind = "all") {
+  const res = await fetch(`/api/trend/yttrends?geo=${encodeURIComponent(geo)}&kind=${encodeURIComponent(kind)}`);
   const d = await res.json();
   return {
     label: "YouTube",
@@ -259,6 +283,9 @@ async function fetchYTTrends(geo) {
     stale: !!d.stale,
     source: d.source || "",
     mode: d.mode || "",
+    kind: d.kind || "all",
+    // server กรองหมวดให้แล้วหรือยัง — ถ้ายัง หน้าเว็บต้องกรองเองด้วยคำ
+    catFiltered: !!d.catFiltered,
     fetchedAt: d.fetchedAt || null,
     attempts: (d.meta && d.meta.attempts) || [],
   };
@@ -325,7 +352,7 @@ async function reloadYTTrends(opts = {}) {
   if (!opts.silent) list.innerHTML = `<div class="state skeleton">กำลังดึงคลิปมาแรง…</div>`;
   let bucket;
   try {
-    bucket = await fetchYTTrends(state.ytGeo);
+    bucket = await fetchYTTrends(state.ytGeo, state.ytKind);
   } catch (e) {
     bucket = { label: "YouTube", items: [], error: e.message };
   }
@@ -350,14 +377,20 @@ function renderYTTrends(panel) {
   const bucket = state.data?.sources?.yttrends;
   if (!bucket) return;
   const kw = (state.gkw || "").trim().toLowerCase(); // global search ใช้คำเดียวกับคอลัมน์อื่น
-  const all = bucket.items.filter(
+  const found = bucket.items.filter(
     (it) => !kw || ((it.title || "") + " " + (it.channel || "")).toLowerCase().includes(kw)
   );
+  // โหมดข่าว: ปกติ server ส่งชาร์ตหมวดข่าวมาให้แล้ว (catFiltered) ไม่ต้องกรองซ้ำ
+  // แต่ถ้าตกไปใช้ต้นทางสำรองที่ไม่มีหมวด ต้องกรองเองด้วยคำ ไม่งั้นจะได้ชาร์ตรวมมาทั้งดุ้น
+  const all = state.ytKind === "news" && !bucket.catFiltered
+    ? found.filter((it) => !YT_NEWS_SKIP.includes(ytCatOf(it)))
+    : found;
   // ซ่อนไลฟ์ไว้เพื่อให้เห็นคลิปจริง แต่ถ้าซ่อนแล้วแทบไม่เหลืออะไร แปลว่าตัวตรวจไลฟ์เพี้ยน
   // โชว์ทั้งหมดดีกว่าโชว์ 2 จาก 15 (เคยเกิดจริงตอนตัวตรวจจับผิด 13 ตัว)
   const noLive = all.filter((it) => !it.live);
   const filterBroken = state.ytHideLive && all.length >= 6 && noLive.length < 3;
   const shown = state.ytHideLive && !filterBroken ? noLive : all;
+  syncKindToggle(panel, "[data-ytkind]", state.ytKind);
   const items = (state.ytCat ? shown.filter((it) => ytCatOf(it) === state.ytCat) : shown).slice();
 
   // "มาแรง" = วิวที่เพิ่มในช่วงที่เลือก · ช่วงเวลามาจากช่องแยกต่างหาก (state.ytWin)
@@ -944,6 +977,26 @@ function wire() {
         state.ytGeo = e.target.value;
         reloadYTTrends();
       });
+    // ข่าว/ทั่วไป — X กรองฝั่งหน้าเว็บ (ไม่ต้องยิงใหม่) · YouTube เป็นคนละชาร์ต ต้องยิงใหม่
+    const xkindEl = $("[data-xkind]", panel);
+    if (xkindEl)
+      xkindEl.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-k]");
+        if (!b || state.xKind === b.dataset.k) return;
+        state.xKind = b.dataset.k;
+        state.xCat = null; // หมวดที่เลือกไว้อาจไม่มีอยู่ในโหมดใหม่ ล้างทิ้งกันคอลัมน์ว่างเปล่า
+        renderPanel(panel);
+      });
+    const ytkindEl = $("[data-ytkind]", panel);
+    if (ytkindEl)
+      ytkindEl.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-k]");
+        if (!b || state.ytKind === b.dataset.k) return;
+        state.ytKind = b.dataset.k;
+        state.ytCat = null;
+        syncKindToggle(panel, "[data-ytkind]", state.ytKind); // ให้ปุ่มเปลี่ยนทันที ไม่ต้องรอโหลดเสร็จ
+        reloadYTTrends();
+      });
     const ysortEl = $("[data-ysort]", panel);
     if (ysortEl)
       ysortEl.addEventListener("click", (e) => {
@@ -1058,7 +1111,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 68; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 69; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
