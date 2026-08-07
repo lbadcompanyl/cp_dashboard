@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;r.update();document.addEventListener("visibilitychange",function(){if(!document.hidden)r.update();});}).catch(function(){});});navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
-  <link rel="stylesheet" href="./styles.css?v=7" />
+  <link rel="stylesheet" href="./styles.css?v=8" />
 </head>
 <body>
   <header class="topbar">
@@ -138,6 +138,6 @@
   </main>
 
   <script src="/flags.js?v=28"></script>
-  <script src="./app.js?v=17"></script>
+  <script src="./app.js?v=18"></script>
 </body>
 </html>

@@ -72,6 +72,10 @@ function escapeHtml(s = "") {
 function hl(s = "") {
   return s.replace(/\[\[hl\]\]([\s\S]*?)\[\[\/hl\]\]/g, '<mark class="hl">$1</mark>').replace(/\[\[\/?hl\]\]/g, "").replace(/[\u0001\u0002]/g, "");
 }
+// ข้อความ "ยังโหลดอยู่" + ไอคอนหมุน — ใช้ร่วมกันทุกคอลัมน์ แก้ที่เดียวจบ
+// ต่างจาก .skeleton ตรงที่อันนี้ใช้ตอน "ได้ข้อมูลมาแล้วแต่ยังว่าง" ไม่ใช่ตอนยังไม่ยิง
+const WAITING = `<div class="state waiting"><span class="spin"></span>กรุณารอซักครู่</div>`;
+
 function withinRecency(iso, hours) {
   if (hours === "all") return true;
   return new Date(iso).getTime() >= Date.now() - Number(hours) * 3600000;
@@ -110,7 +114,7 @@ async function load(opts = {}) {
   } else if (!state.data) {
     $("#updated").textContent = "กำลังโหลด…";
     $$(".panel").forEach((p) => {
-      $("[data-list]", p).innerHTML = `<div class="state skeleton">กำลังดึงข้อมูล…</div>`;
+      $("[data-list]", p).innerHTML = `<div class="state waiting"><span class="spin"></span>กำลังดึงข้อมูล…</div>`;
     });
   } else {
     $("#updated").textContent = "กำลังอัปเดต…";
@@ -236,9 +240,9 @@ function emptyState(source, bucket, filtered) {
       </div>`;
     }
     // ฟีดตั้งไว้ใน ir-feeds.config.js อยู่แล้ว — ที่นับได้ 0 แปลว่ายังดึงไม่เสร็จ ไม่ใช่ยังไม่ได้ตั้ง
-    return `<div class="state">กรุณารอซักครู่</div>`;
+    return WAITING;
   }
-  return `<div class="state">กรุณารอซักครู่</div>`;
+  return WAITING;
 }
 
 // ---------- wire ----------
@@ -361,7 +365,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 40; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 41; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now();

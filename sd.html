@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SD Trends — Google Trends ด้านความยั่งยืน</title>
 <!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ไฟล์นี้ — เครื่องที่ติดตั้งเป็นแอปใช้เช็คว่ามีของใหม่ -->
-<meta name="page-ver" content="9" />
+<meta name="page-ver" content="10" />
 <!-- PWA: ติดตั้งเป็นแอปได้จากทุกหน้า ไม่ใช่แค่หน้าแรก -->
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#0d0d0d" />
@@ -86,7 +86,14 @@
   .widget-frame { position:relative; background:#fff; border-radius:10px; min-height:450px; padding:6px; overflow:visible; }
   .widget-frame--tall { min-height:500px; }
   .widget-frame iframe { width:100% !important; min-height:440px; border:0; display:block; }
-  .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
+  .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:9px; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
+
+  /* ไอคอนหมุนตอนโหลด — currentColor เพื่อให้ใช้ได้ทั้งโหมดสว่าง/มืด ไม่ต้องฮาร์ดโค้ดสี */
+  .spin { width:14px; height:14px; flex:0 0 auto; display:inline-block; vertical-align:-2px;
+          border:2px solid currentColor; border-top-color:transparent; border-radius:50%;
+          opacity:.6; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration:2.4s; } }
 
   .note { display:flex; gap:10px; align-items:flex-start; background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:11px 14px; font-size:0.8rem; color:var(--ink-2); }
   .note b { color:var(--ink); }
@@ -106,7 +113,7 @@
   .newsrow .m { font-size:0.75rem; color:var(--muted); margin-top:3px; }
   .news-more { display:inline-block; margin-top:12px; font-size:0.82rem; color:var(--accent); text-decoration:none; }
   .news-more:hover { text-decoration:underline; }
-  .news-state { color:var(--muted); font-size:0.85rem; padding:8px 2px; }
+  .news-state { color:var(--muted); font-size:0.85rem; padding:8px 2px; display:flex; align-items:center; gap:9px; }
   @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
 </style>
 </head>
@@ -141,19 +148,19 @@
     <section class="panel">
       <h2>ความสนใจตามช่วงเวลา</h2>
       <p class="sub" id="tsSub"></p>
-      <div class="widget-frame" id="w-ts"><div class="widget-loading">กำลังโหลดจาก Google Trends…</div></div>
+      <div class="widget-frame" id="w-ts"><div class="widget-loading"><span class="spin"></span>กำลังโหลดจาก Google Trends…</div></div>
     </section>
 
     <div class="two-col">
       <section class="panel">
         <h3>ความสนใจแยกตามพื้นที่</h3>
         <p class="sub" id="geoSub"></p>
-        <div class="widget-frame widget-frame--tall" id="w-geo"><div class="widget-loading">กำลังโหลดแผนที่…</div></div>
+        <div class="widget-frame widget-frame--tall" id="w-geo"><div class="widget-loading"><span class="spin"></span>กำลังโหลดแผนที่…</div></div>
       </section>
       <section class="panel">
         <h3>คำค้นหาที่เกี่ยวข้อง (ยอดนิยม / มาแรง)</h3>
         <p class="sub" id="rqSub"></p>
-        <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading">กำลังโหลด…</div></div>
+        <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading"><span class="spin"></span>กำลังโหลด…</div></div>
       </section>
     </div>
 
@@ -161,12 +168,12 @@
       <section class="panel">
         <h3>🇹🇭 ข่าวในประเทศ (Related news)</h3>
         <p class="sub" id="newsSubTH"></p>
-        <div class="newslist" id="newsListTH"><div class="news-state">กำลังโหลดข่าว…</div></div>
+        <div class="newslist" id="newsListTH"><div class="news-state"><span class="spin"></span>กำลังโหลดข่าว…</div></div>
       </section>
       <section class="panel">
         <h3>🌏 ข่าวต่างประเทศ (Related news)</h3>
         <p class="sub" id="newsSubINTL"></p>
-        <div class="newslist" id="newsListINTL"><div class="news-state">กำลังโหลดข่าว…</div></div>
+        <div class="newslist" id="newsListINTL"><div class="news-state"><span class="spin"></span>กำลังโหลดข่าว…</div></div>
       </section>
     </div>
 
@@ -376,7 +383,7 @@ async function loadNews(){
 async function loadNewsPanel(q, geo, list, sub, subText, gen, region){
   sub.textContent = subText;
   if(!q){ list.innerHTML=`<div class="news-state">เพิ่มคำค้นในกลุ่มเพื่อดูข่าว</div>`; return; }
-  list.innerHTML=`<div class="news-state">กำลังโหลดข่าว…</div>`;
+  list.innerHTML=`<div class="news-state"><span class="spin"></span>กำลังโหลดข่าว…</div>`;
   let data;
   try{ data=await (await fetch(`/api/sd/news?q=${encodeURIComponent(q)}&geo=${geo}`)).json(); }
   catch(e){ data={ articles:[] }; }
