@@ -35,6 +35,27 @@ Cloudflare → cp-dashboard → Settings → Build → Branch control → Produc
 > ที่โค้ดหน้า 3 คอลัมน์ถูกยกมา (ดู `TREND-HANDOFF.md`) **ไม่ใช่แดชบอร์ดนี้**
 > เคยเข้าใจผิดมาแล้ว ทำให้ยิง URL ผิดโปรเจกต์ทั้งหมด
 
+### 📅 รอ release: keyword ชุดใหม่ 74 คำ — จันทร์ 10 ส.ค. 2026
+
+เจ้าของสั่งให้ **กันไว้ก่อน** ตอน release 7 ส.ค. · ของอยู่ครบบน `dev` แล้ว รอคำสั่งอย่างเดียว
+
+**ตอนนี้ `dev` = `main` + commit เดียวที่มีแต่เรื่อง keyword** — จันทร์แค่ merge ตรงๆ ไม่มี conflict
+
+```
+git checkout main && git merge dev && git push -u origin main
+```
+
+> ⚠️ **ห้ามกลับไปใช้วิธี "merge แล้วค่อย revert" อีก** — เคยทำ 2 รอบแล้วติดกับดัก:
+> พอ main มี commit ที่ revert ทับไว้ ครั้งต่อไป git จะมองว่า "main แก้ dev ไม่ได้แก้"
+> แล้ว **เก็บ revert ไว้เงียบๆ** ของใหม่เลยไม่ขึ้นทั้งที่ merge ผ่าน
+> วิธีที่ถูกคือ **reset `dev` ให้เท่า `main` แล้ววางของที่กันไว้เป็น commit บนสุด** (ทำไปแล้ว)
+
+มีอะไรอยู่ใน commit นั้น: `trend-feeds.config.js` (query ตัวเต็ม) · `functions/api/trend/feeds.js`
+(`CACHE_VER` 37 · ตัดคำ `-ไม่เอา` · คำละตินต้องตรงทั้งคำ) · `HARD_KW` ใน `trend/app.js` + `issue/app.js`
+
+**เช็คก่อนปล่อยจันทร์:** query ใน Google Alerts ของจริงตรงกับใน config แล้วหรือยัง
+ถ้ายังไม่ตรง คอลัมน์จะหดลงเรื่อยๆ เงียบๆ (ดูหัวข้อ 🔑 แก้ keyword ของ Google Alert)
+
 ### กฎเหล็ก
 
 1. **ห้าม push ขึ้น production โดยไม่ได้รับคำสั่งชัดเจน** — เคยพลาดมาแล้ว 2 ครั้ง
