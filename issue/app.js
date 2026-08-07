@@ -311,19 +311,31 @@ function renderPanel(panel) {
 const PIN_FALSE_RE = /บีแอลซีพี|blcp|ซีพีเอ็นจ?|cpn |บีซีพีจี|bcpg|บีซีพี|bcp /gi;
 const PIN_CP_RE = /ซีพี|\bcpf\b|cp ?all|ซีพีเอฟ|เซเว่น|7-?eleven|แม็คโคร|makro|โลตัส|lotus|เจียไต๋|แอ็กซ์ตร้า|cpaxt|ทรู|true ?money|true ?corp/i;
 // หมู(?!่) กัน "หมู่บ้าน" · เนื้อ(?!หา) กัน "เนื้อหา"
-const PIN_FOOD_RE = /อาหาร|หมู(?!่)|ไก่|ไข่|กุ้ง|เนื้อ(?!หา)|ปศุสัตว์|ฟาร์ม|สุกร|บุฟเฟ่?ต์|ร้านอาหาร|เมนู|ขนม|กาแฟ|ชานม|ราคาหมู|วัตถุดิบ|ผลไม้|ผัก(?!ผ่อน)|เครื่องดื่ม|\bนม\b|เบเกอ(?:รี่|อรี่)|ข้าว(?!ของ)|ปลา(?!ย)|ทะเล|ทุเรียน|มะม่วง|กล้วย|แตงโม|ส้มตำ|ชาบู|หม่าล่า|ปิ้งย่าง|\bfood\b|buffet|restaurant|cafe|starbucks|สตาร์บัคส์|\bkfc\b|mcdonald|แมคโดนัลด์|ชาตรามือ|มิสเตอร์โดนัท|ดังกิ้น|โออิชิ|ซูชิ|พิซซ่า|pizza|burger|เบอร์เกอร์|ไอศ/i;
-// หมวด "อาหาร/เครื่องดื่ม" ของ Google Trends — เลขเดียวกับ dropdown เลือกหมวดด้านบน
+const PIN_FOOD_RE = /อาหาร|หมู(?!่)|ไก่|ไข่|กุ้ง|เนื้อ(?!หา)|ปศุสัตว์|ฟาร์ม|สุกร|บุฟเฟ่?ต์|ร้านอาหาร|เมนู|ขนม|กาแฟ|ชานม|ราคาหมู|วัตถุดิบ|ผลไม้|ผัก(?!ผ่อน)|เครื่องดื่ม|\bนม\b|เบเกอ(?:รี่|อรี่)|ข้าว(?!ของ)|ปลา(?!ย)|ทะเล|ทุเรียน|มะม่วง|กล้วย|แตงโม|ส้มตำ|ชาบู|หม่าล่า|ปิ้งย่าง|\bfood\b|buffet|restaurant|cafe/i;
+
+// หมวดที่ Google ติดมากับเทรนด์เอง — เลขและป้ายชุดเดียวกับ dropdown เลือกหมวดด้านบนคอลัมน์
+// ไม่ต้องเดาจากคำ ไม่ต้องใช้ AI: Google บอกมาแล้วว่าเทรนด์ไหนอยู่หมวดไหน
+const TREND_CATS = {
+  3: "💼 ธุรกิจ/การเงิน", 4: "🎬 บันเทิง", 5: "🍔 อาหาร/เครื่องดื่ม", 6: "🎮 เกม",
+  7: "🩺 สุขภาพ", 10: "⚖️ กฎหมาย/ราชการ", 14: "🏛️ การเมือง", 15: "🔬 วิทยาศาสตร์",
+  16: "🛍️ ช้อปปิ้ง", 17: "⚽ กีฬา", 18: "💻 เทคโนโลยี", 19: "✈️ ท่องเที่ยว",
+};
 const FOOD_CAT = 5;
+// Google ส่ง topic id มาหลายตัวต่อเทรนด์ และมีหลายตัวที่ไม่อยู่ใน dropdown — โชว์เฉพาะที่รู้จัก
+function trendCatLabel(it) {
+  for (const id of (it && it.topics) || []) if (TREND_CATS[id]) return TREND_CATS[id];
+  return "";
+}
 function pinScore(it) {
   const hay = (it.title + " " + (it.snippet || "") + " " + ((it.related || []).map((r) => r.term || r).join(" ")))
     .toLowerCase().replace(PIN_FALSE_RE, " ");
-  if (PIN_CP_RE.test(hay)) return 2;   // เครือ CP มาก่อน
-  // Google ติดหมวดมากับเทรนด์อยู่แล้ว (it.topics) — เชื่ออันนั้นก่อนลิสต์คำที่เขียนเอง
-  // ลิสต์คำไล่ตามชื่อแบรนด์ไม่มีวันครบ (starbucks ไม่มีคำว่ากาแฟหรืออาหารอยู่ในชื่อเลย
-  // และไม่มี breakdown มาด้วย จึงตกไปอยู่กลางลิสต์ทั้งที่ Google จัดเป็นหมวดอาหาร)
-  if (Array.isArray(it.topics) && it.topics.includes(FOOD_CAT)) return 1;
-  if (PIN_FOOD_RE.test(hay)) return 1; // แล้วค่อยอาหาร
-  return 0;
+  if (PIN_CP_RE.test(hay)) return 2; // เครือ CP มาก่อน (Google ไม่มีหมวดนี้ ต้องดูจากชื่อเอง)
+  // ถ้า Google ติดหมวดมาให้แล้ว เชื่อ Google ล้วน — ลิสต์คำที่เขียนเองไม่มีวันครบชื่อแบรนด์
+  // (starbucks ไม่มีคำว่ากาแฟหรืออาหารในชื่อเลย และไม่มีคำที่เกี่ยวข้องมาด้วย)
+  const topics = Array.isArray(it.topics) ? it.topics : [];
+  if (topics.length) return topics.includes(FOOD_CAT) ? 1 : 0;
+  // ไม่มีหมวดมาด้วย = ตอนที่ Google Trends ล่มแล้วตกไปใช้ RSS สำรอง ค่อยเดาจากคำ
+  return PIN_FOOD_RE.test(hay) ? 1 : 0;
 }
 
 function renderTrends(panel) {
@@ -372,12 +384,14 @@ function renderTrends(panel) {
       ]
         .filter(Boolean)
         .join(" ");
-      const pin = it._pin === 2 ? "เครือ CP" : it._pin === 1 ? "อาหาร" : "";
-      return `<div class="trend${pin ? " pin" : ""}">
+      // ป้าย "เครือ CP" ต้องบอกเอง (Google ไม่มีหมวดนี้) ส่วนหมวดอื่นโชว์ตามที่ Google จัดมา
+      const pin = it._pin === 2 ? "เครือ CP" : "";
+      const catLabel = trendCatLabel(it);
+      return `<div class="trend${it._pin ? " pin" : ""}">
         <div class="trend-head" data-q="${escapeHtml(it.title)}">
           <span class="rank">${i + 1}</span>
           <div class="trend-main">
-            <div class="trend-term">${escapeHtml(it.title)}${pin ? ` <span class="pinbadge">${pin}</span>` : ""}</div>
+            <div class="trend-term">${escapeHtml(it.title)}${pin ? ` <span class="pinbadge">${pin}</span>` : ""}${catLabel ? ` <span class="tcat">${escapeHtml(catLabel)}</span>` : ""}</div>
             <div class="trend-sub">${sub}</div>
             ${it.snippet ? `<div class="trend-bd">${escapeHtml(it.snippet)}</div>` : ""}
           </div>
@@ -601,7 +615,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 10; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 11; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
