@@ -8,7 +8,8 @@ import { parseGeneric, parseTrends } from "./_lib/parser.js";
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
-const CACHE_VER = "35"; // bump: ตัดข่าวที่ไม่ใช่ของล่าสุดทั้งหมด (ยึด byline เป็นเวลาจริง)
+const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
+const CACHE_VER = "36"; // bump: ตัดข่าวที่ไม่ใช่ของล่าสุดทั้งหมด (ยึด byline เป็นเวลาจริง)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -293,7 +294,34 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
     }
   } catch {}
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive, pruned, dateFix });
+  // จัดหมวดข่าว (แบบเดียวกับหน้า IR) — ทำท้ายสุด หลังยุบข่าวซ้ำแล้ว จะได้ไม่เสีย AI ให้ใบที่ถูกทิ้ง
+  const catDiag = {};
+  try {
+    // หมวดที่ AI เคยจัดไว้รอบก่อน — ข่าวเดิมไม่ต้องถามซ้ำ
+    const prevCat = {};
+    try {
+      const prevResp = await cache.match(cacheKey);
+      const pj2 = prevResp ? JSON.parse(await prevResp.clone().text()) : null;
+      if (pj2) {
+        for (const s2 of ["news", "alert1", "alert2"]) {
+          for (const it of (pj2.sources?.[s2]?.items || [])) {
+            if (it.byAI && it.link && it.cat) prevCat[it.link] = it.cat;
+          }
+        }
+      }
+    } catch {}
+    // หมวดที่ผู้ใช้แก้เอง + ตัวอย่างล่าสุดไว้สอน AI (คนละ scope กับ IR: flags:pr)
+    let userCats = {}, catExamples = [];
+    try {
+      if (env && env.FLAGS_KV) {
+        const fraw = await env.FLAGS_KV.get(envPrefix(env) + "flags:pr");
+        if (fraw) { const fs = JSON.parse(fraw); userCats = fs.cats || {}; catExamples = fs.catlog || []; }
+      }
+    } catch {}
+    await enrichCategories(env, sources, prevCat, catDiag, userCats, catExamples);
+  } catch (e) { catDiag.fatal = String((e && e.message) || e).slice(0, 200); }
+
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive, pruned, dateFix, cats: catDiag });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -576,4 +604,118 @@ async function fetchWithTimeout(url, ms) {
   } finally {
     clearTimeout(t);
   }
+}
+
+/* ---------- จัดหมวดข่าว (แบบเดียวกับหน้า IR) ---------- */
+//
+// PR เดิมเดาหมวดจากคำล้วนๆ ฝั่งหน้าเว็บ ทำให้ชนคำอื่นบ่อย
+// เจอจริง: "'หมู ปากน้ำ' เจองานสุดหินสอยคิว" (นักสนุกเกอร์) และ "ม.เกษตร เตือนนิสิต"
+// (มหาวิทยาลัยเกษตรศาสตร์) ไปกองอยู่หมวด "อาหาร/เกษตร"
+//
+// จึงย้ายมาทำฝั่งเซิร์ฟเวอร์แบบ IR: คำค้นตัดสินเฉพาะตอนมั่นใจ · ที่เหลือให้ AI อ่านพาดหัว
+// · จำผลไว้ไม่ต้องถามซ้ำ · และผู้ใช้แก้เองได้ทับทุกอย่าง
+
+const CAT_KW = {
+  econ:   ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"],
+  agri:   ["หมู","ไก่","ไข่","กุ้ง","ปศุสัตว์","อาหารสัตว์","เกษตร","ข้าว","ประมง","เนื้อ","สุกร","ฟาร์ม","อาหาร","livestock","pork","poultry","agri","farm","food","shrimp","crop","harvest"],
+  retail: ["ค้าปลีก","ค้าส่ง","ห้าง","ซูเปอร์","สะดวกซื้อ","ร้านสะดวกซื้อ","ค่าครองชีพ","ผู้บริโภค","อีคอมเมิร์ซ","ห้างสรรพสินค้า","โชห่วย","retail","consumer","e-commerce","ecommerce","mall","convenience","supermarket","wholesale"],
+  crisis: ["โรคระบาด","ระบาด","อหิวาต์","ไข้หวัดนก","asf","โควิด","แผ่นดินไหว","น้ำท่วม","ภัยแล้ง","พายุ","ไฟไหม้","ไฟป่า","สึนามิ","ดินถล่ม","ภัยพิบัติ","อุบัติเหตุ","ฉุกเฉิน","วิกฤต","ภัยธรรมชาติ","disease","outbreak","pandemic","epidemic","earthquake","quake","flood","drought","storm","typhoon","wildfire","tsunami","disaster","emergency","crisis"],
+  pol:    ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"],
+};
+const CAT_KEYS = Object.keys(CAT_KW);
+const AI_BATCH_CAT = 10;   // ก้อนเล็กแม่นกว่า — โมเดล 3B หลุดลำดับง่ายถ้าขอทีละมากๆ
+const AI_MAX_CALLS_CAT = 12;
+const MAX_AI_ITEMS = 60;   // จัดของใหม่ล่าสุดก่อน ที่เหลือรอรอบหน้า
+
+// คำสั้นที่มักโผล่ในชื่อคน/สถานที่/ทีมกีฬา — เจอคำเดียวห้ามตัดสิน
+// ("หมู ปากน้ำ" คือนักสนุกเกอร์ · "ม.เกษตร" คือมหาวิทยาลัย · "วัดไก่เตี้ย" คือวัด)
+const AMBIG_KW = new Set(["ไก่", "หมู", "ไข่", "เนื้อ", "ปลา", "ข้าว", "นก", "กุ้ง", "เกษตร", "ห้าง", "ภาษี"]);
+
+const hayOf = (it) => ((it.title || "") + " " + (it.snippet || "")).replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
+const keywordHits = (it) => CAT_KEYS.filter((k) => CAT_KW[k].some((w) => hayOf(it).includes(w)));
+// มั่นใจ = มีคำของหมวดนั้นที่ "ไม่กำกวม" อย่างน้อย 1 คำ
+const confidentHit = (it, cat) => CAT_KW[cat].some((w) => !AMBIG_KW.has(w) && hayOf(it).includes(w));
+
+async function classifyCatBatch(env, titles, examples) {
+  const list = titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  const ex = (examples || []).slice(-8).map((e) => `- "${String(e.t).slice(0, 120)}" => ${e.c}`).join("\n");
+  const prompt =
+    "Classify each Thai/English news headline into ONE category code:\n" +
+    "econ = economy/business/stocks/finance/GDP/investment\n" +
+    "agri = agriculture/livestock/farming/food production\n" +
+    "retail = retail/wholesale/consumer/e-commerce/shopping\n" +
+    "crisis = disease outbreak/earthquake/flood/storm/natural disaster/accident/emergency\n" +
+    "pol = domestic politics/government/policy/law\n" +
+    "other = none of the above (religion, crime, sport, entertainment, obituary, general)\n" +
+    "Judge by the MAIN topic. A word that appears only inside a person's name, a place or an " +
+    "organisation does NOT put it in a category — a snooker player nicknamed หมู is sport, " +
+    "and มหาวิทยาลัยเกษตรศาสตร์ is a university. Use other.\n" +
+    (ex ? "\nThe user corrected these before — follow the same judgement:\n" + ex + "\n" : "") +
+    `\nOutput EXACTLY ${titles.length} lines, one code per line, in the SAME order.\n` +
+    "Each line must contain ONLY the code word. No numbering, no explanation.\n\n" +
+    list;
+  const out = await env.AI.run(AI_MODEL_CAT, { messages: [{ role: "user", content: prompt }], max_tokens: 300 });
+  const text = String((out && (out.response || out.result)) || "").toLowerCase();
+  // รับเฉพาะบรรทัดที่เป็นโค้ดล้วน — บรรทัดอธิบายจะทำให้ลำดับเลื่อนทั้งชุด
+  const codes = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.trim().match(/^(?:\d+[.)]\s*)?(econ|agri|retail|crisis|pol|other)\b[\s.]*$/);
+    if (m) codes.push(m[1]);
+  }
+  if (codes.length !== titles.length) throw new Error(`count mismatch ${codes.length}/${titles.length}`);
+  return codes;
+}
+
+// ก้อนไหนพลาดก็ผ่าครึ่งลองใหม่ ไม่ทิ้งทั้งชุด (ทิ้งทั้งชุด = ข่าวตกไปอยู่ "อื่นๆ" ยกแผง)
+async function classifyCatInto(env, chunk, diag, st, examples, depth) {
+  if (!chunk.length || st.calls >= AI_MAX_CALLS_CAT) return;
+  st.calls++;
+  try {
+    const cats = await classifyCatBatch(env, chunk.map((x) => x.title), examples);
+    chunk.forEach((it, j) => {
+      const c = cats[j];
+      if (!c) return;
+      it.cat = CAT_KEYS.includes(c) ? c : "other";
+      it.byAI = true;
+      diag.ok++;
+    });
+  } catch (e) {
+    diag.aiErr = String((e && e.message) || e).slice(0, 100);
+    if (depth >= 2 || chunk.length <= 2) return;
+    const mid = Math.ceil(chunk.length / 2);
+    diag.splits = (diag.splits || 0) + 1;
+    await classifyCatInto(env, chunk.slice(0, mid), diag, st, examples, depth + 1);
+    await classifyCatInto(env, chunk.slice(mid), diag, st, examples, depth + 1);
+  }
+}
+
+// ลำดับความน่าเชื่อ: ผู้ใช้จัดเอง > เคยจัดด้วย AI > คำค้นแบบมั่นใจ > ให้ AI อ่าน
+async function enrichCategories(env, sources, prevCat, diag, userCats, examples) {
+  userCats = userCats || {};
+  const toAI = [];
+  let userN = 0;
+  for (const s of ["news", "alert1", "alert2"]) {
+    for (const it of (sources[s] && sources[s].items) || []) {
+      if (userCats[it.link]) { it.cat = userCats[it.link]; it.byUser = true; userN++; continue; }
+      const cached = prevCat[it.link];
+      if (cached) { it.cat = cached; it.byAI = true; continue; }
+      const hits = keywordHits(it);
+      if (hits.length === 1 && confidentHit(it, hits[0])) { it.cat = hits[0]; it.byAI = false; continue; }
+      it.cat = "other";   // ค่าชั่วคราว — กำกวม/ชนหลายหมวด/ไม่ชนเลย ให้ AI ตัดสิน
+      it.byAI = false;
+      toAI.push(it);
+    }
+  }
+  diag.bound = !!(env && env.AI);
+  diag.userCats = userN;
+  diag.candidates = toAI.length;
+  diag.ok = 0;
+  if (!env || !env.AI || !toAI.length) return;
+  const st = { calls: 0 };
+  const batch = toAI.slice(0, MAX_AI_ITEMS);
+  diag.sent = batch.length;
+  for (let i = 0; i < batch.length; i += AI_BATCH_CAT) {
+    await classifyCatInto(env, batch.slice(i, i + AI_BATCH_CAT), diag, st, examples, 0);
+  }
+  diag.aiCalls = st.calls;
 }

@@ -613,7 +613,17 @@ const NEWS_CATS = [
   { key: "pol",    label: "🏛️ การเมือง", kw: ["รัฐบาล","นายก","สภา","ครม","พรรค","เลือกตั้ง","กฎหมาย","นโยบาย","รัฐมนตรี","ภาษี","การเมือง","กกต","แบงก์ชาติ","มาตรการ","กระทรวง","govern","policy","election","parliament","minister","cabinet","regulation","tax","law"] },
 ];
 const NEWS_MAP = Object.fromEntries(NEWS_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
-function newsCatOf(it) {
+// ลำดับความน่าเชื่อ (เหมือนหน้า IR): ผู้ใช้จัดเอง > ที่ server จัดมา > เดาจากคำฝั่งนี้
+//
+// ⚠️ การเดาจากคำฝั่ง client เป็นทางสำรองเท่านั้น มันชนคำอื่นบ่อย
+// ("หมู ปากน้ำ" นักสนุกเกอร์ · "ม.เกษตร" มหาวิทยาลัย) — ของจริงตัดสินที่ server
+// ซึ่งมีตัวกันคำกำกวมและให้ AI อ่านพาดหัวเมื่อไม่มั่นใจ
+function newsCatOf(it, source) {
+  if (window.Flags && Flags.getCat) {
+    const o = Flags.getCat(it.link);
+    if (o) return o;
+  }
+  if (it.cat) return it.cat;
   const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
   for (const key of Object.keys(NEWS_MAP)) if (NEWS_MAP[key].some((k) => hay.includes(k))) return key;
   return "other";
@@ -650,7 +660,7 @@ function renderPanel(panel) {
     if (window.Flags && Flags.isHidden(it.link)) return false;
     if (!withinRecency(it.publishedAt, f.rc)) return false;
     if (source === "alert1" && f.cat === "cpf" && !isCPF(it)) return false; // chip CPF
-    if (source === "news" && f.cat && newsCatOf(it) !== f.cat) return false; // chip หมวดข่าว (แบบ IR)
+    if (source === "news" && f.cat && newsCatOf(it, source) !== f.cat) return false; // chip หมวดข่าว (แบบ IR)
     if (kw) {
       const hay = (it.title + " " + it.snippet + " " + it.sourceLabel).toLowerCase();
       if (!hay.includes(kw)) return false;
@@ -670,6 +680,7 @@ function renderPanel(panel) {
     .map(
       (it) => `<a class="card" href="${escapeHtml(it.link)}" target="_blank" rel="noopener">
         ${window.Flags ? Flags.button(it, source) : ""}
+        ${window.Flags ? Flags.catButton(it, source) : ""}
         ${it.sourceLabel ? `<div class="src">${escapeHtml(it.sourceLabel)}</div>` : ""}
         <div class="ttl">${hl(escapeHtml(it.title))}</div>
         ${it.snippet ? `<div class="snip">${hl(escapeHtml(it.snippet))}</div>` : ""}
@@ -1020,14 +1031,14 @@ function applyKeywords() {
   Flags.setKeywords(map);
 }
 if (window.Flags) {
-  Flags.init({ onChange: renderAll });
+  Flags.init({ onChange: renderAll, cats: NEWS_CATS }); // ไม่ส่ง cats = ปุ่มจัดหมวดรายข่าวไม่ขึ้น
   Flags.setKeywords(HARD_KW); // แสดงทันทีก่อนโหลด
 }
 wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 62; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 63; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
