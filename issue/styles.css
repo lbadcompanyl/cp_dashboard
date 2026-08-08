@@ -430,5 +430,4 @@ body {
 .trend.pin { border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.08); border-radius: 8px; }
 .pinbadge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; color: #78350f; background: #fbbf24; vertical-align: 1px; white-space: nowrap; }
 /* หมวดที่ Google จัดให้ — เบากว่า pinbadge เพราะเป็นข้อมูลประกอบ ไม่ใช่การเน้น */
-.tcat { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--border); vertical-align: 1px; white-space: nowrap; }
 

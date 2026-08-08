@@ -883,17 +883,16 @@ const PIN_FOOD_RE = /อาหาร|หมู(?!่)|ไก่|ไข่|กุ
 
 // หมวดที่ Google ติดมากับเทรนด์เอง — เลขและป้ายชุดเดียวกับ dropdown เลือกหมวดด้านบนคอลัมน์
 // ไม่ต้องเดาจากคำ ไม่ต้องใช้ AI: Google บอกมาแล้วว่าเทรนด์ไหนอยู่หมวดไหน
+//
+// ⚠️ ไม่ได้เอาไปโชว์บนการ์ดแล้ว (เจ้าของสั่งเอาป้ายหมวดออก) แต่ห้ามลบตารางนี้ทิ้ง —
+// เป็นตัวยืนยันว่าเลขหมวดที่ FOOD_CAT อ้างถึงตรงกับ dropbox จริง (เทสต์ pintest เทียบให้)
+// ลบทิ้งเมื่อไหร่ = FOOD_CAT กลายเป็นเลข 5 ลอยๆ ที่ไม่มีอะไรการันตีว่าคืออาหาร
 const TREND_CATS = {
   3: "💼 ธุรกิจ/การเงิน", 4: "🎬 บันเทิง", 5: "🍔 อาหาร/เครื่องดื่ม", 6: "🎮 เกม",
   7: "🩺 สุขภาพ", 10: "⚖️ กฎหมาย/ราชการ", 14: "🏛️ การเมือง", 15: "🔬 วิทยาศาสตร์",
   16: "🛍️ ช้อปปิ้ง", 17: "⚽ กีฬา", 18: "💻 เทคโนโลยี", 19: "✈️ ท่องเที่ยว",
 };
 const FOOD_CAT = 5;
-// Google ส่ง topic id มาหลายตัวต่อเทรนด์ และมีหลายตัวที่ไม่อยู่ใน dropdown — โชว์เฉพาะที่รู้จัก
-function trendCatLabel(it) {
-  for (const id of (it && it.topics) || []) if (TREND_CATS[id]) return TREND_CATS[id];
-  return "";
-}
 function pinScore(it) {
   const hay = (it.title + " " + (it.snippet || "") + " " + ((it.related || []).map((r) => r.term || r).join(" ")))
     .toLowerCase().replace(PIN_FALSE_RE, " ");
@@ -958,12 +957,11 @@ function renderTrends(panel) {
         .join(" ");
       // ป้าย "เครือ CP" ต้องบอกเอง (Google ไม่มีหมวดนี้) ส่วนหมวดอื่นโชว์ตามที่ Google จัดมา
       const pin = it._pin === 2 ? "เครือ CP" : "";
-      const catLabel = trendCatLabel(it);
       return `<div class="trend${it._pin ? " pin" : ""}">
         <div class="trend-head" data-q="${escapeHtml(it.title)}">
           <span class="rank">${i + 1}</span>
           <div class="trend-main">
-            <div class="trend-term">${escapeHtml(it.title)}${pin ? ` <span class="pinbadge">${pin}</span>` : ""}${catLabel ? ` <span class="tcat">${escapeHtml(catLabel)}</span>` : ""}</div>
+            <div class="trend-term">${escapeHtml(it.title)}${pin ? ` <span class="pinbadge">${pin}</span>` : ""}</div>
             <div class="trend-sub">${sub}</div>
             ${it.snippet ? `<div class="trend-bd">${escapeHtml(it.snippet)}</div>` : ""}
           </div>
@@ -1284,7 +1282,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 84; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 85; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

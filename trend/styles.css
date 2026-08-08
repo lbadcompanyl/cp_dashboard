@@ -529,7 +529,6 @@ body {
 .kindtog .cat.on { background: var(--alert); color: #fff; font-weight: 600; }
 
 /* หมวดที่ Google จัดให้ — เบากว่า pinbadge เพราะเป็นข้อมูลประกอบ ไม่ใช่การเน้น */
-.tcat { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--border); vertical-align: 1px; white-space: nowrap; }
 
 
 /* ---- ปุ่มชี้ทางไปแถวล่าง ---- */
