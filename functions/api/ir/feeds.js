@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "47"; // bump: ตัด "ทรูดิจิทัล พาร์ค" ออกจากคอลัมน์ CP (สถานที่ ไม่ใช่ข่าวเครือ)
+const CACHE_VER = "48"; // bump: ตัดประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -463,6 +463,10 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   const arDiag = {};
   try { await mergeArchives(env, sources, arDiag); } catch (e) { arDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
+  // กวาดประกาศงาน/อสังหา/หน้าขายของที่ค้างอยู่ใน KV ออกด้วย (verify ทำงานก่อน archive)
+  const swept = {};
+  try { dropNoiseAfterArchive(sources, swept); } catch (e) { swept.err = String((e && e.message) || e).slice(0, 120); }
+
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   const pruned = {};
   try {
@@ -517,6 +521,23 @@ const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 const IMGPOST_RE = /^\s*S_?\d{4,}\b/i;
 const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
+// ---- ประกาศงาน / อสังหา / หน้าขายสินค้า — ไม่ใช่ข่าว ----
+// เจ้าของสั่งตัดออก (7 ส.ค. 69): jobsdb, dotproperty, epower ฯลฯ โผล่ในคอลัมน์ CP
+// จับที่ "โดเมน" เป็นหลักเพราะแม่นกว่าจับคำ — คำเอาไว้กันเว็บที่ยังไม่อยู่ในลิสต์
+const JOB_HOSTS = [
+  "jobsdb", "jooble", "jobbkk", "jobthai", "indeed.", "glassdoor", "linkedin.", "jobtopgun",
+  "careerjet", "talent.com", "workventure", "jobnisit", "trabajo.", "th.joblum", "joboko",
+];
+const JOB_RE = /รับสมัครงาน|สมัครงาน|หางาน|ตำแหน่งงาน|งานเต็มเวลา|งานพาร์ทไทม์|งานพาร์ท-?ไทม์|jobs in |job vacanc|job opening|now hiring|apply now/i;
+const PROP_HOSTS = [
+  "dotproperty", "ddproperty", "livinginsider", "baania", "hipflat", "thinkofliving",
+  "propertyhub", "prakard", "realist.co.th", "bahtsold", "propfit", "homenayoo",
+];
+// "ให้เช่า" คำเดียวพอ — ประกาศเช่าใช้ทุกใบ ส่วนข่าวธุรกิจจะเขียน "ปล่อยเช่า/สัญญาเช่า" แทน
+const PROP_RE = /ให้เช่า|ห้องเช่า|หอพัก|ขายบ้าน|ขายคอนโด|ขายทาวน์|ขายที่ดิน|ขายดาวน์|for rent|ห้องนอน[\s\S]{0,20}ห้องน้ำ/i;
+// หน้าขายสินค้า/บริการของผู้ขาย (ไม่ใช่ข่าว) — ภาษาแบบใบเสนอราคา/แคตตาล็อก
+const VENDOR_RE = /ตัวแทนจำหน่าย|ผลิตและจำหน่าย|รับติดตั้ง|บริการติดตั้ง|สอบถามราคา|ใบเสนอราคา|ราคาโรงงาน|สินค้าและบริการ|เครื่องกรองน้ำ|เครื่องกรองอากาศ|water purifier|air purifier|air quality sensor|เซนเซอร์วัดคุณภาพอากาศ/i;
+
 function hostOf(link) {
   try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
 }
@@ -532,7 +553,29 @@ function noiseReason(it, title) {
   const host = hostOf(link);
   if (host && SHOP_HOSTS.some((h) => host.includes(h))) return "shopping";
   if (SHOP_RE.test(text)) return "shopping";
+  if (host && JOB_HOSTS.some((h) => host.includes(h))) return "job";
+  if (JOB_RE.test(text)) return "job";
+  if (host && PROP_HOSTS.some((h) => host.includes(h))) return "property";
+  if (PROP_RE.test(text)) return "property";
+  if (VENDOR_RE.test(text)) return "vendor";
   return null;
+}
+
+// กวาดของที่เป็นประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert "หลังดึงของเก่าจาก KV กลับมา"
+// ⚠️ verifyAlertItems() ทำงานก่อน mergeArchives() — ของเก่าที่เก็บไว้ตอนยังไม่มีตัวกรองนี้
+// จะไหลกลับเข้ามาโดยไม่ผ่านด่าน ต้องกวาดอีกรอบตรงนี้ ไม่งั้นต้องรอ 10 วันกว่าจะหายเอง
+function dropNoiseAfterArchive(sources, diag) {
+  for (const src of ["alert1", "alert2"]) {
+    const b = sources[src];
+    if (!b || !Array.isArray(b.items)) continue;
+    const before = b.items.length;
+    b.items = b.items.filter((it) => {
+      const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase());
+      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: (it.title || "").slice(0, 60) });
+      return !why;
+    });
+    diag[src] = before - b.items.length;
+  }
 }
 // ตระกูลแบรนด์ในเครือ CP — บทความ CP มักเรียกตัวเองด้วยชื่อลูก (CPF/เซเว่น/แม็คโคร) ไม่ใช่คำว่า "ซีพี" ตรง ๆ
 // ใช้ตอน verify คอลัมน์ alert1: ถ้า meta มีชื่อในเครือ = ข่าว CP จริง แม้ Google จะไฮไลต์ "ซีพี" จาก related block

@@ -9,7 +9,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "37"; // bump: ตัด "ทรูดิจิทัล พาร์ค" ออกจากคอลัมน์ CP (สถานที่ ไม่ใช่ข่าวเครือ)
+const CACHE_VER = "38"; // bump: ตัดประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -269,6 +269,10 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const archive = {};
   try { await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
 
+  // กวาดประกาศงาน/อสังหา/หน้าขายของที่ค้างอยู่ใน KV ออกด้วย (verify ทำงานก่อน archive)
+  const swept = {};
+  try { dropNoiseAfterArchive(sources, swept); } catch (e) { swept.err = String((e && e.message) || e).slice(0, 120); }
+
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   const pruned = {};
   try {
@@ -394,6 +398,23 @@ const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 // พาดหัวขึ้นต้น "ข่าวประชาสัมพันธ์" = หน้าประกาศ/PR ราชการ-หน่วยงาน (มัก match keyword จากเมนู/บล็อกลิงก์ ไม่ใช่ตัวข่าว)
 const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
+// ---- ประกาศงาน / อสังหา / หน้าขายสินค้า — ไม่ใช่ข่าว ----
+// เจ้าของสั่งตัดออก (7 ส.ค. 69): jobsdb, dotproperty, epower ฯลฯ โผล่ในคอลัมน์ CP
+// จับที่ "โดเมน" เป็นหลักเพราะแม่นกว่าจับคำ — คำเอาไว้กันเว็บที่ยังไม่อยู่ในลิสต์
+const JOB_HOSTS = [
+  "jobsdb", "jooble", "jobbkk", "jobthai", "indeed.", "glassdoor", "linkedin.", "jobtopgun",
+  "careerjet", "talent.com", "workventure", "jobnisit", "trabajo.", "th.joblum", "joboko",
+];
+const JOB_RE = /รับสมัครงาน|สมัครงาน|หางาน|ตำแหน่งงาน|งานเต็มเวลา|งานพาร์ทไทม์|งานพาร์ท-?ไทม์|jobs in |job vacanc|job opening|now hiring|apply now/i;
+const PROP_HOSTS = [
+  "dotproperty", "ddproperty", "livinginsider", "baania", "hipflat", "thinkofliving",
+  "propertyhub", "prakard", "realist.co.th", "bahtsold", "propfit", "homenayoo",
+];
+// "ให้เช่า" คำเดียวพอ — ประกาศเช่าใช้ทุกใบ ส่วนข่าวธุรกิจจะเขียน "ปล่อยเช่า/สัญญาเช่า" แทน
+const PROP_RE = /ให้เช่า|ห้องเช่า|หอพัก|ขายบ้าน|ขายคอนโด|ขายทาวน์|ขายที่ดิน|ขายดาวน์|for rent|ห้องนอน[\s\S]{0,20}ห้องน้ำ/i;
+// หน้าขายสินค้า/บริการของผู้ขาย (ไม่ใช่ข่าว) — ภาษาแบบใบเสนอราคา/แคตตาล็อก
+const VENDOR_RE = /ตัวแทนจำหน่าย|ผลิตและจำหน่าย|รับติดตั้ง|บริการติดตั้ง|สอบถามราคา|ใบเสนอราคา|ราคาโรงงาน|สินค้าและบริการ|เครื่องกรองน้ำ|เครื่องกรองอากาศ|water purifier|air purifier|air quality sensor|เซนเซอร์วัดคุณภาพอากาศ/i;
+
 function hostOf(link) {
   try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
 }
@@ -408,7 +429,29 @@ function noiseReason(it, title) {
   const host = hostOf(link);
   if (host && SHOP_HOSTS.some((h) => host.includes(h))) return "shopping";
   if (SHOP_RE.test(text)) return "shopping";
+  if (host && JOB_HOSTS.some((h) => host.includes(h))) return "job";
+  if (JOB_RE.test(text)) return "job";
+  if (host && PROP_HOSTS.some((h) => host.includes(h))) return "property";
+  if (PROP_RE.test(text)) return "property";
+  if (VENDOR_RE.test(text)) return "vendor";
   return null;
+}
+
+// กวาดของที่เป็นประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert "หลังดึงของเก่าจาก KV กลับมา"
+// ⚠️ verifyAlertItems() ทำงานก่อน mergeArchives() — ของเก่าที่เก็บไว้ตอนยังไม่มีตัวกรองนี้
+// จะไหลกลับเข้ามาโดยไม่ผ่านด่าน ต้องกวาดอีกรอบตรงนี้ ไม่งั้นต้องรอ 10 วันกว่าจะหายเอง
+function dropNoiseAfterArchive(sources, diag) {
+  for (const src of ["alert1", "alert2"]) {
+    const b = sources[src];
+    if (!b || !Array.isArray(b.items)) continue;
+    const before = b.items.length;
+    b.items = b.items.filter((it) => {
+      const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase());
+      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: (it.title || "").slice(0, 60) });
+      return !why;
+    });
+    diag[src] = before - b.items.length;
+  }
 }
 
 // ---- ข่าวเก่าที่ถูกดันขึ้นมาใหม่ ----
