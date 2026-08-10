@@ -241,6 +241,10 @@ body {
   padding: 30px 16px;
 }
 .state.error { color: #dc2626; }
+
+/* ป้ายบอกที่มาของการ์ดในคอลัมน์ Alert — ใช้ตัดสินว่าต้องไปแก้ที่ Google Alerts หรือแก้ในโค้ด */
+.card .orig { display: inline-block; margin-top: 6px; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; border: 1px solid var(--border); color: var(--muted); background: var(--bg); }
+.card .orig.n { color: #2a78d6; border-color: rgba(42,120,214,.45); }
 .state a { color: var(--alert); }
 .state code {
   display: inline-block;

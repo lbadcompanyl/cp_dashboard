@@ -863,6 +863,7 @@ function renderPanel(panel) {
         ${window.Flags ? Flags.button(it, source) : ""}
         ${window.Flags ? Flags.catButton(it, source) : ""}
         ${it.sourceLabel ? `<div class="src">${escapeHtml(it.sourceLabel)}</div>` : ""}
+        ${source.startsWith("alert") ? `<div class="orig ${it.fromNews ? "n" : "a"}">${it.fromNews ? "📰 มาจากคอลัมน์ข่าว" : "🔔 มาจาก Google Alert"}</div>` : ""}
         <div class="ttl">${hl(escapeHtml(it.title))}</div>
         ${it.snippet ? `<div class="snip">${hl(escapeHtml(it.snippet))}</div>` : ""}
         <div class="meta">${timeAgo(it.publishedAt)}</div>
@@ -1282,7 +1283,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 85; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 86; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่

@@ -159,6 +159,15 @@
     return o ? o.label : source;
   }
 
+  // ป้ายบอกที่มา + บอกว่าต้องไปแก้ที่ไหน
+  // ⚠️ ข่าวที่ถูกดึงมาจากคอลัมน์ข่าว ระบบเราดึงเข้ามาเอง — ใส่ -site: ใน Google Alert ไม่มีผลกับมัน
+  // จึงซ่อนปุ่ม "＋ ตัดเว็บ" ของแถวนั้นไปเลย ไม่ให้กดแล้วนึกว่าแก้ได้ (เคยเข้าใจผิดมาแล้ว)
+  function originTag(r) {
+    if (r.from === "news") return ' <span class="flg-orig n">📰 มาจากคอลัมน์ข่าว — ตัดเว็บที่ Alert ไม่ได้</span>';
+    if (r.from === "alert") return ' <span class="flg-orig">🔔 มาจาก Google Alert</span>';
+    return ' <span class="flg-orig q">ไม่ทราบที่มา (flag ไว้ก่อนมีป้ายนี้)</span>';
+  }
+
   // ---------- flag / undo ----------
   let lastFlag = null;
   function flag(btn) {
@@ -170,6 +179,9 @@
       source: btn.dataset.source || "",
       label: btn.dataset.label || "",
       host: host(link),
+      // มาจากฟีด Google Alert ตรงๆ หรือถูกดึงมาจากคอลัมน์ข่าว — คนละที่แก้กัน
+      // (ของที่ flag ไว้ก่อนหน้านี้ไม่มีค่านี้ หน้า admin จะขึ้นว่า "ไม่ทราบที่มา")
+      from: btn.dataset.from || "",
       ts: Date.now(),
     };
     hidden[link] = 1;
@@ -491,8 +503,9 @@
       html += `<div class="flg-sub">🗞 ข่าวที่ flag <span class="flg-hint">(＋ ตัดเว็บ · ↩ เอากลับ · 🗑 ลบออกจากรายการ)</span></div>
         <div class="flg-items">` +
         a.items.slice().reverse().map((r) => `<div class="flg-item">
-          <div class="flg-item-main"><div class="flg-item-ttl">${esc(stripMarks(r.title) || "(ไม่มีหัวข้อ)")}</div>${r.host ? `<div class="flg-item-host">🌐 ${esc(r.host)}</div>` : ""}</div>
-          ${r.host ? `<button type="button" class="flg-mini" data-ta="${esc(taId)}" data-add="-site:${esc(r.host)}" title="เติม -site:${esc(r.host)} ลงกล่อง">＋ ตัดเว็บ</button>` : ""}
+          <div class="flg-item-main"><div class="flg-item-ttl">${esc(stripMarks(r.title) || "(ไม่มีหัวข้อ)")}</div>
+            <div class="flg-item-host">${r.host ? `🌐 ${esc(r.host)}` : ""}${originTag(r)}</div></div>
+          ${r.host && r.from !== "news" ? `<button type="button" class="flg-mini" data-ta="${esc(taId)}" data-add="-site:${esc(r.host)}" title="เติม -site:${esc(r.host)} ลงกล่อง">＋ ตัดเว็บ</button>` : ""}
           <button type="button" class="flg-mini ghost" data-restore="${esc(r.link)}" title="เอาข่าวนี้กลับเข้า feed">↩</button>
           <button type="button" class="flg-mini ghost" data-dismiss="${esc(r.link)}" title="ลบออกจากรายการนี้ (ยังซ่อนข่าวไว้ ไม่เอากลับ)">🗑</button>
         </div>`).join("") + `</div>`;
@@ -620,6 +633,9 @@
     .flg-item-main{flex:1;min-width:0}
     .flg-item-ttl{font-size:12px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
     .flg-item-host{font-size:10.5px;opacity:.6;margin-top:2px}
+    .flg-orig{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;border:1px solid rgba(150,150,150,.3);font-size:10px;font-weight:600;white-space:nowrap}
+    .flg-orig.n{color:#6fb0ff;border-color:rgba(42,120,214,.45);white-space:normal}
+    .flg-orig.q{opacity:.7}
     .flg-mini{border:1px solid rgba(150,150,150,.3);background:transparent;color:inherit;border-radius:7px;padding:4px 8px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap}
     .flg-mini:hover{border-color:#c0392b}
     .flg-mini.ghost{opacity:.6;padding:4px 7px}
@@ -713,7 +729,7 @@
     button(item, source) {
       // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม
       if (!source || !source.startsWith("alert")) return "";
-      return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(stripMarks(item.title))}" data-label="${esc(item.sourceLabel || "")}">⚑</button>`;
+      return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(stripMarks(item.title))}" data-label="${esc(item.sourceLabel || "")}" data-from="${item.fromNews ? "news" : "alert"}">⚑</button>`;
     },
     // ปุ่มจัดหมวดเอง — เฉพาะคอลัมน์ข่าว (มีหมวดให้เลือก)
     catButton(item, source) {
