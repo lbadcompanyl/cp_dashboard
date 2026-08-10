@@ -8,7 +8,35 @@
 
 const ARCHIVE_KEY = "pr:archive"; // ต้องตรงกับใน feeds.js
 const LABELS = { alert1: "CP", alert2: "หัวข้อที่จับตามอง" };
+// ⚠️ อ่านอย่างเดียว ไม่เขียน KV — Google Sheet มาดึงทุกชั่วโมงก็ไม่กินโควตาเขียน
 const MAX_DAYS = 400;
+
+// ---- หัวข้อที่แยกเก็บลง Google Sheet ----
+// ?topics=cpf,blackchin,pm25,alien  → เอาเฉพาะข่าวที่เข้าหัวข้อพวกนี้ + ติดชื่อหัวข้อมาให้
+// ไม่ใส่ = เอาทุกข่าวเหมือนเดิม (ของเดิมที่ =IMPORTDATA ใช้อยู่จะไม่พัง)
+//
+// ⚠️ ข่าวใบเดียวเข้าได้หลายหัวข้อ (เช่น CPF + ปลาหมอคางดำ) — ใส่ทุกหัวข้อคั่นด้วย ", "
+// ไม่เลือกอันใดอันหนึ่ง เพราะจะทำให้อีกหัวข้อหาย และตัวกรองในชีตยังใช้ "มีคำว่า..." ได้อยู่
+const TOPICS = [
+  { key: "cpf", label: "CPF", terms: ["cpf", "ซีพีเอฟ", "cp foods", "เจริญโภคภัณฑ์อาหาร", "charoen pokphand foods"] },
+  { key: "blackchin", label: "ปลาหมอคางดำ", terms: ["หมอคางดำ", "ปลาหมอสีคางดำ", "blackchin tilapia"] },
+  { key: "pm25", label: "PM2.5", terms: ["pm2.5", "pm 2.5", "ฝุ่นพิษ", "ฝุ่นละอองขนาดเล็ก", "ค่าฝุ่น", "ฝุ่นจิ๋ว", "หมอกควัน"] },
+  { key: "alien", label: "Alien species",
+    terms: ["เอเลี่ยนสปีชีส์", "เอเลียนสปีชีส์", "ชนิดพันธุ์ต่างถิ่น", "สัตว์ต่างถิ่น", "เอเลี่ยน สปีชีส์",
+            "invasive species", "alien species"] },
+];
+// คำไทยไม่มีช่องว่างคั่นคำ จึงเทียบแบบ substring · คำอังกฤษต้องตรงทั้งคำ
+// (บทเรียนเดิม: rcep ไปจับ inte(rcep)t · SLAPP ไปจับ slapped) — โค้ดชุดเดียวกับใน feeds.js
+const LATIN_TERM = /^[\x20-\x7e]+$/;
+function termRe(t) {
+  const esc = String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(LATIN_TERM.test(t) ? "(?<![a-z0-9])" + esc + "(?![a-z0-9])" : esc, "i");
+}
+const TOPIC_RE = TOPICS.map((t) => ({ ...t, res: t.terms.map(termRe) }));
+function topicsOf(text) {
+  const hay = String(text || "").toLowerCase();
+  return TOPIC_RE.filter((t) => t.res.some((re) => re.test(hay)));
+}
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
@@ -19,6 +47,12 @@ export async function onRequest(context) {
   const wanted = srcParam === "all" ? Object.keys(LABELS) : Object.keys(LABELS).filter((k) => k === srcParam);
   const days = clamp(parseInt(url.searchParams.get("days") || "90", 10), 1, MAX_DAYS);
   const format = (url.searchParams.get("format") || "csv").toLowerCase();
+  // ว่าง = ไม่กรอง · ใส่ชื่อหัวข้อคั่นจุลภาค = เอาเฉพาะหัวข้อนั้น · "all" = ทุกหัวข้อที่รู้จัก
+  const topicParam = (url.searchParams.get("topics") || "").trim().toLowerCase();
+  const wantTopics = !topicParam ? null
+    : topicParam === "all" ? TOPIC_RE.map((t) => t.key)
+    : topicParam.split(",").map((x) => x.trim()).filter((x) => TOPIC_RE.some((t) => t.key === x));
+  if (wantTopics && !wantTopics.length) return text("ไม่รู้จักหัวข้อนี้ — ใช้ " + TOPIC_RE.map((t) => t.key).join(", "), 400);
 
   if (!wanted.length) return text("ไม่รู้จักคอลัมน์นี้ — ใช้ src=alert1, alert2 หรือ all", 400);
   if (!kv) return text("ยังไม่ได้ผูก KV — ไม่มีคลังข้อมูลให้ดึง", 503);
@@ -37,7 +71,15 @@ export async function onRequest(context) {
     for (const it of store[src] || []) {
       const t = Date.parse(it && it.publishedAt);
       if (!Number.isFinite(t) || t < cutoff) continue;
+      let topicLabel = "";
+      if (wantTopics) {
+        // ดูทั้งพาดหัวและสรุป — บางข่าวชื่อหัวข้ออยู่ในสรุปอย่างเดียว
+        const hit = topicsOf(clean(it.title) + " " + clean(it.snippet)).filter((x) => wantTopics.includes(x.key));
+        if (!hit.length) continue;
+        topicLabel = hit.map((x) => x.label).join(", ");
+      }
       rows.push({
+        topic: topicLabel,
         publishedAt: new Date(t).toISOString(),
         date: thDate(t),
         column: LABELS[src],
@@ -56,8 +98,8 @@ export async function onRequest(context) {
     });
   }
 
-  const head = ["วันที่", "เวลา ISO", "คอลัมน์", "พาดหัว", "สำนักข่าว", "ลิงก์", "สรุป"];
-  const body = rows.map((r) => [r.date, r.publishedAt, r.column, r.title, r.outlet, r.link, r.snippet]);
+  const head = ["วันที่", "เวลา ISO", "คอลัมน์", "พาดหัว", "สำนักข่าว", "ลิงก์", "สรุป", "หมวด"];
+  const body = rows.map((r) => [r.date, r.publishedAt, r.column, r.title, r.outlet, r.link, r.snippet, r.topic || ""]);
   // BOM (\uFEFF) — ถ้าไม่ใส่ Excel จะอ่านภาษาไทยเป็นตัวยึกยือ
   const csv = "\uFEFF" + [head, ...body].map((r) => r.map(csvCell).join(",")).join("\r\n");
 
