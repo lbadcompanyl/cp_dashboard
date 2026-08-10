@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "46"; // bump: ตัดชื่อลวง บีแอลซีพี/ซีพีเอ็น ออกจากคอลัมน์ CP
+const CACHE_VER = "47"; // bump: ตัด "ทรูดิจิทัล พาร์ค" ออกจากคอลัมน์ CP (สถานที่ ไม่ใช่ข่าวเครือ)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -548,7 +548,18 @@ const CP_BRANDS = [
 const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
 // ชื่อที่ "มีซีพี/CP อยู่ข้างใน" แต่ไม่ใช่เครือ CP — บีแอลซีพี = BLCP Power (โรงไฟฟ้า), ซีพีเอ็น = Central Pattana
 const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็น", "cpn "];
-const CP_FALSE_RE = new RegExp(CP_FALSE.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+// ชื่อที่สะกดได้หลายแบบจนไล่พิมพ์ครบไม่ไหว — เขียนเป็นแพตเทิร์นแทน (เว้นวรรค · ทัล/ตอล · พ/ป)
+// ⚠️ True Digital Park = สถานที่จัดงาน/ที่ตั้งออฟฟิศ ข่าวที่พูดถึงมันไม่ใช่ข่าวของเครือ CP
+// จับเฉพาะที่มีคำว่า พาร์ค/ปาร์ค/park ต่อท้าย — "ทรูดิจิทัล กรุ๊ป" เป็นบริษัทของทรูจริง ห้ามตัด
+const CP_FALSE_RX = [
+  "ทรู\\s*ดิจิ(?:ทัล|ตอล)\\s*(?:พาร์ค|ปาร์ค|park)",
+  "true\\s*digital\\s*park",
+];
+const CP_FALSE_RE = new RegExp(
+  CP_FALSE.slice().sort((a, b) => b.length - a.length)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).concat(CP_FALSE_RX).join("|"),
+  "gi"
+);
 const hasFalseCP = (s) => { CP_FALSE_RE.lastIndex = 0; return CP_FALSE_RE.test(String(s || "")); };
 const dropFalseCP = (s) => String(s || "").replace(CP_FALSE_RE, " ");
 // จริงหรือไม่: ตัดชื่อลวงออกก่อน แล้วยังเหลือชื่อเครือ CP อยู่ไหม

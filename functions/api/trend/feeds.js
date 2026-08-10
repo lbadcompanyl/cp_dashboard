@@ -9,7 +9,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "36"; // bump: ตัดข่าวที่ไม่ใช่ของล่าสุดทั้งหมด (ยึด byline เป็นเวลาจริง)
+const CACHE_VER = "37"; // bump: ตัด "ทรูดิจิทัล พาร์ค" ออกจากคอลัมน์ CP (สถานที่ ไม่ใช่ข่าวเครือ)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -481,10 +481,17 @@ const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
 // ชื่อที่ "มีซีพี/CP อยู่ข้างใน" แต่ไม่ใช่เครือ CP — บีแอลซีพี = BLCP Power (โรงไฟฟ้า), ซีพีเอ็น = Central Pattana
 // บีแอลซีพี = BLCP Power (โรงไฟฟ้า) · ซีพีเอ็น = Central Pattana · บีซีพีจี/บีซีพี = กลุ่มบางจาก
 const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็น", "cpn ", "บีซีพีจี", "bcpg", "บีซีพี", "bcp "];
+// ชื่อที่สะกดได้หลายแบบจนไล่พิมพ์ครบไม่ไหว — เขียนเป็นแพตเทิร์นแทน (เว้นวรรค · ทัล/ตอล · พ/ป)
+// ⚠️ True Digital Park = สถานที่จัดงาน/ที่ตั้งออฟฟิศ ข่าวที่พูดถึงมันไม่ใช่ข่าวของเครือ CP
+// จับเฉพาะที่มีคำว่า พาร์ค/ปาร์ค/park ต่อท้าย — "ทรูดิจิทัล กรุ๊ป" เป็นบริษัทของทรูจริง ห้ามตัด
+const CP_FALSE_RX = [
+  "ทรู\\s*ดิจิ(?:ทัล|ตอล)\\s*(?:พาร์ค|ปาร์ค|park)",
+  "true\\s*digital\\s*park",
+];
 // เรียงยาวก่อนสั้น — ไม่งั้น "บีซีพี" จะกินก่อนแล้ว "บีซีพีจี" ไม่มีวันแมตช์
 const CP_FALSE_RE = new RegExp(
   CP_FALSE.slice().sort((a, b) => b.length - a.length)
-    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).concat(CP_FALSE_RX).join("|"),
   "gi"
 );
 const hasFalseCP = (s) => { CP_FALSE_RE.lastIndex = 0; return CP_FALSE_RE.test(String(s || "")); };
