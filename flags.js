@@ -363,7 +363,9 @@
   function injectKwButtons() {
     $$(".panel").forEach((p) => {
       const s = p.dataset.source || "";
-      if (!s.startsWith("alert")) return; // ทุกคอลัมน์ Alert (เดิมมีแค่ alert2)
+      // ทุกคอลัมน์ Alert ยกเว้นคอลัมน์ CP (alert1) — เจ้าของสั่งไม่ต้องขึ้น
+      // query ของคอลัมน์ CP มีแค่ "cp" กับ "ซีพี" ไม่กี่คำ เปิดดูแล้วไม่ได้อะไร
+      if (!s.startsWith("alert") || s === "alert1") return;
       const phead = $(".phead", p);
       if (!phead || $(".flg-view-btn", phead)) return;
       const vbtn = document.createElement("button");
