@@ -51,7 +51,18 @@ function syncNews() {
   var rows = all
     // เก่า → ใหม่ จะได้ต่อท้ายเรียงตามเวลาจริง
     .sort(function (a, b) { return a.publishedAt < b.publishedAt ? -1 : 1; })
-    .filter(function (r) { return r.link && !seen[normLink_(r.link)]; })
+    // ⚠️ ต้องกันซ้ำ "ภายในรอบเดียวกัน" ด้วย ไม่ใช่เทียบกับที่มีในชีตอย่างเดียว
+    // เคยเกิดจริง: ข่าวใบเดียวถูกส่งมา 27 ใบในรอบเดียว (ลิงก์ Bing เปลี่ยนทุกชั่วโมง)
+    // แล้วเขียนลงชีตครบ 27 แถว เพราะ seen ถูกอ่านมาก่อนเริ่มเขียน
+    .filter(function (r) {
+      if (!r.link) return false;
+      var byLink = normLink_(r.link);
+      var byText = dupKey_(r.outlet, r.title); // กันกรณีลิงก์ต่างแต่เป็นข่าวใบเดียวกัน
+      if (seen[byLink] || seen[byText]) return false;
+      seen[byLink] = true;
+      seen[byText] = true;
+      return true;
+    })
     .map(function (r) { return [r.outlet, r.title, r.link, r.date, r.topic]; });
 
   if (!rows.length) return; // ไม่มีข่าวใหม่ — ไม่ต้องแตะชีต
@@ -82,12 +93,25 @@ function seenLinks_(sheet) {
   var last = sheet.getLastRow();
   var out = {};
   if (last < 2) return out;
-  var vals = sheet.getRange(2, 3, last - 1, 1).getValues(); // คอลัมน์ C = link
+  var vals = sheet.getRange(2, 1, last - 1, 3).getValues(); // A=สำนักข่าว B=พาดหัว C=link
   for (var i = 0; i < vals.length; i++) {
-    var k = normLink_(vals[i][0]);
+    var k = normLink_(vals[i][2]);
     if (k) out[k] = true;
+    var t = dupKey_(vals[i][0], vals[i][1]);
+    if (t) out[t] = true;
   }
   return out;
+}
+
+/**
+ * กุญแจกันซ้ำแบบไม่พึ่งลิงก์ — สำนักข่าวเดียวกัน + พาดหัวเดียวกัน = ข่าวใบเดียวกัน
+ * ใช้คู่กับลิงก์ เพราะ Bing เปลี่ยนลิงก์ของข่าวใบเดิมทุกชั่วโมง
+ * ตัด "…" ท้ายพาดหัวออกด้วย — ใบเดียวกันบางรอบได้ตัวเต็ม บางรอบได้ตัวที่ถูกตัด
+ */
+function dupKey_(outlet, title) {
+  var t = String(title || "").replace(/\s+/g, " ").replace(/(?:…|\.\.\.)\s*$/, "").trim().toLowerCase();
+  if (!t) return "";
+  return "t:" + String(outlet || "").trim().toLowerCase() + "|" + t.slice(0, 80);
 }
 
 /** ตัด ?utm_... และ / ท้าย เพื่อให้ลิงก์เดียวกันที่พ่วงพารามิเตอร์ต่างกันนับเป็นใบเดียว */
@@ -113,4 +137,28 @@ function cleanupNoTopic() {
     if (String(vals[i][0] || "").trim() === "") { sheet.deleteRow(i + 2); removed++; }
   }
   SpreadsheetApp.getActiveSpreadsheet().toast("ลบแถวที่ไม่มีหมวดออก " + removed + " แถว");
+}
+
+/**
+ * ล้างข่าวซ้ำที่มีอยู่แล้วในชีต — เก็บแถวบนสุดของแต่ละข่าวไว้ ที่เหลือลบทิ้ง
+ * เลือกฟังก์ชันนี้แล้วกด Run หนึ่งครั้ง (ทำครั้งเดียวพอ รอบถัดไป syncNews กันซ้ำเองแล้ว)
+ *
+ * นับซ้ำ 2 ทาง: ลิงก์เดียวกัน หรือ สำนักข่าว+พาดหัวเดียวกัน
+ * ⚠️ ลบจากล่างขึ้นบน ไม่งั้นเลขแถวจะเลื่อนแล้วลบผิดแถว
+ */
+function cleanupDupes() {
+  var sheet = getSheet_();
+  var last = sheet.getLastRow();
+  if (last < 3) return;
+  var vals = sheet.getRange(2, 1, last - 1, 3).getValues();
+  var keep = {}, drop = [];
+  for (var i = 0; i < vals.length; i++) {
+    var byLink = normLink_(vals[i][2]);
+    var byText = dupKey_(vals[i][0], vals[i][1]);
+    if ((byLink && keep[byLink]) || (byText && keep[byText])) { drop.push(i + 2); continue; }
+    if (byLink) keep[byLink] = true;
+    if (byText) keep[byText] = true;
+  }
+  for (var j = drop.length - 1; j >= 0; j--) sheet.deleteRow(drop[j]);
+  SpreadsheetApp.getActiveSpreadsheet().toast("ลบข่าวซ้ำออก " + drop.length + " แถว");
 }

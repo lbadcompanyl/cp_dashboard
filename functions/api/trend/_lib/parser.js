@@ -72,6 +72,27 @@ function hash(str) {
 }
 
 // RSS <item> หรือ Atom <entry> (ใช้กับ news + alert)
+// ลิงก์ตัวเปลี่ยนทางของ Google/Bing → ลิงก์ข่าวจริงที่อยู่ในพารามิเตอร์ `url=`
+//
+// ทำเฉพาะโดเมนของ Google/Bing เท่านั้น — เว็บข่าวบางเว็บก็มีพารามิเตอร์ชื่อ `url=`
+// ของตัวเอง ถ้าแกะมั่วจะได้ลิงก์ผิดไปเลย
+const REDIRECT_HOST_RE = /(^|\.)(bing\.com|google\.[a-z.]+)$/i;
+export function unwrapRedirect(link) {
+  const s = String(link || "");
+  if (!s) return s;
+  let host = "";
+  try { host = new URL(s).hostname; } catch { return s; }
+  if (!REDIRECT_HOST_RE.test(host)) return s;
+  const m = s.match(/[?&]url=([^&]+)/);
+  if (!m) return s;
+  try {
+    const real = decodeURIComponent(m[1]);
+    return /^https?:\/\//i.test(real) ? real : s;
+  } catch {
+    return s;
+  }
+}
+
 export function parseGeneric(xml, source) {
   const items = [];
   let list = blocks(xml, "item").map((b) => ({ b, atom: false }));
@@ -95,16 +116,13 @@ export function parseGeneric(xml, source) {
     if (isAlert) {
       // Google Alert (alert / alert1 / alert2): title มี <b> ครอบคำที่ match → เก็บเป็น marker
       title = markBold(title);
-      // ลิงก์เป็น google.com/url?...&url=<ลิงก์จริง> — แกะออกให้ตรง
-      const m = link.match(/[?&]url=([^&]+)/);
-      if (m) {
-        try {
-          link = decodeURIComponent(m[1]);
-        } catch {
-          /* keep original */
-        }
-      }
     }
+    // ลิงก์ของ Google/Bing เป็นตัวเปลี่ยนทาง: ...?url=<ลิงก์จริง> — แกะออกให้ตรง
+    //
+    // ⚠️ ต้องทำกับคอลัมน์ข่าวด้วย ไม่ใช่เฉพาะ alert — Bing ใส่ `tid=` ที่เปลี่ยนทุกรอบ
+    // ที่ดึง ข่าวใบเดียวจึงได้ลิงก์ใหม่ทุกชั่วโมง แล้วคลังข่าวที่ dedupe ด้วยลิงก์
+    // มองเป็นข่าวคนละใบทุกครั้ง → ข่าวเดียวซ้ำนับสิบแถวในชีต (เกิดขึ้นจริง 27 แถว)
+    link = unwrapRedirect(link);
 
     if (isGarbled(stripMarks(title))) continue; // ทิ้งข่าวที่หัวข้อพัง (mojibake)
     if (isGarbled(stripMarks(snippet))) snippet = ""; // หัวข้อดีแต่ snippet พัง → ตัด snippet ทิ้ง

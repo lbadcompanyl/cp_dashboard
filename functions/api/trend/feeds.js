@@ -3,13 +3,13 @@
 // ใช้ stale-while-revalidate: ส่งของใน cache ทันที (เร็ว) แล้วดึงของใหม่เบื้องหลัง
 
 import feeds from "../../../trend-feeds.config.js";
-import { parseGeneric, parseTrends } from "./_lib/parser.js";
+import { parseGeneric, parseTrends, unwrapRedirect } from "./_lib/parser.js";
 
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "52"; // bump: คอลัมน์จับตามองรับข่าวชนิดพันธุ์ต่างถิ่นครบทั้งหมวด (extraTerms)
+const CACHE_VER = "53"; // bump: แกะลิงก์เปลี่ยนทางของ Bing (ยุบข่าวซ้ำ) + เติมพาดหัวที่ถูกตัดสั้น
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -332,6 +332,10 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const alertVerify = {};
   try { await verifyAlertItems(cache, sources, alertVerify, allowVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
 
+  // เติมพาดหัวที่ Bing ตัดสั้น — ต้องทำ "ก่อน" archive ไม่งั้นของที่เก็บลง KV จะเป็นตัวที่ถูกตัด
+  const titles = {};
+  try { await fillClippedTitles(cache, sources, titles, allowVerify); } catch (e) { titles.err = String((e && e.message) || e).slice(0, 120); }
+
   // เก็บสะสม alert ลง KV (CP/จับตามอง 10 วัน) แม้หลุดจากฟีด Google Alert แล้ว — หลัง verify กันสะสม noise
   const archive = {};
   try { await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
@@ -391,7 +395,7 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
     await enrichCategories(env, sources, prevCat, catDiag, userCats, catExamples);
   } catch (e) { catDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, archive, pruned, dateFix, cats: catDiag });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, titles, archive, pruned, dateFix, cats: catDiag });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -420,8 +424,15 @@ async function mergeArchives(env, sources, diag) {
     const cfg = ARCHIVE_CFG[src];
     const cutoff = now - cfg.days * 86400000;
     const byLink = new Map();
-    for (const it of (store[src] || [])) if (it && it.link) byLink.set(it.link, it);
-    for (const it of sources[src].items) if (it && it.link) byLink.set(it.link, it); // ของสดทับของเก่า
+    // ⚠️ ต้องแกะลิงก์ตัวเปลี่ยนทางก่อน dedupe — ของเก่าใน KV เก็บลิงก์ Bing ที่มี `tid=`
+    // เปลี่ยนทุกรอบ ข่าวใบเดียวจึงกองอยู่หลายสิบใบ · แกะแล้ว key จะตรงกันแล้วยุบเหลือใบเดียว
+    const put = (it) => {
+      if (!it || !it.link) return;
+      it.link = unwrapRedirect(it.link);
+      byLink.set(normLink(it.link), it);
+    };
+    for (const it of (store[src] || [])) put(it);
+    for (const it of sources[src].items) put(it); // ของสดทับของเก่า
     const merged = [...byLink.values()]
       .filter((it) => { const t = new Date(it.publishedAt).getTime(); return isNaN(t) || t >= cutoff; })
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
@@ -651,6 +662,72 @@ async function bodyHasKeep(cache, link, keep) {
     try { await cache.put(vkey, new Response(JSON.stringify({ b: body }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
   }
   return !!body && keep.some((t) => body.includes(t));
+}
+// ---------- เติมพาดหัวที่ถูกตัดสั้น ----------
+// Bing ส่งพาดหัวมาแบบตัดท้ายด้วย "…" (เช่น "…ผนึก CPF–แม่โจ้ จัดการชั่ว …")
+// ตัวเต็มไม่ได้อยู่ในฟีดเลย ต้องไปอ่านจากหน้าข่าวจริง
+//
+// ⚠️ ยิงทีละน้อยและเฉพาะตอนทำงานเบื้องหลัง (allowFetch) — ผลถูกเก็บลงคลังข่าว
+// จึงจ่ายค่ายิงครั้งเดียวต่อข่าว 1 ใบ รอบต่อไปได้ของเต็มมาเลย
+const CLIPPED_RE = /(?:…|\.\.\.)\s*$/;
+const stripMarks = (s) => String(s || "").replace(/\[\[\/?hl\]\]/g, "").trim();
+const TITLE_FETCH_MAX = 8; // ต่อ 1 request — กันชนโควตา subrequest ของ Cloudflare
+function decodeEntities(s) {
+  return String(s || "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d))
+    .replace(/\s+/g, " ").trim();
+}
+function headlineFromHtml(html) {
+  const pick = (re) => { const m = html.match(re); return m ? decodeEntities(m[1]) : ""; };
+  return pick(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)
+    || pick(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i)
+    || pick(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i)
+    || pick(/<h1[^>]*>([\s\S]{4,300}?)<\/h1>/i).replace(/<[^>]+>/g, "")
+    || pick(/<title[^>]*>([\s\S]{4,300}?)<\/title>/i);
+}
+async function fillClippedTitles(cache, sources, diag, allowFetch) {
+  const todo = [];
+  for (const src of ["alert1", "alert2", "news"]) {
+    for (const it of (sources[src]?.items || [])) {
+      if (it && it.link && CLIPPED_RE.test(stripMarks(it.title || ""))) todo.push(it);
+    }
+  }
+  diag.clipped = todo.length;
+  if (!todo.length) return;
+  const pick = todo.slice(0, TITLE_FETCH_MAX);
+  diag.tried = pick.length;
+  const got = await mapPoolResults(pick, 4, async (it) => {
+    const vkey = new Request("https://verify.local/title1?u=" + encodeURIComponent(it.link));
+    try { const hit = await cache.match(vkey); if (hit) return (await hit.json()).t || ""; } catch {}
+    if (!allowFetch) return "";
+    let full = "";
+    try {
+      const res = await fetchWithTimeout(it.link, 6000);
+      if (res.ok && /html/i.test(res.headers.get("content-type") || "")) {
+        full = headlineFromHtml((await res.text()).slice(0, 200000)).slice(0, 300);
+      }
+    } catch { full = ""; }
+    try {
+      await cache.put(vkey, new Response(JSON.stringify({ t: full }), {
+        headers: { "content-type": "application/json", "cache-control": "public, max-age=604800" },
+      }));
+    } catch {}
+    return full;
+  });
+  let fixed = 0;
+  pick.forEach((it, i) => {
+    const full = got[i];
+    const bare = stripMarks(it.title || "");
+    // ต้องยาวกว่าเดิมจริง และต้องขึ้นต้นเหมือนกัน ไม่งั้นแปลว่าไปเจอชื่อเว็บ ไม่ใช่พาดหัว
+    if (!full || CLIPPED_RE.test(full) || full.length <= bare.length) return;
+    const head = bare.replace(CLIPPED_RE, "").trim().slice(0, 12);
+    if (head && !full.includes(head)) return;
+    it.title = full;
+    fixed++;
+  });
+  diag.fixed = fixed;
 }
 async function mapPoolResults(items, limit, fn) {
   const results = new Array(items.length);
