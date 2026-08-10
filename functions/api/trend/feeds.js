@@ -9,7 +9,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "51"; // bump: คอลัมน์ CP ต้องมีชื่อเครือ CP จริง ไม่รับเศษคำที่ Google ไฮไลต์
+const CACHE_VER = "52"; // bump: คอลัมน์จับตามองรับข่าวชนิดพันธุ์ต่างถิ่นครบทั้งหมวด (extraTerms)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -106,6 +106,12 @@ for (const _f of feeds) { try { const _h = new URL(_f.url).hostname.replace(/^ww
 // query ตัวเต็มที่เขียนไว้ใน config (ถ้ามี) — ใช้แทน <title> ของฟีดเมื่อ Google ตัดให้สั้น
 const CONFIG_Q = {};
 for (const _f of feeds) if (_f.query) (CONFIG_Q[_f.source] = CONFIG_Q[_f.source] || []).push(_f.query);
+// คำเพิ่มที่ไม่ได้อยู่ใน Google Alerts — ใช้ดึงข่าวจากคอลัมน์ News เข้าคอลัมน์ alert เท่านั้น
+// (ช่อง query ของ Google Alerts มีเพดานความยาว ใส่เพิ่มไม่ได้แล้ว — ดู trend-feeds.config.js)
+const CONFIG_EXTRA = {};
+for (const _f of feeds) for (const _t of (_f.extraTerms || [])) {
+  (CONFIG_EXTRA[_f.source] = CONFIG_EXTRA[_f.source] || []).push(String(_t).toLowerCase());
+}
 function outletOf(link) {
   try { const h = new URL(link).hostname.replace(/^www\./, ""); return h.includes("google.") ? "" : (OUTLET_BY_HOST[h] || h); } catch { return ""; }
 }
@@ -310,7 +316,9 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
     sources[s].queries = parseAlertTerms(cfgQ).length > parseAlertTerms(feedQ).length ? cfgQ : feedQ;
   }
   const a2q = (sources.alert2 && sources.alert2.queries) || [];
-  const a2terms = parseAlertTerms(a2q);
+  // คำจาก Google Alert + คำเพิ่มที่ใช้กับข่าวจากคอลัมน์ News เท่านั้น
+  // ⚠️ ต้องใช้ชุดเดียวกันทั้ง merge / prune / highlight ไม่งั้นจะดึงเข้ามาแล้วลบทิ้งสลับกันทุกรอบ
+  const a2terms = [...new Set([...parseAlertTerms(a2q), ...(CONFIG_EXTRA.alert2 || [])])];
   const a2excl = parseAlertExcludes(a2q);
 
   // ไฮบริด: บวกข่าว Google News ที่ match keyword ของคอลัมน์เข้ามา (เสถียรขึ้น ไม่พึ่ง Google Alert อย่างเดียว)
