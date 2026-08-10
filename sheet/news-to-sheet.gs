@@ -34,7 +34,21 @@ function syncNews() {
     throw new Error("ดึงข่าวไม่สำเร็จ (" + res.getResponseCode() + ") " + res.getContentText().slice(0, 200));
   }
 
-  var rows = (JSON.parse(res.getContentText()).rows || [])
+  var all = JSON.parse(res.getContentText()).rows || [];
+
+  // ⚠️ ด่านกันข้อมูลผิดลงชีต — ห้ามตัดออก
+  // ถ้าฝั่งเซิร์ฟเวอร์ยังไม่รู้จักคำสั่งกรองหัวข้อ มันจะ "ส่งข่าวทั้งหมดมาเงียบๆ"
+  // (เคยเกิดจริง: ได้ข่าวเครือ CP มา 423 แถว หมวดว่างเปล่าหมด)
+  // ทุกแถวที่กรองแล้วต้องมีหมวดติดมาเสมอ — ถ้าไม่มีแปลว่ายังไม่ได้กรอง ให้หยุดและฟ้อง
+  var noTopic = all.filter(function (r) { return !r.topic; }).length;
+  if (all.length && noTopic) {
+    throw new Error(
+      "ยังกรองหัวข้อไม่ได้ (" + noTopic + "/" + all.length + " แถวไม่มีหมวด) — ยังไม่ได้เขียนอะไรลงชีต\n" +
+      "แปลว่าตัวกรอง 4 หัวข้อยังไม่ขึ้นเซิร์ฟเวอร์ที่ตั้งไว้ใน var API"
+    );
+  }
+
+  var rows = all
     // เก่า → ใหม่ จะได้ต่อท้ายเรียงตามเวลาจริง
     .sort(function (a, b) { return a.publishedAt < b.publishedAt ? -1 : 1; })
     .filter(function (r) { return r.link && !seen[normLink_(r.link)]; })
@@ -81,4 +95,22 @@ function normLink_(link) {
   var s = String(link || "").trim().toLowerCase();
   if (!s) return "";
   return s.split("#")[0].split("?")[0].replace(/\/+$/, "");
+}
+
+/**
+ * ล้างแถวที่ไม่มีหมวด (ข่าวที่หลุดเข้ามาตอนตัวกรองยังไม่ทำงาน)
+ * เลือกฟังก์ชันนี้แล้วกด Run หนึ่งครั้ง — ใช้เมื่อชีตมีข่าวที่ไม่ได้อยู่ใน 4 หัวข้อปนอยู่
+ *
+ * ⚠️ ลบจากล่างขึ้นบน — ถ้าลบจากบนลงล่าง เลขแถวจะเลื่อนแล้วลบผิดแถว
+ */
+function cleanupNoTopic() {
+  var sheet = getSheet_();
+  var last = sheet.getLastRow();
+  if (last < 2) return;
+  var vals = sheet.getRange(2, 5, last - 1, 1).getValues(); // คอลัมน์ E = หมวด
+  var removed = 0;
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (String(vals[i][0] || "").trim() === "") { sheet.deleteRow(i + 2); removed++; }
+  }
+  SpreadsheetApp.getActiveSpreadsheet().toast("ลบแถวที่ไม่มีหมวดออก " + removed + " แถว");
 }
