@@ -9,7 +9,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "50"; // bump: keyword ชุดใหม่ของ alert2 + ยึด query ตัวเต็มจาก config (เลขสูงไว้ กันชนกับงานระหว่างสัปดาห์)
+const CACHE_VER = "51"; // bump: คอลัมน์ CP ต้องมีชื่อเครือ CP จริง ไม่รับเศษคำที่ Google ไฮไลต์
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -673,6 +673,14 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       if (src === "alert1" && hasFalseCP(rawHay) && !realCP(rawHay)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
       if (it.fromNews) return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
+      // ⚠️ คอลัมน์ CP: ต้องมี "ชื่อเครือ CP จริง" เท่านั้น ไม่ใช่แค่คำที่ Google ไฮไลต์
+      // Google ไฮไลต์ "เศษคำ" ได้ — เจอจริง: F-16s inter[cep]t ... ของ Al Jazeera
+      // "cep" ไม่ได้อยู่ใน WEAK_TERMS และมันก็อยู่ในพาดหัวจริงๆ ด่านเดิมจึงปล่อยผ่าน
+      // ไล่เติมทีละคำเป็นการวิ่งไล่ไม่จบ — เปลี่ยนเป็นถามว่า "เป็นชื่อเครือ CP ไหม" แทน
+      if (src === "alert1") {
+        if (realCP(rawHay)) return { ok: true };                 // ชั้น 1
+        return { ok: "body", why: "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป", terms, bare, link: it.link }; // ไปเช็คเนื้อข่าว (ชั้น 3)
+      }
       // เช็คทั้ง title ดิบ + แบบแปลงเครื่องหมายเป็นช่องว่าง — พาดหัวแบบ 'TU'อัพเป้า ให้คำอย่าง "tu " match ติด
       const ntitle = " " + title.replace(/[^\p{L}\p{N}]+/gu, " ") + " ";
       if (terms.some((t) => title.includes(t) || ntitle.includes(t)) || extra.some((t) => title.includes(t) || ntitle.includes(t))) return { ok: true }; // ชั้น 1

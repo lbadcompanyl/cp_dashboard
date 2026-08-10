@@ -351,9 +351,18 @@ const HARD_KW = {
 function applyKeywords() {
   if (!window.Flags) return;
   const map = {};
-  for (const src of Object.keys(HARD_KW)) {
+  // ทุกคอลัมน์ Alert ต้องมีรายการ keyword ให้ดู ไม่ใช่เฉพาะที่เขียน HARD_KW ไว้
+  // (ปุ่ม 🔤 ดู keyword ขึ้นทุกคอลัมน์ Alert แล้ว — ถ้าไม่ใส่ตรงนี้จะกดแล้วว่างเปล่า)
+  const srcs = new Set([
+    ...Object.keys(HARD_KW),
+    ...$$(".panel[data-source]").map((p) => p.dataset.source).filter((s) => s.startsWith("alert")),
+  ]);
+  for (const src of srcs) {
     const feedQ = state.data?.sources?.[src]?.queries || [];
-    map[src] = Flags.parseKw(feedQ).length >= Flags.parseKw(HARD_KW[src]).length ? feedQ : HARD_KW[src];
+    const hard = HARD_KW[src];
+    // ยึดอันที่ได้คำมากกว่า — Google ตัด title ให้สั้นเมื่อ query ยาว คำท้ายๆ จะหายไปเงียบๆ
+    if (!hard) map[src] = feedQ;
+    else map[src] = Flags.parseKw(feedQ).length >= Flags.parseKw(hard).length ? feedQ : hard;
   }
   Flags.setKeywords(map);
 }
@@ -365,7 +374,7 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 44; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+const APP_VER = 45; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now();

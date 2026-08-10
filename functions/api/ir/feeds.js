@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "48"; // bump: ตัดประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert
+const CACHE_VER = "49"; // bump: คอลัมน์ CP ต้องมีชื่อเครือ CP จริง ไม่รับเศษคำที่ Google ไฮไลต์
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -271,10 +271,29 @@ for (const _f of feeds) { try { const _h = new URL(_f.url).hostname.replace(/^ww
 function outletOf(link) {
   try { const h = new URL(link).hostname.replace(/^www\./, ""); return h.includes("google.") ? "" : (OUTLET_BY_HOST[h] || h); } catch { return ""; }
 }
+// คำไทยไม่มีช่องว่างคั่นคำ จึงต้องเทียบแบบ substring
+// แต่คำอังกฤษต้องตรงทั้งคำ ไม่งั้น "rcep" (ความตกลง RCEP) จะไปจับ "inte[rcep]t"
+// เจอจริง: ข่าว F-16s intercept ของ Al Jazeera หลุดเข้าคอลัมน์การค้า (7 ส.ค. 69)
+// (ฝั่ง trend แก้ไปแล้วตั้งแต่ตอน SLAPP ไปจับ "slapped" — อันนี้คือยกมาให้ IR ตาม)
+const LATIN_TERM = /^[\x20-\x7e]+$/;
+function termPattern(t) {
+  const esc = String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return LATIN_TERM.test(t) ? "(?<![a-z0-9])" + esc + "(?![a-z0-9])" : esc;
+}
+function anyTermIn(hay, matchers) {
+  for (const m of matchers) if (m.test(hay)) return m.term;
+  return null;
+}
+function buildMatchers(terms) {
+  return (terms || []).filter(Boolean).map((t) => {
+    const re = new RegExp(termPattern(t), "i");
+    return { term: String(t).toLowerCase(), test: (hay) => re.test(hay) };
+  });
+}
 // ครอบคำที่ match ด้วย marker [[hl]] ให้ frontend ไฮไลต์ (เหมือน <b> ของ Google Alert)
 function hlWrap(text, term) {
   if (!text || !term) return text || "";
-  const re = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  const re = new RegExp(termPattern(term), "gi");
   return text.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
 }
 // ไฮไลต์ทุก term ที่ตามอยู่ในข้อความเดียว: ลบ marker เดิมแล้วครอบใหม่ทีเดียว (longest-first กันครอบซ้อน)
@@ -283,7 +302,7 @@ function hlAll(text, terms) {
   const stripped = text.replace(/\[\[\/?hl\]\]/g, "");
   const esc = [...new Set(terms.filter(Boolean).map((t) => String(t)))]
     .sort((a, b) => b.length - a.length)
-    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    .map(termPattern);
   if (!esc.length) return stripped;
   const re = new RegExp("(" + esc.join("|") + ")", "gi");
   return stripped.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
@@ -293,11 +312,11 @@ function pruneStaleMerged(sources, alertSrc, terms) {
   const s = sources[alertSrc];
   const cut = []; // รายการที่ตัด (โชว์ใน ?errors)
   if (!s || !terms || !terms.length) return cut;
-  const kws = terms.map((t) => String(t).toLowerCase());
+  const matchers = buildMatchers(terms);
   s.items = s.items.filter((it) => {
     if (!it.fromNews) return true;
     const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase().replace(/\[\[\/?hl\]\]/g, "");
-    if (kws.some((k) => hay.includes(k))) return true;
+    if (anyTermIn(hay, matchers)) return true;
     if (cut.length < 40) cut.push({ title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
     return false;
   });
@@ -341,12 +360,12 @@ function highlightAlertItems(sources, alertSrc, terms) {
 }
 function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
   if (!sources[alertSrc] || !terms.length) return 0;
-  const kws = terms.map((t) => t.toLowerCase());
+  const matchers = buildMatchers(terms);
   const have = new Set(sources[alertSrc].items.map((it) => normLink(it.link)));
   let added = 0;
   for (const nk of newsKeys) for (const it of (sources[nk]?.items || [])) {
     const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
-    const matched = kws.find((k) => hay.includes(k));
+    const matched = anyTermIn(hay, matchers);
     if (!matched) continue;
     const nl = normLink(it.link);
     if (have.has(nl)) continue;
@@ -705,6 +724,14 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       if (src === "alert1" && hasFalseCP(rawHay) && !realCP(rawHay)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
       if (it.fromNews) return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
+      // ⚠️ คอลัมน์ CP: ต้องมี "ชื่อเครือ CP จริง" เท่านั้น ไม่ใช่แค่คำที่ Google ไฮไลต์
+      // Google ไฮไลต์ "เศษคำ" ได้ — เจอจริง: F-16s inter[cep]t ... ของ Al Jazeera
+      // "cep" ไม่ได้อยู่ใน WEAK_TERMS และมันก็อยู่ในพาดหัวจริงๆ ด่านเดิมจึงปล่อยผ่าน
+      // ไล่เติมทีละคำเป็นการวิ่งไล่ไม่จบ — เปลี่ยนเป็นถามว่า "เป็นชื่อเครือ CP ไหม" แทน
+      if (src === "alert1") {
+        if (realCP(rawHay)) return { ok: true };                 // ชั้น 1
+        return { ok: "body", why: "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป", terms, bare, link: it.link }; // ไปเช็คเนื้อข่าว (ชั้น 3)
+      }
       // เช็คทั้ง title ดิบ + แบบแปลงเครื่องหมายเป็นช่องว่าง — พาดหัวแบบ 'TU'อัพเป้า ให้คำอย่าง "tu " match ติด
       const ntitle = " " + title.replace(/[^\p{L}\p{N}]+/gu, " ") + " ";
       if (terms.some((t) => title.includes(t) || ntitle.includes(t)) || extra.some((t) => title.includes(t) || ntitle.includes(t))) return { ok: true }; // ชั้น 1

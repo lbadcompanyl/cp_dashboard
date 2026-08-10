@@ -363,7 +363,7 @@
   function injectKwButtons() {
     $$(".panel").forEach((p) => {
       const s = p.dataset.source || "";
-      if (s !== "alert2") return; // เฉพาะ alert 2
+      if (!s.startsWith("alert")) return; // ทุกคอลัมน์ Alert (เดิมมีแค่ alert2)
       const phead = $(".phead", p);
       if (!phead || $(".flg-view-btn", phead)) return;
       const vbtn = document.createElement("button");
