@@ -9,7 +9,7 @@ import { readAllow, allowKey } from "../allow.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "54"; // bump: เว็บแจกข่าว PR ตัดเฉพาะใบที่ไม่มีชื่อเครือ CP ในพาดหัว
+const CACHE_VER = "55"; // bump: อ่านเนื้อข่าวไม่ได้ = ไม่ตัด (ของเดิมตัดทิ้งเลย)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -725,7 +725,11 @@ async function bodyHasKeep(cache, link, keep) {
     } catch { body = ""; }
     try { await cache.put(vkey, new Response(JSON.stringify({ b: body }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
   }
-  return !!body && keep.some((t) => body.includes(t));
+  // ⚠️ แยก "อ่านเนื้อข่าวแล้วไม่เจอคำ" ออกจาก "อ่านเนื้อข่าวไม่ได้เลย"
+  // ของเดิมคืน false เหมือนกันทั้งคู่ → ข่าวที่เว็บโหลดไม่ขึ้น/มี paywall/หมดเวลา
+  // ถูกตัดทิ้งทั้งที่เราไม่เคยอ่านมันเลย · null = ตัดสินไม่ได้ → ให้ผ่านไว้ก่อน
+  if (!body) return null;
+  return keep.some((t) => body.includes(t));
 }
 async function mapPoolResults(items, limit, fn) {
   const results = new Array(items.length);
@@ -773,9 +777,11 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
     verdict.forEach((v, i) => { if (v.ok === "body") needBody.push(i); });
     if (allowFetch && needBody.length) {
       const hits = await mapPoolResults(needBody, 6, (i) => bodyHasKeep(cache, items[i].link, extra));
-      needBody.forEach((i, k) => { verdict[i].ok = hits[k] === true; }); // เนื้อจริงมีคำโดเมน → เก็บ
+      // อ่านไม่ได้ (null) = ไม่รู้ → เก็บไว้ · เจอคำ = เก็บ · อ่านแล้วไม่เจอ = ตัด
+      needBody.forEach((i, k) => { verdict[i].ok = hits[k] !== false; });
     } else {
-      needBody.forEach((i) => { verdict[i].ok = false; }); // cold: ไม่ fetch → ตัด (ตามพาดหัว)
+      // รอบนี้ยังไม่มีสิทธิ์ยิงอ่านเนื้อข่าว — เก็บไว้ก่อน รอบเบื้องหลังจะมาตัดสินให้เอง
+      needBody.forEach((i) => { verdict[i].ok = true; });
     }
     const kept = [];
     verdict.forEach((v, i) => {

@@ -10,7 +10,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "60"; // bump: เว็บแจกข่าว PR ตัดเฉพาะใบที่ไม่มีชื่อเครือ CP ในพาดหัว
+const CACHE_VER = "61"; // bump: อ่านเนื้อข่าวไม่ได้ = ไม่ตัด (ของเดิมตัดทิ้งเลย)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -722,7 +722,12 @@ async function bodyHasKeep(cache, link, keep) {
     } catch { body = ""; }
     try { await cache.put(vkey, new Response(JSON.stringify({ b: body }), { headers: { "content-type": "application/json", "cache-control": "public, max-age=86400" } })); } catch {}
   }
-  return !!body && keep.some((t) => body.includes(t));
+  // ⚠️ แยก "อ่านเนื้อข่าวแล้วไม่เจอคำ" ออกจาก "อ่านเนื้อข่าวไม่ได้เลย"
+  // ของเดิมคืน false เหมือนกันทั้งคู่ → ข่าวที่เว็บโหลดไม่ขึ้น/มี paywall/หมดเวลา
+  // ถูกตัดทิ้งทั้งที่เราไม่เคยอ่านมันเลย (เจอจริง: ข่าว EV ของฐานเศรษฐกิจ/ข่าวสด)
+  // null = ตัดสินไม่ได้ → ให้ผ่านไว้ก่อน ปล่อยขยะหลุดดีกว่าทำข่าวจริงหายเงียบๆ
+  if (!body) return null;
+  return keep.some((t) => body.includes(t));
 }
 // ---------- เติมพาดหัวที่ถูกตัดสั้น ----------
 // Bing ส่งพาดหัวมาแบบตัดท้ายด้วย "…" (เช่น "…ผนึก CPF–แม่โจ้ จัดการชั่ว …")
@@ -869,9 +874,11 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
     verdict.forEach((v, i) => { if (v.ok === "body") needBody.push(i); });
     if (allowFetch && needBody.length) {
       const hits = await mapPoolResults(needBody, 6, (i) => bodyHasKeep(cache, items[i].link, extra));
-      needBody.forEach((i, k) => { verdict[i].ok = hits[k] === true; });
+      // อ่านไม่ได้ (null) = ไม่รู้ → เก็บไว้ · เจอคำ = เก็บ · อ่านแล้วไม่เจอ = ตัด
+      needBody.forEach((i, k) => { verdict[i].ok = hits[k] !== false; });
     } else {
-      needBody.forEach((i) => { verdict[i].ok = false; });
+      // รอบนี้ยังไม่มีสิทธิ์ยิงอ่านเนื้อข่าว — เก็บไว้ก่อน รอบเบื้องหลังจะมาตัดสินให้เอง
+      needBody.forEach((i) => { verdict[i].ok = true; });
     }
     const kept = [];
     verdict.forEach((v, i) => {
