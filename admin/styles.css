@@ -179,3 +179,14 @@ body {
   .droplist li { flex-wrap: wrap; }
   .dropback { margin-left: 0; }
 }
+
+/* ↩ สรุปข่าวที่เอากลับ — ใช้ดูว่ากฎไหนตัดพลาดบ่อยจนควรไปแก้ที่ตัวกรอง */
+.backlist { margin: 0 0 10px; padding: 0; list-style: none; }
+.backlist li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0; border-top: 1px solid rgba(150, 150, 150, .1); font-size: 13px;
+}
+.backwhy { flex: 1; min-width: 0; }
+.backlist li.loud .backwhy { color: #e6a935; font-weight: 600; }
+.backlist li.loud .dropn { background: rgba(230, 169, 53, .2); color: #e6a935; }
+.backhint { margin: 0; font-size: 12px; opacity: .7; line-height: 1.55; }

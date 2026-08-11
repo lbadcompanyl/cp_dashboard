@@ -117,6 +117,7 @@ async function sendBack(btn) {
       btn.textContent = "✓ เอากลับแล้ว";
       btn.classList.add("done");
       btn.closest("li")?.classList.add("back");
+      loadReturned(); // อัปเดตสรุปทันที จะได้เห็นว่ากฎไหนโดนกดคืนบ่อย
     } else {
       btn.textContent = "↩ ลองใหม่";
       btn.disabled = false;
@@ -124,6 +125,45 @@ async function sendBack(btn) {
   } catch {
     btn.textContent = "↩ ลองใหม่";
     btn.disabled = false;
+  }
+}
+
+// ---- ↩ สรุปว่ากฎไหนถูกกดเอากลับบ่อย ----
+// ⚠️ ตัวที่ตัดข่าวเป็น "กฎที่เขียนไว้ตายตัว" ไม่ใช่ AI — กดเอากลับจึงไม่ได้สอนอะไรมันเลย
+// สิ่งที่ทำได้จริงคือรวมสถิติว่ากฎไหนตัดพลาดบ่อย แล้วเอาไปแก้กฎที่ต้นเหตุ
+// (กดเอากลับ = แก้ทีละใบ · แก้กฎ = แก้ทั้งประเภท)
+const OVER_BROAD = 3; // ถูกกดเอากลับกี่ครั้งถึงถือว่ากฎกว้างเกินไป
+
+async function loadReturned() {
+  const box = $("#admBack");
+  if (!box) return;
+  try {
+    const data = await fetch("/api/allow").then((r) => r.json());
+    const items = Object.values(data.items || {});
+    if (!items.length) {
+      box.innerHTML = `<p class="lead">ยังไม่มีข่าวที่กดเอากลับ</p>`;
+      return;
+    }
+    const byWhy = new Map();
+    for (const it of items) {
+      const k = it.why || "ไม่ระบุ";
+      byWhy.set(k, (byWhy.get(k) || 0) + 1);
+    }
+    const rows = [...byWhy.entries()].sort((a, b) => b[1] - a[1]);
+    const loud = rows.filter(([, n]) => n >= OVER_BROAD);
+    box.innerHTML =
+      `<p class="dropsum">เอากลับไปแล้ว <b>${items.length}</b> ข่าว</p>` +
+      `<ul class="backlist">${rows.map(([why, n]) => `
+        <li${n >= OVER_BROAD ? ' class="loud"' : ""}>
+          <span class="backwhy">${esc(WHY_TH[why] || why)}</span>
+          <span class="dropn">${n}</span>
+        </li>`).join("")}</ul>` +
+      (loud.length
+        ? `<p class="backhint">⚠️ กฎ “${esc(WHY_TH[loud[0][0]] || loud[0][0])}” ถูกกดเอากลับ ${loud[0][1]} ครั้งแล้ว —
+             แปลว่ากฎนี้น่าจะกว้างเกินไป <b>บอกให้แก้ตัวกรองที่ต้นเหตุดีกว่ามากดคืนทีละใบ</b></p>`
+        : `<p class="backhint">กดเอากลับ = แก้เฉพาะข่าวใบนั้น ถ้ากฎเดิมตัดพลาดซ้ำๆ ให้บอกไปแก้ตัวกรองแทน</p>`);
+  } catch {
+    box.innerHTML = `<p class="lead">ดึงข้อมูลไม่สำเร็จ</p>`;
   }
 }
 
@@ -168,6 +208,7 @@ function show(scope) {
 const start = initialScope();
 paintTabs(start);
 loadDropped(start);
+loadReturned();
 
 Flags.init({
   ui: "admin",
