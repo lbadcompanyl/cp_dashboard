@@ -151,7 +151,12 @@
   .wfoot { margin:8px 2px 0; font-size:0.78rem; color:#6b7480; line-height:1.5; }
   .wfoot a { color:#1a73e8; text-decoration:none; white-space:nowrap; }
   .wfoot a:hover { text-decoration:underline; }
-  .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
+  .wretry { border:1px solid var(--border); background:var(--surface-2); color:var(--ink-2); border-radius:999px; padding:3px 11px; font-size:0.78rem; cursor:pointer; white-space:nowrap; font-family:inherit; }
+  .wretry:hover { background:var(--surface); }
+  .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:9px; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
+  /* ไอคอนหมุนตอนรอโหลด — สีตามข้อความรอบข้าง (กล่อง widget พื้นขาวเสมอ แม้หน้าจะเป็นโหมดมืด) */
+  .spin { width:13px; height:13px; flex:0 0 auto; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; display:inline-block; animation:spin 0.8s linear infinite; opacity:0.55; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   .newslist { display:flex; flex-direction:column; }
   .newsrow { display:flex; gap:12px; align-items:flex-start; padding:12px 2px; border-top:1px solid var(--border); }
   .newsrow:first-child { border-top:none; }
@@ -220,15 +225,15 @@
       <section class="panel">
         <h2>ความสนใจตามช่วงเวลา</h2>
         <p class="sub" id="tsSub"></p>
-        <div class="widget-frame" id="w-ts"><div class="widget-loading">กำลังโหลดจาก Google Trends…</div></div>
-        <p class="wfoot">กราฟเป็นของ Google ถ้าขึ้นว่า <b>Oops! Something went wrong</b> แปลว่า Google ไม่ยอมตอบรอบนี้ (มักเป็นการจำกัดจำนวนครั้ง) — รอสักครู่แล้วกดรีเฟรช หรือ <a id="tsOpen" href="#" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a></p>
+        <div class="widget-frame" id="w-ts"><div class="widget-loading"><span class="spin"></span>กำลังโหลดจาก Google Trends…</div></div>
+        <p class="wfoot">กราฟเป็นของ Google ถ้าขึ้นว่า <b>Oops! Something went wrong</b> แปลว่า Google ไม่ยอมตอบรอบนี้ (มักเป็นการจำกัดจำนวนครั้ง) — <button type="button" class="wretry" data-w="w-ts">🔄 โหลดกราฟนี้ใหม่</button> หรือ <a id="tsOpen" href="#" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a></p>
       </section>
       <div class="two-col">
         <section class="panel">
           <h3>คำค้นหาที่เกี่ยวข้อง (ยอดนิยม / มาแรง)</h3>
           <p class="sub" id="rqSub"></p>
-          <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading">กำลังโหลด…</div></div>
-          <p class="wfoot"><a id="rqOpen" href="#" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a></p>
+          <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading"><span class="spin"></span>รอเลื่อนหน้าจอมาถึงก่อนค่อยโหลด…</div></div>
+          <p class="wfoot"><button type="button" class="wretry" data-w="w-rq">🔄 โหลดใหม่</button> <a id="rqOpen" href="#" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a></p>
         </section>
         <section class="panel">
           <h3>🇹🇭 ข่าวในประเทศ (Related news)</h3>
@@ -444,24 +449,83 @@ function configFor(keyword){
     opts:   { exploreQuery:`date=${encodeURIComponent(time)}&geo=${state.geo}&q=${encodeURIComponent(keyword)}&hl=th`, guestPath:GUEST_PATH },
   };
 }
-let widgetGen = 0;
-function renderWidgets(){
+// ⚠️ ทำไมต้องรัดกุมขนาดนี้ — Google Trends ขึ้น "Oops! Something went wrong." บ่อย
+// เพราะเรายิงขอ widget ถี่เกินไป (widget = iframe คนละอัน = คนละ request)
+// widget อยู่ใน iframe คนละโดเมน เรา "อ่านไม่ได้ว่ามันพัง" จึงกันที่ต้นทางอย่างเดียว 3 ชั้น:
+//   1. รอให้ผู้ใช้หยุดกดก่อน (debounce) — เปลี่ยนแท็บ/ช่วงเวลารัวๆ ไม่ยิงทุกครั้ง
+//   2. เว้นระยะระหว่าง widget (GAP) — ไม่ยิงพร้อมกัน
+//   3. ตัวที่อยู่นอกจอ ยังไม่โหลด (IntersectionObserver) — เลื่อนไปถึงค่อยขอ
+// + ปุ่ม 🔄 ให้กดโหลดเฉพาะกล่องที่พัง โดยไม่ต้องรีโหลดทั้งหน้า
+const WGAP = 2200;          // ระยะห่างขั้นต่ำระหว่างการขอ widget แต่ละอัน (ms)
+const WDEBOUNCE = 400;      // รอผู้ใช้หยุดเปลี่ยนค่าก่อนค่อยยิง (ms)
+let widgetGen = 0, wNextAt = 0, wDebTimer = 0;
+const wJobs = new Map();    // id → {type,cfg,gen,done}
+const wVisible = new Set(); // id ที่อยู่ในจอตอนนี้
+let wObserver = null;
+
+function wLoading(id, text){
+  const box=el(id); if(box) box.innerHTML='<div class="widget-loading"><span class="spin"></span>'+text+"</div>";
+}
+function paintWidget(id){
+  const job = wJobs.get(id);
+  if(!job || job.gen!==widgetGen || job.done) return;
+  job.done = true;
+  const box=el(id); if(!box) return;
+  box.innerHTML="";
+  try{ window.trends.embed.renderExploreWidgetTo(box, job.type, job.cfg.common, job.cfg.opts); }
+  catch(err){ box.innerHTML='<div class="widget-loading">โหลด widget ไม่สำเร็จ</div>'; }
+}
+// เข้าคิวแบบเว้นระยะ — ไม่รีเซ็ต wNextAt ตอน render ใหม่ ถ้าเพิ่งยิงไปหมาดๆ ก็ต้องรอเหมือนกัน
+function queueWidget(id){
+  const now = Date.now();
+  const at = Math.max(now, wNextAt);
+  wNextAt = at + WGAP;
+  setTimeout(()=>paintWidget(id), at-now);
+}
+function ensureWidgetObserver(){
+  if(wObserver || !window.IntersectionObserver) return;
+  wObserver = new IntersectionObserver((entries)=>{
+    entries.forEach((e)=>{
+      if(e.isIntersecting){ wVisible.add(e.target.id); queueWidget(e.target.id); }
+      else wVisible.delete(e.target.id);
+    });
+  }, { rootMargin:"300px 0px" });
+}
+function renderWidgetsNow(){
   if(!(window.trends && window.trends.embed && window.trends.embed.renderExploreWidgetTo)){ return; }
   const g=activeGroup();
   const combined = configFor(combinedKeyword(g));
   const single = configFor(firstKeyword(g));
   const jobs = [ ["w-ts","TIMESERIES",combined], ["w-rq","RELATED_QUERIES",single] ]; // ไม่มีแผนที่ (ตัดออก — layout ล้น)
   const gen = ++widgetGen;
-  const delays = [0, 900]; // ทยอยโหลด ลดโอกาสโดน Google rate-limit
+  wJobs.clear();
+  ensureWidgetObserver();
   jobs.forEach(([id,type,cfg],i)=>{
-    setTimeout(()=>{
-      if(gen!==widgetGen) return;
-      const box=el(id); box.innerHTML="";
-      try{ window.trends.embed.renderExploreWidgetTo(box, type, cfg.common, cfg.opts); }
-      catch(err){ box.innerHTML='<div class="widget-loading">โหลด widget ไม่สำเร็จ</div>'; }
-    }, delays[i]||0);
+    const box=el(id); if(!box) return;
+    wJobs.set(id, { type, cfg, gen, done:false });
+    wLoading(id, i===0 ? "กำลังโหลดจาก Google Trends…" : "รอเลื่อนหน้าจอมาถึงก่อนค่อยโหลด…");
+    if(wObserver){
+      wObserver.observe(box);
+      // ตัวแรกคือกราฟหลัก โหลดเสมอ · ตัวอื่นโหลดเมื่ออยู่ในจอ (ถ้ายังอยู่ observer จะไม่ยิงซ้ำ ต้องสั่งเอง)
+      if(i===0 || wVisible.has(id)) queueWidget(id);
+    } else {
+      queueWidget(id); // เบราว์เซอร์เก่าที่ไม่มี IntersectionObserver — ยังทยอยโหลดตามคิวเหมือนเดิม
+    }
   });
 }
+function renderWidgets(){
+  clearTimeout(wDebTimer);
+  wDebTimer = setTimeout(renderWidgetsNow, WDEBOUNCE);
+}
+// ปุ่ม 🔄 ใต้กล่อง — โหลดเฉพาะกล่องนั้นใหม่ ไม่ต้องรีโหลดทั้งหน้า
+document.addEventListener("click",(e)=>{
+  const b=e.target.closest(".wretry"); if(!b) return;
+  const id=b.dataset.w, job=wJobs.get(id);
+  if(!job) { renderWidgets(); return; }
+  job.done=false;
+  wLoading(id,"กำลังโหลดใหม่…");
+  paintWidget(id);
+});
 function waitForTrends(cb,tries=0){
   if(window.trends && window.trends.embed && window.trends.embed.renderExploreWidgetTo){ cb(); return; }
   if(tries>60){ document.querySelectorAll(".widget-loading").forEach(n=>n.textContent="โหลด Google Trends ไม่สำเร็จ (ตรวจการเชื่อมต่อ/ตัวบล็อกสคริปต์)"); return; }
