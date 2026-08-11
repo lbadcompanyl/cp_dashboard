@@ -3,9 +3,67 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Issue Dashboard — หน้า 3</title>
+<title>Issue Dashboard — กระแสข่าว</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
+<meta name="page-ver" content="1" />
 <link rel="stylesheet" href="./styles.css?v=7" />
+<style>
+  /* กระแสข่าว — นับ "จำนวนข่าวต่อสัปดาห์" จากคลังข่าวของเราเอง
+     ต่างจาก Google Trends ที่นับ "คนค้นหา" — อันนี้นับว่าสื่อพูดถึงมากแค่ไหน
+     ซึ่งตรงกับงานติดตามประเด็นมากกว่า และไม่ต้องรอให้คนไปค้น */
+  .nc-wrap { max-width: 900px; margin: 0 auto; padding: 0 16px 40px; }
+  .nc-demo { margin: 14px 0 0; padding: 9px 13px; border-radius: 10px; font-size: 12.5px; line-height: 1.55;
+    color: #e6a935; background: rgba(230,169,53,.12); border: 1px solid rgba(230,169,53,.4); }
+  .nc-card { background: var(--card, #1a1a19); border: 1px solid var(--line, rgba(255,255,255,.1));
+    border-radius: 12px; margin-top: 14px; overflow: hidden; }
+  .nc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 14px; border-bottom: 2px solid #a855f7; flex-wrap: wrap; }
+  .nc-title { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 7px; color: var(--text, #fff); }
+  .nc-dot { width: 8px; height: 8px; border-radius: 50%; background: #a855f7; }
+  .nc-pill { font-size: 11px; color: var(--muted, #898781); background: var(--bg, #0d0d0d);
+    border-radius: 20px; padding: 2px 9px; white-space: nowrap; }
+  .nc-filters { display: flex; gap: 8px; padding: 10px 14px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--line, rgba(255,255,255,.1)); }
+  .nc-filters select { border: 1px solid var(--line, rgba(255,255,255,.16)); background: var(--card2, #232322);
+    color: inherit; border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 12px; }
+  .nc-body { padding: 14px; color: var(--text, #e8e8ea); }
+  .nc-sum { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; margin-bottom: 14px; }
+  .nc-big { font-size: 30px; font-weight: 800; line-height: 1; }
+  .nc-delta { font-weight: 700; font-size: 13px; }
+  .nc-delta.up { color: #f87171; }
+  .nc-delta.down { color: #6bd39a; }
+  .nc-delta.flat { color: var(--muted, #898781); }
+  .nc-sub { font-size: 11.5px; color: var(--muted, #898781); }
+  /* กราฟแท่ง — ทำด้วย div ล้วน ไม่ต้องโหลดไลบรารีกราฟเข้ามาให้หน้าหนัก */
+  .nc-bars { display: flex; align-items: flex-end; gap: 4px; height: 130px; padding: 16px 2px 0;
+    border-bottom: 1px solid var(--line, rgba(255,255,255,.12)); }
+  .nc-bar { flex: 1; min-width: 0; background: #3987e5; border-radius: 3px 3px 0 0; min-height: 2px;
+    position: relative; cursor: default; }
+  .nc-bar.hot { background: #f87171; }
+  .nc-bar b { position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; font-weight: 600; color: var(--text2, #c3c2b7); }
+  .nc-xs { display: flex; gap: 4px; margin-top: 5px; }
+  .nc-xs div { flex: 1; min-width: 0; text-align: center; font-size: 9.5px; color: var(--muted, #898781);
+    overflow: hidden; white-space: nowrap; }
+  .nc-peak { margin-top: 12px; padding: 9px 11px; border-radius: 8px; font-size: 12.5px; line-height: 1.55;
+    color: #f87171; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.35); }
+  .nc-list { margin-top: 12px; border-top: 1px solid var(--line, rgba(255,255,255,.1)); padding-top: 8px; }
+  .nc-row { display: flex; gap: 9px; align-items: baseline; padding: 5px 0; font-size: 12.5px; }
+  .nc-row .n { color: var(--muted, #898781); font-size: 11px; min-width: 46px; white-space: nowrap; }
+  .nc-row a { color: var(--text, #e8e8ea); text-decoration: none; overflow-wrap: anywhere; }
+  .nc-row a:hover { color: #8ec0ff; text-decoration: underline; }
+  .nc-state { padding: 26px 14px; text-align: center; color: var(--muted, #898781); font-size: 13px; }
+  .nc-spin { display: inline-block; width: 11px; height: 11px; margin-right: 7px; vertical-align: -1px;
+    border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%;
+    animation: ncspin .8s linear infinite; opacity: .75; }
+  @keyframes ncspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .nc-spin { animation-duration: 3s; } }
+  @media (max-width: 640px) {
+    .nc-bars { height: 110px; gap: 3px; }
+    .nc-bar b { font-size: 9px; }
+    .nc-xs div { font-size: 8.5px; }
+  }
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -13,7 +71,7 @@
       <span class="logo">🧭</span>
       <div>
         <h1>Issue Dashboard</h1>
-        <p class="sub">หน้า 3 — เตรียมไว้</p>
+        <p class="sub">หน้า 3 — กระแสข่าว (ทดลอง)</p>
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -23,12 +81,140 @@
   <div class="pgtabs">
     <a class="pgtab" href="./">📰 ข่าวประเด็น</a>
     <a class="pgtab" href="trends.html">📈 เทรนด์ (Trends)</a>
-    <a class="pgtab on" href="three.html">➕ หน้า 3</a>
+    <a class="pgtab on" href="three.html">📊 กระแสข่าว</a>
   </div>
-  <div style="text-align:center;padding:100px 20px;color:var(--muted)">
-    <div style="font-size:44px;margin-bottom:12px">🚧</div>
-    <h2 style="color:var(--text);margin:0 0 6px">หน้า 3 — ยังว่างอยู่</h2>
-    <p>เตรียมพื้นที่ไว้สำหรับมุมมองใหม่ บอกได้เลยว่าอยากให้เป็นอะไร</p>
+
+  <div class="nc-wrap">
+    <p class="nc-demo">🧪 <b>ตัวอย่างให้ดูก่อน</b> — นับจำนวนข่าวต่อสัปดาห์จากคลังข่าวจริงของเรา (ย้อนหลังได้ 90 วัน)
+      ต่างจาก Google Trends ที่นับว่า “คนค้นหา” มากแค่ไหน อันนี้นับว่า “สื่อพูดถึง” มากแค่ไหน
+      · บอกได้เลยว่าอยากปรับอะไร ยังไม่ได้ผูกกับหน้าอื่น</p>
+
+    <div class="nc-card">
+      <div class="nc-head">
+        <span class="nc-title"><span class="nc-dot"></span>📊 กระแสข่าวรายสัปดาห์</span>
+        <span class="nc-pill" id="ncRange">90 วัน</span>
+      </div>
+      <div class="nc-filters">
+        <select id="ncTopic" aria-label="เลือกหัวข้อ">
+          <option value="pm25">PM2.5</option>
+          <option value="cpf">CPF</option>
+          <option value="blackchin">ปลาหมอคางดำ</option>
+          <option value="alien">Alien species</option>
+        </select>
+        <select id="ncDays" aria-label="ช่วงเวลา">
+          <option value="90">90 วันที่ผ่านมา</option>
+          <option value="60">60 วันที่ผ่านมา</option>
+          <option value="30">30 วันที่ผ่านมา</option>
+        </select>
+      </div>
+      <div id="ncBody" class="nc-body">
+        <div class="nc-state"><span class="nc-spin"></span>กรุณารอซักครู่</div>
+      </div>
+    </div>
   </div>
+
+<script>
+(function () {
+  var API = "/api/trend/archive";
+  var el = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  };
+
+  // จันทร์ของสัปดาห์นั้น — ใช้เป็นกุญแจจัดกลุ่ม
+  function weekStart(d) {
+    var x = new Date(d.getTime());
+    x.setHours(0, 0, 0, 0);
+    var dow = (x.getDay() + 6) % 7; // จันทร์ = 0
+    x.setDate(x.getDate() - dow);
+    return x;
+  }
+  var TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  function label(d) { return d.getDate() + " " + TH_MON[d.getMonth()]; }
+
+  function render(rows, days) {
+    var body = el("ncBody");
+    if (!rows.length) {
+      body.innerHTML = '<div class="nc-state">ยังไม่มีข่าวของหัวข้อนี้ในช่วงที่เลือก</div>';
+      return;
+    }
+    // นับต่อสัปดาห์ — เติมสัปดาห์ที่ไม่มีข่าวด้วย 0 ไม่งั้นกราฟจะโกหกว่าต่อเนื่อง
+    var buckets = {};
+    var now = new Date();
+    var first = weekStart(new Date(now.getTime() - (days - 1) * 86400000));
+    for (var t = new Date(first.getTime()); t <= now; t.setDate(t.getDate() + 7)) buckets[+weekStart(t)] = [];
+    rows.forEach(function (r) {
+      var d = new Date(r.publishedAt);
+      var k = +weekStart(d);
+      if (buckets[k]) buckets[k].push(r);
+    });
+    var keys = Object.keys(buckets).map(Number).sort(function (a, b) { return a - b; });
+    var counts = keys.map(function (k) { return buckets[k].length; });
+    var max = Math.max.apply(null, counts) || 1;
+    var last = counts[counts.length - 1] || 0;
+    var prev = counts[counts.length - 2] || 0;
+    var avg = counts.reduce(function (a, b) { return a + b; }, 0) / (counts.length || 1);
+
+    var pct = prev ? Math.round(((last - prev) / prev) * 100) : (last ? 100 : 0);
+    var cls = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
+    var arrow = pct > 0 ? "▲ +" : pct < 0 ? "▼ " : "— ";
+
+    var bars = keys.map(function (k, i) {
+      var n = counts[i];
+      var hot = n >= avg * 2 && n > 2;
+      return '<div class="nc-bar' + (hot ? " hot" : "") + '" style="height:' +
+        Math.max(2, Math.round((n / max) * 100)) + '%" title="' + label(new Date(k)) + ' · ' + n + ' ข่าว">' +
+        (n ? "<b>" + n + "</b>" : "") + "</div>";
+    }).join("");
+    var xs = keys.map(function (k) { return "<div>" + label(new Date(k)) + "</div>"; }).join("");
+
+    // สัปดาห์ล่าสุดพุ่งผิดปกติไหม
+    var peak = last >= avg * 2 && last > 2
+      ? '<div class="nc-peak">🔺 <b>พุ่งผิดปกติสัปดาห์นี้</b> — ' + last +
+        " ข่าว สูงกว่าค่าเฉลี่ย " + (avg ? (last / avg).toFixed(1) : "-") + " เท่า</div>"
+      : "";
+
+    // ข่าวเด่นของสัปดาห์ล่าสุด — จัดกลุ่มตามสำนักข่าวเพื่อให้เห็นว่าใครเล่นเรื่องนี้
+    var lastRows = buckets[keys[keys.length - 1]] || [];
+    var list = lastRows.slice(0, 6).map(function (r) {
+      return '<div class="nc-row"><span class="n">' + esc(r.outlet || "-") + "</span>" +
+        '<a href="' + esc(r.link) + '" target="_blank" rel="noopener">' + esc(r.title) + "</a></div>";
+    }).join("");
+
+    body.innerHTML =
+      '<div class="nc-sum"><span class="nc-big">' + last + "</span>" +
+      '<span><span class="nc-delta ' + cls + '">' + arrow + Math.abs(pct) + "%</span>" +
+      '<div class="nc-sub">ข่าวสัปดาห์นี้ · สัปดาห์ก่อน ' + prev + " ข่าว · เฉลี่ย " + avg.toFixed(1) + " ข่าว/สัปดาห์</div></span></div>" +
+      '<div class="nc-bars">' + bars + "</div>" +
+      '<div class="nc-xs">' + xs + "</div>" +
+      peak +
+      (list ? '<div class="nc-list"><div class="nc-sub" style="margin-bottom:4px">ข่าวสัปดาห์ล่าสุด</div>' + list + "</div>" : "");
+  }
+
+  var gen = 0;
+  function load() {
+    var topic = el("ncTopic").value;
+    var days = +el("ncDays").value;
+    var my = ++gen;
+    el("ncRange").textContent = days + " วัน";
+    el("ncBody").innerHTML = '<div class="nc-state"><span class="nc-spin"></span>กรุณารอซักครู่</div>';
+    fetch(API + "?src=all&days=" + days + "&topics=" + encodeURIComponent(topic) + "&format=json")
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (my !== gen) return; // ผู้ใช้เปลี่ยนตัวเลือกระหว่างรอ — ทิ้งผลเก่า
+        render(j.rows || [], days);
+      })
+      .catch(function () {
+        if (my !== gen) return;
+        el("ncBody").innerHTML = '<div class="nc-state">ดึงข้อมูลไม่สำเร็จ — ลองรีเฟรชหน้าอีกครั้ง</div>';
+      });
+  }
+  el("ncTopic").onchange = load;
+  el("ncDays").onchange = load;
+  load();
+})();
+</script>
 </body>
 </html>
