@@ -145,6 +145,9 @@ async function fetchTrends(geo, hours, cat = 0) {
     items: d.items || [],
     error: d.error || null,
     sourceType: d.source || "trendingnow",
+    // ⚠️ ต้องมีธงนี้ — "ยังโหลดไม่เสร็จ" กับ "โหลดเสร็จแล้วแต่หมวดนี้ไม่มีเทรนด์"
+    // ได้ items ว่างเหมือนกันทั้งคู่ ถ้าไม่แยกจะขึ้น "กรุณารอซักครู่" ค้างตลอด
+    loaded: true,
   };
 }
 
@@ -162,6 +165,7 @@ async function fetchXTrends(geo) {
     fetchedAt: d.fetchedAt || null,
     sourceUpdatedAt: d.sourceUpdatedAt || null,
     cats: (d.meta && d.meta.cats) || null,
+    loaded: true, // แยก "ยังโหลดไม่เสร็จ" ออกจาก "โหลดแล้วแต่ไม่มีอะไรเลย"
   };
 }
 
@@ -171,7 +175,7 @@ async function reloadXTrends() {
   try {
     state.data.sources.xtrends = await fetchXTrends(state.xGeo);
   } catch (e) {
-    state.data.sources.xtrends = { label: "X Trends", items: [], error: e.message };
+    state.data.sources.xtrends = { label: "X Trends", items: [], error: e.message, loaded: true };
   }
   renderPanel(panel);
 }
@@ -280,9 +284,11 @@ function renderXTrends(panel) {
     // ยังไม่มีข้อมูลเลย ≠ กรองแล้วไม่เจอ — ตอนเพิ่งเปิดหน้ายังไม่มีอะไรมา ให้บอกว่ารอก่อน
     list.innerHTML = bucket.error
       ? `<div class="state">ดึงเทรนด์ไม่ได้</div>`
-      : all.length === 0
-      ? WAITING
-      : `<div class="state">ไม่พบคำที่ตรงกับตัวกรอง</div>`;
+      : all.length > 0
+      ? `<div class="state">ไม่พบคำที่ตรงกับตัวกรอง</div>`
+      : bucket.loaded
+      ? `<div class="state">ไม่มีเทรนด์ในหมวดนี้<br><span style="font-size:11px">ลองสลับเป็น 🌐 ทั่วไป หรือเปลี่ยนประเทศ</span></div>`
+      : WAITING;
     return;
   }
   // กดที่เทรนด์ = เปิดหน้าค้นหาบน X ซึ่งคือโพสต์จริงของเทรนด์นั้น
@@ -312,6 +318,7 @@ async function fetchYTTrends(geo, kind = "all") {
     kind: d.kind || "all",
     // server กรองหมวดให้แล้วหรือยัง — ถ้ายัง หน้าเว็บต้องกรองเองด้วยคำ
     catFiltered: !!d.catFiltered,
+    loaded: true, // แยก "ยังโหลดไม่เสร็จ" ออกจาก "โหลดแล้วแต่ไม่มีอะไรเลย"
     fetchedAt: d.fetchedAt || null,
     attempts: (d.meta && d.meta.attempts) || [],
   };
@@ -367,7 +374,7 @@ async function reloadYTTrends(opts = {}) {
   try {
     bucket = await fetchYTTrends(state.ytGeo, state.ytKind);
   } catch (e) {
-    bucket = { label: "YouTube", items: [], error: e.message };
+    bucket = { label: "YouTube", items: [], error: e.message, loaded: true };
   }
   if (!state.data) state.data = { sources: {} };
   if (!state.data.sources) state.data.sources = {};
@@ -492,7 +499,12 @@ function renderYTTrends(panel) {
   const list = $("[data-list]", panel);
   if (items.length === 0) {
     if (!bucket.error) {
-      list.innerHTML = all.length === 0 ? WAITING : `<div class="state">ไม่พบคลิปที่ตรงกับตัวกรอง</div>`;
+      list.innerHTML =
+        all.length > 0
+          ? `<div class="state">ไม่พบคลิปที่ตรงกับตัวกรอง</div>`
+          : bucket.loaded
+          ? `<div class="state">ไม่มีคลิปในหมวดนี้<br><span style="font-size:11px">ลองสลับเป็น 🌐 ทั่วไป หรือเปลี่ยนประเทศ</span></div>`
+          : WAITING;
       return;
     }
     // ดึงไม่ได้ = บอกไปเลยว่าแหล่งไหนพังเพราะอะไร ไม่ต้องให้ผู้ใช้ไปเปิด API เอง
@@ -540,7 +552,7 @@ async function reloadTrends() {
   try {
     state.data.sources.trends = await fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat);
   } catch (e) {
-    state.data.sources.trends = { label: "Google Trends", items: [], error: e.message };
+    state.data.sources.trends = { label: "Google Trends", items: [], error: e.message, loaded: true };
   }
   renderPanel(panel);
 }
@@ -940,6 +952,8 @@ function renderTrends(panel) {
       ? `<div class="state">ดึงเทรนด์ไม่ได้</div>`
       : kw
       ? `<div class="state">ไม่พบคำที่ตรงกับตัวกรอง</div>`
+      : bucket.loaded
+      ? `<div class="state">ไม่มีเทรนด์ในหมวดนี้<br><span style="font-size:11px">Google ไม่ได้จัดอันดับหมวดนี้ในช่วงเวลาที่เลือก — ลองเปลี่ยนหมวดหรือขยายช่วงเวลา</span></div>`
       : WAITING;
     return;
   }
@@ -1295,7 +1309,15 @@ wire();
 load();
 // ---- auto-update: เช็คว่ามีโค้ดใหม่ deploy หรือยัง แล้วอัปเดตเองแม้ไม่ปิดแท็บ ----
 // แยกจาก auto-refresh: ข้อมูลรีเฟรชทุก 3 นาที · โค้ดเช็ควันละครั้ง (deploy นานๆ ที ไม่ต้องถี่)
-const APP_VER = 102; // = app.js?v= ใน index.html (bump คู่กันเสมอ)
+// ⚠️ อ่านเลขเวอร์ชันจาก <script src="./app.js?v=NNN"> ตรงๆ ห้ามฮาร์ดโค้ดซ้ำ
+// ของเดิมเขียนเลขไว้ที่นี่อีกที่หนึ่ง แล้ว "ลืม bump คู่กัน" — พอเลขในโค้ดต่ำกว่าใน index.html
+// ทุกครั้งที่เช็คจะเจอว่า "มีเวอร์ชันใหม่" แล้วเด้งแถบ/รีโหลด ทั้งที่รีโหลดมาก็ได้เลขเดิม วนไม่จบ
+// (เกิดจริง: /trend/ ค้างที่ 102 ทั้งที่หน้าเป็น 104 · /issue/ 52 vs 53)
+const APP_VER = (() => {
+  const s = document.querySelector('script[src*="app.js"]');
+  const m = s && (s.getAttribute("src") || "").match(/v=(\d+)/);
+  return m ? parseInt(m[1], 10) : Infinity; // อ่านไม่ได้ = ไม่เดา ไม่กวนผู้ใช้
+})();
 const CODE_CHECK_MS = 24 * 60 * 60 * 1000; // เช็คโค้ดใหม่วันละครั้ง (เจ้าของเลือกเอง — 10 นาทีถี่ไป)
 let updateReady = false;
 let lastCodeCheck = Date.now(); // เพิ่งโหลดโค้ดล่าสุด → เริ่มนับใหม่
@@ -1332,9 +1354,9 @@ async function checkForUpdate() {
   } catch {}
 }
 function maybeCheckForUpdate() { if (Date.now() - lastCodeCheck >= CODE_CHECK_MS) checkForUpdate(); }
-// กลับเข้าแอป = จังหวะที่ควรเช็คที่สุด ไม่ต้องรอครบรอบ (กันกดสลับไปมารัวๆ ด้วย 60 วิ)
-const RESUME_MIN_GAP = 60 * 1000;
-function checkOnResume() { if (Date.now() - lastCodeCheck >= RESUME_MIN_GAP) checkForUpdate(); }
+// กลับเข้าแอปก็ยังยึดรอบวันละครั้ง (เจ้าของสั่ง 11 ส.ค. 2026 — เดิมเว้นแค่ 60 วิ
+// เท่ากับเช็คแทบทุกครั้งที่สลับกลับมา ถี่เกินจำเป็นเพราะ deploy ไม่ได้บ่อยขนาดนั้น)
+function checkOnResume() { maybeCheckForUpdate(); }
 // ข้อมูล: รีเฟรชเงียบทุก 3 นาที
 setInterval(() => { if (!document.hidden) load({ silent: true }); }, 3 * 60 * 1000);
 // โค้ด: เช็คชั่วโมงละครั้ง แต่ยิงจริงเมื่อครบ 24 ชม.

@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>🛠 หน้าจัดการ · CP Dashboard</title>
-<meta name="page-ver" content="10">
+<meta name="page-ver" content="11">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛠</text></svg>">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="./styles.css?v=6">
 <!-- ป้ายเลขเวอร์ชัน + service worker (ชุดเดียวกับหน้าอื่น — วางไว้ใน head เหมือนกันหมด) -->
-<script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;r.update();document.addEventListener("visibilitychange",function(){if(!document.hidden)r.update();});}).catch(function(){});});}</script>
+<script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){/* เช็ค service worker ตัวใหม่ "วันละครั้ง" พอ (เจ้าของสั่ง 11 ส.ค. 2026) — เดิมเช็คทุกครั้งที่สลับกลับเข้าแอป พอ deploy บ่อยๆ ป้าย "มีเวอร์ชันใหม่" เด้งทั้งวัน · ตัวเช็คหน้าเว็บ (page-ver) เป็นวันละครั้งอยู่แล้ว เหลือตัวนี้ที่ยังถี่อยู่ · ทางลัด: แตะที่ป้ายเลขเวอร์ชัน = สั่งเช็คเดี๋ยวนี้ ใช้ตอนเพิ่ง release แล้วอยากรู้ว่าถึงเครื่องหรือยัง */var __verEvery=864e5,__verKey="swChkAt";function __verDue(){try{return Date.now()-(+localStorage.getItem(__verKey)||0)>__verEvery;}catch(x){return true;}}function __verMark(){try{localStorage.setItem(__verKey,String(Date.now()));}catch(x){}}addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;function chk(force){if(!force&&!__verDue())return;__verMark();r.update();}chk(false);document.addEventListener("visibilitychange",function(){if(!document.hidden)chk(false);});var vt=document.getElementById("vtag");if(vt){vt.style.cursor="pointer";vt.title="แตะเพื่อเช็คเวอร์ชันใหม่เดี๋ยวนี้ (ปกติเช็คให้เองวันละครั้ง)";vt.addEventListener("click",function(){var t=vt.textContent;vt.textContent="กำลังเช็ค…";setTimeout(function(){if(vt.textContent==="กำลังเช็ค…")vt.textContent=t;},1500);chk(true);});}}).catch(function(){});});}</script>
 </head>
 <body>
 
@@ -58,6 +58,6 @@
 </footer>
 
 <script src="/flags.js?v=31"></script>
-<script src="./app.js?v=6"></script>
+<script src="./app.js?v=7"></script>
 </body>
 </html>
