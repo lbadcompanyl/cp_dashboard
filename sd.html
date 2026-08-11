@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SD Trends — Google Trends ด้านความยั่งยืน</title>
 <!-- ⭐ bump เลขนี้ทุกครั้งที่แก้ไฟล์นี้ — เครื่องที่ติดตั้งเป็นแอปใช้เช็คว่ามีของใหม่ -->
-<meta name="page-ver" content="10" />
+<meta name="page-ver" content="11" />
 <!-- PWA: ติดตั้งเป็นแอปได้จากทุกหน้า ไม่ใช่แค่หน้าแรก -->
 <link rel="manifest" href="/manifest.webmanifest" />
 <meta name="theme-color" content="#0d0d0d" />
@@ -53,6 +53,14 @@
   .add-tab:disabled { opacity:.45; cursor:not-allowed; }
 
   .toolbar { background:var(--surface); border:1px solid var(--border); border-radius:0 var(--radius) var(--radius) var(--radius); padding:16px; display:flex; flex-direction:column; gap:14px; }
+  /* กล่องตั้งค่าแบบกดเปิด — บนจอแคบมันกินที่จนดันกราฟตกจอ ปิดไว้ก่อนดีกว่า */
+  .tbtoggle { display:flex; align-items:center; gap:9px; width:100%; border:none; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; padding:0; }
+  .tbcaret { color:var(--muted); font-size:0.8rem; transition:transform .15s; }
+  .tbtoggle[aria-expanded="true"] .tbcaret { transform:rotate(90deg); }
+  .tbtitle { font-weight:650; font-size:0.9rem; white-space:nowrap; }
+  .tbsum { color:var(--muted); font-size:0.78rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tbbody { display:flex; flex-direction:column; gap:14px; margin-top:14px; }
+  .tbbody[hidden] { display:none; }
   .grp-editor { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
   .grp-name { font-weight:700; font-size:1rem; border:none; border-bottom:2px solid transparent; background:transparent; color:var(--ink); min-width:120px; max-width:240px; font-family:inherit; padding:2px 0; }
   .grp-name:focus-visible { outline:none; border-bottom-color:var(--accent); }
@@ -66,7 +74,9 @@
   .kw button:hover { color:var(--down); }
   .grp-add { border:1px dashed var(--border); background:transparent; border-radius:999px; padding:5px 12px; font-size:0.82rem; color:var(--ink-2); min-width:130px; font-family:inherit; }
   .grp-add:focus-visible { outline:2px solid var(--accent); }
-  .combine-eq { font-size:0.75rem; color:var(--muted); background:var(--accent-soft); border-radius:8px; padding:5px 10px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* ต้องอ่านคำค้นได้ทั้งก้อน — ของเดิม nowrap+ellipsis ตัดหายบนจอแคบ ทั้งที่นี่คือ
+     ข้อความที่ใช้ตรวจว่าส่งอะไรไปให้ Google */
+  .combine-eq { font-size:0.75rem; color:var(--muted); background:var(--accent-soft); border-radius:8px; padding:5px 10px; max-width:100%; overflow-wrap:anywhere; }
   .combine-eq b { color:var(--accent); }
 
   .filters { display:flex; flex-wrap:wrap; gap:10px; border-top:1px solid var(--border); padding-top:14px; }
@@ -130,7 +140,13 @@
 
   <div class="tabs" id="tabs" role="tablist" aria-label="กลุ่มคำค้น"></div>
 
-  <div class="toolbar">
+  <div class="toolbar" id="toolbar">
+    <button class="tbtoggle" id="tbToggle" type="button" aria-expanded="false" aria-controls="tbBody">
+      <span class="tbcaret" aria-hidden="true">▸</span>
+      <span class="tbtitle">⚙️ ตั้งค่ากลุ่มคำ</span>
+      <span class="tbsum" id="tbSum"></span>
+    </button>
+    <div class="tbbody" id="tbBody" hidden>
     <div class="grp-editor">
       <input class="grp-name" id="grpName" aria-label="ชื่อกลุ่ม">
       <button class="grp-del" id="grpDel" type="button" aria-label="ลบกลุ่มนี้">×</button>
@@ -141,6 +157,7 @@
     <div class="filters">
       <div class="field"><label for="geo">พื้นที่ (Location)</label><select id="geo"></select></div>
       <div class="field"><label for="period">ช่วงเวลา (Time range)</label><select id="period"></select></div>
+    </div>
     </div>
   </div>
 
@@ -230,7 +247,20 @@ const GUEST_PATH = "https://trends.google.com:443/trends/embed/";
 const el = id => document.getElementById(id);
 const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const activeGroup = () => groups[state.active];
-const combinedKeyword = g => g.keywords.map(k=>k.trim()).filter(Boolean).join(" + ") || g.name;
+// ⚠️ Google Trends มองคำที่ต่างกันแค่ช่องว่าง/เครื่องหมาย เป็นคำเดียวกัน ("pm 2.5" = "pm2.5")
+// ถ้าส่งไปทั้งคู่คั่นด้วย + จะกลายเป็น "เอาคำนี้ OR คำเดียวกัน" ซึ่ง Google ตอบ error
+// (หน้าจอขึ้น "Oops! Something went wrong.") — ยุบให้เหลือตัวแรกก่อนส่ง
+const trendKey = k => String(k).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+function uniqKeywords(g){
+  const out=[], seen=new Set();
+  for(const k of g.keywords.map(x=>x.trim()).filter(Boolean)){
+    const key=trendKey(k);
+    if(!key || seen.has(key)) continue;
+    seen.add(key); out.push(k);
+  }
+  return out;
+}
+const combinedKeyword = g => uniqKeywords(g).join(" + ") || g.name;
 
 // ---------- persistence: URL (shareable) + localStorage (per-browser) ----------
 const STORE_KEY = "sdTrendsV1";
@@ -299,7 +329,32 @@ function fillSelects(){
   el("geo").onchange=e=>{ state.geo=e.target.value; renderWidgets(); updateSubs(); scheduleNews(); save(); };
   el("period").onchange=e=>{ state.period=e.target.value; renderWidgets(); updateSubs(); save(); };
 }
+// ---- กล่องตั้งค่าแบบกดเปิด ----
+// ⚠️ จำสถานะไว้นอก DOM (localStorage) — ของที่ผู้ใช้กดเปิดไว้ต้องรอดตอนหน้าวาดใหม่
+const OPEN_KEY = "sdTrendsOpen";
+function toolbarOpen(){ try{ return localStorage.getItem(OPEN_KEY) === "1"; }catch(e){ return false; } }
+function setToolbarOpen(on){
+  const btn=el("tbToggle"), body=el("tbBody");
+  if(!btn||!body) return;
+  body.hidden = !on;
+  btn.setAttribute("aria-expanded", on ? "true" : "false");
+  try{ localStorage.setItem(OPEN_KEY, on ? "1" : "0"); }catch(e){}
+}
+function initToolbarToggle(){
+  const btn=el("tbToggle");
+  if(!btn) return;
+  setToolbarOpen(toolbarOpen());
+  btn.onclick=()=>setToolbarOpen(el("tbBody").hidden);
+}
+// สรุปสั้นๆ ให้อ่านได้โดยไม่ต้องกางกล่อง
+function updateToolbarSummary(){
+  const sum=el("tbSum");
+  if(!sum) return;
+  const g=activeGroup(), n=uniqKeywords(g).length;
+  sum.textContent = g.name + " · " + n + " คำ · " + GEOS[state.geo] + " · " + PERIODS[state.period].label;
+}
 function updateSubs(){
+  updateToolbarSummary(); // สรุปบนหัวกล่องตั้งค่า ต้องตรงกับค่าจริงเสมอ แม้กล่องปิดอยู่
   const g=activeGroup(), geoL=GEOS[state.geo], perL=PERIODS[state.period].label;
   el("tsSub").textContent=`${combinedKeyword(g)} · ${geoL} · ${perL}`;
   el("geoSub").textContent=`${g.name} · ${geoL}`;
@@ -413,6 +468,7 @@ el("themeBtn").onclick=()=>{ setTheme(document.documentElement.getAttribute("dat
 loadFromURL() || loadFromStore();   // local ก่อน (instant paint) — URL ที่แชร์ > localStorage
 fillSelects();
 setTheme("light");   // ค่าเริ่มต้น: โหมดสว่าง (กดปุ่มสลับเป็นมืดได้)
+initToolbarToggle();
 renderTabs(); renderEditor(); updateSubs();
 waitForTrends(renderWidgets);
 loadNews();
@@ -426,7 +482,7 @@ document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) syncFro
 <script>
   // เช็คของใหม่ — กลไกเดียวกับหน้าอื่นทุกหน้า (landing / trend / ir / issue)
   (function(){
-    var VER = 9; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
+    var VER = 11; // ต้องตรงกับ <meta name="page-ver"> ด้านบน
     var CHECK_MS = 24 * 60 * 60 * 1000;
     var last = 0, ready = false;
     function banner(){

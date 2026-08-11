@@ -103,6 +103,14 @@
   .add-tab:hover { background:var(--surface-2); color:var(--ink-2); }
   .add-tab:disabled { opacity:.45; cursor:not-allowed; }
   .toolbar { background:var(--surface); border:1px solid var(--border); border-radius:0 var(--radius) var(--radius) var(--radius); padding:16px; display:flex; flex-direction:column; gap:14px; }
+  /* กล่องตั้งค่าแบบกดเปิด — บนจอแคบมันกินที่จนดันกราฟตกจอ ปิดไว้ก่อนดีกว่า */
+  .tbtoggle { display:flex; align-items:center; gap:9px; width:100%; border:none; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; padding:0; }
+  .tbcaret { color:var(--muted); font-size:0.8rem; transition:transform .15s; }
+  .tbtoggle[aria-expanded="true"] .tbcaret { transform:rotate(90deg); }
+  .tbtitle { font-weight:650; font-size:0.9rem; white-space:nowrap; }
+  .tbsum { color:var(--muted); font-size:0.78rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tbbody { display:flex; flex-direction:column; gap:14px; margin-top:14px; }
+  .tbbody[hidden] { display:none; }
   .grp-editor { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
   .grp-name { font-weight:700; font-size:1rem; border:none; border-bottom:2px solid transparent; background:transparent; color:var(--ink); min-width:120px; max-width:240px; font-family:inherit; padding:2px 0; }
   .grp-name:focus-visible { outline:none; border-bottom-color:var(--accent); }
@@ -181,7 +189,13 @@
   <!-- ═══════ หน้า 2: เทรนด์ (แบบ SD) ═══════ -->
   <section class="page on" id="page2">
     <div class="tabs" id="tabs" role="tablist" aria-label="กลุ่มประเด็น"></div>
-    <div class="toolbar">
+    <div class="toolbar" id="toolbar">
+      <button class="tbtoggle" id="tbToggle" type="button" aria-expanded="false" aria-controls="tbBody">
+        <span class="tbcaret" aria-hidden="true">▸</span>
+        <span class="tbtitle">⚙️ ตั้งค่ากลุ่มคำ</span>
+        <span class="tbsum" id="tbSum"></span>
+      </button>
+      <div class="tbbody" id="tbBody" hidden>
       <div class="grp-editor">
         <input class="grp-name" id="grpName" aria-label="ชื่อกลุ่ม">
         <button class="grp-del" id="grpDel" type="button" aria-label="ลบกลุ่มนี้">×</button>
@@ -192,6 +206,7 @@
       <div class="filters">
         <div class="field"><label for="geo">พื้นที่ (Location)</label><select id="geo"></select></div>
         <div class="field"><label for="period">ช่วงเวลา (Time range)</label><select id="period"></select></div>
+      </div>
       </div>
     </div>
     <main class="sdmain">
@@ -380,7 +395,32 @@ function exploreUrl(keyword){
   return "https://trends.google.com/trends/explore?date=" + encodeURIComponent(timeString(state.period)) +
     "&geo=" + encodeURIComponent(state.geo) + "&q=" + encodeURIComponent(keyword) + "&hl=th";
 }
+// ---- กล่องตั้งค่าแบบกดเปิด ----
+// ⚠️ จำสถานะไว้นอก DOM (localStorage) — ของที่ผู้ใช้กดเปิดไว้ต้องรอดตอนหน้าวาดใหม่
+const OPEN_KEY = "issueTrendsOpen";
+function toolbarOpen(){ try{ return localStorage.getItem(OPEN_KEY) === "1"; }catch(e){ return false; } }
+function setToolbarOpen(on){
+  const btn=el("tbToggle"), body=el("tbBody");
+  if(!btn||!body) return;
+  body.hidden = !on;
+  btn.setAttribute("aria-expanded", on ? "true" : "false");
+  try{ localStorage.setItem(OPEN_KEY, on ? "1" : "0"); }catch(e){}
+}
+function initToolbarToggle(){
+  const btn=el("tbToggle");
+  if(!btn) return;
+  setToolbarOpen(toolbarOpen());
+  btn.onclick=()=>setToolbarOpen(el("tbBody").hidden);
+}
+// สรุปสั้นๆ ให้อ่านได้โดยไม่ต้องกางกล่อง
+function updateToolbarSummary(){
+  const sum=el("tbSum");
+  if(!sum) return;
+  const g=activeGroup(), n=uniqKeywords(g).length;
+  sum.textContent = g.name + " · " + n + " คำ · " + GEOS[state.geo] + " · " + PERIODS[state.period].label;
+}
 function updateSubs(){
+  updateToolbarSummary(); // สรุปบนหัวกล่องตั้งค่า ต้องตรงกับค่าจริงเสมอ แม้กล่องปิดอยู่
   const g=activeGroup(), geoL=GEOS[state.geo], perL=PERIODS[state.period].label;
   el("tsSub").textContent=`${combinedKeyword(g)} · ${geoL} · ${perL}`;
   el("rqSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
@@ -462,6 +502,7 @@ function refresh(){ renderTabs(); renderEditor(); updateSubs(); renderWidgets();
 function initTrendsPage(){
   loadFromURL() || loadFromStore();
   fillSelects();
+  initToolbarToggle();
   renderTabs(); renderEditor(); updateSubs();
   el("grpName").oninput=e=>{ activeGroup().name=e.target.value; renderTabs(); updateSubs(); save(); };
   el("grpDel").onclick=()=>{ if(groups.length<=1) return; if(!confirm(`ลบกลุ่ม “${activeGroup().name}” ?`)) return; groups.splice(state.active,1); if(state.active>=groups.length) state.active=groups.length-1; refresh(); };
