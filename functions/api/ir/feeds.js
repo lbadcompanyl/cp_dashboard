@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "51"; // bump: ตัดประกาศงานภาษาอังกฤษ + monster.co.th
+const CACHE_VER = "52"; // bump: เพิ่ม seek ในลิสต์เว็บหางาน
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -549,6 +549,7 @@ const JOB_HOSTS = [
   "jobsdb", "jooble", "jobbkk", "jobthai", "indeed.", "glassdoor", "linkedin.", "jobtopgun",
   "careerjet", "talent.com", "workventure", "jobnisit", "trabajo.", "th.joblum", "joboko",
   "monster.co", "monster.com", "jobstreet", "prosple", "hiring.cafe", "jobsbkk", "th.jora.com",
+  "seek.com", "seek.co", "jobseek", "jobdb",
 ];
 // ⚠️ ประกาศงานภาษาอังกฤษไม่ได้เขียนว่า "hiring" เสมอไป — เจอจริงในคอลัมน์ IR:
 // "AI Business Partner/ AI Expert with 5 - 7 Years of Experience at thai union"

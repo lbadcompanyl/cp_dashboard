@@ -9,7 +9,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "57"; // bump: ตัดประกาศงานภาษาอังกฤษ + monster.co.th
+const CACHE_VER = "58"; // bump: เพิ่ม seek ในลิสต์เว็บหางาน
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -505,6 +505,7 @@ const JOB_HOSTS = [
   "jobsdb", "jooble", "jobbkk", "jobthai", "indeed.", "glassdoor", "linkedin.", "jobtopgun",
   "careerjet", "talent.com", "workventure", "jobnisit", "trabajo.", "th.joblum", "joboko",
   "monster.co", "monster.com", "jobstreet", "prosple", "hiring.cafe", "jobsbkk", "th.jora.com",
+  "seek.com", "seek.co", "jobseek", "jobdb",
 ];
 // ⚠️ ประกาศงานภาษาอังกฤษไม่ได้เขียนว่า "hiring" เสมอไป — เจอจริงในคอลัมน์ IR:
 // "AI Business Partner/ AI Expert with 5 - 7 Years of Experience at thai union"
