@@ -11,6 +11,11 @@
  *   5. ไอคอนนาฬิกา (Triggers) → Add Trigger
  *        ฟังก์ชัน: syncNews · แหล่งที่มา: ตามเวลา · ทุก 1 ชั่วโมง
  *
+ * ฟังก์ชันซ่อมของเก่า (เลือกชื่อในกล่องข้างปุ่ม ▶ Run แล้วกด Run — ทำเมื่อจำเป็น)
+ *   cleanupNoTopic()    ลบแถวที่ไม่มีหมวด (หลุดเข้ามาตอนตัวกรองยังไม่ทำงาน)
+ *   cleanupDupes()      ลบข่าวซ้ำ เก็บแถวบนสุดของแต่ละข่าวไว้
+ *   fixClippedTitles()  ซ่อมพาดหัวที่ถูกตัดสั้น (ลงท้ายด้วย "…") — รันซ้ำได้
+ *
  * ⚠️ ข่าวในระบบเก็บไว้ 90 วัน — ถ้าตัวตั้งเวลาหยุดวิ่งเกิน 90 วัน ข่าวช่วงที่ขาดจะหายถาวร
  *    เช็คได้จากคอลัมน์วันที่ในชีต ว่ายังเดินต่อเนื่องอยู่ไหม
  */
@@ -137,6 +142,73 @@ function cleanupNoTopic() {
     if (String(vals[i][0] || "").trim() === "") { sheet.deleteRow(i + 2); removed++; }
   }
   SpreadsheetApp.getActiveSpreadsheet().toast("ลบแถวที่ไม่มีหมวดออก " + removed + " แถว");
+}
+
+/**
+ * ซ่อมพาดหัวที่ถูกตัดสั้น (ลงท้ายด้วย "…") ของแถวที่เขียนลงชีตไปแล้ว
+ * เลือกฟังก์ชันนี้แล้วกด Run — รันซ้ำได้เรื่อยๆ ไม่มีผลเสีย
+ *
+ * syncNews เขียนแต่แถวใหม่ ไม่เคยกลับไปแก้ของเดิม พาดหัวที่ถูกตัดตอนเก็บมาจึงค้างอยู่ตลอด
+ * ตัวนี้ไปขอพาดหัวตัวเต็มจากคลังข่าวมาทับให้
+ *
+ * ⚠️ จับคู่ด้วย "สำนักข่าว + ต้นพาดหัว" ไม่ใช่ลิงก์ — แถวเก่าเก็บลิงก์ Bing ที่เปลี่ยนทุกชั่วโมง
+ *    เทียบลิงก์จะไม่มีวันตรง · เจอแล้วอัปเดตลิงก์ให้เป็นลิงก์ข่าวจริงไปด้วยเลย
+ *
+ * ⚠️ คลังข่าวเก็บ 90 วัน — แถวที่เก่ากว่านั้นซ่อมไม่ได้แล้ว
+ *    และฝั่งเซิร์ฟเวอร์ก็ทยอยเติมพาดหัวรอบละ 20 ข่าว ถ้ายังไม่ครบให้รันซ้ำอีกวันสองวัน
+ */
+function fixClippedTitles() {
+  var sheet = getSheet_();
+  var last = sheet.getLastRow();
+  if (last < 2) return;
+
+  var res = UrlFetchApp.fetch(
+    API + "?src=all&days=90&topics=" + encodeURIComponent(TOPICS) + "&format=json",
+    { muteHttpExceptions: true }
+  );
+  if (res.getResponseCode() !== 200) {
+    throw new Error("ดึงคลังข่าวไม่สำเร็จ (" + res.getResponseCode() + ") — ยังไม่ได้แก้อะไรในชีต");
+  }
+
+  // รวบพาดหัวตัวเต็มจากคลัง แยกตามสำนักข่าว
+  var byOutlet = {};
+  var rows = JSON.parse(res.getContentText()).rows || [];
+  for (var i = 0; i < rows.length; i++) {
+    var t = String(rows[i].title || "").replace(/\s+/g, " ").trim();
+    if (!t || isClipped_(t)) continue; // ตัวที่ยังถูกตัดอยู่ ไม่ช่วยอะไร
+    var o = String(rows[i].outlet || "").trim().toLowerCase();
+    (byOutlet[o] = byOutlet[o] || []).push({ title: t, link: String(rows[i].link || "") });
+  }
+
+  var vals = sheet.getRange(2, 1, last - 1, 3).getValues(); // A=สำนักข่าว B=พาดหัว C=link
+  var fixed = 0;
+  for (var r = 0; r < vals.length; r++) {
+    var cur = String(vals[r][1] || "").replace(/\s+/g, " ").trim();
+    if (!isClipped_(cur)) continue;
+    var head = cur.replace(/(?:…|\.\.\.)\s*$/, "").trim();
+    if (head.length < 10) continue; // สั้นเกินไป จับคู่แล้วเสี่ยงได้ข่าวผิดใบ
+    var cands = byOutlet[String(vals[r][0] || "").trim().toLowerCase()] || [];
+    for (var c = 0; c < cands.length; c++) {
+      if (cands[c].title.indexOf(head) !== 0) continue; // ต้องขึ้นต้นตรงกันเป๊ะ
+      vals[r][1] = cands[c].title;
+      if (cands[c].link) vals[r][2] = cands[c].link; // เก็บลิงก์ข่าวจริงแทนลิงก์ Bing ไปด้วย
+      fixed++;
+      break;
+    }
+  }
+
+  if (!fixed) {
+    SpreadsheetApp.getActiveSpreadsheet().toast("ไม่มีพาดหัวที่ซ่อมได้เพิ่ม — ลองรันใหม่พรุ่งนี้");
+    return;
+  }
+  // เขียนกลับทีเดียวทั้งคอลัมน์ B กับ C (เขียนทีละช่องจะช้ามากเมื่อชีตยาว)
+  sheet.getRange(2, 2, vals.length, 2).setValues(vals.map(function (v) { return [v[1], v[2]]; }));
+  SpreadsheetApp.getActiveSpreadsheet().toast("ซ่อมพาดหัวได้ " + fixed + " แถว");
+}
+
+/** พาดหัวที่ถูกตัดจะลงท้ายด้วย … หรือ ... */
+function isClipped_(s) {
+  return /(?:…|\.\.\.)\s*$/.test(String(s || "").trim());
 }
 
 /**
