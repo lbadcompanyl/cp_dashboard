@@ -46,8 +46,11 @@ var GD_TO   = "";           // ว่าง = ถึงวันนี้
 
 // หัวข้อ → คำค้นแบบ GDELT · ชื่อหัวข้อต้องสะกดให้ตรงกับที่เซิร์ฟเวอร์ใช้ ไม่งั้นตัวกรองในชีตจะแยกเป็นคนละหมวด
 // (ใช้คำค้นเป็นตัวกำหนดหมวดเลย จะได้ไม่ต้องมีตารางคำซ้ำอีกที่หนึ่งให้ลืมอัปเดต)
+//
+// ⚠️ GDELT ไม่รับคำที่สั้นเกินไป — ใส่ "CPF" เดี่ยวๆ แล้วมันตอบ "The specified phrase is too short."
+//    ทั้งรอบเลยไม่ได้ข่าว CPF สักใบ (เจอตอนรันจริง 11 ส.ค.) · ต้องใช้คำที่ยาวพอเท่านั้น
 var GD_QUERIES = {
-  "CPF": '("ซีพีเอฟ" OR "CPF" OR "เจริญโภคภัณฑ์อาหาร")',
+  "CPF": '("ซีพีเอฟ" OR "CP Foods" OR "เจริญโภคภัณฑ์อาหาร" OR "Charoen Pokphand Foods")',
   "ปลาหมอคางดำ": '("ปลาหมอคางดำ" OR "หมอคางดำ" OR "blackchin tilapia")',
   "PM2.5": '("PM2.5" OR "ฝุ่นพิษ" OR "ฝุ่นละอองขนาดเล็ก")',
   "Alien species": '("ชนิดพันธุ์ต่างถิ่น" OR "สัตว์ต่างถิ่น" OR "เอเลี่ยนสปีชีส์")'
@@ -332,7 +335,12 @@ function backfillGdelt() {
   return msg;
 }
 
-/** ยิงถาม GDELT 1 ครั้ง — คืน {articles:[], err:""} ไม่ throw เพื่อให้รอบอื่นไปต่อได้ */
+/**
+ * ยิงถาม GDELT 1 ครั้ง — คืน {articles:[], err:""} ไม่ throw เพื่อให้รอบอื่นไปต่อได้
+ *
+ * ⚠️ Apps Script ออกเน็ตจาก IP ที่ใช้ร่วมกับคนทั้งโลก GDELT จึงตอบ 429 บ่อยมาก
+ *    (รันจริง 11 ส.ค. โดน 429 ไป 18 จาก 20 ครั้ง) — ต้องรอแล้วลองใหม่ ไม่ใช่ข้ามทิ้งเลย
+ */
 function gdeltFetch_(query, from, to) {
   var url = GD_API +
     "?query=" + encodeURIComponent(query) +
@@ -340,17 +348,24 @@ function gdeltFetch_(query, from, to) {
     "&maxrecords=" + GD_MAX +
     "&startdatetime=" + from.replace(/-/g, "") + "000000" +
     "&enddatetime=" + to.replace(/-/g, "") + "235959";
-  try {
-    var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) return { articles: [], err: "HTTP " + res.getResponseCode() };
-    var txt = res.getContentText();
-    // GDELT ตอบเป็นข้อความธรรมดาเวลาคำค้นผิดรูป ไม่ใช่ JSON — อย่าให้ทั้งรอบล้มเพราะอันเดียว
-    if (txt.charAt(0) !== "{") return { articles: [], err: txt.slice(0, 80) };
-    var j = JSON.parse(txt);
-    return { articles: j.articles || [], err: "" };
-  } catch (e) {
-    return { articles: [], err: String(e).slice(0, 80) };
+  var wait = [0, 8000, 20000]; // ครั้งแรกยิงเลย · โดน 429 แล้วรอ 8 วิ · แล้ว 20 วิ
+  var last = "";
+  for (var i = 0; i < wait.length; i++) {
+    if (wait[i]) Utilities.sleep(wait[i]);
+    try {
+      var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      var code = res.getResponseCode();
+      if (code === 429) { last = "HTTP 429"; continue; } // โดนจำกัดจำนวนครั้ง — รอแล้วลองใหม่
+      if (code !== 200) return { articles: [], err: "HTTP " + code };
+      var txt = res.getContentText();
+      // GDELT ตอบเป็นข้อความธรรมดาเวลาคำค้นผิดรูป ไม่ใช่ JSON — อย่าให้ทั้งรอบล้มเพราะอันเดียว
+      if (txt.charAt(0) !== "{") return { articles: [], err: txt.slice(0, 80) };
+      return { articles: JSON.parse(txt).articles || [], err: "" };
+    } catch (e) {
+      last = String(e).slice(0, 80);
+    }
   }
+  return { articles: [], err: last + " (ลองแล้ว " + wait.length + " ครั้ง)" };
 }
 
 /** "20260807T024500Z" → "2026-08-07 09:45" (เวลาไทย ให้ตรงรูปแบบกับที่เซิร์ฟเวอร์เขียน) */
