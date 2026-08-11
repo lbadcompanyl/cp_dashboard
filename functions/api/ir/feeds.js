@@ -4,11 +4,12 @@
 
 import feeds from "../../../ir-feeds.config.js";
 import { parseGeneric } from "../trend/_lib/parser.js";
+import { readAllow, allowKey } from "../allow.js";
 
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "52"; // bump: เพิ่ม seek ในลิสต์เว็บหางาน
+const CACHE_VER = "53"; // bump: ข่าวที่กด ↩ เอากลับ ต้องไม่โดนตัดอีก
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -377,6 +378,7 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
 }
 
 async function buildAndStore(cache, cacheKey, env, allowAI) {
+  try { ALLOWED = await readAllow(env); } catch { ALLOWED = {}; }
   const sources = {};
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
   for (const f of feeds) { const t = targetSource(f); if (sources[t]) sources[t].feedCount++; }
@@ -508,7 +510,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alert2CutList, alertVerify, pruned });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alert2CutList, alertVerify, swept, pruned });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -571,7 +573,13 @@ function hostOf(link) {
   try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
 }
 // คืนเหตุผลถ้าเป็น noise (gallery/pr/daily/shopping) มิฉะนั้น null
+// ข่าวที่เจ้าของกด "↩ เอากลับ" ไว้ที่หน้า /admin/ — ต้องรอดทุกด่าน
+// ⚠️ ตั้งค่าใหม่ทุกครั้งที่ build · Workers ใช้โมดูลเดิมซ้ำข้าม request ถ้าไม่ตั้งใหม่จะค้างของเก่า
+let ALLOWED = {};
+const isAllowed = (it) => !!(it && it.link && ALLOWED[allowKey(it.link)]);
+
 function noiseReason(it, title) {
+  if (isAllowed(it)) return null; // เจ้าของสั่งคืนไว้ — ไม่ต้องตัดอีก
   const link = it.link || "";
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost";
@@ -595,6 +603,7 @@ function noiseReason(it, title) {
 // กวาดของที่เป็นประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert "หลังดึงของเก่าจาก KV กลับมา"
 // ⚠️ verifyAlertItems() ทำงานก่อน mergeArchives() — ของเก่าที่เก็บไว้ตอนยังไม่มีตัวกรองนี้
 // จะไหลกลับเข้ามาโดยไม่ผ่านด่าน ต้องกวาดอีกรอบตรงนี้ ไม่งั้นต้องรอ 10 วันกว่าจะหายเอง
+const stripMarks = (s) => String(s || "").replace(/\[\[\/?hl\]\]/g, "").trim();
 function dropNoiseAfterArchive(sources, diag) {
   for (const src of ["alert1", "alert2"]) {
     const b = sources[src];
@@ -602,7 +611,8 @@ function dropNoiseAfterArchive(sources, diag) {
     const before = b.items.length;
     b.items = b.items.filter((it) => {
       const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase());
-      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: (it.title || "").slice(0, 60) });
+      // เก็บลิงก์+พาดหัวเต็มไว้ด้วย — หน้า /admin/ เอาไปแสดงว่า "ระบบตัดอะไรทิ้งไปบ้าง"
+      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "" });
       return !why;
     });
     diag[src] = before - b.items.length;
@@ -729,6 +739,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
     const items = sources[src].items;
     const extra = src === "alert1" ? CP_BRANDS : src === "alert2" ? ALERT2_KEEP : []; // คำเฉพาะโดเมน (เครือ CP / คู่แข่ง-ภาษี-ปศุสัตว์)
     const verdict = items.map((it) => {
+      if (isAllowed(it)) return { ok: true }; // เจ้าของสั่งคืนไว้ที่หน้า /admin/ — ผ่านทุกด่าน
       const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
       const title = bare.toLowerCase();
       const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/แกลเลอรี/PR ก่อนเช็ค related-block

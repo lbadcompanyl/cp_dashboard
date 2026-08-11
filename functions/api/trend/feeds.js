@@ -4,12 +4,13 @@
 
 import feeds from "../../../trend-feeds.config.js";
 import { parseGeneric, parseTrends, unwrapRedirect } from "./_lib/parser.js";
+import { readAllow, allowKey } from "../allow.js";
 
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "58"; // bump: เพิ่ม seek ในลิสต์เว็บหางาน
+const CACHE_VER = "59"; // bump: ข่าวที่กด ↩ เอากลับ ต้องไม่โดนตัดอีก
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -261,6 +262,7 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms, excludes) {
 }
 
 async function buildAndStore(cache, cacheKey, allowVerify, env) {
+  try { ALLOWED = await readAllow(env); } catch { ALLOWED = {}; }
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
     alert1: { label: "CP", items: [], feedCount: 0 },
@@ -402,7 +404,7 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
     await enrichCategories(env, sources, prevCat, catDiag, userCats, catExamples);
   } catch (e) { catDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, titles, archive, pruned, dateFix, cats: catDiag });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, titles, swept, archive, pruned, dateFix, cats: catDiag });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -533,7 +535,13 @@ function hostOf(link) {
   try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
 }
 // คืนเหตุผลถ้าเป็น noise (gallery/pr/daily/shopping) มิฉะนั้น null — ใช้ title+snippet ที่ถอด marker hl แล้ว
+// ข่าวที่เจ้าของกด "↩ เอากลับ" ไว้ที่หน้า /admin/ — ต้องรอดทุกด่าน
+// ⚠️ ตั้งค่าใหม่ทุกครั้งที่ build · Workers ใช้โมดูลเดิมซ้ำข้าม request ถ้าไม่ตั้งใหม่จะค้างของเก่า
+let ALLOWED = {};
+const isAllowed = (it) => !!(it && it.link && ALLOWED[allowKey(it.link)]);
+
 function noiseReason(it, title) {
+  if (isAllowed(it)) return null; // เจ้าของสั่งคืนไว้ — ไม่ต้องตัดอีก
   const link = it.link || "";
   if (GALLERY_RE.test(link)) return "gallery";
   if (PR_RE.test(title)) return "pr";
@@ -566,7 +574,8 @@ function dropNoiseAfterArchive(sources, diag) {
     const before = b.items.length;
     b.items = b.items.filter((it) => {
       const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase());
-      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: (it.title || "").slice(0, 60) });
+      // เก็บลิงก์+พาดหัวเต็มไว้ด้วย — หน้า /admin/ เอาไปแสดงว่า "ระบบตัดอะไรทิ้งไปบ้าง"
+      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "" });
       return !why;
     });
     diag[src] = before - b.items.length;
@@ -827,6 +836,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
     const items = sources[src].items;
     const extra = src === "alert1" ? CP_BRANDS : []; // คอลัมน์ CP → ยอมรับชื่อในเครือด้วย
     const verdict = items.map((it) => {
+      if (isAllowed(it)) return { ok: true }; // เจ้าของสั่งคืนไว้ที่หน้า /admin/ — ผ่านทุกด่าน
       const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
       const title = bare.toLowerCase();
       const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/หน้าแกลเลอรี ก่อนเช็ค related-block

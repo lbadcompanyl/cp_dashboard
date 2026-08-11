@@ -130,29 +130,6 @@
       <div class="list" data-list></div>
     </section>
 
-    <section class="panel" data-source="xtrends">
-      <div class="phead">
-        <span class="ptitle"><span class="dot xtrends"></span>𝕏 เทรนด์บน X</span>
-        <span class="pcount" data-count>—</span>
-      </div>
-      <div class="filters">
-        <select class="rc" data-xgeo title="เลือกประเทศ">
-          <option value="thailand">🇹🇭 ไทย</option>
-          <option value="united-states">🇺🇸 สหรัฐฯ</option>
-          <option value="japan">🇯🇵 ญี่ปุ่น</option>
-          <option value="korea">🇰🇷 เกาหลี</option>
-          <option value="singapore">🇸🇬 สิงคโปร์</option>
-          <option value="worldwide">🌏 ทั่วโลก</option>
-        </select>
-        <!-- ข่าว = ตัดบันเทิง/กีฬาออก · ทั่วไป = ทุกหมวด -->
-        <div class="kindtog" data-xkind>
-          <button type="button" class="cat" data-k="news">📰 ข่าว</button>
-          <button type="button" class="cat on" data-k="all">🌐 ทั่วไป</button>
-        </div>
-      </div>
-      <div class="list" data-list></div>
-    </section>
-
     <section class="panel" data-source="yttrends">
       <div class="phead">
         <span class="ptitle"><span class="dot yttrends"></span>▶️ คลิปมาแรง YouTube</span>
@@ -191,6 +168,29 @@
       </div>
       <div class="list" data-list></div>
     </section>
+
+    <section class="panel" data-source="xtrends">
+      <div class="phead">
+        <span class="ptitle"><span class="dot xtrends"></span>𝕏 เทรนด์บน X</span>
+        <span class="pcount" data-count>—</span>
+      </div>
+      <div class="filters">
+        <select class="rc" data-xgeo title="เลือกประเทศ">
+          <option value="thailand">🇹🇭 ไทย</option>
+          <option value="united-states">🇺🇸 สหรัฐฯ</option>
+          <option value="japan">🇯🇵 ญี่ปุ่น</option>
+          <option value="korea">🇰🇷 เกาหลี</option>
+          <option value="singapore">🇸🇬 สิงคโปร์</option>
+          <option value="worldwide">🌏 ทั่วโลก</option>
+        </select>
+        <!-- ข่าว = ตัดบันเทิง/กีฬาออก · ทั่วไป = ทุกหมวด -->
+        <div class="kindtog" data-xkind>
+          <button type="button" class="cat" data-k="news">📰 ข่าว</button>
+          <button type="button" class="cat on" data-k="all">🌐 ทั่วไป</button>
+        </div>
+      </div>
+      <div class="list" data-list></div>
+    </section>
     <!-- เช็คว่าคำหนึ่งคนสนใจแค่ไหน ก่อนตัดสินใจเอาเข้า Alert -->
     <section class="panel" data-source="kwcheck">
       <div class="phead">
@@ -225,6 +225,6 @@
   <button id="scrollcue" type="button" hidden><span class="cuearrow">▼</span> เลื่อนเพื่อดู Trend · X · YouTube</button>
 
   <script src="/flags.js?v=31"></script>
-  <script src="./app.js?v=103"></script>
+  <script src="./app.js?v=104"></script>
 </body>
 </html>
