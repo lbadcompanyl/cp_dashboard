@@ -8,7 +8,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "49"; // bump: คอลัมน์ CP ต้องมีชื่อเครือ CP จริง ไม่รับเศษคำที่ Google ไฮไลต์
+const CACHE_VER = "50"; // bump: ยกตัวกรองแอดเวอร์ทอเรียล + เว็บแจกข่าว PR + ทรูธโซเชียล มาจาก trend
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -539,6 +539,8 @@ const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 // โพสต์รูปภาพล้วน (สไลด์แกลเลอรี) ที่ตั้งหัวข้อเป็นรหัสรูป เช่น "S_30752912 | Pasusart News" — ไม่มีพาดหัวจริง
 const IMGPOST_RE = /^\s*S_?\d{4,}\b/i;
 const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
+// เว็บที่รับแจกข่าวประชาสัมพันธ์ล้วนๆ (ไม่มีกองบรรณาธิการคัดข่าว)
+const PR_HOSTS = ["newswit.com", "thaipr.net", "prnewswire.com", "businesswire.com"];
 
 // ---- ประกาศงาน / อสังหา / หน้าขายสินค้า — ไม่ใช่ข่าว ----
 // เจ้าของสั่งตัดออก (7 ส.ค. 69): jobsdb, dotproperty, epower ฯลฯ โผล่ในคอลัมน์ CP
@@ -557,6 +559,9 @@ const PROP_RE = /ให้เช่า|ห้องเช่า|หอพัก|
 // หน้าขายสินค้า/บริการของผู้ขาย (ไม่ใช่ข่าว) — ภาษาแบบใบเสนอราคา/แคตตาล็อก
 const VENDOR_RE = /ตัวแทนจำหน่าย|ผลิตและจำหน่าย|รับติดตั้ง|บริการติดตั้ง|สอบถามราคา|ใบเสนอราคา|ราคาโรงงาน|สินค้าและบริการ|เครื่องกรองน้ำ|เครื่องกรองอากาศ|water purifier|air purifier|air quality sensor|เซนเซอร์วัดคุณภาพอากาศ/i;
 
+// โฆษณาที่เขียนให้ดูเหมือนข่าว — ต้องเจอทั้งชื่อสินค้าและภาษาชวนซื้อ (ชุดเดียวกับ trend/feeds.js)
+const AD_PRODUCT_RE = /ครีม|เซรั่ม|เซรัม|serum|รีมูฟเวอร์|คลีนซิ่ง|สกินแคร์|skincare|มาส์ก|โลชั่น|แป้งพัฟ|ลิปสติก|บำรุงผิว|บำรุงหน้า|ผิวกระจ่างใส/i;
+const AD_PITCH_RE = /หาซื้อได้ที่|วางจำหน่ายแล้ว|พร้อมจำหน่าย|ราคาเพียง|ราคาพิเศษ|โปรโมชั่?น|ลดราคา|สั่งซื้อ|ตัวช่วย|ปัง|ตัวท็อป|ห้ามพลาด|บอกเลยว่า|ต้องมีติดบ้าน|ติดกระเป๋า/i;
 function hostOf(link) {
   try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
 }
@@ -566,6 +571,7 @@ function noiseReason(it, title) {
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost";
   if (PR_RE.test(title)) return "pr";
+  if (hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h))) return "pr";
   const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
   const text = title + " " + snip;
   if (DAILY_RE.test(text)) return "daily";
@@ -577,6 +583,7 @@ function noiseReason(it, title) {
   if (host && PROP_HOSTS.some((h) => host.includes(h))) return "property";
   if (PROP_RE.test(text)) return "property";
   if (VENDOR_RE.test(text)) return "vendor";
+  if (AD_PRODUCT_RE.test(text) && AD_PITCH_RE.test(text)) return "advertorial";
   return null;
 }
 
@@ -616,6 +623,9 @@ const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็�
 const CP_FALSE_RX = [
   "ทรู\\s*ดิจิ(?:ทัล|ตอล)\\s*(?:พาร์ค|ปาร์ค|park)",
   "true\\s*digital\\s*park",
+  "ทรู\\s*ธ?\\s*โซเชี?ย?ล",
+  "truth\\s*social",
+  "trump\\s*media",
 ];
 const CP_FALSE_RE = new RegExp(
   CP_FALSE.slice().sort((a, b) => b.length - a.length)
