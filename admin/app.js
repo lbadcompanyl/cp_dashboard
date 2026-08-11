@@ -40,79 +40,6 @@ const SCOPES = {
   },
 };
 
-// ---- ✂️ ข่าวที่ระบบตัดทิ้ง ----
-// ตัวเลข/รายการมาจาก response ของ API อยู่แล้ว (alertVerify.dropped + swept.dropped)
-// หน้านี้แค่เอามาแสดง — ไม่ได้ยิงอะไรเพิ่ม ไม่แตะ KV
-const API = { pr: "/api/trend/feeds", root: "/api/trend/feeds", ir: "/api/ir/feeds" };
-
-// รหัสเหตุผลจาก noiseReason()/verifyAlertItems() → ภาษาคน
-const WHY_TH = {
-  job: "ประกาศหางาน",
-  property: "อสังหา / ให้เช่า",
-  vendor: "หน้าขายสินค้า-บริการ",
-  shopping: "ร้านค้าออนไลน์",
-  daily: "รายงานประจำวัน",
-  gallery: "แกลเลอรีรูป",
-  pr: "ข่าวประชาสัมพันธ์ราชการ",
-  roundup: "สรุปข่าวรวมหลายเรื่อง",
-  "old-content": "ข่าวเก่าถูกดันขึ้นใหม่",
-  "false-cp": "ชื่อคล้ายเครือ CP แต่ไม่ใช่",
-  "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป": "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป",
-  "ไม่อยู่ในพาดหัว/เนื้อ": "คำที่ match ไม่ได้อยู่ในพาดหัวหรือเนื้อข่าว",
-};
-const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-function renderDropped(scope, data) {
-  const box = $("#admDrop");
-  if (!box) return;
-  const cols = {};
-  for (const a of SCOPES[scope].alerts) cols[a.source] = a.label;
-
-  const rows = [
-    ...((data?.alertVerify?.dropped) || []),
-    ...((data?.swept?.dropped) || []),
-  ].filter((d) => d && d.title);
-
-  if (!rows.length) {
-    box.innerHTML = `<p class="lead">รอบล่าสุดไม่มีข่าวถูกตัดทิ้งเลย</p>`;
-    return;
-  }
-
-  // จัดกลุ่มตามเหตุผล เรียงกลุ่มที่ตัดเยอะสุดขึ้นก่อน
-  const byWhy = new Map();
-  for (const d of rows) {
-    const k = d.why || "ไม่ระบุ";
-    if (!byWhy.has(k)) byWhy.set(k, []);
-    byWhy.get(k).push(d);
-  }
-  const groups = [...byWhy.entries()].sort((a, b) => b[1].length - a[1].length);
-
-  box.innerHTML =
-    `<p class="dropsum">ตัดทิ้ง <b>${rows.length}</b> ข่าว · ${groups.length} เหตุผล</p>` +
-    groups.map(([why, list]) => `
-      <details class="dropgrp">
-        <summary><span class="dropwhy">${esc(WHY_TH[why] || why)}</span><span class="dropn">${list.length}</span></summary>
-        <ul class="droplist">${list.map((d) => `
-          <li>
-            <span class="dropcol">${esc(cols[d.src] || d.src || "")}</span>
-            ${d.link ? `<a href="${esc(d.link)}" target="_blank" rel="noopener">${esc(d.title)}</a>` : `<span>${esc(d.title)}</span>`}
-          </li>`).join("")}</ul>
-      </details>`).join("");
-}
-
-async function loadDropped(scope) {
-  const box = $("#admDrop");
-  if (!box) return;
-  box.innerHTML = `<p class="lead"><span class="spin"></span>กรุณารอซักครู่</p>`;
-  try {
-    const data = await fetch(API[scope]).then((r) => r.json());
-    if ($("#scopes button.on")?.dataset.scope !== scope) return; // ผู้ใช้สลับแท็บระหว่างรอ — ทิ้งผลเก่า
-    renderDropped(scope, data);
-  } catch {
-    box.innerHTML = `<p class="lead">ดึงข้อมูลไม่สำเร็จ — ลองรีเฟรชหน้าอีกครั้ง</p>`;
-  }
-}
-
 const LS_LAST = "admScope"; // จำว่าดูอันไหนค้างไว้ กลับมาเปิดอันเดิม
 const validScope = (s) => (Object.prototype.hasOwnProperty.call(SCOPES, s) ? s : "pr");
 
@@ -131,12 +58,10 @@ function show(scope) {
   paintTabs(scope);
   try { localStorage.setItem(LS_LAST, scope); } catch {}
   Flags.setScope(scope, SCOPES[scope].alerts);
-  loadDropped(scope);
 }
 
 const start = initialScope();
 paintTabs(start);
-loadDropped(start);
 
 Flags.init({
   ui: "admin",

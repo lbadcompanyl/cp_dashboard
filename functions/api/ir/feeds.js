@@ -508,7 +508,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
     }
   }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alert2CutList, alertVerify, swept, pruned });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alert2CutList, alertVerify, pruned });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -583,7 +583,6 @@ function noiseReason(it, title) {
 // กวาดของที่เป็นประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert "หลังดึงของเก่าจาก KV กลับมา"
 // ⚠️ verifyAlertItems() ทำงานก่อน mergeArchives() — ของเก่าที่เก็บไว้ตอนยังไม่มีตัวกรองนี้
 // จะไหลกลับเข้ามาโดยไม่ผ่านด่าน ต้องกวาดอีกรอบตรงนี้ ไม่งั้นต้องรอ 10 วันกว่าจะหายเอง
-const stripMarks = (s) => String(s || "").replace(/\[\[\/?hl\]\]/g, "").trim();
 function dropNoiseAfterArchive(sources, diag) {
   for (const src of ["alert1", "alert2"]) {
     const b = sources[src];
@@ -591,8 +590,7 @@ function dropNoiseAfterArchive(sources, diag) {
     const before = b.items.length;
     b.items = b.items.filter((it) => {
       const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase());
-      // เก็บลิงก์+พาดหัวเต็มไว้ด้วย — หน้า /admin/ เอาไปแสดงว่า "ระบบตัดอะไรทิ้งไปบ้าง"
-      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "" });
+      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: (it.title || "").slice(0, 60) });
       return !why;
     });
     diag[src] = before - b.items.length;

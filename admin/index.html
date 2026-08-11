@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>🛠 หน้าจัดการ · CP Dashboard</title>
-<meta name="page-ver" content="8">
+<meta name="page-ver" content="7">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛠</text></svg>">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="robots" content="noindex, nofollow">
-<link rel="stylesheet" href="./styles.css?v=4">
+<link rel="stylesheet" href="./styles.css?v=3">
 <!-- ป้ายเลขเวอร์ชัน + service worker (ชุดเดียวกับหน้าอื่น — วางไว้ใน head เหมือนกันหมด) -->
 <script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;r.update();document.addEventListener("visibilitychange",function(){if(!document.hidden)r.update();});}).catch(function(){});});}</script>
 </head>
@@ -34,12 +34,6 @@
     <div id="admCut"></div>
   </section>
 
-  <section class="card wide">
-    <h2>✂️ ข่าวที่ระบบตัดทิ้ง</h2>
-    <p class="lead">ข่าวที่เข้าเงื่อนไข keyword แล้ว แต่ตัวกรองอัตโนมัติคัดออกก่อนขึ้นแดชบอร์ด — เปิดดูว่ามีข่าวจริงหลุดไปด้วยไหม</p>
-    <div id="admDrop"></div>
-  </section>
-
   <section class="card">
     <h2>➕ keyword ที่เก็บไว้</h2>
     <p class="lead">คำที่พิมพ์เก็บไว้จากปุ่ม ➕ บนแดชบอร์ด — ที่นี่คือที่ประกอบเป็น query แล้วคัดลอกไปแปะใน Google Alert</p>
@@ -52,6 +46,6 @@
 </footer>
 
 <script src="/flags.js?v=31"></script>
-<script src="./app.js?v=4"></script>
+<script src="./app.js?v=3"></script>
 </body>
 </html>
