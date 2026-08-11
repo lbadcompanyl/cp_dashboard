@@ -122,6 +122,11 @@ functions/api/  Cloudflare Pages Functions (trend / ir / sd / flags)
 
 ที่ใช้อยู่จึงเป็น `cp-dashboard-680.pages.dev/admin/` และ `dev.cp-dashboard-680.pages.dev/admin/`
 
+- **✂️ ข่าวที่ระบบตัดทิ้ง** — เอา `alertVerify.dropped` + `swept.dropped` จาก response ของ API
+  มาแสดง จัดกลุ่มตามเหตุผล (กลุ่มที่ตัดเยอะสุดขึ้นก่อน) แปลรหัสเป็นภาษาคนด้วยตาราง `WHY_TH`
+  · **ไม่ได้ยิง API เพิ่ม ไม่แตะ KV** — ข้อมูลติดมากับ response ที่แดชบอร์ดใช้อยู่แล้ว
+  · **เพิ่มเหตุผลใหม่ใน `noiseReason()` เมื่อไหร่ ต้องเติม `WHY_TH` ใน `admin/app.js` ด้วย**
+    ไม่งั้นจะขึ้นเป็นรหัสดิบ (`vendor` / `false-cp`) ให้เจ้าของอ่าน — เทสต์ `dropview.mjs` คุมไว้
 - **ไม่มีการ์ดบน landing โดยตั้งใจ** — เป็นเครื่องมือของเจ้าของ ไม่ใช่แดชบอร์ดให้คนทั่วไปดู
 - ⚠️ **ไม่มีระบบล็อกอิน** ใครรู้ลิงก์ก็เปิดได้ (มี `noindex` กัน Google เท่านั้น)
   ถ้าจะจำกัดสิทธิ์จริงต้องตั้ง **Cloudflare Access** หน้า path นี้

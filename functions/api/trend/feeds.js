@@ -395,7 +395,7 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
     await enrichCategories(env, sources, prevCat, catDiag, userCats, catExamples);
   } catch (e) { catDiag.fatal = String((e && e.message) || e).slice(0, 200); }
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, titles, archive, pruned, dateFix, cats: catDiag });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, titles, swept, archive, pruned, dateFix, cats: catDiag });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
@@ -524,7 +524,8 @@ function dropNoiseAfterArchive(sources, diag) {
     const before = b.items.length;
     b.items = b.items.filter((it) => {
       const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase());
-      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: (it.title || "").slice(0, 60) });
+      // เก็บลิงก์+พาดหัวเต็มไว้ด้วย — หน้า /admin/ เอาไปแสดงว่า "ระบบตัดอะไรทิ้งไปบ้าง"
+      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "" });
       return !why;
     });
     diag[src] = before - b.items.length;
