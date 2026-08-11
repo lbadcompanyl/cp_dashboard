@@ -9,7 +9,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "53"; // bump: แกะลิงก์เปลี่ยนทางของ Bing (ยุบข่าวซ้ำ) + เติมพาดหัวที่ถูกตัดสั้น
+const CACHE_VER = "54"; // bump: เติมพาดหัวที่ถูกตัดให้ของเก่าใน KV ด้วย (เดิมแตะได้แต่ของสด)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -332,13 +332,20 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const alertVerify = {};
   try { await verifyAlertItems(cache, sources, alertVerify, allowVerify); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
 
-  // เติมพาดหัวที่ Bing ตัดสั้น — ต้องทำ "ก่อน" archive ไม่งั้นของที่เก็บลง KV จะเป็นตัวที่ถูกตัด
-  const titles = {};
-  try { await fillClippedTitles(cache, sources, titles, allowVerify); } catch (e) { titles.err = String((e && e.message) || e).slice(0, 120); }
-
   // เก็บสะสม alert ลง KV (CP/จับตามอง 10 วัน) แม้หลุดจากฟีด Google Alert แล้ว — หลัง verify กันสะสม noise
   const archive = {};
-  try { await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
+  let archiveOut = null;
+  try { archiveOut = await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
+
+  // เติมพาดหัวที่ถูกตัดสั้น — ต้องทำ "หลัง" merge เพื่อให้เห็นของเก่าใน KV ด้วย
+  // ⚠️ ของเก่าที่เก็บไว้ตอนยังไม่มีตัวเติมจะถูกตัดค้างอยู่ตลอด ถ้าเติมก่อน merge
+  // จะแตะได้แต่ของสดที่เพิ่งดึงมา (เคยพลาดมาแล้ว — พาดหัวเก่ายังขาดอยู่หลัง release)
+  const titles = {};
+  try { await fillClippedTitles(cache, sources, archiveOut, titles, allowVerify); } catch (e) { titles.err = String((e && e.message) || e).slice(0, 120); }
+
+  // เขียน KV หลังเติมพาดหัวแล้ว — ไม่งั้นที่เติมได้จะหายทุกรอบแล้วต้องยิงซ้ำไม่จบ
+  // (item ใน sources[].items เป็นตัวเดียวกับใน archiveOut — แก้ที่หนึ่งจึงติดไปอีกที่เอง)
+  try { await saveArchives(env, archiveOut, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
 
   // กวาดประกาศงาน/อสังหา/หน้าขายของที่ค้างอยู่ใน KV ออกด้วย (verify ทำงานก่อน archive)
   const swept = {};
@@ -442,7 +449,21 @@ async function mergeArchives(env, sources, diag) {
     out[src] = merged;                              // KV: เก็บเต็มไว้ export
     diag[src] = merged.length;
   }
-  try { await kv.put(key, JSON.stringify(out)); diag.saved = true; diag.env = env.APP_ENV || "prod"; } catch (e) { diag.err = String((e && e.message) || e).slice(0, 120); }
+  return out; // ยังไม่เขียน KV — รอเติมพาดหัวก่อน แล้วค่อยเรียก saveArchives()
+}
+
+// เขียนคลังข่าวลง KV — แยกจาก mergeArchives เพื่อให้เติมพาดหัวที่ถูกตัดได้ก่อนเขียน
+// ⚠️ เขียนครั้งเดียวต่อ request เท่านั้น (โควตาเขียนของแผนฟรี 1,000 ครั้ง/วัน ใช้ร่วมทั้งโปรเจกต์)
+async function saveArchives(env, out, diag) {
+  const kv = env && env.FLAGS_KV;
+  if (!kv || !out) return;
+  try {
+    await kv.put(envPrefix(env) + ARCHIVE_KEY, JSON.stringify(out));
+    diag.saved = true;
+    diag.env = env.APP_ENV || "prod";
+  } catch (e) {
+    diag.err = String((e && e.message) || e).slice(0, 120);
+  }
 }
 
 // ส่งสำเนาที่ไม่ให้เบราว์เซอร์ cache (กดรีเฟรชแล้วได้ของล่าสุดจาก edge เสมอ)
@@ -672,7 +693,7 @@ async function bodyHasKeep(cache, link, keep) {
 // จึงจ่ายค่ายิงครั้งเดียวต่อข่าว 1 ใบ รอบต่อไปได้ของเต็มมาเลย
 const CLIPPED_RE = /(?:…|\.\.\.)\s*$/;
 const stripMarks = (s) => String(s || "").replace(/\[\[\/?hl\]\]/g, "").trim();
-const TITLE_FETCH_MAX = 8; // ต่อ 1 request — กันชนโควตา subrequest ของ Cloudflare
+const TITLE_FETCH_MAX = 20; // ต่อ 1 request — กันชนโควตา subrequest ของ Cloudflare (เพดาน 50)
 function decodeEntities(s) {
   return String(s || "")
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
@@ -688,11 +709,20 @@ function headlineFromHtml(html) {
     || pick(/<h1[^>]*>([\s\S]{4,300}?)<\/h1>/i).replace(/<[^>]+>/g, "")
     || pick(/<title[^>]*>([\s\S]{4,300}?)<\/title>/i);
 }
-async function fillClippedTitles(cache, sources, diag, allowFetch) {
+async function fillClippedTitles(cache, sources, archived, diag, allowFetch) {
   const todo = [];
-  for (const src of ["alert1", "alert2", "news"]) {
-    for (const it of (sources[src]?.items || [])) {
-      if (it && it.link && CLIPPED_RE.test(stripMarks(it.title || ""))) todo.push(it);
+  const seen = new Set();
+  // คอลัมน์ alert มาก่อน — เป็นชุดที่ไหลลง Google Sheet · คลังข่าวเต็มมาก่อนของที่โชว์บนหน้า
+  // เพราะพาดหัวที่ค้างอยู่ใน KV คือตัวที่ผู้ใช้เห็นว่า "ยังไม่ครบ"
+  const pools = [
+    ...(archived ? ["alert1", "alert2"].map((s) => archived[s]) : []),
+    ...["alert1", "alert2", "news"].map((s) => sources[s]?.items),
+  ];
+  for (const list of pools) {
+    for (const it of (list || [])) {
+      if (!it || !it.link || seen.has(it)) continue;
+      seen.add(it);
+      if (CLIPPED_RE.test(stripMarks(it.title || ""))) todo.push(it);
     }
   }
   diag.clipped = todo.length;
