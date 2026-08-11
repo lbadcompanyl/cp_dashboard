@@ -311,7 +311,7 @@ function configFor(keyword){
   const time = timeString(state.period);
   return {
     common: { comparisonItem:[{ keyword, geo:state.geo, time }], category:0, property:"" },
-    opts:   { exploreQuery:`date=${time}&geo=${state.geo}&q=${encodeURIComponent(keyword)}&hl=th`, guestPath:GUEST_PATH },
+    opts:   { exploreQuery:`date=${encodeURIComponent(time)}&geo=${state.geo}&q=${encodeURIComponent(keyword)}&hl=th`, guestPath:GUEST_PATH },
   };
 }
 function firstKeyword(g){ return g.keywords.map(k=>k.trim()).filter(Boolean)[0] || g.name; }

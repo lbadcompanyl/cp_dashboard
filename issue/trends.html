@@ -116,7 +116,9 @@
   .kw button:hover { color:var(--down); }
   .grp-add { border:1px dashed var(--border); background:transparent; border-radius:999px; padding:5px 12px; font-size:0.82rem; color:var(--ink-2); min-width:130px; font-family:inherit; }
   .grp-add:focus-visible { outline:2px solid var(--accent); }
-  .combine-eq { font-size:0.75rem; color:var(--muted); background:var(--accent-soft); border-radius:8px; padding:5px 10px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* ต้องอ่านคำค้นได้ทั้งก้อน — ของเดิม nowrap+ellipsis ตัดหายบนจอแคบ ทั้งที่นี่คือ
+     ข้อความที่ใช้ตรวจว่าส่งอะไรไปให้ Google */
+  .combine-eq { font-size:0.75rem; color:var(--muted); background:var(--accent-soft); border-radius:8px; padding:5px 10px; max-width:100%; overflow-wrap:anywhere; }
   .combine-eq b { color:var(--accent); }
   .filters { display:flex; flex-wrap:wrap; gap:10px; border-top:1px solid var(--border); padding-top:14px; }
   .field { display:flex; flex-direction:column; gap:4px; min-width:170px; }
@@ -131,6 +133,9 @@
   .widget-frame { position:relative; background:#fff; border-radius:10px; min-height:450px; padding:6px; overflow:visible; }
   .widget-frame--tall { min-height:500px; }
   .widget-frame iframe { width:100% !important; min-height:440px; border:0; display:block; }
+  .wfoot { margin:8px 2px 0; font-size:0.78rem; color:#6b7480; line-height:1.5; }
+  .wfoot a { color:#1a73e8; text-decoration:none; white-space:nowrap; }
+  .wfoot a:hover { text-decoration:underline; }
   .widget-loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px; color:#5b6470; font-size:0.9rem; }
   .newslist { display:flex; flex-direction:column; }
   .newsrow { display:flex; gap:12px; align-items:flex-start; padding:12px 2px; border-top:1px solid var(--border); }
@@ -194,12 +199,14 @@
         <h2>ความสนใจตามช่วงเวลา</h2>
         <p class="sub" id="tsSub"></p>
         <div class="widget-frame" id="w-ts"><div class="widget-loading">กำลังโหลดจาก Google Trends…</div></div>
+        <p class="wfoot">กราฟเป็นของ Google ถ้าขึ้นว่า <b>Oops! Something went wrong</b> แปลว่า Google ไม่ยอมตอบรอบนี้ (มักเป็นการจำกัดจำนวนครั้ง) — รอสักครู่แล้วกดรีเฟรช หรือ <a id="tsOpen" href="#" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a></p>
       </section>
       <div class="two-col">
         <section class="panel">
           <h3>คำค้นหาที่เกี่ยวข้อง (ยอดนิยม / มาแรง)</h3>
           <p class="sub" id="rqSub"></p>
           <div class="widget-frame widget-frame--tall" id="w-rq"><div class="widget-loading">กำลังโหลด…</div></div>
+          <p class="wfoot"><a id="rqOpen" href="#" target="_blank" rel="noopener">↗ เปิดใน Google Trends</a></p>
         </section>
         <section class="panel">
           <h3>🇹🇭 ข่าวในประเทศ (Related news)</h3>
@@ -284,7 +291,20 @@ function timeString(key){
 }
 const GUEST_PATH = "https://trends.google.com:443/trends/embed/";
 const activeGroup = () => groups[state.active];
-const combinedKeyword = g => g.keywords.map(k=>k.trim()).filter(Boolean).join(" + ") || g.name;
+// ⚠️ Google Trends มองคำที่ต่างกันแค่ช่องว่าง/เครื่องหมาย เป็นคำเดียวกัน ("pm 2.5" = "pm2.5")
+// ถ้าส่งไปทั้งคู่คั่นด้วย + จะกลายเป็น "เอาคำนี้ OR คำเดียวกัน" ซึ่ง Google ตอบ error
+// (หน้าจอขึ้น "Oops! Something went wrong.") — ยุบให้เหลือตัวแรกก่อนส่ง
+const trendKey = k => String(k).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+function uniqKeywords(g){
+  const out=[], seen=new Set();
+  for(const k of g.keywords.map(x=>x.trim()).filter(Boolean)){
+    const key=trendKey(k);
+    if(!key || seen.has(key)) continue;
+    seen.add(key); out.push(k);
+  }
+  return out;
+}
+const combinedKeyword = g => uniqKeywords(g).join(" + ") || g.name;
 function firstKeyword(g){ return g.keywords.map(k=>k.trim()).filter(Boolean)[0] || g.name; }
 
 // ---- persistence: localStorage + URL hash (คนละ key กับ SD ไม่ชนกัน) ----
@@ -354,10 +374,19 @@ function fillSelects(){
   el("geo").onchange=e=>{ state.geo=e.target.value; renderWidgets(); updateSubs(); scheduleNews(); save(); };
   el("period").onchange=e=>{ state.period=e.target.value; renderWidgets(); updateSubs(); save(); };
 }
+// ลิงก์ไปหน้า Google Trends ตรงๆ — ใช้ตอน widget ขึ้น error ซึ่งเราอ่านค่าใน iframe ไม่ได้เลย
+// (คนละโดเมน) จึงดักไม่ได้ว่าพังเมื่อไหร่ ต้องมีทางออกให้กดไว้ตลอด
+function exploreUrl(keyword){
+  return "https://trends.google.com/trends/explore?date=" + encodeURIComponent(timeString(state.period)) +
+    "&geo=" + encodeURIComponent(state.geo) + "&q=" + encodeURIComponent(keyword) + "&hl=th";
+}
 function updateSubs(){
   const g=activeGroup(), geoL=GEOS[state.geo], perL=PERIODS[state.period].label;
   el("tsSub").textContent=`${combinedKeyword(g)} · ${geoL} · ${perL}`;
   el("rqSub").textContent=`คำ “${firstKeyword(g)}” · ${geoL} · ${perL}`;
+  const ts=el("tsOpen"), rq=el("rqOpen");
+  if(ts) ts.href=exploreUrl(combinedKeyword(g));
+  if(rq) rq.href=exploreUrl(firstKeyword(g));
 }
 
 // ---- Google Trends widgets ----
@@ -365,7 +394,7 @@ function configFor(keyword){
   const time = timeString(state.period);
   return {
     common: { comparisonItem:[{ keyword, geo:state.geo, time }], category:0, property:"" },
-    opts:   { exploreQuery:`date=${time}&geo=${state.geo}&q=${encodeURIComponent(keyword)}&hl=th`, guestPath:GUEST_PATH },
+    opts:   { exploreQuery:`date=${encodeURIComponent(time)}&geo=${state.geo}&q=${encodeURIComponent(keyword)}&hl=th`, guestPath:GUEST_PATH },
   };
 }
 let widgetGen = 0;
