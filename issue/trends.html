@@ -111,6 +111,13 @@
   .tbsum { color:var(--muted); font-size:0.78rem; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tbbody { display:flex; flex-direction:column; gap:14px; margin-top:14px; }
   .tbbody[hidden] { display:none; }
+  /* เดสก์ท็อป: กางไว้ตลอด ไม่ต้องมีปุ่มกด (เจ้าของสั่ง 11 ส.ค. 2026)
+     ที่ย่อเก็บเป็นเรื่องของจอแคบล้วนๆ — บนจอกว้างมีที่เหลือเฟือ กดเปิดทุกครั้งมีแต่รำคาญ
+     ⚠️ ต้องทับ [hidden] ด้วย ไม่งั้น UA stylesheet บังคับ display:none ชนะ */
+  @media (min-width:861px){
+    .tbtoggle { display:none; }
+    .tbbody, .tbbody[hidden] { display:flex; margin-top:0; }
+  }
   .grp-editor { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
   .grp-name { font-weight:700; font-size:1rem; border:none; border-bottom:2px solid transparent; background:transparent; color:var(--ink); min-width:120px; max-width:240px; font-family:inherit; padding:2px 0; }
   .grp-name:focus-visible { outline:none; border-bottom-color:var(--accent); }

@@ -16,6 +16,10 @@
  *   cleanupDupes()      ลบข่าวซ้ำ เก็บแถวบนสุดของแต่ละข่าวไว้
  *   fixClippedTitles()  ซ่อมพาดหัวที่ถูกตัดสั้น (ลงท้ายด้วย "…") — รันซ้ำได้
  *
+ * ดึงข่าวย้อนหลังจาก GDELT (คลังข่าวเปิด ฟรี ไม่ต้องมี key)
+ *   probeGdelt()        ลองดูว่าย้อนได้ถึงไหน ได้กี่ข่าว — อ่านอย่างเดียว ไม่เขียนชีต
+ *   backfillGdelt()     ดึงของจริงลงชีต (ตั้งช่วงเวลาที่ GD_FROM / GD_TO)
+ *
  * ⚠️ ข่าวในระบบเก็บไว้ 90 วัน — ถ้าตัวตั้งเวลาหยุดวิ่งเกิน 90 วัน ข่าวช่วงที่ขาดจะหายถาวร
  *    เช็คได้จากคอลัมน์วันที่ในชีต ว่ายังเดินต่อเนื่องอยู่ไหม
  */
@@ -26,6 +30,28 @@ var TOPICS = "cpf,blackchin,pm25,alien";
 var TAB = "ข่าว";
 var DAYS = 7;   // ดึงย้อนหลังกี่วันต่อรอบ — เผื่อไว้เกินความถี่ที่ตั้ง เผื่อรอบไหนไม่วิ่ง
 var HEAD = ["สำนักข่าว", "พาดหัว", "link", "วันที่", "หมวด"];
+
+// ───────── ข่าวย้อนหลังจาก GDELT ─────────
+// GDELT = คลังข่าวออนไลน์ทั่วโลกแบบเปิด ใช้ฟรี ไม่ต้องขอ key
+//
+// ⚠️ ยังไม่เคยยิงจริงจากเครื่องที่เขียนโค้ดนี้ (ยิงเน็ตออกไม่ได้) — ให้กด probeGdelt() ก่อนเสมอ
+//    มันจะบอกเองว่าย้อนได้ถึงปีไหน แต่ละหัวข้อได้กี่ข่าว โดยไม่แตะชีตเลย
+//
+// ⚠️ GDELT ขอให้ยิงไม่ถี่กว่า 1 ครั้งต่อ 5 วินาที — โค้ดหน่วงให้แล้ว อย่าลดลง
+var GD_API = "https://api.gdeltproject.org/api/v2/doc/doc";
+var GD_WAIT_MS = 5000;
+var GD_MAX = 250;          // เพดานของ GDELT ต่อ 1 ครั้ง
+var GD_FROM = "2025-01-01"; // backfillGdelt ดึงตั้งแต่วันนี้
+var GD_TO   = "";           // ว่าง = ถึงวันนี้
+
+// หัวข้อ → คำค้นแบบ GDELT · ชื่อหัวข้อต้องสะกดให้ตรงกับที่เซิร์ฟเวอร์ใช้ ไม่งั้นตัวกรองในชีตจะแยกเป็นคนละหมวด
+// (ใช้คำค้นเป็นตัวกำหนดหมวดเลย จะได้ไม่ต้องมีตารางคำซ้ำอีกที่หนึ่งให้ลืมอัปเดต)
+var GD_QUERIES = {
+  "CPF": '("ซีพีเอฟ" OR "CPF" OR "เจริญโภคภัณฑ์อาหาร")',
+  "ปลาหมอคางดำ": '("ปลาหมอคางดำ" OR "หมอคางดำ" OR "blackchin tilapia")',
+  "PM2.5": '("PM2.5" OR "ฝุ่นพิษ" OR "ฝุ่นละอองขนาดเล็ก")',
+  "Alien species": '("ชนิดพันธุ์ต่างถิ่น" OR "สัตว์ต่างถิ่น" OR "เอเลี่ยนสปีชีส์")'
+};
 
 function syncNews() {
   var sheet = getSheet_();
@@ -223,6 +249,134 @@ function isClipped_(s) {
   if (!t) return false;
   if (/(?:…|\.\.\.)$/.test(t)) return true;
   return t.length >= 80 && !/[.!?"”』】]$/.test(t);
+}
+
+/* ═══════════ ข่าวย้อนหลังจาก GDELT ═══════════ */
+
+/**
+ * ลองดูก่อนว่า GDELT ย้อนได้ถึงไหน — อ่านอย่างเดียว ไม่เขียนอะไรลงชีตเลย
+ * เลือกฟังก์ชันนี้แล้วกด Run แล้วเปิด "บันทึกการดำเนินการ" (Execution log) อ่านผล
+ *
+ * ยิงถามทีละปี ปีละ 1 ครั้งต่อหัวข้อ แล้วรายงานว่าปีไหนมีข่าว ปีไหนไม่มี
+ */
+function probeGdelt() {
+  var years = [2026, 2025, 2024, 2023, 2022];
+  var out = ["ผลตรวจ GDELT — ตัวเลขคือจำนวนข่าวที่ขอมาได้ (เพดาน " + GD_MAX + " ต่อครั้ง)"];
+  for (var topic in GD_QUERIES) {
+    var line = [];
+    for (var i = 0; i < years.length; i++) {
+      var y = years[i];
+      var res = gdeltFetch_(GD_QUERIES[topic], y + "-01-01", y + "-12-31");
+      line.push(y + ": " + (res.err ? "ผิดพลาด (" + res.err + ")" : res.articles.length));
+      Utilities.sleep(GD_WAIT_MS);
+    }
+    out.push("• " + topic + " → " + line.join(" · "));
+  }
+  out.push("");
+  out.push("อ่านยังไง: ปีที่ได้เลข 0 ทุกหัวข้อ = ย้อนไม่ถึงปีนั้น");
+  out.push("ถ้าได้ " + GD_MAX + " เต็มเพดาน = ยังมีมากกว่านั้น ต้องแบ่งดึงทีละเดือน (backfillGdelt ทำให้แล้ว)");
+  var msg = out.join("\n");
+  Logger.log(msg);
+  SpreadsheetApp.getActiveSpreadsheet().toast("ตรวจเสร็จแล้ว — เปิด Execution log อ่านผล", "GDELT", 10);
+  return msg;
+}
+
+/**
+ * ดึงข่าวย้อนหลังจาก GDELT ลงชีตจริง — ตั้งช่วงเวลาที่ GD_FROM / GD_TO ด้านบน
+ * แบ่งดึงทีละเดือนต่อหัวข้อ เพราะ GDELT ให้ครั้งละไม่เกิน 250 ข่าว
+ *
+ * ⚠️ ใช้ตัวกันข่าวซ้ำชุดเดียวกับ syncNews — ข่าวที่มีอยู่แล้วจะไม่ถูกเพิ่มซ้ำ
+ * ⚠️ ช้า (หน่วง 5 วินาทีต่อครั้งตามที่ GDELT ขอ) · Apps Script จำกัด 6 นาทีต่อรอบ
+ *    ถ้าไม่จบใน 1 รอบ มันจะบอกให้กด Run ซ้ำ แล้วเลื่อน GD_FROM ตามที่ค้างไว้
+ */
+function backfillGdelt() {
+  var sheet = getSheet_();
+  var seen = seenLinks_(sheet);
+  var months = monthRanges_(GD_FROM, GD_TO || ymd_(new Date()));
+  var started = Date.now();
+  var rows = [], calls = 0, stoppedAt = "";
+
+  for (var m = 0; m < months.length && !stoppedAt; m++) {
+    for (var topic in GD_QUERIES) {
+      // Apps Script ตัดการทำงานที่ 6 นาที — เผื่อเวลาไว้เขียนชีตก่อนโดนตัด
+      if (Date.now() - started > 4.5 * 60 * 1000) { stoppedAt = months[m].from; break; }
+      var res = gdeltFetch_(GD_QUERIES[topic], months[m].from, months[m].to);
+      calls++;
+      if (res.err) { Logger.log("ข้าม " + topic + " " + months[m].from + " — " + res.err); }
+      for (var i = 0; i < res.articles.length; i++) {
+        var a = res.articles[i];
+        var link = String(a.url || "");
+        if (!link) continue;
+        var title = String(a.title || "").replace(/\s+/g, " ").trim();
+        if (!title) continue;
+        var outlet = String(a.domain || "").replace(/^www\./, "");
+        var byLink = normLink_(link), byText = dupKey_(outlet, title);
+        if (seen[byLink] || seen[byText]) continue;
+        seen[byLink] = true;
+        seen[byText] = true;
+        rows.push([outlet, title, link, gdeltDate_(a.seendate), topic]);
+      }
+      Utilities.sleep(GD_WAIT_MS);
+    }
+  }
+
+  if (rows.length) {
+    // เรียงเก่า → ใหม่ แล้วต่อท้ายชีต (รูปแบบเดียวกับ syncNews)
+    rows.sort(function (a, b) { return a[3] < b[3] ? -1 : 1; });
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, HEAD.length).setValues(rows);
+  }
+  var msg = "GDELT: ยิง " + calls + " ครั้ง · เพิ่มลงชีต " + rows.length + " ข่าว" +
+    (stoppedAt ? "\n⏱ หมดเวลาของ Apps Script — ยังไม่จบ ให้แก้ GD_FROM เป็น " + stoppedAt + " แล้วกด Run ซ้ำ" : "\n✅ ครบช่วงที่ตั้งไว้แล้ว");
+  Logger.log(msg);
+  SpreadsheetApp.getActiveSpreadsheet().toast(msg, "GDELT", 15);
+  return msg;
+}
+
+/** ยิงถาม GDELT 1 ครั้ง — คืน {articles:[], err:""} ไม่ throw เพื่อให้รอบอื่นไปต่อได้ */
+function gdeltFetch_(query, from, to) {
+  var url = GD_API +
+    "?query=" + encodeURIComponent(query) +
+    "&mode=artlist&format=json&sort=datedesc" +
+    "&maxrecords=" + GD_MAX +
+    "&startdatetime=" + from.replace(/-/g, "") + "000000" +
+    "&enddatetime=" + to.replace(/-/g, "") + "235959";
+  try {
+    var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return { articles: [], err: "HTTP " + res.getResponseCode() };
+    var txt = res.getContentText();
+    // GDELT ตอบเป็นข้อความธรรมดาเวลาคำค้นผิดรูป ไม่ใช่ JSON — อย่าให้ทั้งรอบล้มเพราะอันเดียว
+    if (txt.charAt(0) !== "{") return { articles: [], err: txt.slice(0, 80) };
+    var j = JSON.parse(txt);
+    return { articles: j.articles || [], err: "" };
+  } catch (e) {
+    return { articles: [], err: String(e).slice(0, 80) };
+  }
+}
+
+/** "20260807T024500Z" → "2026-08-07 09:45" (เวลาไทย ให้ตรงรูปแบบกับที่เซิร์ฟเวอร์เขียน) */
+function gdeltDate_(s) {
+  var m = String(s || "").match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (!m) return "";
+  var t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) + 7 * 3600000;
+  var d = new Date(t), p = function (n) { return String(n).padStart(2, "0"); };
+  return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate()) +
+    " " + p(d.getUTCHours()) + ":" + p(d.getUTCMinutes());
+}
+
+/** แบ่งช่วงวันที่เป็นรายเดือน — GDELT ให้ครั้งละ 250 ข่าว ขอทีเดียวทั้งปีจะได้ไม่ครบ */
+function monthRanges_(from, to) {
+  var out = [], s = new Date(from + "T00:00:00Z"), e = new Date(to + "T00:00:00Z");
+  while (s <= e) {
+    var last = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + 1, 0));
+    out.push({ from: ymd_(s), to: ymd_(last < e ? last : e) });
+    s = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + 1, 1));
+  }
+  return out;
+}
+
+function ymd_(d) {
+  var p = function (n) { return String(n).padStart(2, "0"); };
+  return d.getUTCFullYear() + "-" + p(d.getUTCMonth() + 1) + "-" + p(d.getUTCDate());
 }
 
 /**
