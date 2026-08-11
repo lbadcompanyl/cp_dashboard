@@ -63,6 +63,11 @@
     }
     .card--pconly .ext-badge { top:auto; }
   }
+  /* ไอคอนคู่ (TikTok Idea) — โน้ตดนตรีบอกว่าเป็น TikTok + หลอดไฟบอกว่าเป็นไอเดียคอนเทนต์
+     ใช้ 2 ตัวซ้อนแทนการวางเรียงกัน ไม่งั้นกล่องไอคอน 52px จะแคบจนตัวอักษรหด */
+  .card .icon--duo { font-size:24px; }
+  .card .icon--duo .sub { position:absolute; right:-7px; bottom:-7px; font-size:20px;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
   .card .icon .wip-corner { position:absolute; right:-6px; bottom:-6px; font-size:18px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
 
   /* under-construction cards */
@@ -177,7 +182,7 @@
     <a class="card ext card--pconly" href="https://ads.tiktok.com/creative/creativeCenter/trends/video?region=TH&amp;period=7" target="_blank" rel="noopener">
       <span class="pconly">🖥️ กรุณาดูผ่าน PC</span>
       <span class="ext-badge">↗ เว็บภายนอก</span>
-      <div class="icon">💡</div>
+      <div class="icon icon--duo">🎵<span class="sub">💡</span></div>
       <span class="tag">TIKTOK</span>
       <h2>TikTok Idea</h2>
       <p>คลิปมาแรงบน TikTok ประเทศไทย — ดูว่าคนทำคอนเทนต์แบบไหนแล้วปัง</p>
