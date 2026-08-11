@@ -175,7 +175,10 @@ function fixClippedTitles() {
   var rows = JSON.parse(res.getContentText()).rows || [];
   for (var i = 0; i < rows.length; i++) {
     var t = String(rows[i].title || "").replace(/\s+/g, " ").trim();
-    if (!t || isClipped_(t)) continue; // ตัวที่ยังถูกตัดอยู่ ไม่ช่วยอะไร
+    // ⚠️ ตรงนี้ต้องเช็คแบบเข้ม (เฉพาะที่ลงท้ายด้วยจุดไข่ปลาจริงๆ) ห้ามใช้ isClipped_
+    // ที่เดาจากความยาว — ไม่งั้นพาดหัวตัวเต็มที่ยาวจะถูกมองว่า "ยังถูกตัด" แล้วโดนคัดทิ้ง
+    // กลายเป็นไม่มีตัวเต็มเหลือให้เอามาซ่อมเลยสักใบ
+    if (!t || /(?:…|\.\.\.)$/.test(t)) continue;
     var o = String(rows[i].outlet || "").trim().toLowerCase();
     (byOutlet[o] = byOutlet[o] || []).push({ title: t, link: String(rows[i].link || "") });
   }
@@ -190,6 +193,9 @@ function fixClippedTitles() {
     var cands = byOutlet[String(vals[r][0] || "").trim().toLowerCase()] || [];
     for (var c = 0; c < cands.length; c++) {
       if (cands[c].title.indexOf(head) !== 0) continue; // ต้องขึ้นต้นตรงกันเป๊ะ
+      // ต้องยาวกว่าของเดิมจริงถึงจะทับ — ไม่งั้นแถวที่ซ่อมไปแล้วจะถูกเขียนทับด้วยค่าเดิม
+      // ทุกครั้งที่รัน แล้วรายงานว่า "ซ่อมได้ n แถว" ทั้งที่ไม่มีอะไรเปลี่ยน
+      if (cands[c].title.length <= cur.length) continue;
       vals[r][1] = cands[c].title;
       if (cands[c].link) vals[r][2] = cands[c].link; // เก็บลิงก์ข่าวจริงแทนลิงก์ Bing ไปด้วย
       fixed++;
@@ -206,9 +212,17 @@ function fixClippedTitles() {
   SpreadsheetApp.getActiveSpreadsheet().toast("ซ่อมพาดหัวได้ " + fixed + " แถว");
 }
 
-/** พาดหัวที่ถูกตัดจะลงท้ายด้วย … หรือ ... */
+/**
+ * พาดหัวที่น่าจะถูกตัด
+ * ⚠️ บางฟีดตัดโดยไม่ใส่ "…" ด้วย (จบห้วนๆ กลางประโยค) ดูแค่จุดไข่ปลาจึงไม่พอ
+ *    พาดหัวที่ยาวใกล้เพดานของฟีดจึงนับว่าน่าสงสัยไว้ก่อน — เดาเกินไปไม่เสียหาย
+ *    เพราะจะทับได้ก็ต่อเมื่อเจอตัวที่ยาวกว่าและขึ้นต้นตรงกันเท่านั้น
+ */
 function isClipped_(s) {
-  return /(?:…|\.\.\.)\s*$/.test(String(s || "").trim());
+  var t = String(s || "").replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  if (/(?:…|\.\.\.)$/.test(t)) return true;
+  return t.length >= 80 && !/[.!?"”』】]$/.test(t);
 }
 
 /**

@@ -9,7 +9,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "54"; // bump: เติมพาดหัวที่ถูกตัดให้ของเก่าใน KV ด้วย (เดิมแตะได้แต่ของสด)
+const CACHE_VER = "55"; // bump: จับพาดหัวที่ถูกตัดโดยไม่มี … ด้วย + ธง tfix กันเช็คซ้ำ
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -693,6 +693,25 @@ async function bodyHasKeep(cache, link, keep) {
 const CLIPPED_RE = /(?:…|\.\.\.)\s*$/;
 const stripMarks = (s) => String(s || "").replace(/\[\[\/?hl\]\]/g, "").trim();
 const TITLE_FETCH_MAX = 20; // ต่อ 1 request — กันชนโควตา subrequest ของ Cloudflare (เพดาน 50)
+// ⚠️ บางฟีด "ตัดพาดหัวโดยไม่ใส่ …" ด้วย (เจอจริง: "…ดันกระทรวง อว.เป็นกลไกหลักด้าน" จบห้วนๆ)
+// ดูแค่จุดไข่ปลาจึงไม่พอ — พาดหัวที่ยาวใกล้เพดานของฟีดให้ถือว่า "น่าสงสัย" ไว้ก่อน
+//
+// เดาเกินไปไม่เสียหาย เพราะด่านตอนรับค่ากลับเข้มอยู่แล้ว (ต้องยาวกว่าเดิม + ขึ้นต้นเหมือนกัน)
+// ถ้าของเดิมถูกอยู่แล้วก็แค่ไม่มีอะไรเปลี่ยน · เสียแค่การยิง 1 ครั้ง ซึ่งจ่ายครั้งเดียวต่อข่าว
+const CLIP_LEN = 80;
+function looksClipped(title) {
+  const t = stripMarks(title);
+  if (!t) return false;
+  if (CLIPPED_RE.test(t)) return true;
+  return t.length >= CLIP_LEN && !/[.!?"”』】]$/.test(t);
+}
+// ตัดชื่อเว็บที่ต่อท้ายพาดหัว ("พาดหัว | เดลินิวส์" · "พาดหัว - INN News")
+// ไม่งั้นจะเอาชื่อเว็บไปแปะในชีตให้เจ้าของอ่าน
+function trimSiteSuffix(full, head) {
+  const m = String(full).match(/^([\s\S]+?)\s*[|–—-]\s*([^|–—-]{2,25})$/);
+  if (!m) return full;
+  return m[1].length >= Math.max(head.length, 20) ? m[1].trim() : full;
+}
 function decodeEntities(s) {
   return String(s || "")
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
@@ -721,7 +740,10 @@ async function fillClippedTitles(cache, sources, archived, diag, allowFetch) {
     for (const it of (list || [])) {
       if (!it || !it.link || seen.has(it)) continue;
       seen.add(it);
-      if (CLIPPED_RE.test(stripMarks(it.title || ""))) todo.push(it);
+      // it.tfix = เคยไปอ่านพาดหัวจากหน้าข่าวจริงแล้ว (ธงนี้ถูกเก็บลง KV ไปด้วย)
+      // ถ้าไม่มีธงนี้ ข่าวที่ "เช็คแล้วว่าพาดหัวถูกอยู่แล้ว" จะถูกหยิบมาเช็คซ้ำทุกรอบ
+      // จนกินโควตา 20 ใบต่อรอบไปหมด แล้วข่าวที่ยังขาดจริงๆ จะไม่มีวันได้คิว
+      if (!it.tfix && looksClipped(it.title)) todo.push(it);
     }
   }
   diag.clipped = todo.length;
@@ -748,11 +770,12 @@ async function fillClippedTitles(cache, sources, archived, diag, allowFetch) {
   });
   let fixed = 0;
   pick.forEach((it, i) => {
-    const full = got[i];
+    it.tfix = 1; // เช็คแล้ว — ไม่ว่าจะได้ของเต็มหรือไม่ ก็ไม่ต้องมาเช็คซ้ำอีก
     const bare = stripMarks(it.title || "");
+    const head = bare.replace(CLIPPED_RE, "").trim().slice(0, 12);
+    const full = trimSiteSuffix(String(got[i] || "").trim(), head);
     // ต้องยาวกว่าเดิมจริง และต้องขึ้นต้นเหมือนกัน ไม่งั้นแปลว่าไปเจอชื่อเว็บ ไม่ใช่พาดหัว
     if (!full || CLIPPED_RE.test(full) || full.length <= bare.length) return;
-    const head = bare.replace(CLIPPED_RE, "").trim().slice(0, 12);
     if (head && !full.includes(head)) return;
     it.title = full;
     fixed++;
