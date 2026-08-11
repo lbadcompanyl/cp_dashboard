@@ -629,7 +629,7 @@ env ที่ต้องใส่ (Cloudflare **Secret** เท่านั้�
 
 | ประเภท | ตัวอย่างที่เจอจริง | ลิสต์ |
 |---|---|---|
-| ประกาศงาน | jobsdb · jooble · jobbkk | `JOB_HOSTS` · `JOB_RE` |
+| ประกาศงาน | jobsdb · jooble · jobbkk · **monster.co.th** (ประกาศงานภาษาอังกฤษ) | `JOB_HOSTS` · `JOB_RE` |
 | อสังหา/ให้เช่า | dotproperty · ddproperty · livinginsider | `PROP_HOSTS` · `PROP_RE` |
 | หน้าขายสินค้า/บริการ | epower (เครื่องกรอง/เซนเซอร์วัดฝุ่น) | `VENDOR_RE` |
 | โฆษณาแฝงในข่าว | ครีม/เซรั่ม "หาซื้อได้ที่เซเว่น" (ข่าวสด) | `AD_PRODUCT_RE` **และ** `AD_PITCH_RE` |
