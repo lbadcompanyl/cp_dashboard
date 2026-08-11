@@ -48,13 +48,20 @@
   .card:hover { border-color:var(--accent); transform:translateY(-3px); box-shadow:0 12px 30px rgba(0,0,0,.18); }
   .card .icon { width:52px; height:52px; border-radius:13px; display:grid; place-items:center; font-size:26px; background:var(--accent-soft); position:relative; }
   /* ป้าย "กรุณาดูผ่าน PC" — โผล่เฉพาะจอแคบ เพราะหน้าของ TikTok เองใช้บนมือถือแล้วอ่านไม่ออก
-     ติดไว้กับไอคอนของการ์ด ไม่ใช่ในลิสต์ข้างล่าง จะได้เห็นตั้งแต่ยังไม่อ่านรายละเอียด */
-  .card .icon .pconly { display:none; }
+     เจ้าของสั่งให้ครอบ 20% ของการ์ด (11 ส.ค. 2026) — เป็นแถบเต็มความกว้างพาดหัวการ์ด
+     ⚠️ ความสูง 20% คิดจาก "ความสูงการ์ด" จึงต้องเป็นลูกของ .card ไม่ใช่ของ .icon
+     และการ์ดต้องเผื่อ padding-top เท่าแถบ ไม่งั้นแถบจะทับไอคอนกับชื่อการ์ด */
+  .card .pconly { display:none; }
   @media (max-width:700px){
-    .card .icon .pconly { display:block; position:absolute; left:50%; top:calc(100% + 6px); transform:translateX(-50%);
-      white-space:nowrap; font-size:0.62rem; font-weight:700; line-height:1.2; padding:3px 8px; border-radius:999px;
-      color:#b45309; background:rgba(245,158,11,.16); border:1px solid rgba(245,158,11,.45); }
-    .card .icon { margin-bottom:22px; }
+    .card--pconly { padding-top:calc(20% + 26px); }
+    .card .pconly {
+      display:flex; align-items:center; justify-content:center; gap:7px;
+      position:absolute; left:0; right:0; top:0; height:20%; min-height:44px;
+      border-radius:var(--radius) var(--radius) 0 0;
+      font-size:1.02rem; font-weight:800; letter-spacing:.01em; text-align:center;
+      color:#7c2d12; background:#fbbf24; border-bottom:1px solid rgba(120,53,15,.35);
+    }
+    .card--pconly .ext-badge { top:auto; }
   }
   .card .icon .wip-corner { position:absolute; right:-6px; bottom:-6px; font-size:18px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
 
@@ -152,9 +159,10 @@
       <span class="go">เปิดแดชบอร์ด →</span>
     </a>
 
-    <a class="card ext" href="https://ads.tiktok.com/creative/creativeCenter/trends/hashtag?region=TH&amp;period=7" target="_blank" rel="noopener">
+    <a class="card ext card--pconly" href="https://ads.tiktok.com/creative/creativeCenter/trends/hashtag?region=TH&amp;period=7" target="_blank" rel="noopener">
+      <span class="pconly">🖥️ กรุณาดูผ่าน PC</span>
       <span class="ext-badge">↗ เว็บภายนอก</span>
-      <div class="icon">🎵<span class="pconly">กรุณาดูผ่าน PC</span></div>
+      <div class="icon">🎵</div>
       <span class="tag">TIKTOK</span>
       <h2>TikTok Trend</h2>
       <p>แฮชแท็กมาแรงบน TikTok ประเทศไทย — เปิดตรงไปที่ TikTok Creative Center</p>
@@ -166,9 +174,10 @@
       <span class="go">เปิด Creative Center ↗</span>
     </a>
 
-    <a class="card ext" href="https://ads.tiktok.com/creative/creativeCenter/trends/video?region=TH&amp;period=7" target="_blank" rel="noopener">
+    <a class="card ext card--pconly" href="https://ads.tiktok.com/creative/creativeCenter/trends/video?region=TH&amp;period=7" target="_blank" rel="noopener">
+      <span class="pconly">🖥️ กรุณาดูผ่าน PC</span>
       <span class="ext-badge">↗ เว็บภายนอก</span>
-      <div class="icon">💡<span class="pconly">กรุณาดูผ่าน PC</span></div>
+      <div class="icon">💡</div>
       <span class="tag">TIKTOK</span>
       <h2>TikTok Idea</h2>
       <p>คลิปมาแรงบน TikTok ประเทศไทย — ดูว่าคนทำคอนเทนต์แบบไหนแล้วปัง</p>
