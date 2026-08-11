@@ -651,7 +651,7 @@ env ที่ต้องใส่ (Cloudflare **Secret** เท่านั้�
 | อสังหา/ให้เช่า | dotproperty · ddproperty · livinginsider | `PROP_HOSTS` · `PROP_RE` |
 | หน้าขายสินค้า/บริการ | epower (เครื่องกรอง/เซนเซอร์วัดฝุ่น) | `VENDOR_RE` |
 | โฆษณาแฝงในข่าว | ครีม/เซรั่ม "หาซื้อได้ที่เซเว่น" (ข่าวสด) | `AD_PRODUCT_RE` **และ** `AD_PITCH_RE` |
-| เว็บแจกข่าว PR | newswit · thaipr · prnewswire | `PR_HOSTS` |
+| เว็บแจกข่าว PR | newswit · thaipr · prnewswire — **ตัดเฉพาะใบที่ชื่อเครือ CP ไม่อยู่ในพาดหัว** (เคยตัดทั้งเว็บ แล้วข่าวจริงของ ซีพี แอ็กซ์ตร้า/Makro หายไปด้วย) | `PR_HOSTS` + `realCP(title)` |
 | ร้านค้าออนไลน์ · รายงานประจำวัน · แกลเลอรีรูป · ข่าว PR ราชการ | (ของเดิม) | `SHOP_*` · `DAILY_RE` · `GALLERY_RE` · `PR_RE` |
 
 > ⚠️ **`verifyAlertItems()` ทำงาน "ก่อน" `mergeArchives()`** — ของเก่าที่เก็บไว้ใน KV ตอนยังไม่มีตัวกรอง

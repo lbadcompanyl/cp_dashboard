@@ -9,7 +9,7 @@ import { readAllow, allowKey } from "../allow.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "53"; // bump: ข่าวที่กด ↩ เอากลับ ต้องไม่โดนตัดอีก
+const CACHE_VER = "54"; // bump: เว็บแจกข่าว PR ตัดเฉพาะใบที่ไม่มีชื่อเครือ CP ในพาดหัว
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -584,7 +584,13 @@ function noiseReason(it, title) {
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost";
   if (PR_RE.test(title)) return "pr";
-  if (hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h))) return "pr";
+  // เว็บรับแจกข่าวประชาสัมพันธ์ — ตัดเฉพาะใบที่ "ชื่อเครือ CP ไม่ได้อยู่ในพาดหัว"
+  //
+  // ⚠️ เคยตัดทั้งเว็บ แล้วข่าวจริงของเครือหายไปด้วย (ซีพี แอ็กซ์ตร้า แจ้งผลประกอบการ ·
+  // Makro ครบรอบ 37 ปี) — บริษัทใหญ่ส่งข่าวของตัวเองผ่านเว็บพวกนี้เป็นปกติ
+  // ที่ไม่เอาคือใบที่ชื่อเครือโผล่แค่ในเนื้อ เช่น รายชื่อผู้รับรางวัลท้ายข่าว
+  // (เจอจริง: newswit "นาคราชอวอร์ด" พาดหัวเป็นชื่อดารา ซีพี ออลล์ อยู่ท้ายข่าว)
+  if (hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && !realCP(title)) return "pr";
   const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
   const text = title + " " + snip;
   if (DAILY_RE.test(text)) return "daily";
