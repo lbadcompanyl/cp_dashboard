@@ -7,7 +7,8 @@ import { fetchTrendingNow } from "./_lib/trends.js";
 
 const VALID_HOURS = [4, 24, 48, 168];
 // หมวดหมู่แบบ Google Trends "Trending now" (0 = ทุกหมวด) — ต้องตรงกับ dropdown ใน trend/index.html
-const VALID_CATS = [0, 3, 4, 5, 6, 7, 10, 14, 15, 16, 17, 18, 19];
+// 0 = ทุกหมวด · 1-19 = หมวดของ Google เรียงตามตัวอักษรอังกฤษ (ดูตาราง TREND_CATS ใน trend/app.js)
+const VALID_CATS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
 
 export async function onRequest(context) {
   const url = new URL(context.request.url);
