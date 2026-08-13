@@ -97,7 +97,43 @@ function sortNewestFirst() {
   var sheet = getSheet_();
   var last = sheet.getLastRow();
   if (last < 3) return;
-  sheet.getRange(2, 1, last - 1, HEAD.length).sort({ column: 4, ascending: false });
+  var rng = sheet.getRange(2, 1, last - 1, HEAD.length);
+  // ⚠️ ห้ามใช้ Range.sort() ตรงๆ — คอลัมน์วันที่ในชีตปนกันทั้ง Date จริงกับข้อความ
+  // (แถวเก่าที่ Sheets แปลงให้ vs แถวใหม่ที่เพิ่งเขียนเป็นสตริง) แล้วมันจะแยกเป็น 2 กอง
+  // เรียงเองใน JS ด้วยเวลาจริงจึงแน่นอนกว่า
+  var rows = rng.getValues();
+  rows.sort(function (a, b) { return cellTime_(b[3]) - cellTime_(a[3]); });
+  rng.setValues(rows);
+}
+
+/**
+ * ค่าในคอลัมน์วันที่อาจเป็น Date หรือข้อความ ("2026-08-13 06:22") — คืนเป็นตัวเลขเทียบกันได้
+ * ⚠️ เคยพลาดมาแล้ว: เอา String(Date) มาเรียงแบบตัวอักษร ได้ "Wed Aug 12" > "Thu Aug 13"
+ *    แล้ว checkStatus() รายงานว่า "ชีตเรียงถูกแล้ว" ทั้งที่ของใหม่ตกอยู่ก้นชีต
+ */
+function cellTime_(v) {
+  if (v && typeof v.getTime === "function") return v.getTime(); // Date (ดูที่ความสามารถ ไม่ใช่ instanceof)
+  var s = String(v || "").trim();
+  if (!s) return 0;
+  var t = Date.parse(s.replace(" ", "T")); // "2026-08-13 06:22"
+  if (isNaN(t)) t = Date.parse(s);         // "Wed Aug 13 2026 06:22:00 GMT+0700"
+  return isNaN(t) ? 0 : t;
+}
+
+/**
+ * แสดงวันที่ให้อ่านง่าย — รับค่าดิบจากเซลล์
+ * ⚠️ ห้ามบวก 7 ชั่วโมงเอง: ถ้าเป็นข้อความ มันเป็นเวลาไทยอยู่แล้ว (syncNews เขียนแบบนั้น)
+ *    ถ้าเป็น Date ก็ใช้ตัวอ่านแบบ local ซึ่ง Apps Script ตั้งเป็นเวลาของชีตให้อยู่แล้ว
+ *    บวกเองเมื่อไหร่ = เวลาเพี้ยนไป 7 ชม. ทั้งที่ข้อมูลถูก
+ */
+function fmtTime_(v) {
+  if (v && typeof v.getTime === "function") {
+    var p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return v.getFullYear() + "-" + p(v.getMonth() + 1) + "-" + p(v.getDate()) +
+           " " + p(v.getHours()) + ":" + p(v.getMinutes());
+  }
+  var s = String(v || "").trim();
+  return s || "(ว่าง)";
 }
 
 /**
@@ -116,15 +152,18 @@ function checkStatus() {
   var out = ["แถวข้อมูลในชีต: " + Math.max(0, last - 1)];
 
   if (last > 1) {
-    var dates = sheet.getRange(2, 4, last - 1, 1).getValues()
-      .map(function (r) { return String(r[0] || "").trim(); }).filter(Boolean).sort();
-    var newest = dates[dates.length - 1] || "(ไม่มี)";
-    var top = String(sheet.getRange(2, 4).getValue() || "").trim();
-    var bottom = String(sheet.getRange(last, 4).getValue() || "").trim();
-    out.push("วันที่ใหม่สุดที่มีในชีต: " + newest);
-    out.push("แถวบนสุด (แถว 2): " + top);
-    out.push("แถวล่างสุด (แถว " + last + "): " + bottom);
-    out.push(newest !== top
+    // ⚠️ เทียบเป็น "เวลา" ไม่ใช่ "ข้อความ" — ดู cellTime_
+    var col = sheet.getRange(2, 4, last - 1, 1).getValues().map(function (r) { return r[0]; });
+    var newestVal = col[0], newest = cellTime_(col[0]);
+    for (var i = 1; i < col.length; i++) {
+      var t = cellTime_(col[i]);
+      if (t > newest) { newest = t; newestVal = col[i]; }
+    }
+    var top = cellTime_(col[0]);
+    out.push("วันที่ใหม่สุดที่มีในชีต: " + fmtTime_(newestVal));
+    out.push("แถวบนสุด (แถว 2): " + fmtTime_(col[0]));
+    out.push("แถวล่างสุด (แถว " + last + "): " + fmtTime_(col[col.length - 1]));
+    out.push(newest > top
       ? "→ ของใหม่ไม่ได้อยู่บนสุด ชีตยังเรียงไม่ถูก — กด Run sortNewestFirst() หนึ่งครั้ง"
       : "→ ชีตเรียงถูกแล้ว ของใหม่อยู่บนสุด");
   }
