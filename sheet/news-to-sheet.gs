@@ -26,6 +26,7 @@
 
 // ⚠️ ใช้ของ production เท่านั้น — ถ้าอยากลองก่อนให้เปลี่ยนเป็น dev.cp-dashboard-680.pages.dev
 var API = "https://cp-dashboard-680.pages.dev/api/trend/archive";
+var FEEDS = "https://cp-dashboard-680.pages.dev/api/trend/feeds";
 var TOPICS = "cpf,blackchin,pm25,alien";
 var TAB = "ข่าว";
 var DAYS = 7;   // ดึงย้อนหลังกี่วันต่อรอบ — เผื่อไว้เกินความถี่ที่ตั้ง เผื่อรอบไหนไม่วิ่ง
@@ -34,6 +35,8 @@ var HEAD = ["สำนักข่าว", "พาดหัว", "link", "วั
 function syncNews() {
   var sheet = getSheet_();
   var seen = seenLinks_(sheet);
+
+  warmArchive_(); // ⚠️ อ่านคำอธิบายที่ฟังก์ชัน — ถ้าไม่มีบรรทัดนี้ ข่าวบางวันจะหายไปเลย
 
   var res = UrlFetchApp.fetch(
     API + "?src=all&days=" + DAYS + "&topics=" + encodeURIComponent(TOPICS) + "&format=json",
@@ -94,6 +97,22 @@ function sortNewestFirst() {
   var last = sheet.getLastRow();
   if (last < 3) return;
   sheet.getRange(2, 1, last - 1, HEAD.length).sort({ column: 4, ascending: false });
+}
+
+/**
+ * แตะแดชบอร์ดให้เก็บข่าวรอบใหม่เข้าคลังก่อน แล้วค่อยมาดึง
+ *
+ * ⚠️ **คลังข่าวโตเฉพาะตอนมีคนเปิดแดชบอร์ด** — Cloudflare Pages ตั้ง cron ไม่ได้
+ * (Workers ทำได้ Pages ไม่ได้) คลังจึงถูกเขียนตอนมีคนขอ /api/trend/feeds เท่านั้น
+ * วันไหนไม่มีใครเปิดหน้าเว็บ ข่าววันนั้นจะไม่ถูกเก็บเลย และชีตก็ไม่มีอะไรให้ดึงตามไปด้วย
+ * → **ตัวตั้งเวลาของชีตนี้ทำหน้าที่ cron ให้ทั้งระบบ** ไม่ใช่แค่ดึงข่าวมาลงชีต
+ *
+ * เขียน KV เพิ่มแค่ตอน cache หมดอายุ (~1 ชม./ครั้ง = ไม่เกิน 24 ครั้ง/วัน)
+ * โควตาแผนฟรี 1,000 ครั้ง/วันที่ใช้ร่วมกันทั้งโปรเจกต์ จึงยังเหลือเฟือ
+ * ล้มก็ไม่เป็นไร — ข้ามไปดึงคลังเท่าที่มีตามปกติ
+ */
+function warmArchive_() {
+  try { UrlFetchApp.fetch(FEEDS, { muteHttpExceptions: true }); } catch (e) {}
 }
 
 /** สร้างแท็บ + หัวตารางถ้ายังไม่มี */
