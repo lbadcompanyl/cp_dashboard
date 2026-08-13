@@ -12,6 +12,7 @@
  *        ฟังก์ชัน: syncNews · แหล่งที่มา: ตามเวลา · ทุก 1 ชั่วโมง
  *
  * ฟังก์ชันซ่อมของเก่า (เลือกชื่อในกล่องข้างปุ่ม ▶ Run แล้วกด Run — ทำเมื่อจำเป็น)
+ *   checkStatus()       🔎 บอกว่าติดตรงไหน — ชีตมีถึงวันไหน · คลังมีถึงวันไหน · มีของใหม่กี่ใบ
  *   sortNewestFirst()   เรียงทั้งชีตใหม่→เก่าครั้งเดียว (ใช้ตอนของเก่ายังปนกันอยู่)
  *   cleanupNoTopic()    ลบแถวที่ไม่มีหมวด (หลุดเข้ามาตอนตัวกรองยังไม่ทำงาน)
  *   cleanupDupes()      ลบข่าวซ้ำ เก็บแถวบนสุดของแต่ละข่าวไว้
@@ -97,6 +98,64 @@ function sortNewestFirst() {
   var last = sheet.getLastRow();
   if (last < 3) return;
   sheet.getRange(2, 1, last - 1, HEAD.length).sort({ column: 4, ascending: false });
+}
+
+/**
+ * 🔎 ติดตรงไหน — เลือกฟังก์ชันนี้ในกล่องข้าง ▶ Run แล้วกด Run · อ่านผลที่ Execution log
+ *
+ * ตอบทีเดียว 3 คำถามที่เดาไม่ได้จากการเปิดชีตดูเฉยๆ:
+ *   1. ชีตมีข่าวถึงวันไหน  และ  แถวล่างสุดเป็นวันไหน   → รู้ว่าของใหม่ไปกองอยู่ก้นชีตหรือเปล่า
+ *   2. คลังข่าวฝั่งเซิร์ฟเวอร์มีถึงวันไหน               → รู้ว่าปัญหาอยู่ฝั่งชีตหรือฝั่งคลัง
+ *   3. รอบนี้มีข่าวที่ยังไม่อยู่ในชีตกี่ใบ              → รู้ว่า syncNews ควรเขียนอะไรไหม
+ *
+ * ไม่แตะชีตเลย อ่านอย่างเดียว รันกี่ครั้งก็ได้
+ */
+function checkStatus() {
+  var sheet = getSheet_();
+  var last = sheet.getLastRow();
+  var out = ["แถวข้อมูลในชีต: " + Math.max(0, last - 1)];
+
+  if (last > 1) {
+    var dates = sheet.getRange(2, 4, last - 1, 1).getValues()
+      .map(function (r) { return String(r[0] || "").trim(); }).filter(Boolean).sort();
+    var newest = dates[dates.length - 1] || "(ไม่มี)";
+    var top = String(sheet.getRange(2, 4).getValue() || "").trim();
+    var bottom = String(sheet.getRange(last, 4).getValue() || "").trim();
+    out.push("วันที่ใหม่สุดที่มีในชีต: " + newest);
+    out.push("แถวบนสุด (แถว 2): " + top);
+    out.push("แถวล่างสุด (แถว " + last + "): " + bottom);
+    out.push(newest !== top
+      ? "→ ของใหม่ไม่ได้อยู่บนสุด ชีตยังเรียงไม่ถูก — กด Run sortNewestFirst() หนึ่งครั้ง"
+      : "→ ชีตเรียงถูกแล้ว ของใหม่อยู่บนสุด");
+  }
+
+  var res = UrlFetchApp.fetch(
+    API + "?src=all&days=" + DAYS + "&topics=" + encodeURIComponent(TOPICS) + "&format=json",
+    { muteHttpExceptions: true }
+  );
+  var code = res.getResponseCode();
+  out.push("คลังข่าวตอบ: HTTP " + code);
+  if (code !== 200) {
+    out.push("→ ดึงคลังข่าวไม่สำเร็จ: " + res.getContentText().slice(0, 200));
+    console.log(out.join("\n"));
+    return;
+  }
+
+  var rows = JSON.parse(res.getContentText()).rows || [];
+  out.push("คลังข่าวส่งมา (ย้อนหลัง " + DAYS + " วัน): " + rows.length + " ใบ");
+  out.push("ใหม่สุดในคลัง: " + (rows.length ? rows[0].date : "(ไม่มีเลย)"));
+
+  var seen = seenLinks_(sheet);
+  var fresh = rows.filter(function (r) {
+    return r.link && !seen[normLink_(r.link)] && !seen[dupKey_(r.outlet, r.title)];
+  });
+  out.push("ที่ยังไม่มีในชีต: " + fresh.length + " ใบ");
+  out.push(fresh.length
+    ? "→ กด Run syncNews จะเขียนลงชีต " + fresh.length + " แถว (ปัญหาอยู่ที่การเขียน/การเรียง)"
+    : rows.length
+      ? "→ คลังข่าวไม่มีของใหม่เลย ปัญหาอยู่ฝั่งคลังข่าว ไม่ใช่ฝั่งชีต"
+      : "→ คลังข่าวว่างเปล่า — ไม่มีอะไรให้ดึงตั้งแต่ต้นทาง");
+  console.log(out.join("\n"));
 }
 
 /**
