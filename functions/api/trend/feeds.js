@@ -10,7 +10,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "63"; // bump: คอลัมน์ CP ไม่ตัดสินจากสรุปของฟีด (related news) แล้ว
+const CACHE_VER = "64"; // bump: ตัดหน้าสตรีมมิ่ง (netflix) + หน้าสินค้าสัตว์เลี้ยง
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -490,6 +490,16 @@ const SHOP_HOSTS = [
   "homepro.co", "thaiwatsadu", "dohome", "globalhouse", "boonthavorn", "index-living",
   // เว็บเกม/เว็บบอร์ดที่มีหน้าค้นหาในตัว — ไม่ใช่ข่าว (เจอจริง: "Card Search — OnPlay Arena")
   "onplay.in.th", "gamingdose", "playpark",
+  // ร้านสินค้าสัตว์เลี้ยง — "CP" เป็นชื่อรุ่นแผ่นรองซับ ไม่ใช่ชื่อเครือ (เจอจริง: vif.pet)
+  "vif.pet", "petloft", "petsanova", "pet4home",
+];
+
+// หน้าแคตตาล็อกหนัง/ซีรีส์ของผู้ให้บริการสตรีมมิ่ง — เป็นหน้าโปรโมตเรื่อง ไม่ใช่ข่าว
+// (เจอจริง: netflix.com "ดู 'บ้านหลังสุดท้าย' | เว็บไซต์อย่างเป็นทางการของ Netflix")
+// ⚠️ **ห้ามใส่ trueid** — เป็นบริการของทรูในเครือ CP ข่าวของมันคือข่าวที่เราต้องการ
+const STREAM_HOSTS = [
+  "netflix.", "disneyplus.", "primevideo.", "viu.com", "wetv.vip", "iq.com",
+  "hbomax.", "hulu.com", "tv.apple.com", "bilibili.tv", "monomax.", "oneD.net",
 ];
 // วลีเชิงพาณิชย์ในพาดหัว/สนิปเป็ต (คัดเฉพาะสัญญาณแรง เลี่ยงคำข่าว เช่น "วางจำหน่าย/เปิดตัว")
 const SHOP_RE =
@@ -525,7 +535,7 @@ const PROP_HOSTS = [
 // "ให้เช่า" คำเดียวพอ — ประกาศเช่าใช้ทุกใบ ส่วนข่าวธุรกิจจะเขียน "ปล่อยเช่า/สัญญาเช่า" แทน
 const PROP_RE = /ให้เช่า|ห้องเช่า|หอพัก|ขายบ้าน|ขายคอนโด|ขายทาวน์|ขายที่ดิน|ขายดาวน์|for rent|ห้องนอน[\s\S]{0,20}ห้องน้ำ/i;
 // หน้าขายสินค้า/บริการของผู้ขาย (ไม่ใช่ข่าว) — ภาษาแบบใบเสนอราคา/แคตตาล็อก
-const VENDOR_RE = /ตัวแทนจำหน่าย|ผลิตและจำหน่าย|รับติดตั้ง|บริการติดตั้ง|สอบถามราคา|ใบเสนอราคา|ราคาโรงงาน|สินค้าและบริการ|เครื่องกรองน้ำ|เครื่องกรองอากาศ|water purifier|air purifier|air quality sensor|เซนเซอร์วัดคุณภาพอากาศ/i;
+const VENDOR_RE = /ตัวแทนจำหน่าย|ผลิตและจำหน่าย|รับติดตั้ง|บริการติดตั้ง|สอบถามราคา|ใบเสนอราคา|ราคาโรงงาน|สินค้าและบริการ|เครื่องกรองน้ำ|เครื่องกรองอากาศ|water purifier|air purifier|air quality sensor|เซนเซอร์วัดคุณภาพอากาศ|แผ่นรองซับ|แผ่นรองฉี่|training pad|pee pad/i;
 
 // ---- แอดเวอร์ทอเรียล (โฆษณาที่เขียนให้ดูเหมือนข่าว) ----
 // เจอจริง: "ปาร์ตี้ฉลองท้ายปีหน้าแน่นแค่ไหนก็รอด! สเต็ปคลีนหน้าด้วยรีมูฟเวอร์…"
@@ -567,6 +577,7 @@ function noiseReason(it, title, src) {
   if (DAILY_RE.test(text)) return "daily";
   const host = hostOf(link);
   if (host && SHOP_HOSTS.some((h) => host.includes(h))) return "shopping";
+  if (host && STREAM_HOSTS.some((h) => host.includes(h))) return "stream";
   if (SHOP_RE.test(text)) return "shopping";
   if (host && JOB_HOSTS.some((h) => host.includes(h))) return "job";
   if (JOB_RE.test(text)) return "job";
