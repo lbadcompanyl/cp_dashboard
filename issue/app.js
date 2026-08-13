@@ -232,11 +232,11 @@ function renderAll() {
 }
 
 // หมวดย่อยคอลัมน์ CP (alert1): แยก CPF ออกจากเครือ CP (กรอง keyword ฝั่ง client)
-const CPF_KW = ["cpf", "ซีพีเอฟ", "cp foods", "เจริญโภคภัณฑ์อาหาร", "charoen pokphand foods"];
-const isCPF = (it) => {
-  const h = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
-  return CPF_KW.some((k) => h.includes(k));
-};
+// ⚠️ เจ้าของสั่ง (13 ส.ค. 2026): **เอาแค่ "ซีพีเอฟ" กับ "cpf" เท่านั้น**
+// และ cpf ต้องตรงทั้งคำ ไม่งั้นไปจับ "CPFresh" (ทุเรียนแห่งชาติ CPFresh = คนละบริษัท)
+// บทเรียนเดียวกับ SLAPP → slapped และ rcep → intercept — คำละตินต้องมีขอบคำเสมอ
+const CPF_RE = /(?:(?<![a-z0-9])cpf(?![a-z0-9]))|ซีพีเอฟ/i;
+const isCPF = (it) => CPF_RE.test((it.title || "") + " " + (it.snippet || ""));
 // หมวดข่าว Google News (แบบหน้า IR) — กรอง keyword ฝั่ง client
 const NEWS_CATS = [
   { key: "econ",   label: "💰 เศรษฐกิจ", kw: ["หุ้น","เศรษฐกิจ","จีดีพี","เงินบาท","ดอกเบี้ย","เงินเฟ้อ","ส่งออก","นำเข้า","ลงทุน","กำไร","ตลาดหุ้น","ปันผล","แบงก์","ธนาคาร","ผลประกอบการ","econom","gdp","inflation","export","import","invest","market","stock","finance","earnings","bank"] },

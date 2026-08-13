@@ -16,7 +16,7 @@ import {
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "60"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
+const CACHE_VER = "61"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -567,7 +567,10 @@ async function bodyHasKeep(cache, link, keep) {
   // ของเดิมคืน false เหมือนกันทั้งคู่ → ข่าวที่เว็บโหลดไม่ขึ้น/มี paywall/หมดเวลา
   // ถูกตัดทิ้งทั้งที่เราไม่เคยอ่านมันเลย · null = ตัดสินไม่ได้ → ให้ผ่านไว้ก่อน
   if (!body) return null;
-  return keep.some((t) => body.includes(t));
+  // ⚠️ ตัดชื่อลวงออกจากเนื้อข่าวก่อนเสมอ — ข่าวทรัมป์เอ่ยถึง "ทรูธโซเชียล" ทั้งบทความ
+  // ถ้าไม่ตัด body.includes("ทรู") จะจริงตลอด แล้วข่าวคนละเรื่องหลุดเข้าคอลัมน์ CP
+  const hay = dropFalseCP(body);
+  return keep.some((t) => hay.includes(t));
 }
 async function mapPoolResults(items, limit, fn) {
   const results = new Array(items.length);
@@ -595,7 +598,8 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
       // CP มาจากชื่อลวงล้วน ๆ (บีแอลซีพี/ซีพีเอ็น) → ไม่ใช่ข่าวเครือ CP
       const rawHay = bare + " " + (it.snippet || "");
-      if (src === "alert1" && hasFalseCP(rawHay) && !realCP(rawHay)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
+      // ยึดพาดหัวอย่างเดียวเหมือน noiseReason — สรุปของฟีดเป็น "ข่าวที่เกี่ยวข้อง" เชื่อไม่ได้
+      if (src === "alert1" && hasFalseCP(bare) && !realCP(bare)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
       // ⚠️ คอลัมน์ CP ไม่เข้าข่ายทางลัดนี้ — ของที่ดึงมาจากคอลัมน์ข่าว match ได้จาก "สรุป"
       // ด้วย ถ้าปล่อยผ่านตรงนี้ กฎ "ชื่อเครือต้องอยู่ในพาดหัว" ข้างล่างจะไม่มีโอกาสทำงานเลย
       if (it.fromNews && src !== "alert1") return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ

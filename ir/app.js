@@ -30,10 +30,11 @@ const ALERT2_CATS = [
 const ALERT2_MAP = Object.fromEntries(ALERT2_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
 
 // หมวดย่อยคอลัมน์ CP (alert1) — แยก CPF ออกจากเครือ CP (กรอง keyword ฝั่ง client)
-const ALERT1_CATS = [
-  { key: "cpf", label: "CPF", kw: ["cpf", "ซีพีเอฟ", "cp foods", "เจริญโภคภัณฑ์อาหาร", "charoen pokphand foods"] },
-];
-const ALERT1_MAP = Object.fromEntries(ALERT1_CATS.map((c) => [c.key, c.kw.map((k) => k.toLowerCase())]));
+// ⚠️ เจ้าของสั่ง (13 ส.ค. 2026): **เอาแค่ "ซีพีเอฟ" กับ "cpf" เท่านั้น**
+// และ cpf ต้องตรงทั้งคำ ไม่งั้นไปจับ "CPFresh" (คนละบริษัท)
+// ใช้ regex ไม่ใช่ลิสต์คำ เพราะตัวจับหมวดตัวอื่นเทียบด้วย includes ซึ่งไม่มีขอบคำ
+const CPF_RE = /(?:(?<![a-z0-9])cpf(?![a-z0-9]))|ซีพีเอฟ/i;
+const ALERT1_CATS = [{ key: "cpf", label: "CPF", re: CPF_RE }];
 
 function catsForSource(source) {
   if (source === "alert1") return ALERT1_CATS;
@@ -48,9 +49,11 @@ function catOf(it, source) {
     const o = Flags.getCat(it.link);
     if (o) return o;
   }
-  const map = source === "alert1" ? ALERT1_MAP : source === "alert2" ? ALERT2_MAP : CAT_MAP;
   if (source.indexOf("news") === 0 && it.cat) return it.cat; // it.cat (AI) เฉพาะคอลัมน์ข่าว
   const hay = ((it.title || "") + " " + (it.snippet || "")).toLowerCase();
+  // คอลัมน์ CP ใช้ regex (ต้องมีขอบคำ) ส่วนคอลัมน์อื่นยังเทียบด้วย includes ตามเดิม
+  if (source === "alert1") return CPF_RE.test(hay) ? "cpf" : "other";
+  const map = source === "alert2" ? ALERT2_MAP : CAT_MAP;
   for (const key of Object.keys(map)) if (map[key].some((k) => hay.includes(k))) return key;
   return "other";
 }

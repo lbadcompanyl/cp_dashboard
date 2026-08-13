@@ -17,7 +17,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "66"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
+const CACHE_VER = "67"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -552,7 +552,10 @@ async function bodyHasKeep(cache, link, keep) {
   // ถูกตัดทิ้งทั้งที่เราไม่เคยอ่านมันเลย (เจอจริง: ข่าว EV ของฐานเศรษฐกิจ/ข่าวสด)
   // null = ตัดสินไม่ได้ → ให้ผ่านไว้ก่อน ปล่อยขยะหลุดดีกว่าทำข่าวจริงหายเงียบๆ
   if (!body) return null;
-  return keep.some((t) => body.includes(t));
+  // ⚠️ ตัดชื่อลวงออกจากเนื้อข่าวก่อนเสมอ — ข่าวทรัมป์เอ่ยถึง "ทรูธโซเชียล" ทั้งบทความ
+  // ถ้าไม่ตัด body.includes("ทรู") จะจริงตลอด แล้วข่าวคนละเรื่องหลุดเข้าคอลัมน์ CP
+  const hay = dropFalseCP(body);
+  return keep.some((t) => hay.includes(t));
 }
 // ---------- เติมพาดหัวที่ถูกตัดสั้น ----------
 // Bing ส่งพาดหัวมาแบบตัดท้ายด้วย "…" (เช่น "…ผนึก CPF–แม่โจ้ จัดการชั่ว …")
@@ -678,7 +681,8 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       if (isOldRepost(it)) return { ok: false, why: "old-content", terms: [], bare, link: it.link };
       // CP มาจากชื่อลวงล้วน ๆ (บีแอลซีพี/ซีพีเอ็น) → ไม่ใช่ข่าวเครือ CP
       const rawHay = bare + " " + (it.snippet || "");
-      if (src === "alert1" && hasFalseCP(rawHay) && !realCP(rawHay)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
+      // ยึดพาดหัวอย่างเดียวเหมือน noiseReason — สรุปของฟีดเป็น "ข่าวที่เกี่ยวข้อง" เชื่อไม่ได้
+      if (src === "alert1" && hasFalseCP(bare) && !realCP(bare)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
       // ⚠️ คอลัมน์ CP ไม่เข้าข่ายทางลัดนี้ — ของที่ดึงมาจากคอลัมน์ข่าว match ได้จาก "สรุป"
       // ด้วย ถ้าปล่อยผ่านตรงนี้ กฎ "ชื่อเครือต้องอยู่ในพาดหัว" ข้างล่างจะไม่มีโอกาสทำงานเลย
       if (it.fromNews && src !== "alert1") return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
