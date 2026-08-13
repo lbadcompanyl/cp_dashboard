@@ -4,13 +4,20 @@
 
 import feeds from "../../../trend-feeds.config.js";
 import { parseGeneric, parseTrends, unwrapRedirect } from "./_lib/parser.js";
-import { readAllow, allowKey } from "../allow.js";
+import { readAllow } from "../allow.js";
+import {
+  noiseReason, dropNoiseAfterArchive, setAllowed, isAllowed,
+  hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
+  CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
+  stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
+  WEAK_TERMS, ROUNDUP_RE, hlWrap,
+} from "../_lib/noise.js";
 
 const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำหรับ SWR (~1 ชม.)
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "64"; // bump: ตัดหน้าสตรีมมิ่ง (netflix) + หน้าสินค้าสัตว์เลี้ยง
+const CACHE_VER = "65"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -96,11 +103,6 @@ function alertQueryFromXml(xml) {
   return i >= 0 ? t.slice(i + 3).trim() : "";
 }
 
-// ---------- ไฮบริด: บวกข่าว Google News ที่ match keyword เข้าคอลัมน์ alert (dedup ด้วย link ที่ normalize) ----------
-function normLink(url) {
-  try { const u = new URL(url); return u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/+$/, ""); }
-  catch { return url || ""; }
-}
 // map โดเมน → ชื่อสำนักข่าว (จาก feed config); ไม่รู้จัก → ใช้โดเมน
 const OUTLET_BY_HOST = {};
 for (const _f of feeds) { try { const _h = new URL(_f.url).hostname.replace(/^www\./, ""); if (!_h.includes("bing.com") && !OUTLET_BY_HOST[_h]) OUTLET_BY_HOST[_h] = _f.label; } catch {} }
@@ -112,16 +114,6 @@ for (const _f of feeds) if (_f.query) (CONFIG_Q[_f.source] = CONFIG_Q[_f.source]
 const CONFIG_EXTRA = {};
 for (const _f of feeds) for (const _t of (_f.extraTerms || [])) {
   (CONFIG_EXTRA[_f.source] = CONFIG_EXTRA[_f.source] || []).push(String(_t).toLowerCase());
-}
-function outletOf(link) {
-  try { const h = new URL(link).hostname.replace(/^www\./, ""); return h.includes("google.") ? "" : (OUTLET_BY_HOST[h] || h); } catch { return ""; }
-}
-// ครอบคำที่ match ด้วย marker [[hl]] ให้ frontend ไฮไลต์ (เหมือน <b> ของ Google Alert)
-function hlWrap(text, term) {
-  if (!text || !term) return text || "";
-  // termPattern: คำอังกฤษต้องตรงทั้งคำ ไม่งั้นจะไปไฮไลต์ "slapp" กลางคำ "slapped"
-  const re = new RegExp(termPattern(term), "gi");
-  return text.replace(re, (m) => `[[hl]]${m}[[/hl]]`);
 }
 // ไฮไลต์ทุก term ที่ตามอยู่ในข้อความเดียว: ลบ marker เดิม (ของ Google หรือรอบก่อน) แล้วครอบใหม่ทีเดียว
 // longest-first + regex เดียว → ไม่ครอบซ้อนกัน (เช่น "ซีพี" ใน "ซีพีเอฟ")
@@ -220,25 +212,6 @@ function parseAlertExcludes(queries) {
   }
   return [...out];
 }
-// ---------- เทียบคำ ----------
-// ภาษาไทยไม่มีช่องว่างคั่นคำ จะเทียบแบบ substring เท่านั้น
-// แต่คำอังกฤษต้องตรงทั้งคำ ไม่งั้น "SLAPP" (คดีฟ้องปิดปาก) จะไปจับ "slapped" ในพาดหัวอังกฤษ
-// ซึ่งเจอบ่อยมาก (slapped with a fine / slapped tariffs) — คอลัมน์จะเต็มไปด้วยข่าวที่ไม่เกี่ยว
-const LATIN_TERM = /^[\x20-\x7e]+$/;
-function termPattern(t) {
-  const esc = String(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return LATIN_TERM.test(t) ? "(?<![a-z0-9])" + esc + "(?![a-z0-9])" : esc;
-}
-function anyTermIn(hay, matchers) {
-  for (const m of matchers) if (m.test(hay)) return m.term;
-  return null;
-}
-function buildMatchers(terms) {
-  return (terms || []).filter(Boolean).map((t) => {
-    const re = new RegExp(termPattern(t), "i");
-    return { term: String(t).toLowerCase(), test: (hay) => re.test(hay) };
-  });
-}
 // เอาข่าวจาก newsKeys ที่ (title+snippet) มี term -> เพิ่มเข้า alertSrc ถ้ายังไม่ซ้ำ (ตาม normLink)
 // excludes = คำที่ Google Alert สั่งไม่เอา — ข่าวที่ติดคำพวกนี้จะไม่ถูกดึงเข้ามา
 function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms, excludes) {
@@ -262,7 +235,7 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms, excludes) {
 }
 
 async function buildAndStore(cache, cacheKey, allowVerify, env) {
-  try { ALLOWED = await readAllow(env); } catch { ALLOWED = {}; }
+  try { setAllowed(await readAllow(env)); } catch { setAllowed({}); }
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
     alert1: { label: "CP", items: [], feedCount: 0 },
@@ -475,137 +448,15 @@ function browserCopy(resp) {
   return new Response(resp.body, { status: resp.status, headers: h });
 }
 
-// ---------- Hybrid alert filter: keyword ต้องอยู่ในเนื้อ/meta ของบทความจริง (ไม่ใช่ related block) ----------
-// ต้นเหตุ false positive: Google Alert จับ keyword จากบล็อก "ข่าวที่เกี่ยวข้อง/แนะนำ/roundup" ท้ายหน้า
-const ROUNDUP_RE = /สรุปข่าวประจำวัน|สรุปข่าวเด่น|รวมข่าวเด่นประจำ|ข่าวเด่นประจำวัน/;
 
-// ---------- Noise filter: ตัด "โฆษณา/ขายของ" และ "รายงานประจำวัน" ที่ match keyword แต่ไม่ใช่ข่าวน่าจับตา ----------
-// โดเมนร้านค้า/มาร์เก็ตเพลส/เว็บ affiliate — เนื้อหาเป็นสินค้าไม่ใช่ข่าว
-const SHOP_HOSTS = [
-  "thaisuperphone", "shopee.", "lazada.", "kaidee.", "thaisecondhand", "weloveshopping", "priceza",
-  "lnwshop", "tarad.com", "aliexpress", "amazon.", "bananastore", "advice.co.th", "jib.co.th",
-  "powerbuy", "mercular", "itopplus", "bentoweb", "makewebeasy", "pantipmarket", "chilindo", "nocnoc",
-  // ร้านวัสดุ/ของแต่งบ้าน — หน้าสินค้ามีรหัสรุ่นที่ลงท้ายด้วย -CP (เจอจริง: ราวแขวนผ้า
-  // KOHLER K-R26691-CP ของโฮมโปร หลุดเข้าคอลัมน์ CP เพราะรหัสสี "CP" = โครเมียม)
-  "homepro.co", "thaiwatsadu", "dohome", "globalhouse", "boonthavorn", "index-living",
-  // เว็บเกม/เว็บบอร์ดที่มีหน้าค้นหาในตัว — ไม่ใช่ข่าว (เจอจริง: "Card Search — OnPlay Arena")
-  "onplay.in.th", "gamingdose", "playpark",
-  // ร้านสินค้าสัตว์เลี้ยง — "CP" เป็นชื่อรุ่นแผ่นรองซับ ไม่ใช่ชื่อเครือ (เจอจริง: vif.pet)
-  "vif.pet", "petloft", "petsanova", "pet4home",
-];
 
-// หน้าแคตตาล็อกหนัง/ซีรีส์ของผู้ให้บริการสตรีมมิ่ง — เป็นหน้าโปรโมตเรื่อง ไม่ใช่ข่าว
-// (เจอจริง: netflix.com "ดู 'บ้านหลังสุดท้าย' | เว็บไซต์อย่างเป็นทางการของ Netflix")
-// ⚠️ **ห้ามใส่ trueid** — เป็นบริการของทรูในเครือ CP ข่าวของมันคือข่าวที่เราต้องการ
-const STREAM_HOSTS = [
-  "netflix.", "disneyplus.", "primevideo.", "viu.com", "wetv.vip", "iq.com",
-  "hbomax.", "hulu.com", "tv.apple.com", "bilibili.tv", "monomax.", "oneD.net",
-];
-// วลีเชิงพาณิชย์ในพาดหัว/สนิปเป็ต (คัดเฉพาะสัญญาณแรง เลี่ยงคำข่าว เช่น "วางจำหน่าย/เปิดตัว")
-const SHOP_RE =
-  /โปรโมชั่น|โปรโมชัน|ลดราคา|ราคาพิเศษ|ราคาถูก|สั่งซื้อ|สั่งเลย|ซื้อเลย|ช้อปเลย|ส่งฟรี|พร้อมส่ง|ของแท้ราคา|สินค้าขายดี|shop now|buy now|order now|for sale|free shipping|best price|add to cart|with our |protect yourself/i;
-// รายงาน/พยากรณ์รายวันที่วนซ้ำ — routine ไม่ใช่ข่าวเด่น (ระวัง "โรคประจำตัว" ต้องไม่โดน = จับ "ประจำวัน" ตรง ๆ)
-const DAILY_RE =
-  /ประจำวัน|พยากรณ์อากาศ|รายงานสถานการณ์ฝุ่น|รายงานค่าฝุ่น|รายงานคุณภาพอากาศ|สรุปสภาพอากาศ|ค่าฝุ่นละออง[\s\S]{0,12}วันที่/;
-// หน้าแกลเลอรี/ดูรูป — เฉพาะสคริปต์เปิดดูรูปจริง (เช่น .../Gallery/viewpic2d.php) ไม่จับ /gallery/ เปล่า ๆ
-// (บางหน่วยงานเช่น moc.go.th ใช้ /gallery/ เป็นหมวดข่าว/บทความจริง — ไม่ใช่อัลบั้มรูป)
-const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
-// พาดหัวขึ้นต้น "ข่าวประชาสัมพันธ์" = หน้าประกาศ/PR ราชการ-หน่วยงาน (มัก match keyword จากเมนู/บล็อกลิงก์ ไม่ใช่ตัวข่าว)
-const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
-// เว็บที่รับแจกข่าวประชาสัมพันธ์ล้วนๆ (ไม่มีกองบรรณาธิการคัดข่าว)
-const PR_HOSTS = ["newswit.com", "thaipr.net", "prnewswire.com", "businesswire.com"];
 
-// ---- ประกาศงาน / อสังหา / หน้าขายสินค้า — ไม่ใช่ข่าว ----
-// เจ้าของสั่งตัดออก (7 ส.ค. 69): jobsdb, dotproperty, epower ฯลฯ โผล่ในคอลัมน์ CP
-// จับที่ "โดเมน" เป็นหลักเพราะแม่นกว่าจับคำ — คำเอาไว้กันเว็บที่ยังไม่อยู่ในลิสต์
-const JOB_HOSTS = [
-  "jobsdb", "jooble", "jobbkk", "jobthai", "indeed.", "glassdoor", "linkedin.", "jobtopgun",
-  "careerjet", "talent.com", "workventure", "jobnisit", "trabajo.", "th.joblum", "joboko",
-  "monster.co", "monster.com", "jobstreet", "prosple", "hiring.cafe", "jobsbkk", "th.jora.com",
-  "seek.com", "seek.co", "jobseek", "jobdb",
-];
-// ⚠️ ประกาศงานภาษาอังกฤษไม่ได้เขียนว่า "hiring" เสมอไป — เจอจริงในคอลัมน์ IR:
-// "AI Business Partner/ AI Expert with 5 - 7 Years of Experience at thai union"
-// เข้ามาเพราะมีคำว่า thai union · จับที่รูปประโยคของใบประกาศงานเพิ่ม
-const JOB_RE = /รับสมัครงาน|สมัครงาน|หางาน|ตำแหน่งงาน|งานเต็มเวลา|งานพาร์ทไทม์|งานพาร์ท-?ไทม์|jobs in |job vacanc|job opening|now hiring|apply now|years of experience|job purpose|job description|full[- ]time|responsibilities:|qualifications:|we are (?:looking for|hiring)|join our team/i;
-const PROP_HOSTS = [
-  "dotproperty", "ddproperty", "livinginsider", "baania", "hipflat", "thinkofliving",
-  "propertyhub", "prakard", "realist.co.th", "bahtsold", "propfit", "homenayoo",
-];
-// "ให้เช่า" คำเดียวพอ — ประกาศเช่าใช้ทุกใบ ส่วนข่าวธุรกิจจะเขียน "ปล่อยเช่า/สัญญาเช่า" แทน
-const PROP_RE = /ให้เช่า|ห้องเช่า|หอพัก|ขายบ้าน|ขายคอนโด|ขายทาวน์|ขายที่ดิน|ขายดาวน์|for rent|ห้องนอน[\s\S]{0,20}ห้องน้ำ/i;
-// หน้าขายสินค้า/บริการของผู้ขาย (ไม่ใช่ข่าว) — ภาษาแบบใบเสนอราคา/แคตตาล็อก
-const VENDOR_RE = /ตัวแทนจำหน่าย|ผลิตและจำหน่าย|รับติดตั้ง|บริการติดตั้ง|สอบถามราคา|ใบเสนอราคา|ราคาโรงงาน|สินค้าและบริการ|เครื่องกรองน้ำ|เครื่องกรองอากาศ|water purifier|air purifier|air quality sensor|เซนเซอร์วัดคุณภาพอากาศ|แผ่นรองซับ|แผ่นรองฉี่|training pad|pee pad/i;
 
-// ---- แอดเวอร์ทอเรียล (โฆษณาที่เขียนให้ดูเหมือนข่าว) ----
-// เจอจริง: "ปาร์ตี้ฉลองท้ายปีหน้าแน่นแค่ไหนก็รอด! สเต็ปคลีนหน้าด้วยรีมูฟเวอร์…"
-// เข้าคอลัมน์ CP เพราะในเนื้อบอกว่า "หาซื้อได้ที่เซเว่น" — ขายของ ไม่ใช่ข่าวของเครือ
-//
-// ⚠️ คำพวกนี้อยู่ในข่าวจริงได้เหมือนกัน จึงต้องเจอ "ภาษาชวนซื้อ" ด้วยอย่างน้อย 1 คำ
-// ไม่ใช่เจอชื่อสินค้าแล้วตัดเลย (ข่าวเรียกคืนเครื่องสำอางก็มีคำว่าครีม/เซรั่ม)
-const AD_PRODUCT_RE = /ครีม|เซรั่ม|เซรัม|serum|รีมูฟเวอร์|คลีนซิ่ง|สกินแคร์|skincare|มาส์ก|โลชั่น|แป้งพัฟ|ลิปสติก|บำรุงผิว|บำรุงหน้า|ผิวกระจ่างใส/i;
-const AD_PITCH_RE = /หาซื้อได้ที่|วางจำหน่ายแล้ว|พร้อมจำหน่าย|ราคาเพียง|ราคาพิเศษ|โปรโมชั่?น|ลดราคา|สั่งซื้อ|ตัวช่วย|ปัง|ตัวท็อป|ห้ามพลาด|บอกเลยว่า|ต้องมีติดบ้าน|ติดกระเป๋า/i;
 
-function hostOf(link) {
-  try { return new URL(link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
-}
 // คืนเหตุผลถ้าเป็น noise (gallery/pr/daily/shopping) มิฉะนั้น null — ใช้ title+snippet ที่ถอด marker hl แล้ว
 // ข่าวที่เจ้าของกด "↩ เอากลับ" ไว้ที่หน้า /admin/ — ต้องรอดทุกด่าน
-// ⚠️ ตั้งค่าใหม่ทุกครั้งที่ build · Workers ใช้โมดูลเดิมซ้ำข้าม request ถ้าไม่ตั้งใหม่จะค้างของเก่า
-let ALLOWED = {};
-const isAllowed = (it) => !!(it && it.link && ALLOWED[allowKey(it.link)]);
 
-function noiseReason(it, title, src) {
-  if (isAllowed(it)) return null; // เจ้าของสั่งคืนไว้ — ไม่ต้องตัดอีก
-  const link = it.link || "";
-  if (GALLERY_RE.test(link)) return "gallery";
-  if (PR_RE.test(title)) return "pr";
-  // เว็บรับแจกข่าวประชาสัมพันธ์ — ใช้กับ **คอลัมน์ CP (alert1) เท่านั้น**
-  //
-  // ⚠️ เคยตัดทั้งเว็บ แล้วข่าวจริงของเครือหายไปด้วย (ซีพี แอ็กซ์ตร้า แจ้งผลประกอบการ ·
-  // Makro ครบรอบ 37 ปี) — บริษัทใหญ่ส่งข่าวของตัวเองผ่านเว็บพวกนี้เป็นปกติ
-  // ที่ไม่เอาคือใบที่ชื่อเครือโผล่แค่ในเนื้อ เช่น รายชื่อผู้รับรางวัลท้ายข่าว
-  // (เจอจริง: newswit "นาคราชอวอร์ด" พาดหัวเป็นชื่อดารา ซีพี ออลล์ อยู่ท้ายข่าว)
-  //
-  // 🚫 **ห้ามเอาไปใช้กับ alert2** (13 ส.ค. 2026) — คอลัมน์นั้นตามอุตสาหกรรม ไม่ได้ตามเครือ
-  // เงื่อนไข "ต้องมีชื่อเครือ CP ในพาดหัว" จึงตัดข่าวที่ถูกต้องทิ้งหมด
-  // (เจอจริง: TFG แจ้งผลประกอบการ Q2/69 · กรมประมงยืนยันมาตรฐานเชื้อดื้อยาในสัตว์น้ำ)
-  // ข่าวใน alert2 ผ่านด่าน keyword ของคอลัมน์มาแล้ว การมาจากเว็บแจกข่าวไม่ใช่เหตุผลให้ตัด
-  if (src === "alert1" && hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && !realCP(title)) return "pr";
-  const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
-  const text = title + " " + snip;
-  if (DAILY_RE.test(text)) return "daily";
-  const host = hostOf(link);
-  if (host && SHOP_HOSTS.some((h) => host.includes(h))) return "shopping";
-  if (host && STREAM_HOSTS.some((h) => host.includes(h))) return "stream";
-  if (SHOP_RE.test(text)) return "shopping";
-  if (host && JOB_HOSTS.some((h) => host.includes(h))) return "job";
-  if (JOB_RE.test(text)) return "job";
-  if (host && PROP_HOSTS.some((h) => host.includes(h))) return "property";
-  if (PROP_RE.test(text)) return "property";
-  if (VENDOR_RE.test(text)) return "vendor";
-  // โฆษณาที่เขียนให้ดูเหมือนข่าว — ต้องเจอทั้งชื่อสินค้าและภาษาชวนซื้อ ไม่งั้นตัดข่าวจริงพลาด
-  if (AD_PRODUCT_RE.test(text) && AD_PITCH_RE.test(text)) return "advertorial";
-  return null;
-}
 
-// กวาดของที่เป็นประกาศงาน/อสังหา/หน้าขายของ ออกจากคอลัมน์ alert "หลังดึงของเก่าจาก KV กลับมา"
-// ⚠️ verifyAlertItems() ทำงานก่อน mergeArchives() — ของเก่าที่เก็บไว้ตอนยังไม่มีตัวกรองนี้
-// จะไหลกลับเข้ามาโดยไม่ผ่านด่าน ต้องกวาดอีกรอบตรงนี้ ไม่งั้นต้องรอ 10 วันกว่าจะหายเอง
-function dropNoiseAfterArchive(sources, diag) {
-  for (const src of ["alert1", "alert2"]) {
-    const b = sources[src];
-    if (!b || !Array.isArray(b.items)) continue;
-    const before = b.items.length;
-    b.items = b.items.filter((it) => {
-      const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase(), src);
-      // เก็บลิงก์+พาดหัวเต็มไว้ด้วย — หน้า /admin/ เอาไปแสดงว่า "ระบบตัดอะไรทิ้งไปบ้าง"
-      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "" });
-      return !why;
-    });
-    diag[src] = before - b.items.length;
-  }
-}
 
 // ---- ข่าวเก่าที่ถูกดันขึ้นมาใหม่ ----
 // Google Alert เจอหน้าเก่าที่เพิ่งมีคนคอมเมนต์/แก้ไข แล้วส่งมาเป็น "ของใหม่"
@@ -662,62 +513,6 @@ function fixContentDates(sources) {
   return fixed;
 }
 
-// ตระกูลแบรนด์ในเครือ CP — บทความ CP มักเรียกตัวเองด้วยชื่อลูก (CPF/เซเว่น/แม็คโคร) ไม่ใช่คำว่า "ซีพี" ตรง ๆ
-// ใช้ตอน verify คอลัมน์ alert1: ถ้า meta มีชื่อในเครือ = ข่าว CP จริง แม้ Google จะไฮไลต์ "ซีพี" จาก related block
-const CP_BRANDS = [
-  "ซีพี", "cp all", "cpall", "cpf", "ซีพีเอฟ", "ซีพี ออลล์", "ซีพีแรม", "cpram", "cp axtra", "แอ็กซ์ตร้า",
-  "cp group", "cp foods", "cp land", "cp brand", "cp fresh", "cp meiji", "cp-meiji", "cp intertrade",
-  "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
-  "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "7-11", "7 11", "แม็คโคร", "makro", "โลตัส", "lotus's",
-  "cpaxt", "ซีพี แอ็กซ์ตร้า", "ซีพีแอ็กซ์ตร้า", "cppc", "ซีพีพีซี",
-  "ศุภชัย เจียรวนนท์", "ธนินท์ เจียรวนนท์", "supachai chearavanont", "true corp", "ทรู คอร์ปอเรชั่น", "ทรู",
-];
-// คำ match ที่ "อ่อนเกิน" — bare "cp" อังกฤษ โผล่ในใบเซอร์/OCR มั่ว/Canadian Pacific/cpu ฯลฯ → ไม่นับเป็นสัญญาณ ต้องพิสูจน์ด้วยชื่อเต็ม
-const WEAK_TERMS = new Set(["cp", "cd", "cpi", "cpu"]);
-// ชื่อที่ "มีซีพี/CP อยู่ข้างใน" แต่ไม่ใช่เครือ CP — บีแอลซีพี = BLCP Power (โรงไฟฟ้า), ซีพีเอ็น = Central Pattana
-// บีแอลซีพี = BLCP Power (โรงไฟฟ้า) · ซีพีเอ็น = Central Pattana · บีซีพีจี/บีซีพี = กลุ่มบางจาก
-const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็น", "cpn ", "บีซีพีจี", "bcpg", "บีซีพี", "bcp "];
-// ชื่อที่สะกดได้หลายแบบจนไล่พิมพ์ครบไม่ไหว — เขียนเป็นแพตเทิร์นแทน (เว้นวรรค · ทัล/ตอล · พ/ป)
-// ⚠️ True Digital Park = สถานที่จัดงาน/ที่ตั้งออฟฟิศ ข่าวที่พูดถึงมันไม่ใช่ข่าวของเครือ CP
-// จับเฉพาะที่มีคำว่า พาร์ค/ปาร์ค/park ต่อท้าย — "ทรูดิจิทัล กรุ๊ป" เป็นบริษัทของทรูจริง ห้ามตัด
-// ⚠️ ทรูธโซเชียล (Truth Social) = แอปของทรัมป์ ไม่เกี่ยวกับทรูของ CP เลย
-// แต่คำว่า "ทรู" อยู่ต้นคำพอดี ข่าว "Trump Media ขาดทุน 238 ล้าน" จึงหลุดเข้าคอลัมน์ CP
-// (บทเรียนเดิมกับ ทรูดิจิทัล พาร์ค เป๊ะๆ — ชื่ออื่นที่ขึ้นต้นด้วย "ทรู")
-const CP_FALSE_RX = [
-  "ทรู\\s*ดิจิ(?:ทัล|ตอล)\\s*(?:พาร์ค|ปาร์ค|park)",
-  "true\\s*digital\\s*park",
-  "ทรู\\s*ธ?\\s*โซเชี?ย?ล",
-  "truth\\s*social",
-  "trump\\s*media",
-  // ⚠️ C.P.HOLIDAYS = บริษัททัวร์คนละเจ้า ไม่เกี่ยวกับเครือ (เจอจริง: cpholidays.com
-  // หน้า "บริการจองตั๋วเครื่องบิน" หลุดเข้าคอลัมน์ CP)
-  "c\\.?\\s*p\\.?\\s*holidays",
-  "ซี\\s*\\.?\\s*พี\\s*\\.?\\s*ฮอลิเดย์",
-  // รหัสรุ่นสินค้าที่ลงท้าย -CP (สีโครเมียม) — ไม่ใช่ชื่อเครือ
-  // ตัวอย่าง: K-R26691-CP · ต้องมีตัวเลข/ขีดนำหน้าเสมอ ไม่งั้นจะกิน "ซีพี" ปกติ
-  "[a-z0-9]+-[a-z0-9]*\\d[a-z0-9]*-cp\\b",
-];
-// เรียงยาวก่อนสั้น — ไม่งั้น "บีซีพี" จะกินก่อนแล้ว "บีซีพีจี" ไม่มีวันแมตช์
-const CP_FALSE_RE = new RegExp(
-  CP_FALSE.slice().sort((a, b) => b.length - a.length)
-    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).concat(CP_FALSE_RX).join("|"),
-  "gi"
-);
-const hasFalseCP = (s) => { CP_FALSE_RE.lastIndex = 0; return CP_FALSE_RE.test(String(s || "")); };
-const dropFalseCP = (s) => String(s || "").replace(CP_FALSE_RE, " ");
-// จริงหรือไม่: ตัดชื่อลวงออกก่อน แล้วยังเหลือชื่อเครือ CP อยู่ไหม
-function realCP(text) {
-  const hay = dropFalseCP(String(text || "").replace(/\[\[\/?hl\]\]/g, "")).toLowerCase();
-  return CP_BRANDS.some((b) => hay.includes(b));
-}
-// คำที่ Google ไฮไลต์ (= คำที่ match) จาก marker [[hl]]…[[/hl]] ใน title+snippet
-function highlightedTerms(it) {
-  const s = (it.title || "") + " " + (it.snippet || "");
-  const out = new Set(); let m;
-  const re = /\[\[hl\]\]([\s\S]*?)\[\[\/hl\]\]/g;
-  while ((m = re.exec(s))) { const w = m[1].replace(/\[\[\/?hl\]\]/g, "").trim().toLowerCase(); if (w.length >= 2) out.add(w); }
-  return [...out];
-}
 // "เนื้อข่าวจริง" จาก JSON-LD articleBody/description ที่สำนักข่าวประกาศไว้ — เป็น prose ของบทความล้วน (related/หุ้นแนะนำ ไม่อยู่ในนี้)
 function articleBodyText(html) {
   const out = [];
@@ -764,7 +559,6 @@ async function bodyHasKeep(cache, link, keep) {
 // ⚠️ ยิงทีละน้อยและเฉพาะตอนทำงานเบื้องหลัง (allowFetch) — ผลถูกเก็บลงคลังข่าว
 // จึงจ่ายค่ายิงครั้งเดียวต่อข่าว 1 ใบ รอบต่อไปได้ของเต็มมาเลย
 const CLIPPED_RE = /(?:…|\.\.\.)\s*$/;
-const stripMarks = (s) => String(s || "").replace(/\[\[\/?hl\]\]/g, "").trim();
 const TITLE_FETCH_MAX = 20; // ต่อ 1 request — กันชนโควตา subrequest ของ Cloudflare (เพดาน 50)
 // ⚠️ บางฟีด "ตัดพาดหัวโดยไม่ใส่ …" ด้วย (เจอจริง: "…ดันกระทรวง อว.เป็นกลไกหลักด้าน" จบห้วนๆ)
 // ดูแค่จุดไข่ปลาจึงไม่พอ — พาดหัวที่ยาวใกล้เพดานของฟีดให้ถือว่า "น่าสงสัย" ไว้ก่อน
