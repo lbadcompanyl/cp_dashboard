@@ -4,9 +4,9 @@
 
 import feeds from "../../../ir-feeds.config.js";
 import { parseGeneric } from "../trend/_lib/parser.js";
-import { readAllow } from "../allow.js";
+import { readDecisions } from "../allow.js";
 import {
-  noiseReason, dropNoiseAfterArchive, setAllowed, isAllowed,
+  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -16,7 +16,7 @@ import {
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "59"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
+const CACHE_VER = "60"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -352,7 +352,9 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
 }
 
 async function buildAndStore(cache, cacheKey, env, allowAI) {
-  try { setAllowed(await readAllow(env)); } catch { setAllowed({}); }
+  // ⚠️ ต้องตั้งใหม่ทุกครั้งที่ build — Workers ใช้โมดูลเดิมซ้ำข้าม request
+  try { const d = await readDecisions(env); setAllowed(d.allowed); setBlocked(d.blocked); }
+  catch { setAllowed({}); setBlocked({}); }
   const sources = {};
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
   for (const f of feeds) { const t = targetSource(f); if (sources[t]) sources[t].feedCount++; }

@@ -170,6 +170,21 @@
 
   // ---------- flag / undo ----------
   let lastFlag = null;
+  // ---- สั่งตัด/ยกเลิกการตัด "ข้ามแดชบอร์ด" ----
+  // ⚠️ กอง flag ของแต่ละแดชบอร์ดแยกกัน (flags:pr / flags:ir / flags:root) การซ่อนจึงติดอยู่
+  // แค่หน้าที่กด — ข่าวใบเดียวกันยังโผล่ที่อื่น (เจ้าของแจ้ง 13 ส.ค. 2026: หน้า AQI ของ iqair)
+  // คำสั่งตัดจึงต้องเก็บไว้ที่ส่วนกลางด้วย แล้ว feeds.js ของทุกแดชบอร์ดจะไม่ส่งข่าวใบนั้นมาอีก
+  // ยิงแล้วไม่ต้องรอผล — การซ่อนฝั่งหน้าเว็บทำทันทีอยู่แล้ว ตัวนี้เป็นการทำให้ถาวรและข้ามหน้า
+  function pushCut(rec, on) {
+    try {
+      fetch("/api/allow", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "block", on, link: rec.link, title: rec.title || "", why: "⚑ เจ้าของสั่งตัด" }),
+      }).catch(() => {});
+    } catch (e) {}
+  }
+
   function flag(btn) {
     const link = btn.dataset.link;
     if (!link || hidden[link]) return;
@@ -189,10 +204,11 @@
     save(key(LS_HIDDEN), hidden);
     save(key(LS_RECS), records);
     lastFlag = rec;
-    toast(`ซ่อนแล้ว ✓ · flag คอลัมน์นี้ ${analyze(rec.source).count} ใบ`, true);
+    toast(`ตัดออกทุกแดชบอร์ดแล้ว ✓ · flag คอลัมน์นี้ ${analyze(rec.source).count} ใบ`, true);
     onChange();
     refresh();
     pushOp({ op: "flag", rec });
+    pushCut(rec, true); // ตัดที่ส่วนกลางด้วย — แดชบอร์ดอื่นจะไม่เห็นข่าวใบนี้อีก
   }
   function undoLast() {
     if (!lastFlag) return;
@@ -206,6 +222,7 @@
     onChange();
     refresh();
     pushOp({ op: "unflag", link });
+    pushCut({ link }, false); // ยกเลิกคำสั่งตัดที่ส่วนกลางด้วย
   }
   function restoreItem(link) {
     delete hidden[link];
@@ -217,6 +234,7 @@
     onChange();
     refresh(); // re-render panel ถ้าเปิดอยู่
     pushOp({ op: "unflag", link });
+    pushCut({ link }, false); // ยกเลิกคำสั่งตัดที่ส่วนกลางด้วย
   }
   // ลบออกจากรายการคำแนะนำ แต่ยังซ่อนข่าวไว้ (ไม่เอากลับเข้า feed)
   function dismissItem(link) {
@@ -731,7 +749,7 @@
     button(item, source) {
       // flag → exclusion ใช้ได้เฉพาะ Google Alert (มี query ให้แก้) — News เป็น RSS ตรง จึงไม่มีปุ่ม
       if (!source || !source.startsWith("alert")) return "";
-      return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ซ่อน + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(stripMarks(item.title))}" data-label="${esc(item.sourceLabel || "")}" data-from="${item.fromNews ? "news" : "alert"}">⚑</button>`;
+      return `<button type="button" class="flag-btn" title="ไม่เกี่ยวข้อง — ตัดข่าวใบนี้ออกจากทุกแดชบอร์ด + เก็บเข้าคำแนะนำตัดข่าว" data-link="${esc(item.link)}" data-source="${esc(source)}" data-title="${esc(stripMarks(item.title))}" data-label="${esc(item.sourceLabel || "")}" data-from="${item.fromNews ? "news" : "alert"}">⚑</button>`;
     },
     // ปุ่มจัดหมวดเอง — เฉพาะคอลัมน์ข่าว (มีหมวดให้เลือก)
     catButton(item, source) {

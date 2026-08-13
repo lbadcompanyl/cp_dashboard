@@ -4,9 +4,9 @@
 
 import feeds from "../../../trend-feeds.config.js";
 import { parseGeneric, parseTrends, unwrapRedirect } from "./_lib/parser.js";
-import { readAllow } from "../allow.js";
+import { readDecisions } from "../allow.js";
 import {
-  noiseReason, dropNoiseAfterArchive, setAllowed, isAllowed,
+  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -17,7 +17,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "65"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
+const CACHE_VER = "66"; // bump: ตัวกรองย้ายไป _lib/noise.js ชุดเดียวใช้ทุกแดชบอร์ด
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -235,7 +235,9 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms, excludes) {
 }
 
 async function buildAndStore(cache, cacheKey, allowVerify, env) {
-  try { setAllowed(await readAllow(env)); } catch { setAllowed({}); }
+  // ⚠️ ต้องตั้งใหม่ทุกครั้งที่ build — Workers ใช้โมดูลเดิมซ้ำข้าม request
+  try { const d = await readDecisions(env); setAllowed(d.allowed); setBlocked(d.blocked); }
+  catch { setAllowed({}); setBlocked({}); }
   const sources = {
     news: { label: "Google News", items: [], feedCount: 0 },
     alert1: { label: "CP", items: [], feedCount: 0 },

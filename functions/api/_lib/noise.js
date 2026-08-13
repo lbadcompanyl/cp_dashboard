@@ -16,10 +16,14 @@
 
 import { allowKey } from "../allow.js";
 
-// ---- ข่าวที่เจ้าของกด "↩ เอากลับ" ไว้ที่หน้า /admin/ — ต้องรอดทุกด่าน ----
+// ---- คำตัดสินรายข่าวของเจ้าของ (เก็บที่ /api/allow ใช้ร่วมกันทุกแดชบอร์ด) ----
+// ↩ เอากลับ = ต้องรอดทุกด่าน · ⚑ สั่งตัด = ต้องหายทุกแดชบอร์ด
 let ALLOWED = {};
+let BLOCKED = {};
 export function setAllowed(map) { ALLOWED = map || {}; }
+export function setBlocked(map) { BLOCKED = map || {}; }
 export const isAllowed = (it) => !!(it && it.link && ALLOWED[allowKey(it.link)]);
+export const isBlocked = (it) => !!(it && it.link && BLOCKED[allowKey(it.link)]);
 
 export const LATIN_TERM = /^[\x20-\x7e]+$/;
 
@@ -34,6 +38,13 @@ export const SHOP_HOSTS = [
   "onplay.in.th", "gamingdose", "playpark",
   // ร้านสินค้าสัตว์เลี้ยง — "CP" เป็นชื่อรุ่นแผ่นรองซับ ไม่ใช่ชื่อเครือ (เจอจริง: vif.pet)
   "vif.pet", "petloft", "petsanova", "pet4home",
+];
+
+// หน้า "ข้อมูล" ที่ไม่ใช่ข่าว — ตารางค่าฝุ่น/อากาศรายเมือง อัปเดตทุกชั่วโมงและมีทุกเมืองบนโลก
+// (เจอจริง 13 ส.ค. 2026: iqair.com หน้าเมือง "Bieber" ในแคลิฟอร์เนีย หลุดเข้าคอลัมน์ PM2.5)
+export const DATAPAGE_HOSTS = [
+  "iqair.com", "aqicn.org", "waqi.info", "air4thai.com", "accuweather.com", "weatherbug.com",
+  "tmd.go.th/weather", "windy.com", "numbeo.com",
 ];
 
 export const STREAM_HOSTS = [
@@ -132,7 +143,8 @@ export function outletOf(link) {
 }
 
 export function noiseReason(it, title, src) {
-  if (isAllowed(it)) return null; // เจ้าของสั่งคืนไว้ — ไม่ต้องตัดอีก
+  if (isAllowed(it)) return null;      // เจ้าของสั่งคืนไว้ — ไม่ต้องตัดอีก
+  if (isBlocked(it)) return "by-owner"; // เจ้าของกด ⚑ สั่งตัด — ตัดทุกแดชบอร์ด
   const link = it.link || "";
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost"; // เดิมมีแค่ฝั่ง IR — รวมมาแล้ว ใช้ทุกแดชบอร์ด
@@ -155,6 +167,7 @@ export function noiseReason(it, title, src) {
   const host = hostOf(link);
   if (host && SHOP_HOSTS.some((h) => host.includes(h))) return "shopping";
   if (host && STREAM_HOSTS.some((h) => host.includes(h))) return "stream";
+  if (host && DATAPAGE_HOSTS.some((h) => host.includes(h))) return "datapage";
   if (SHOP_RE.test(text)) return "shopping";
   if (host && JOB_HOSTS.some((h) => host.includes(h))) return "job";
   if (JOB_RE.test(text)) return "job";

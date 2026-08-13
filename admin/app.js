@@ -52,6 +52,8 @@ const WHY_TH = {
   vendor: "หน้าขายสินค้า-บริการ",
   shopping: "ร้านค้าออนไลน์",
   stream: "หน้าดูหนัง/ซีรีส์ ไม่ใช่ข่าว",
+  "by-owner": "เจ้าของกด ⚑ สั่งตัดเอง",
+  datapage: "หน้าข้อมูลค่าฝุ่น/อากาศ ไม่ใช่ข่าว",
   daily: "รายงานประจำวัน",
   gallery: "แกลเลอรีรูป",
   pr: "ข่าวประชาสัมพันธ์ราชการ",
@@ -123,6 +125,7 @@ async function sendBack(btn) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ link, title, why, on: true }),
+      // ⚠️ ฝั่งเซิร์ฟเวอร์จะถอดลิงก์นี้ออกจากรายการ "สั่งตัด" ให้เอง — อยู่สองฝั่งพร้อมกันไม่ได้
     }).then((x) => x.json());
     if (r && r.ok) {
       btn.textContent = "✓ เอากลับแล้ว";

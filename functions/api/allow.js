@@ -1,11 +1,16 @@
-// GET/POST /api/allow — รายชื่อข่าวที่เจ้าของสั่งว่า "อันนี้ไม่ควรโดนตัด"
+// GET/POST /api/allow — คำตัดสินรายข่าวของเจ้าของ **ใช้ร่วมกันทุกแดชบอร์ด**
 //
-// ตัวกรองอัตโนมัติตัดพลาดได้เสมอ หน้า /admin/ จึงมีปุ่ม ↩ เอากลับ ให้กดคืนข่าวรายใบ
-// ลิงก์ที่ถูกกดคืนจะถูกจำไว้ที่นี่ แล้ว feeds.js จะข้ามด่านตัดให้ข่าวใบนั้นตลอดไป
+//   allow  = "อันนี้ไม่ควรโดนตัด"  (ปุ่ม ↩ เอากลับ บนหน้า /admin/)
+//   block  = "ตัดข่าวใบนี้ทิ้ง"     (ปุ่ม ⚑ บนการ์ด — กดที่ไหนก็หายทุกแดชบอร์ด)
 //
-// ⚠️ เก็บเป็น blob เดียว ไม่แยก key ต่อข่าว — โควตาเขียน KV ของแผนฟรีมี 1,000 ครั้ง/วัน
-//    ใช้ร่วมกันทั้งโปรเจกต์ (ดูกฎเรื่อง KV ใน CLAUDE.md)
+// 🎯 เจ้าของสั่ง (13 ส.ค. 2026): **ตัดที่เดียวต้องหายทุกแดชบอร์ด**
+// ของเดิมปุ่ม ⚑ ซ่อนการ์ดเฉพาะแดชบอร์ดที่กด (เก็บใน flags:pr / flags:ir / flags:root
+// ซึ่งแยกกันคนละกอง) ข่าวใบเดียวกันจึงยังโผล่ที่อื่นอยู่ — ตอนนี้ย้ายมาเก็บรวมที่นี่
+//
+// ⚠️ เก็บ allow กับ block ไว้ใน **blob เดียวกัน** (key `noise:allow`) ตั้งใจ
+//    จะได้อ่าน KV ครั้งเดียวได้ทั้งสองอย่าง · โควตาเขียนแผนฟรีมี 1,000 ครั้ง/วันใช้ร่วมทั้งโปรเจกต์
 //    อ่าน: 1 ครั้งต่อการ build feed · เขียน: เฉพาะตอนเจ้าของกดปุ่ม
+//    (blob เก่าที่มีแต่ items ยังอ่านได้ตามปกติ — ไม่ต้องย้ายข้อมูล)
 
 export const ALLOW_KEY = "noise:allow";
 const MAX = 500; // กันไม่ให้ blob โตไม่มีที่สิ้นสุด — เก่าสุดหลุดออกก่อน
@@ -23,16 +28,26 @@ export function allowKey(url) {
 
 const prefix = (env) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : "");
 
-export async function readAllow(env) {
+async function readBlob(env) {
   const kv = env && env.FLAGS_KV;
   if (!kv) return {};
   try {
     const raw = await kv.get(prefix(env) + ALLOW_KEY);
-    const j = raw ? JSON.parse(raw) : null;
-    return (j && j.items) || {};
+    return (raw ? JSON.parse(raw) : null) || {};
   } catch {
     return {};
   }
+}
+
+/** อ่านทั้งสองรายการด้วย KV ครั้งเดียว — feeds.js ทุกแดชบอร์ดใช้ตัวนี้ */
+export async function readDecisions(env) {
+  const j = await readBlob(env);
+  return { allowed: j.items || {}, blocked: j.blocked || {} };
+}
+
+/** ของเดิม เผื่อมีที่ไหนเรียกอยู่ */
+export async function readAllow(env) {
+  return (await readBlob(env)).items || {};
 }
 
 export async function onRequest(context) {
@@ -40,10 +55,12 @@ export async function onRequest(context) {
   const kv = env && env.FLAGS_KV;
   if (!kv) return json({ error: "ยังไม่ได้ผูก KV" }, 503);
 
-  const items = await readAllow(env);
+  const blob = await readBlob(env);
+  const items = blob.items || {};
+  const blocked = blob.blocked || {};
 
   if (request.method === "GET") {
-    return json({ count: Object.keys(items).length, items });
+    return json({ count: Object.keys(items).length, items, blockedCount: Object.keys(blocked).length, blocked });
   }
 
   if (request.method !== "POST") return json({ error: "ใช้ GET หรือ POST" }, 405);
@@ -55,29 +72,39 @@ export async function onRequest(context) {
   const key = allowKey(link);
   if (!key) return json({ error: "ลิงก์ไม่ถูกต้อง" }, 400);
 
+  // mode: "allow" (ค่าเริ่มต้น เพื่อความเข้ากันได้กับของเดิม) หรือ "block"
+  const mode = body.mode === "block" ? "block" : "allow";
+  const target = mode === "block" ? blocked : items;
+  const other = mode === "block" ? items : blocked;
+
   if (body.on === false) {
-    delete items[key];
+    delete target[key];
   } else {
-    items[key] = {
+    target[key] = {
       link,
       title: String(body.title || "").slice(0, 300),
       why: String(body.why || "").slice(0, 60),
       at: new Date().toISOString(),
     };
-    // เกินเพดาน → ตัดอันที่เก่าที่สุดทิ้ง
-    const keys = Object.keys(items);
-    if (keys.length > MAX) {
-      keys.sort((a, b) => String(items[a].at).localeCompare(String(items[b].at)));
-      for (const k of keys.slice(0, keys.length - MAX)) delete items[k];
-    }
+    // ⚠️ อยู่สองฝั่งพร้อมกันไม่ได้ — สั่งตัดแล้วต้องหลุดจากรายการเอากลับ และกลับกัน
+    delete other[key];
+    trim(target);
   }
 
   try {
-    await kv.put(prefix(env) + ALLOW_KEY, JSON.stringify({ items }));
+    await kv.put(prefix(env) + ALLOW_KEY, JSON.stringify({ items, blocked }));
   } catch (e) {
     return json({ error: "บันทึกไม่สำเร็จ: " + String((e && e.message) || e).slice(0, 80) }, 500);
   }
-  return json({ ok: true, on: body.on !== false, count: Object.keys(items).length });
+  return json({ ok: true, mode, on: body.on !== false, count: Object.keys(target).length });
+}
+
+// เกินเพดาน → ตัดอันที่เก่าที่สุดทิ้ง (กัน blob โตไม่มีที่สิ้นสุด)
+function trim(map) {
+  const keys = Object.keys(map);
+  if (keys.length <= MAX) return;
+  keys.sort((a, b) => String(map[a].at).localeCompare(String(map[b].at)));
+  for (const k of keys.slice(0, keys.length - MAX)) delete map[k];
 }
 
 function json(obj, status = 200) {
