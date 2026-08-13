@@ -6,7 +6,7 @@ import feeds from "../../../ir-feeds.config.js";
 import { parseGeneric } from "../trend/_lib/parser.js";
 import { readDecisions } from "../allow.js";
 import {
-  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed,
+  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed, cpExamples,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -16,7 +16,7 @@ import {
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "64"; // bump: คอลัมน์ CP ยึดพาดหัวตอน merge + AI ตัดสินใบที่อ่านเนื้อไม่ได้
+const CACHE_VER = "65"; // bump: คอลัมน์ CP ยึดพาดหัวตอน merge + AI ตัดสินใบที่อ่านเนื้อไม่ได้
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -356,7 +356,9 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
 
 async function buildAndStore(cache, cacheKey, env, allowAI) {
   // ⚠️ ต้องตั้งใหม่ทุกครั้งที่ build — Workers ใช้โมดูลเดิมซ้ำข้าม request
-  try { const d = await readDecisions(env); setAllowed(d.allowed); setBlocked(d.blocked); }
+  // cpEx = ตัวอย่างสอน AI จากที่เจ้าของกด ↩/⚑ — ได้จาก blob เดียวกัน ไม่มี KV read เพิ่ม
+  let cpEx = [];
+  try { const d = await readDecisions(env); setAllowed(d.allowed); setBlocked(d.blocked); cpEx = cpExamples(d); }
   catch { setAllowed({}); setBlocked({}); }
   const sources = {};
   for (const s of SOURCES) sources[s] = { label: LABELS[s], items: [], feedCount: 0 };
@@ -429,7 +431,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
 
   // ตัด related-block: พาดหัว (ฟรี) + เนื้อข่าวจริง articleBody เฉพาะ background (allowAI) · ก่อน archive เพื่อไม่สะสม noise
   const alertVerify = {};
-  try { await verifyAlertItems(cache, sources, alertVerify, allowAI, env); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
+  try { await verifyAlertItems(cache, sources, alertVerify, allowAI, env, cpEx); } catch (e) { alertVerify.err = String((e && e.message) || e).slice(0, 120); }
 
   // อ่าน cache เก่า 1 ครั้ง — ใช้ทั้ง reuse หมวดจาก AI + คงของเดิมถ้า source ว่าง
   let pj = null;
@@ -589,13 +591,16 @@ async function mapPoolResults(items, limit, fn) {
 // ชั้น 4 ของคอลัมน์ CP — เปิดอ่านเนื้อข่าวไม่ได้ (เว็บบล็อกบอต/ช้า/paywall) เดิม "ปล่อยผ่านตาบอด"
 // ให้ AI (โมเดลเดียวกับที่จัดหมวดข่าว) อ่านพาดหัวตัดสินแทน — ดูหมายเหตุเต็มที่ trend/feeds.js
 // · AI ตอบไม่ครบ/ล้ม/ไม่มี binding → ปล่อยผ่านเหมือนเดิม (พลาดฝั่งเก็บ ดีกว่าทำข่าวจริงหาย)
-async function aiHeadlineIsCP(env, titles) {
+async function aiHeadlineIsCP(env, titles, examples) {
   if (!env || !env.AI || !titles.length) return null;
+  // few-shot จากที่เจ้าของกด ↩/⚑ มาแล้ว — ดู cpExamples ใน _lib/noise.js
+  const ex = (examples || []).map((e) => `- "${e.t}" => ${e.y ? "y" : "n"}`).join("\n");
   const prompt =
     "ต่อไปนี้คือพาดหัวข่าว จงตอบว่าแต่ละพาดหัวเป็นข่าวเกี่ยวกับบริษัทในเครือเจริญโภคภัณฑ์ (ซีพี) หรือไม่\n" +
     "บริษัทในเครือ เช่น CP, CPF, CP ALL, เซเว่น อีเลฟเว่น, CP Axtra, แม็คโคร, โลตัส, ทรู, เจียไต๋\n" +
     "ข่าวที่แค่เอ่ยชื่อหุ้นผ่านๆ ในภาพรวมตลาด ไม่นับว่าเป็นข่าวของเครือ\n" +
-    "ตอบบรรทัดละข้อ เป็น y (ใช่) หรือ n (ไม่ใช่) เท่านั้น\n\n" +
+    (ex ? "\nเจ้าของเคยตัดสินแบบนี้มาแล้ว ให้ยึดแนวเดียวกัน:\n" + ex + "\n" : "") +
+    "\nตอบบรรทัดละข้อ เป็น y (ใช่) หรือ n (ไม่ใช่) เท่านั้น\n\n" +
     titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
   try {
     const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 20 + titles.length * 8 });
@@ -606,7 +611,7 @@ async function aiHeadlineIsCP(env, titles) {
     return ans.length === titles.length ? ans : null; // นับไม่ครบ = อย่าเดา
   } catch { return null; }
 }
-async function verifyAlertItems(cache, sources, diag, allowFetch, env) {
+async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
   diag.dropped = []; // รายการข่าวที่ถูกตัด (ไว้ debug ผ่าน ?errors)
   for (const src of ["alert1", "alert2"]) {
     if (!sources[src]) continue;
@@ -654,7 +659,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env) {
       // ชั้น 4 — เฉพาะคอลัมน์ CP: ใบที่เปิดอ่านเนื้อไม่ได้ ให้ AI อ่านพาดหัวตัดสินแทนการปล่อยผ่าน
       if (src === "alert1") {
         const blind = needBody.filter((_, k) => hits[k] === null);
-        const ans = blind.length ? await aiHeadlineIsCP(env, blind.map((i) => verdict[i].bare)) : null;
+        const ans = blind.length ? await aiHeadlineIsCP(env, blind.map((i) => verdict[i].bare), cpEx) : null;
         if (ans) blind.forEach((i, k) => { if (!ans[k]) { verdict[i].ok = false; verdict[i].why = "ai-no-cp"; } });
       }
     } else {
