@@ -9,7 +9,7 @@ import { readAllow, allowKey } from "../allow.js";
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "55"; // bump: อ่านเนื้อข่าวไม่ได้ = ไม่ตัด (ของเดิมตัดทิ้งเลย)
+const CACHE_VER = "56"; // bump: กฎเว็บแจกข่าว (newswit/thaipr) ใช้กับคอลัมน์ CP เท่านั้น
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -531,6 +531,11 @@ const SHOP_HOSTS = [
   "thaisuperphone", "shopee.", "lazada.", "kaidee.", "thaisecondhand", "weloveshopping", "priceza",
   "lnwshop", "tarad.com", "aliexpress", "amazon.", "bananastore", "advice.co.th", "jib.co.th",
   "powerbuy", "mercular", "itopplus", "bentoweb", "makewebeasy", "pantipmarket", "chilindo", "nocnoc",
+  // ร้านวัสดุ/ของแต่งบ้าน — หน้าสินค้ามีรหัสรุ่นที่ลงท้ายด้วย -CP (เจอจริง: ราวแขวนผ้า
+  // KOHLER K-R26691-CP ของโฮมโปร หลุดเข้าคอลัมน์ CP เพราะรหัสสี "CP" = โครเมียม)
+  "homepro.co", "thaiwatsadu", "dohome", "globalhouse", "boonthavorn", "index-living",
+  // เว็บเกม/เว็บบอร์ดที่มีหน้าค้นหาในตัว — ไม่ใช่ข่าว (เจอจริง: "Card Search — OnPlay Arena")
+  "onplay.in.th", "gamingdose", "playpark",
 ];
 const SHOP_RE =
   /โปรโมชั่น|โปรโมชัน|ลดราคา|ราคาพิเศษ|ราคาถูก|สั่งซื้อ|สั่งเลย|ซื้อเลย|ช้อปเลย|ส่งฟรี|พร้อมส่ง|ของแท้ราคา|สินค้าขายดี|shop now|buy now|order now|for sale|free shipping|best price|add to cart|with our |protect yourself/i;
@@ -578,19 +583,24 @@ function hostOf(link) {
 let ALLOWED = {};
 const isAllowed = (it) => !!(it && it.link && ALLOWED[allowKey(it.link)]);
 
-function noiseReason(it, title) {
+function noiseReason(it, title, src) {
   if (isAllowed(it)) return null; // เจ้าของสั่งคืนไว้ — ไม่ต้องตัดอีก
   const link = it.link || "";
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost";
   if (PR_RE.test(title)) return "pr";
-  // เว็บรับแจกข่าวประชาสัมพันธ์ — ตัดเฉพาะใบที่ "ชื่อเครือ CP ไม่ได้อยู่ในพาดหัว"
+  // เว็บรับแจกข่าวประชาสัมพันธ์ — ใช้กับ **คอลัมน์ CP (alert1) เท่านั้น**
   //
   // ⚠️ เคยตัดทั้งเว็บ แล้วข่าวจริงของเครือหายไปด้วย (ซีพี แอ็กซ์ตร้า แจ้งผลประกอบการ ·
   // Makro ครบรอบ 37 ปี) — บริษัทใหญ่ส่งข่าวของตัวเองผ่านเว็บพวกนี้เป็นปกติ
   // ที่ไม่เอาคือใบที่ชื่อเครือโผล่แค่ในเนื้อ เช่น รายชื่อผู้รับรางวัลท้ายข่าว
   // (เจอจริง: newswit "นาคราชอวอร์ด" พาดหัวเป็นชื่อดารา ซีพี ออลล์ อยู่ท้ายข่าว)
-  if (hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && !realCP(title)) return "pr";
+  //
+  // 🚫 **ห้ามเอาไปใช้กับ alert2** (13 ส.ค. 2026) — คอลัมน์นั้นตามอุตสาหกรรม ไม่ได้ตามเครือ
+  // เงื่อนไข "ต้องมีชื่อเครือ CP ในพาดหัว" จึงตัดข่าวที่ถูกต้องทิ้งหมด
+  // (เจอจริง: TFG แจ้งผลประกอบการ Q2/69 · กรมประมงยืนยันมาตรฐานเชื้อดื้อยาในสัตว์น้ำ)
+  // ข่าวใน alert2 ผ่านด่าน keyword ของคอลัมน์มาแล้ว การมาจากเว็บแจกข่าวไม่ใช่เหตุผลให้ตัด
+  if (src === "alert1" && hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && !realCP(title)) return "pr";
   const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
   const text = title + " " + snip;
   if (DAILY_RE.test(text)) return "daily";
@@ -616,7 +626,7 @@ function dropNoiseAfterArchive(sources, diag) {
     if (!b || !Array.isArray(b.items)) continue;
     const before = b.items.length;
     b.items = b.items.filter((it) => {
-      const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase());
+      const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase(), src);
       // เก็บลิงก์+พาดหัวเต็มไว้ด้วย — หน้า /admin/ เอาไปแสดงว่า "ระบบตัดอะไรทิ้งไปบ้าง"
       if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "" });
       return !why;
@@ -647,6 +657,13 @@ const CP_FALSE_RX = [
   "ทรู\\s*ธ?\\s*โซเชี?ย?ล",
   "truth\\s*social",
   "trump\\s*media",
+  // ⚠️ C.P.HOLIDAYS = บริษัททัวร์คนละเจ้า ไม่เกี่ยวกับเครือ (เจอจริง: cpholidays.com
+  // หน้า "บริการจองตั๋วเครื่องบิน" หลุดเข้าคอลัมน์ CP)
+  "c\\.?\\s*p\\.?\\s*holidays",
+  "ซี\\s*\\.?\\s*พี\\s*\\.?\\s*ฮอลิเดย์",
+  // รหัสรุ่นสินค้าที่ลงท้าย -CP (สีโครเมียม) — ไม่ใช่ชื่อเครือ
+  // ตัวอย่าง: K-R26691-CP · ต้องมีตัวเลข/ขีดนำหน้าเสมอ ไม่งั้นจะกิน "ซีพี" ปกติ
+  "[a-z0-9]+-[a-z0-9]*\\d[a-z0-9]*-cp\\b",
 ];
 const CP_FALSE_RE = new RegExp(
   CP_FALSE.slice().sort((a, b) => b.length - a.length)
@@ -752,21 +769,28 @@ async function verifyAlertItems(cache, sources, diag, allowFetch) {
       if (isAllowed(it)) return { ok: true }; // เจ้าของสั่งคืนไว้ที่หน้า /admin/ — ผ่านทุกด่าน
       const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
       const title = bare.toLowerCase();
-      const noise = noiseReason(it, title); // ตัดโฆษณา/รายงานประจำวัน/แกลเลอรี/PR ก่อนเช็ค related-block
+      const noise = noiseReason(it, title, src); // ตัดโฆษณา/รายงานประจำวัน/แกลเลอรี/PR ก่อนเช็ค related-block
       if (noise) return { ok: false, why: noise, terms: [], bare, link: it.link };
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
       // CP มาจากชื่อลวงล้วน ๆ (บีแอลซีพี/ซีพีเอ็น) → ไม่ใช่ข่าวเครือ CP
       const rawHay = bare + " " + (it.snippet || "");
       if (src === "alert1" && hasFalseCP(rawHay) && !realCP(rawHay)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
-      if (it.fromNews) return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
+      // ⚠️ คอลัมน์ CP ไม่เข้าข่ายทางลัดนี้ — ของที่ดึงมาจากคอลัมน์ข่าว match ได้จาก "สรุป"
+      // ด้วย ถ้าปล่อยผ่านตรงนี้ กฎ "ชื่อเครือต้องอยู่ในพาดหัว" ข้างล่างจะไม่มีโอกาสทำงานเลย
+      if (it.fromNews && src !== "alert1") return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
       // ⚠️ คอลัมน์ CP: ต้องมี "ชื่อเครือ CP จริง" เท่านั้น ไม่ใช่แค่คำที่ Google ไฮไลต์
       // Google ไฮไลต์ "เศษคำ" ได้ — เจอจริง: F-16s inter[cep]t ... ของ Al Jazeera
       // "cep" ไม่ได้อยู่ใน WEAK_TERMS และมันก็อยู่ในพาดหัวจริงๆ ด่านเดิมจึงปล่อยผ่าน
       // ไล่เติมทีละคำเป็นการวิ่งไล่ไม่จบ — เปลี่ยนเป็นถามว่า "เป็นชื่อเครือ CP ไหม" แทน
       if (src === "alert1") {
-        if (realCP(rawHay)) return { ok: true };                 // ชั้น 1
-        return { ok: "body", why: "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป", terms, bare, link: it.link }; // ไปเช็คเนื้อข่าว (ชั้น 3)
+        if (realCP(bare)) return { ok: true };                   // ชั้น 1 — ชื่อเครืออยู่ใน "พาดหัว"
+        // ⚠️ ชื่อเครือโผล่แค่ในสรุป/เนื้อข่าว = ข่าวเรื่องอื่นที่พาดพิงถึงเครือ ไม่ใช่ข่าวของเครือ
+        // (เจ้าของชี้เคสจริง 13 ส.ค. 2026: "7 ยักษ์ผูกเหลาฟาม์าห์ เขย่าธุรกิจร้านยา" ·
+        //  "จูหรงจี้ อดีตนายกฯ จีน ถึงแก่อนิจกรรม" — ทั้งคู่มีชื่อเครืออยู่ในเนื้อเท่านั้น)
+        // เดิมยอมให้ผ่านถ้าเจอชื่อในสรุป แล้วถ้าไม่เจอค่อยไปอ่านเนื้อข่าว ซึ่งยิ่งปล่อยผ่านมากขึ้น
+        if (realCP(rawHay)) return { ok: false, why: "cp-in-body", terms, bare, link: it.link };
+        return { ok: false, why: "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป", terms, bare, link: it.link };
       }
       // เช็คทั้ง title ดิบ + แบบแปลงเครื่องหมายเป็นช่องว่าง — พาดหัวแบบ 'TU'อัพเป้า ให้คำอย่าง "tu " match ติด
       const ntitle = " " + title.replace(/[^\p{L}\p{N}]+/gu, " ") + " ";

@@ -57,6 +57,7 @@ const WHY_TH = {
   roundup: "สรุปข่าวรวมหลายเรื่อง",
   "old-content": "ข่าวเก่าถูกดันขึ้นใหม่",
   "false-cp": "ชื่อคล้ายเครือ CP แต่ไม่ใช่",
+  "cp-in-body": "ชื่อเครือ CP อยู่แค่ในเนื้อข่าว ไม่ได้อยู่ในพาดหัว",
   "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป": "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป",
   "ไม่อยู่ในพาดหัว/เนื้อ": "คำที่ match ไม่ได้อยู่ในพาดหัวหรือเนื้อข่าว",
 };
@@ -68,10 +69,19 @@ function renderDropped(scope, data) {
   const cols = {};
   for (const a of SCOPES[scope].alerts) cols[a.source] = a.label;
 
+  // ⚠️ ข่าวใบเดียวโผล่ได้ 2 ครั้ง — ด่านตอนตรวจ (alertVerify) กับด่านกวาดของเก่า (swept)
+  // ตัดคนละรอบแต่เป็นข่าวใบเดียวกัน ถ้าไม่ยุบจะเห็นบรรทัดซ้ำติดกันแล้วนึกว่าข่าวซ้ำ
+  const seen = new Set();
   const rows = [
     ...((data?.alertVerify?.dropped) || []),
     ...((data?.swept?.dropped) || []),
-  ].filter((d) => d && d.title);
+  ].filter((d) => {
+    if (!d || !d.title) return false;
+    const k = (d.link || d.title) + "|" + (d.why || "");
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   if (!rows.length) {
     box.innerHTML = `<p class="lead">รอบล่าสุดไม่มีข่าวถูกตัดทิ้งเลย</p>`;
