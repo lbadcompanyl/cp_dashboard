@@ -1,0 +1,9 @@
+{
+  "name": "cp-dashboard-tests",
+  "private": true,
+  "type": "module",
+  "description": "เทสต์ของโปรเจกต์ — ไม่เกี่ยวกับตัวเว็บ เว็บยังเป็น static ไม่มี build step",
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

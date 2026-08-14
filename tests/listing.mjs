@@ -1,0 +1,55 @@
+// สรุปที่ติดมากับฟีดบางใบไม่ใช่สรุปของข่าวใบนั้น แต่เป็น "รายการข่าวอื่น" ที่พ่วงมา
+// เจ้าของแจ้ง 13 ส.ค. 2026 · ต้องตัดทิ้ง แต่ห้ามตัดสรุปจริงไปด้วย
+import { looksLikeListing, parseGeneric } from "../functions/api/trend/_lib/parser.js";
+
+let pass = 0, fail = 0;
+const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
+
+console.log("\n[1] เคสจริงที่เจ้าของส่งมา — ต้องจับได้");
+ok("สรุปที่เป็นข่าวคนละใบ (ขึ้นต้นด้วยเศษวันที่)",
+   looksLikeListing("2569 | 22:00 น. ซีพี แอ็กซ์ตร้า โชว์ผลงานครึ่งปีแรก ทำรายได้ 2.68 แสนล้านบาท โต 3.6%. 07 ส.ค. 2569 ..."));
+
+console.log("\n[2] รูปแบบอื่นของรายการข่าว");
+ok("ขึ้นต้นด้วยวันที่ไทย", looksLikeListing("07 ส.ค. 2569 ซีพี แอ็กซ์ตร้า แจ้งผลประกอบการ"));
+ok("ขึ้นต้นด้วยเวลา", looksLikeListing("22:00 น. เปิดตัวโครงการใหม่"));
+ok("มีวันที่ไทย 2 ชุด = เป็นรายการหลายข่าว",
+   looksLikeListing("ซีพีเปิดตัวโครงการ 07 ส.ค. 2569 และอีกข่าว 08 ส.ค. 2569 ที่เกี่ยวข้อง"));
+ok("ยังจับได้แม้มี marker ไฮไลต์คั่น",
+   looksLikeListing("2569 | 22:00 น. [[hl]]ซีพี[[/hl]] แอ็กซ์ตร้า โชว์ผลงาน"));
+
+console.log("\n[3] สรุปจริง — ห้ามตัดทิ้ง");
+ok("ย่อหน้าสรุปปกติ",
+   !looksLikeListing("ซีพี แอ็กซ์ตร้า ได้วางกลยุทธ์ผ่านโมเดลธุรกิจที่ออกแบบ “ความสุข” ให้จับต้องได้ ด้วยการผสานแนวคิด"));
+ok("สรุปที่เอ่ยวันที่ครั้งเดียวกลางประโยค",
+   !looksLikeListing("บริษัทประกาศเมื่อ 07 ส.ค. 2569 ว่าจะขยายการลงทุนในภาคอีสานเพิ่มอีกเท่าตัว"));
+ok("สรุปภาษาอังกฤษ", !looksLikeListing("CP Axtra reported revenue growth of 3.6% in the first half"));
+ok("สรุปที่มีตัวเลขนำหน้าแต่ไม่ใช่วันที่",
+   !looksLikeListing("2.68 แสนล้านบาท คือรายได้ครึ่งปีแรกของบริษัท"));
+ok("สรุปว่างเปล่า", !looksLikeListing(""));
+ok("สรุปสั้นมาก", !looksLikeListing("ซีพี"));
+
+console.log("\n[4] ต่อกับตัวอ่านฟีดจริง — สรุปแบบนี้ต้องไม่ติดมากับ item");
+{
+  const xml = `<rss><channel>
+    <item>
+      <title>พลิกธุรกิจค้าส่งอาหารสู่ยุคดิจิทัล เปิดตัว 'สี่มุมเมืองออนไลน์' ใหญ่ที่สุดของอาเซียน</title>
+      <link>https://www.thansettakij.com/news/1</link>
+      <pubDate>Wed, 13 Aug 2026 03:00:00 GMT</pubDate>
+      <description>2569 | 22:00 น. ซีพี แอ็กซ์ตร้า โชว์ผลงานครึ่งปีแรก ทำรายได้ 2.68 แสนล้านบาท โต 3.6%. 07 ส.ค. 2569</description>
+    </item>
+    <item>
+      <title>ซีพี แอ็กซ์ตร้า เปิดตัว HAPPITAT</title>
+      <link>https://www.thansettakij.com/news/2</link>
+      <pubDate>Wed, 13 Aug 2026 03:00:00 GMT</pubDate>
+      <description>ซีพี แอ็กซ์ตร้า ได้วางกลยุทธ์ผ่านโมเดลธุรกิจที่ออกแบบความสุขให้จับต้องได้</description>
+    </item>
+  </channel></rss>`;
+  const items = parseGeneric(xml, "alert1");
+  ok("อ่านได้ 2 ใบ", items.length === 2, String(items.length));
+  ok("ใบที่สรุปเป็นข่าวอื่น → สรุปว่าง", items[0].snippet === "", JSON.stringify(items[0].snippet));
+  ok("พาดหัวยังอยู่ครบ", items[0].title.includes("สี่มุมเมืองออนไลน์"));
+  ok("ใบที่สรุปจริง → เก็บไว้เหมือนเดิม", items[1].snippet.includes("วางกลยุทธ์"), JSON.stringify(items[1].snippet));
+}
+
+console.log(`\n${fail === 0 ? "✅" : "❌"} ผ่าน ${pass} · ตก ${fail}\n`);
+process.exit(fail ? 1 : 0);
