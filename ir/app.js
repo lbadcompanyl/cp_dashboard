@@ -86,47 +86,28 @@ function withinRecency(iso, hours) {
 
 // ---------- data ----------
 const MAX_RENDER = 100; // การ์ดสูงสุดต่อคอลัมน์ (กรองบนข้อมูลเต็ม แต่เรนเดอร์เท่านี้ = ลื่นขึ้น)
-const SNAP_KEY = "ir_feeds_snapshot"; // แคชล่าสุดใน localStorage → เปิดมาเห็นทันที
 
-function saveSnapshot(data) {
-  try {
-    const trimmed = { generatedAt: data.generatedAt, sources: {}, errors: data.errors || [] };
-    for (const k of Object.keys(data.sources || {})) {
-      trimmed.sources[k] = { ...data.sources[k], items: (data.sources[k].items || []).slice(0, MAX_RENDER) };
-    }
-    localStorage.setItem(SNAP_KEY, JSON.stringify(trimmed));
-  } catch {}
-}
-function loadSnapshot() {
-  try { const s = localStorage.getItem(SNAP_KEY); return s ? JSON.parse(s) : null; } catch { return null; }
-}
+// เก็บกวาดสำเนาเก่าที่ค้างอยู่ในเครื่องผู้ใช้จากรุ่นก่อน (ไม่ได้ใช้แล้ว)
+try { localStorage.removeItem("ir_feeds_snapshot"); } catch {}
 
+// ⚠️ ของเดิมเก็บสำเนาข่าวไว้ใน localStorage แล้วเปิดมา "โชว์ของเก่าทันที" ก่อนของจริงจะมา
+// (เจ้าของสั่งเอาออก 14 ส.ค. 2026) — ข่าวที่เห็นตอนเปิดหน้าเป็นของรอบที่แล้ว ดูไม่ออกว่าเก่า
+// เพราะไม่มีอะไรบอก · ตอนนี้ทำเหมือน /trend/ กับ /issue/ คือขึ้นไอคอนหมุน "กำลังดึงข้อมูล…"
+// แล้วค่อยแสดงของจริงรอบเดียว **แดชบอร์ดทั้ง 3 หน้าโหลดเหมือนกันหมดแล้ว อย่าเพิ่มกลับทีละหน้า**
 async function load(opts = {}) {
-  const silent = !!opts.silent; // auto-refresh: ไม่แตะสถานะ/ไม่กระโดด scroll
+  const silent = !!opts.silent; // auto-refresh: ไม่ล้างเป็น skeleton / ไม่กระโดด scroll
   const btn = $("#refresh");
   btn.disabled = true;
-
-  // เปิดมาเห็นข่าวเดิมทันที (จาก localStorage) แทนหน้าจอโหลดเปล่า ๆ
-  const snap = loadSnapshot();
-  if (silent && state.data) {
-    /* auto-refresh: คงสถานะเดิมไว้ */
-  } else if (snap && !state.data) {
-    state.data = snap;
-    renderAll();
-    $("#updated").textContent = "กำลังอัปเดต…";
-  } else if (!state.data) {
+  if (!silent) {
     $("#updated").textContent = "กำลังโหลด…";
     $$(".panel").forEach((p) => {
       $("[data-list]", p).innerHTML = `<div class="state waiting"><span class="spin"></span>กำลังดึงข้อมูล…</div>`;
     });
-  } else {
-    $("#updated").textContent = "กำลังอัปเดต…";
   }
 
   try {
     const feeds = await fetch("/api/ir/feeds").then((r) => r.json());
     state.data = feeds;
-    saveSnapshot(feeds);
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
     const sp = silent ? $$(".panel [data-list]").map((el) => el.scrollTop) : null;
