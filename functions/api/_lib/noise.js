@@ -207,7 +207,7 @@ export function dropNoiseAfterArchive(sources, diag) {
     b.items = b.items.filter((it) => {
       const why = noiseReason(it, (it.title || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase(), src);
       // เก็บลิงก์+พาดหัวเต็มไว้ด้วย — หน้า /admin/ เอาไปแสดงว่า "ระบบตัดอะไรทิ้งไปบ้าง"
-      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "" });
+      if (why) (diag.dropped = diag.dropped || []).push({ src, why, title: stripMarks(it.title), link: it.link || "", at: it.publishedAt || "" });
       return !why;
     });
     diag[src] = before - b.items.length;

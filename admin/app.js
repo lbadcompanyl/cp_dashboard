@@ -65,6 +65,7 @@ const WHY_TH = {
   "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป": "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป", // ของเก่าที่ยังค้างใน KV
   "ไม่อยู่ในพาดหัว/เนื้อ": "คำที่ match ไม่ได้อยู่ในพาดหัวหรือเนื้อข่าว",
 };
+const DROP_DAYS = 3; // โชว์เฉพาะข่าว 3 วันล่าสุดในรายการที่ถูกตัด (เจ้าของสั่ง — ของเก่าทำให้รก)
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function renderDropped(scope, data) {
@@ -76,6 +77,10 @@ function renderDropped(scope, data) {
   // ⚠️ ข่าวใบเดียวโผล่ได้ 2 ครั้ง — ด่านตอนตรวจ (alertVerify) กับด่านกวาดของเก่า (swept)
   // ตัดคนละรอบแต่เป็นข่าวใบเดียวกัน ถ้าไม่ยุบจะเห็นบรรทัดซ้ำติดกันแล้วนึกว่าข่าวซ้ำ
   const seen = new Set();
+  // ⚠️ เอาแค่ข่าว 3 วันล่าสุด (เจ้าของสั่ง 14 ส.ค. 2026) — ข่าวเก่ายังถูกตัดอยู่เหมือนเดิม
+  // แค่ไม่ต้องโชว์ให้รก · ใบที่ไม่มีวันที่ติดมา "เก็บไว้" ไม่ซ่อน (ซ่อนของที่ตัดสินไม่ได้ = หายเงียบ)
+  const cutoff = Date.now() - DROP_DAYS * 86400000;
+  let hidden = 0;
   const rows = [
     ...((data?.alertVerify?.dropped) || []),
     ...((data?.swept?.dropped) || []),
@@ -84,11 +89,14 @@ function renderDropped(scope, data) {
     const k = (d.link || d.title) + "|" + (d.why || "");
     if (seen.has(k)) return false;
     seen.add(k);
+    const t = d.at ? new Date(d.at).getTime() : NaN;
+    if (!isNaN(t) && t < cutoff) { hidden++; return false; }
     return true;
   });
 
   if (!rows.length) {
-    box.innerHTML = `<p class="lead">รอบล่าสุดไม่มีข่าวถูกตัดทิ้งเลย</p>`;
+    box.innerHTML = `<p class="lead">ไม่มีข่าวถูกตัดทิ้งใน ${DROP_DAYS} วันล่าสุด` +
+      (hidden ? ` <span class="drophid">(เก่ากว่านั้นอีก ${hidden} ข่าว — ถูกตัดไปแล้ว ไม่ได้แสดง)</span>` : "") + `</p>`;
     return;
   }
 
@@ -102,7 +110,7 @@ function renderDropped(scope, data) {
   const groups = [...byWhy.entries()].sort((a, b) => b[1].length - a[1].length);
 
   box.innerHTML =
-    `<p class="dropsum">ตัดทิ้ง <b>${rows.length}</b> ข่าว · ${groups.length} เหตุผล</p>` +
+    `<p class="dropsum">ตัดทิ้ง <b>${rows.length}</b> ข่าว · ${groups.length} เหตุผล <span class="dropage">(${DROP_DAYS} วันล่าสุด${hidden ? ` · เก่ากว่านั้นอีก ${hidden}` : ""})</span></p>` +
     groups.map(([why, list]) => `
       <details class="dropgrp">
         <summary><span class="dropwhy">${esc(WHY_TH[why] || why)}</span><span class="dropn">${list.length}</span></summary>

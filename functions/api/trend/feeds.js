@@ -17,7 +17,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "72"; // bump: ด่านตรวจรอบสอง — ของเก่าจากคลังต้องผ่านด่านเดียวกัน
+const CACHE_VER = "73"; // bump: ติดวันที่ไปกับรายการที่ถูกตัด (หน้า admin กรอง 3 วัน)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -785,7 +785,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
     const kept = [];
     verdict.forEach((v, i) => {
       if (v.ok === true) { if (v.mark) items[i].vfy = VFY_VER; kept.push(items[i]); }
-      else diag.dropped.push({ src, why: v.why, terms: v.terms || [], title: v.bare, link: v.link });
+      else diag.dropped.push({ src, why: v.why, terms: v.terms || [], title: v.bare, link: v.link, at: (items[i] && items[i].publishedAt) || "" });
     });
     diag[src] = items.length - kept.length;
     sources[src].items = kept;
