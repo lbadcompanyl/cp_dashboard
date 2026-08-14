@@ -17,7 +17,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "71"; // bump: คอลัมน์ CP ยึดพาดหัวตอน merge + AI ตัดสินใบที่อ่านเนื้อไม่ได้
+const CACHE_VER = "72"; // bump: ด่านตรวจรอบสอง — ของเก่าจากคลังต้องผ่านด่านเดียวกัน
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -319,6 +319,29 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const archive = {};
   let archiveOut = null;
   try { archiveOut = await mergeArchives(env, sources, archive); } catch (e) { archive.err = String((e && e.message) || e).slice(0, 120); }
+
+  // ด่านตรวจรอบสอง — verify รอบแรกทำงาน "ก่อน" archive ของเก่าใน KV ที่เก็บไว้ตอนด่านยังไม่มี
+  // (หรือคนละรุ่น) จึงไหลกลับเข้าคอลัมน์โดยไม่ผ่านด่านเลย (เจอจริง: ข่าวหุ้น/ข่าวแกร็บ 14 ส.ค. 2026
+  // — 'ซีพี' อยู่แค่ในบล็อกข่าวแนะนำของหน้า ไม่ได้อยู่ในเนื้อ) · ตรวจเฉพาะใบที่ยังไม่มีธง vfy
+  // แล้วตัดออกจาก "คลัง" ด้วย ไม่ใช่แค่หน้าจอ — จะได้ไม่วนกลับมาให้ตัดใหม่ทุกรอบ
+  try {
+    const pending = {};
+    for (const s2 of ["alert1", "alert2"]) {
+      const un = (sources[s2]?.items || []).filter((it) => it.vfy !== VFY_VER);
+      if (un.length) pending[s2] = { items: un };
+    }
+    if (Object.keys(pending).length) {
+      const v2 = {};
+      await verifyAlertItems(cache, pending, v2, allowVerify, env, cpEx);
+      const cut = new Set((v2.dropped || []).map((d) => normLink(d.link || "")));
+      if (cut.size) for (const s2 of ["alert1", "alert2"]) {
+        if (sources[s2]) sources[s2].items = sources[s2].items.filter((it) => !cut.has(normLink(it.link)));
+        if (archiveOut && archiveOut[s2]) archiveOut[s2] = archiveOut[s2].filter((it) => !cut.has(normLink(it.link)));
+      }
+      if ((v2.dropped || []).length) alertVerify.dropped = [...(alertVerify.dropped || []), ...v2.dropped];
+      alertVerify.pass2 = { alert1: v2.alert1 || 0, alert2: v2.alert2 || 0 };
+    }
+  } catch (e) { alertVerify.err2 = String((e && e.message) || e).slice(0, 120); }
 
   // เติมพาดหัวที่ถูกตัดสั้น — ต้องทำ "หลัง" merge เพื่อให้เห็นของเก่าใน KV ด้วย
   // ⚠️ ของเก่าที่เก็บไว้ตอนยังไม่มีตัวเติมจะถูกตัดค้างอยู่ตลอด ถ้าเติมก่อน merge
@@ -671,6 +694,8 @@ async function mapPoolResults(items, limit, fn) {
 }
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch)
+const BODY_FETCH_MAX = 12; // เพดานยิงอ่านเนื้อข่าวต่อ 1 build — กันชนโควตา subrequest 50 ของ Cloudflare
+const VFY_VER = 1; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
 // ชั้น 4 ของคอลัมน์ CP — เปิดอ่านเนื้อข่าวไม่ได้ (เว็บบล็อกบอต/ช้า/paywall) เดิม "ปล่อยผ่านตาบอด"
 // เจ้าของเจอข่าวตลาดหุ้นที่ไม่มีชื่อเครือทั้งในพาดหัวและเนื้อ ค้างอยู่ในคอลัมน์ (13 ส.ค. 2026)
 // จึงให้ AI (โมเดลเดียวกับที่จัดหมวดข่าว) อ่านพาดหัวตัดสินแทน
@@ -703,7 +728,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
     const items = sources[src].items;
     const extra = src === "alert1" ? CP_BRANDS : []; // คอลัมน์ CP → ยอมรับชื่อในเครือด้วย
     const verdict = items.map((it) => {
-      if (isAllowed(it)) return { ok: true }; // เจ้าของสั่งคืนไว้ที่หน้า /admin/ — ผ่านทุกด่าน
+      if (isAllowed(it)) return { ok: true, mark: true }; // เจ้าของสั่งคืนไว้ที่หน้า /admin/ — ผ่านทุกด่าน
       const bare = (it.title || "").replace(/\[\[\/?hl\]\]/g, "");
       const title = bare.toLowerCase();
       const noise = noiseReason(it, title, src); // ตัดโฆษณา/รายงานประจำวัน/หน้าแกลเลอรี ก่อนเช็ค related-block
@@ -716,14 +741,14 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
       if (src === "alert1" && hasFalseCP(bare) && !realCP(bare)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
       // ⚠️ คอลัมน์ CP ไม่เข้าข่ายทางลัดนี้ — ของที่ดึงมาจากคอลัมน์ข่าว match ได้จาก "สรุป"
       // ด้วย ถ้าปล่อยผ่านตรงนี้ กฎ "ชื่อเครือต้องอยู่ในพาดหัว" ข้างล่างจะไม่มีโอกาสทำงานเลย
-      if (it.fromNews && src !== "alert1") return { ok: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
+      if (it.fromNews && src !== "alert1") return { ok: true, mark: true }; // ข่าวจาก News ที่ match keyword คอลัมน์แล้ว (ไฮบริด) — ผ่าน noise พอ
       const terms = highlightedTerms(it).filter((t) => !WEAK_TERMS.has(t)); // ตัดคำ match ที่อ่อนเกิน (bare cp) ทิ้ง
       // ⚠️ คอลัมน์ CP: ต้องมี "ชื่อเครือ CP จริง" เท่านั้น ไม่ใช่แค่คำที่ Google ไฮไลต์
       // Google ไฮไลต์ "เศษคำ" ได้ — เจอจริง: F-16s inter[cep]t ... ของ Al Jazeera
       // "cep" ไม่ได้อยู่ใน WEAK_TERMS และมันก็อยู่ในพาดหัวจริงๆ ด่านเดิมจึงปล่อยผ่าน
       // ไล่เติมทีละคำเป็นการวิ่งไล่ไม่จบ — เปลี่ยนเป็นถามว่า "เป็นชื่อเครือ CP ไหม" แทน
       if (src === "alert1") {
-        if (realCP(bare)) return { ok: true };                   // ชั้น 1 — ชื่อเครืออยู่ใน "พาดหัว"
+        if (realCP(bare)) return { ok: true, mark: true };       // ชั้น 1 — ชื่อเครืออยู่ใน "พาดหัว"
         // ⚠️ **ห้ามตัดสินจาก it.snippet** (เจ้าของสั่ง 13 ส.ค. 2026)
         // สรุปที่ติดมากับฟีดเป็น "ข่าวที่เกี่ยวข้อง" ไม่ใช่เนื้อข่าวใบนี้ — ชื่อเครือที่โผล่ตรงนั้น
         // จึงไม่ได้แปลว่าข่าวใบนี้เป็นข่าวของเครือ (เจอจริง: "7 ยักษ์ผูกเหลาฟาม์าห์ เขย่าธุรกิจร้านยา"
@@ -733,20 +758,25 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
       }
       // เช็คทั้ง title ดิบ + แบบแปลงเครื่องหมายเป็นช่องว่าง — พาดหัวแบบ 'TU'อัพเป้า ให้คำอย่าง "tu " match ติด
       const ntitle = " " + title.replace(/[^\p{L}\p{N}]+/gu, " ") + " ";
-      if (terms.some((t) => title.includes(t) || ntitle.includes(t)) || extra.some((t) => title.includes(t) || ntitle.includes(t))) return { ok: true }; // ชั้น 1
+      if (terms.some((t) => title.includes(t) || ntitle.includes(t)) || extra.some((t) => title.includes(t) || ntitle.includes(t))) return { ok: true, mark: true }; // ชั้น 1
       return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link };
     });
     const needBody = [];
     verdict.forEach((v, i) => { if (v.ok === "body") needBody.push(i); });
     if (allowFetch && needBody.length) {
-      const hits = await mapPoolResults(needBody, 6, (i) => bodyHasKeep(cache, items[i].link, extra));
-      // อ่านไม่ได้ (null) = ไม่รู้ → เก็บไว้ · เจอคำ = เก็บ · อ่านแล้วไม่เจอ = ตัด
-      needBody.forEach((i, k) => { verdict[i].ok = hits[k] !== false; });
+      // เพดานต่อ build — ด่านนี้ตรวจของเก่าจากคลังด้วย (รอบสอง) รอบแรกหลัง release มี backlog
+      // เยอะ ยิงหมดทีเดียวจะชนโควตา subrequest ของ Cloudflare · เกินเพดาน = เก็บไว้ก่อน
+      // "โดยไม่ติดธง" รอบถัดไปค่อยตรวจต่อ จนกว่าจะหมด
+      const toFetch = needBody.slice(0, BODY_FETCH_MAX);
+      needBody.slice(BODY_FETCH_MAX).forEach((i) => { verdict[i].ok = true; });
+      const hits = await mapPoolResults(toFetch, 6, (i) => bodyHasKeep(cache, items[i].link, extra));
+      // อ่านไม่ได้ (null) = ไม่รู้ → เก็บไว้โดยไม่ติดธง · เจอคำ = เก็บ+ติดธง · อ่านแล้วไม่เจอ = ตัด
+      toFetch.forEach((i, k) => { verdict[i].ok = hits[k] !== false; if (hits[k] === true) verdict[i].mark = true; });
       // ชั้น 4 — เฉพาะคอลัมน์ CP: ใบที่เปิดอ่านเนื้อไม่ได้ ให้ AI อ่านพาดหัวตัดสินแทนการปล่อยผ่าน
       if (src === "alert1") {
-        const blind = needBody.filter((_, k) => hits[k] === null);
+        const blind = toFetch.filter((_, k) => hits[k] === null);
         const ans = blind.length ? await aiHeadlineIsCP(env, blind.map((i) => verdict[i].bare), cpEx) : null;
-        if (ans) blind.forEach((i, k) => { if (!ans[k]) { verdict[i].ok = false; verdict[i].why = "ai-no-cp"; } });
+        if (ans) blind.forEach((i, k) => { if (!ans[k]) { verdict[i].ok = false; verdict[i].why = "ai-no-cp"; } else { verdict[i].mark = true; } });
       }
     } else {
       // รอบนี้ยังไม่มีสิทธิ์ยิงอ่านเนื้อข่าว — เก็บไว้ก่อน รอบเบื้องหลังจะมาตัดสินให้เอง
@@ -754,7 +784,7 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
     }
     const kept = [];
     verdict.forEach((v, i) => {
-      if (v.ok === true) kept.push(items[i]);
+      if (v.ok === true) { if (v.mark) items[i].vfy = VFY_VER; kept.push(items[i]); }
       else diag.dropped.push({ src, why: v.why, terms: v.terms || [], title: v.bare, link: v.link });
     });
     diag[src] = items.length - kept.length;
