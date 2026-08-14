@@ -1,5 +1,5 @@
 // วัดเลย์เอาต์มือถือของจริงด้วย Chromium — ไม่เดาจาก CSS
-import { chromium } from "/tmp/claude-0/-home-user-test/be7fa817-d985-5289-8b20-fc2b22afab7c/scratchpad/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 
 const PAGES = ["/trend/", "/ir/", "/issue/"];
 const VIEWPORTS = [
