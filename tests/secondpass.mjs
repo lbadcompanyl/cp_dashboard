@@ -17,7 +17,7 @@ for (const [name, f] of [["trend", "../functions/api/trend/feeds.js"],
   const src = fs.readFileSync(f, "utf8");
   console.log(`\n[2-${name}] ธง vfy — ติดเฉพาะคำตัดสินที่ชี้ขาดแล้ว`);
   ok("มี VFY_VER", /const VFY_VER = \d+;/.test(src));
-  ok("ผ่านชั้นพาดหัว → ติดธง", /realCP\(bare\)\) return \{ ok: true, mark: true \}/.test(src));
+  ok("ผ่านชั้นพาดหัว (ชื่อเครือยืนเป็นคำ) → ติดธง", /if \(ev === "strong"\) return \{ ok: true, mark: true \};/.test(src));
   ok("เจ้าของสั่งคืน → ติดธง", /isAllowed\(it\)\) return \{ ok: true, mark: true \}/.test(src));
   ok("อ่านเนื้อเจอคำ → ติดธง", /if \(hits\[k\] === true\) verdict\[i\]\.mark = true;/.test(src));
   ok("AI ตอบ 'ใช่' → ติดธง", /else \{ verdict\[i\]\.mark = true; \}/.test(src));

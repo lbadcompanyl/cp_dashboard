@@ -287,3 +287,31 @@ export function cpExamples(decisions, max = 8) {
   // คละสองฝั่งเสมอ ไม่ให้ AI เห็นแต่ n แล้วตอบ n รัว
   return [...yes, ...no].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, max);
 }
+
+// ---------- ชื่อเครืออยู่ "เป็นคำของตัวเอง" หรือ "ไปเจอกลางคำอื่น" ----------
+// ภาษาไทยไม่มีช่องว่างคั่นคำ การเทียบแบบ includes จึงไปเจอชื่อเครือกลางคำอื่นได้
+// เจอจริง 14 ส.ค. 2026: "คาราจีแนน ฟู้ดเจล อควา **เอ็มซีพีไอ**" ของ halal.co.th
+// — คำว่า `ซีพี` ซ่อนอยู่ใน `เอ็ม-ซีพี-ไอ` (สารเคมี MCP) แต่ระบบนับว่าเป็นข่าวของเครือ
+// แล้วปล่อยผ่านตั้งแต่ด่านแรก **ไม่มีวันไปถึงชั้น AI**
+//
+// weak = ชื่อเครือถูกขนาบด้วยตัวอักษรไทย "ทั้งสองข้าง" = อยู่กลางคำอื่นแน่ๆ
+// จงใจตั้งเกณฑ์ให้แคบ: "เครือซีพี" / "ซีพีเอฟ" มีขอบด้านหนึ่งเป็นช่องว่าง/ขอบข้อความ = strong
+// (weak ไม่ได้แปลว่าตัดทิ้ง แค่ส่งให้ AI อ่านพาดหัวตัดสินอีกที)
+const THAI_LETTER = /[ก-ฮะ-๎]/;
+/** @returns "strong" | "weak" | "" (ไม่เจอชื่อเครือเลย) */
+export function cpEvidence(text) {
+  const hay = dropFalseCP(String(text || "").replace(/\[\[\/?hl\]\]/g, "")).toLowerCase();
+  let found = "";
+  for (const b of CP_BRANDS) {
+    let i = hay.indexOf(b);
+    while (i !== -1) {
+      const before = i > 0 ? hay[i - 1] : "";
+      const after = i + b.length < hay.length ? hay[i + b.length] : "";
+      // คำละตินมี (?<![a-z0-9]) คุมอยู่แล้วใน termPattern — ที่นี่ดูเฉพาะการฝังกลางคำไทย
+      if (!(THAI_LETTER.test(before) && THAI_LETTER.test(after))) return "strong";
+      found = "weak";
+      i = hay.indexOf(b, i + 1);
+    }
+  }
+  return found;
+}
