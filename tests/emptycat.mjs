@@ -82,7 +82,9 @@ for (const D of DASH) {
 }
 
 console.log("\n════════ landing + sd ════════");
-for (const [name, url, expect] of [["landing", "http://127.0.0.1:8899/", 15], ["sd", "http://127.0.0.1:8899/sd.html", 13]]) {
+// ⚠️ ตัวเลขนี้ต้องขยับตามทุกครั้งที่ bump page-ver ของหน้านั้น — เทสต์นี้คือตัวบังคับให้ bump จริง
+// (landing 16 = รอบที่เพิ่มการ์ด Social Dashboard)
+for (const [name, url, expect] of [["landing", "http://127.0.0.1:8899/", 16], ["sd", "http://127.0.0.1:8899/sd.html", 13]]) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
   const page = await ctx.newPage();
   await page.route("**://ssl.gstatic.com/**", (r) => r.abort());
