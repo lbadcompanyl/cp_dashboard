@@ -13,7 +13,9 @@ async function loadFrom(file) {
   const block =
     grab(/^const PIN_FALSE_RE = .*$/m, "PIN_FALSE_RE") + "\n" +
     grab(/^const PIN_CP_RE = .*$/m, "PIN_CP_RE") + "\n" +
-    grab(/^const PIN_FOOD_RE = .*$/m, "PIN_FOOD_RE") + "\n" +
+    grab(/^const PIN_FOOD_STRONG_RE = .*$/m, "PIN_FOOD_STRONG_RE") + "\n" +
+    grab(/^const PIN_FOOD_AMBIG_RE = .*$/m, "PIN_FOOD_AMBIG_RE") + "\n" +
+    grab(/^const PIN_FOOD_CTX_RE = .*$/m, "PIN_FOOD_CTX_RE") + "\n" +
     grab(/^const PIN_FOOD_BRAND_RE = .*$/m, "PIN_FOOD_BRAND_RE") + "\n" +
     grab(/^const TREND_CATS = \{[\s\S]*?^\};$/m, "TREND_CATS") + "\n" +
     grab(/^const FOOD_CAT = .*$/m, "FOOD_CAT") + "\n" +
@@ -26,7 +28,7 @@ async function loadFrom(file) {
 // เคยพลาดมาแล้ว: sync ข้ามไฟล์ด้วย regex แล้วตัด pinScore หายไปทั้งฟังก์ชัน
 // node --check ยังผ่านเพราะ syntax ถูก แต่หน้าเว็บพังตอนรันจริง
 console.log("\n[0] ทั้ง trend/ และ issue/ ต้องมีของครบและตรงกัน");
-const NEED = ["PIN_FALSE_RE", "PIN_CP_RE", "PIN_FOOD_RE", "PIN_FOOD_BRAND_RE", "TREND_CATS", "FOOD_CAT", "pinScore"];
+const NEED = ["PIN_FALSE_RE", "PIN_CP_RE", "PIN_FOOD_STRONG_RE", "PIN_FOOD_AMBIG_RE", "PIN_FOOD_CTX_RE", "PIN_FOOD_BRAND_RE", "TREND_CATS", "FOOD_CAT", "pinScore"];
 for (const f of FILES) {
   const src = fs.readFileSync(f, "utf8");
   const missing = NEED.filter((n) => !new RegExp(`^(const|function) ${n}\\b`, "m").test(src));
@@ -129,6 +131,29 @@ for (const page of ["../trend/index.html", "../issue/index.html"]) {
     if (v === "0") { ok(`0 = ทุกหมวด`, /ทุกหมวด/.test(label), label); continue; }
     ok(`${v} = ${label.trim()}`, TREND_CATS[+v] === label.trim(), `ตารางบอก ${TREND_CATS[+v]}`);
   }
+}
+
+console.log("\n[5c] คำอาหารที่กำกวม ต้องมีบริบทหนุน (เจ้าของแจ้ง 14 ส.ค. 2026)");
+{
+  const S = (t, related = []) => pinScore({ title: t, snippet: "", related, topics: [] });
+  // เคสจริง: "ดูสนุกเกอร์สด" ถูกไฮไลต์เป็นอาหาร
+  ok("สนุกเกอร์ + ถ่ายทอดสด → ไม่ใช่อาหาร",
+     S("ดูสนุกเกอร์สด", ["ถ่ายทอดสดสนุกเกอร์", "หมู ปากน้ำ", "ผลสนุกเกอร์"]) === 0);
+  // คำบริบทต้องไม่ไปซ่อนในคำอื่น — บทเรียนเดิมของโปรเจกต์นี้
+  ok('"ทอด" ที่ซ่อนใน ถ่ายทอด ไม่นับเป็นบริบทอาหาร', S("ถ่ายทอดสดไก่ชน") === 0);
+  ok('"นึ่ง" ที่ซ่อนใน หนึ่ง ไม่นับ', S("หนึ่งในสิบ ข้าวสาร") === 0);
+  ok('"ย่าง" ที่ซ่อนใน อย่าง ไม่นับ', S("อย่างไรก็ตาม เนื้อหาข่าว") === 0);
+  ok("ตลาดหุ้น ไม่ใช่บริบทอาหาร", S("ตลาดหุ้นไทย ปลาย ปี") === 0);
+  // ของจริงต้องยังติด
+  ok("ราคาหมู → อาหาร", S("ราคาหมูวันนี้") === 1);
+  ok("ไข่ไก่ + ราคา → อาหาร", S("ไข่ไก่ขึ้นราคา") === 1);
+  ok("กุ้ง + ส่งออก → อาหาร", S("ส่งออกกุ้งไทยโต") === 1);
+  ok("หมู + ร้านอาหาร → อาหาร", S("หมูเด้ง", ["ร้านอาหารหมู"]) === 1);
+  // คำที่ชัดอยู่แล้ว ไม่ต้องมีบริบท
+  ok("บุฟเฟ่ต์ คำเดียวพอ", S("บุฟเฟ่ต์ชาบู") === 1);
+  ok("ทุเรียน คำเดียวพอ", S("ทุเรียนหมอนทอง") === 1);
+  ok("แบรนด์อาหาร คำเดียวพอ", S("starbucks") === 1);
+  ok("เครือ CP มาก่อนอาหาร", S("ซีพีเอฟ แจ้งผล") === 2);
 }
 
 console.log("\n[6] เรียงจริงเหมือนในหน้าเว็บ (sort เสถียร — ลำดับ Google คงอยู่ในกลุ่มเดียวกัน)");
