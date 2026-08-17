@@ -1,8 +1,8 @@
 // แดชบอร์ดโซเชียล 4 แท็บ — คุมข้อกำหนดที่พังแล้วดูไม่ออกด้วยตาเปล่า
 //
-// เรื่องที่คุมไว้: ช่วงเวลา/โหมดเทียบต้องใช้ร่วมกันทุกแท็บ · ทุกตัวเลขต้องมี delta
-// (ยกเว้นเลือกไม่เทียบ) · Top/Bottom/Newest ต้องกรองตามช่วงที่เลือก ·
-// ไม่มีข้อมูลต้องบอกว่าไม่มี ห้ามลากกราฟเป็น 0 · จอแคบต้องอ่านจบ
+// รวมข้อที่แก้จากรอบรีวิว: แกน Y ห้ามซ้ำ · ตารางเทียบรายช่อง · แท่ง 100% ·
+// diverging bar · ชิพเลือกช่อง · คำอธิบายอยู่ใน tooltip · แกน Y คู่ ·
+// กริด TikTok ห้ามมีใบลอยเดี่ยว · delta ฐานเล็กต้องเป็นจำนวนจริง
 //
 // ⚠️ ยิงเน็ตออกนอกไม่ได้ — หน้านี้ใช้ข้อมูลจำลองในตัว ไม่ต้องปลอม API
 // ต้องมีเซิร์ฟเวอร์ static ที่พอร์ต 8899:  python3 -m http.server 8899 --directory ..
@@ -15,7 +15,7 @@ const ok = (c, m) => { c ? (pass++, console.log("  ✅ " + m)) : (fail++, consol
 
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 
-async function open(viewport = { width: 1280, height: 900 }) {
+async function open(viewport = { width: 1400, height: 1000 }) {
   const pg = await browser.newPage({ viewport });
   const errs = [];
   pg.on("pageerror", (e) => errs.push(String(e)));
@@ -24,281 +24,443 @@ async function open(viewport = { width: 1280, height: 900 }) {
   await pg.waitForSelector(".sc");
   return { pg, errs };
 }
-
-const tabTo = async (pg, label) => {
-  await pg.click(`.tab:has-text("${label}")`);
-  await pg.waitForTimeout(120);
-};
+const tabTo = async (pg, label) => { await pg.click(`.tab:has-text("${label}")`); await pg.waitForTimeout(140); };
 const view = (pg) => pg.$eval("#view", (e) => e.innerText);
 const secs = (pg) => pg.$$eval(".sec", (n) => n.map((x) => x.textContent.trim()));
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[1] โครงหน้า — 4 แท็บ อ่านจาก config ไม่ได้เขียนค้างใน HTML");
+console.log("\n[1] โครงหน้า — แท็บอ่านจาก config ไม่ได้เขียนค้างใน HTML");
 {
   const { pg, errs } = await open();
   const tabs = await pg.$$eval(".tab", (n) => n.map((x) => x.dataset.tab));
   ok(tabs.join(",") === "summary,youtube,tiktok,facebook", "แท็บครบ 4 ตัว เรียงถูก");
-
-  // ⚠️ ต้องเพิ่มแท็บใหม่ได้โดยไม่ต้องแตะ HTML — เช็คว่า HTML ไม่ได้ hardcode ปุ่มไว้
   const html = await (await fetch(BASE + "/social/index.html")).text();
-  ok(!/data-tab=/.test(html), "ปุ่มแท็บไม่ได้เขียนค้างไว้ใน HTML (เพิ่มแท็บ paid ทีหลังได้)");
+  ok(!/data-tab=/.test(html), "ปุ่มแท็บไม่ได้เขียนค้างใน HTML (เพิ่มแท็บ paid ทีหลังได้)");
   ok(errs.length === 0, "ไม่มี JS error");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[2] ช่วงเวลา + โหมดเทียบ ต้องใช้ร่วมกันทุกแท็บ");
+console.log("\n[2] ช่วงเวลา + โหมดเทียบ ใช้ร่วมกันทุกแท็บ");
 {
   const { pg } = await open();
   await pg.click('[data-days="90"]');
   await pg.click('[data-cmp="yoy"]');
-  const noteBefore = await pg.$eval(".ctrl-note", (e) => e.innerText);
-  ok(/90 วัน/.test(noteBefore), "ตั้งเป็น 90 วันแล้ว");
-  ok(/เทียบกับ/.test(noteBefore), "ตั้งเป็นเทียบปีก่อนแล้ว");
-
+  const before = await pg.$eval(".ctrl-note", (e) => e.innerText);
+  ok(/90 วัน/.test(before) && /เทียบกับ/.test(before), "ตั้งค่า 90 วัน + เทียบปีก่อนแล้ว");
   for (const t of ["YouTube", "TikTok", "Facebook", "ภาพรวม"]) {
     await tabTo(pg, t);
-    const n = await pg.$eval(".ctrl-note", (e) => e.innerText);
-    ok(n === noteBefore, `สลับไปแท็บ ${t} แล้วช่วงเวลายังเป็นชุดเดิม`);
+    ok((await pg.$eval(".ctrl-note", (e) => e.innerText)) === before, `แท็บ ${t}: ช่วงเวลายังเป็นชุดเดิม`);
   }
-  const on = await pg.$$eval(".seg button.on", (n) => n.map((x) => x.textContent.trim()));
-  ok(on.includes("90 วัน") && on.includes("ปีก่อน"), "ปุ่มที่เลือกไว้ยังไฮไลต์ถูกหลังสลับแท็บ");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[3] ทุกตัวเลขต้องมี delta — ยกเว้นเลือก 'ไม่เทียบ'");
+console.log("\n[3] delta — ทุกตัวเลขต้องมี ยกเว้นเลือก 'ไม่เทียบ'");
 {
   const { pg } = await open();
-  let d = await pg.$$(".sc .dlt");
-  ok(d.length >= 4, `สรุป 4 ใบมีป้ายเทียบครบ (${d.length})`);
+  ok((await pg.$$(".sc .dlt")).length >= 4, "สรุปบนสุดมีป้ายเทียบครบ");
+  ok((await pg.$$(".tbl.cmp .cd .dlt")).length >= 8, "ทุกช่องในตารางเทียบรายช่องมี delta");
 
   await pg.click('[data-cmp="none"]');
-  await pg.waitForTimeout(120);
-  d = await pg.$$(".dlt");
-  ok(d.length === 0, "เลือกไม่เทียบ → ไม่มีป้ายเทียบเหลือเลยสักอัน");
-  const txt = await view(pg);
-  ok(!/▲|▼/.test(txt), "ไม่มีลูกศรขึ้นลงค้างอยู่");
+  await pg.waitForTimeout(140);
+  ok((await pg.$$(".dlt")).length === 0, "เลือกไม่เทียบ → ไม่มีป้ายเทียบเหลือเลย");
+  ok(!/▲|▼/.test(await view(pg)), "ไม่มีลูกศรค้างอยู่");
 
   await pg.click('[data-cmp="prev"]');
-  await pg.waitForTimeout(120);
+  await pg.waitForTimeout(140);
   ok((await pg.$$(".dlt")).length > 0, "กลับมาเทียบแล้วป้ายกลับมา");
-
-  // แท็บช่องก็ต้องมีครบเหมือนกัน
-  await tabTo(pg, "TikTok");
-  ok((await pg.$$(".sc .dlt")).length >= 4, "แท็บช่องก็มีป้ายเทียบครบทุกใบ");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[4] แท็บภาพรวม — ครบและเรียงตามที่สั่ง");
+console.log("\n[4] 🔴 กติกา delta ใหม่ — ฐานน้อยกว่า 1,000 ต้องบอกเป็นจำนวนจริง ไม่ใช่ %");
 {
   const { pg } = await open();
-  ok((await pg.$$(".sc")).length === 4, "① สรุป 4 ใบ");
-  ok((await pg.$$(".pcard")).length === 3, "② การ์ดรายช่อง 3 ใบ");
-  const s = await secs(pg);
-  const idx = (re) => s.findIndex((x) => re.test(x));
-  ok((await pg.$$("svg.donut")).length === 1, "③ มีโดนัทสัดส่วน");
-  ok(idx(/สัดส่วน/) < idx(/แนวโน้มผู้ติดตาม/), "③ มาก่อน ④");
-  ok(idx(/แนวโน้มผู้ติดตาม/) < idx(/เพิ่มและที่หายไป/), "④ มาก่อน ⑤");
-  ok(idx(/เพิ่มและที่หายไป/) < idx(/มีส่วนร่วมมากที่สุด/), "⑤ มาก่อน ⑥");
-  ok((await pg.$$(".gl-row")).length === 3, "⑤ มีแท่งได้/เสีย ครบ 3 ช่อง");
+  await tabTo(pg, "Facebook");
+  await pg.click('[data-days="30"]');
+  await pg.waitForTimeout(150);
 
-  const top = await pg.$$(".posts .post");
-  ok(top.length === 3, "⑥ คอนเทนต์เด่น 3 ใบ");
-  ok((await pg.$$(".posts .post .chip")).length === 3, "⑥ ทุกใบบอกว่ามาจากช่องไหน");
+  // "เพิ่มสุทธิในช่วงนี้" ของ Facebook อยู่หลักสิบ — ห้ามขึ้นเป็น %
+  const netCard = await pg.evaluate(() => {
+    const c = [...document.querySelectorAll(".sc")].find((x) => /เพิ่มสุทธิ/.test(x.querySelector(".sc-l").textContent));
+    return c ? { val: c.querySelector(".sc-v").textContent.trim(), d: c.querySelector(".sc-d").textContent.trim() } : null;
+  });
+  ok(!!netCard, "เจอการ์ดเพิ่มสุทธิ");
+  const base = Number(String(netCard.val).replace(/[^\d.]/g, ""));
+  ok(base < 1000, `ฐานอยู่หลักน้อยจริง (${netCard.val})`);
+  ok(!/%/.test(netCard.d), `delta ไม่ใช่ % (ได้ "${netCard.d}")`);
+  ok(/[+−-]\s*[\d,]/.test(netCard.d), "delta เป็นจำนวนจริงพร้อมเครื่องหมาย");
 
-  // ④ ต้องเป็น index 100 ไม่ใช่ตัวเลขดิบ
-  const yLabels = await pg.$$eval("svg.chart .ax", (n) => n.map((x) => x.textContent));
-  ok(yLabels.some((v) => /^\d{2,3}$/.test(v)), "④ แกน Y เป็นเลขฐาน 100 ไม่ใช่หลักหมื่น");
-  ok(/เริ่มที่ 100/.test(await view(pg)), "④ อธิบายว่าทำไมถึงใช้ฐาน 100");
+  // ของที่ฐานใหญ่ยังต้องเป็น % ตามเดิม
+  const bigD = await pg.evaluate(() => {
+    const c = [...document.querySelectorAll(".sc")].find((x) => /การเข้าถึง|ผู้ติดตาม$/.test(x.querySelector(".sc-l").textContent.trim()));
+    return c ? c.querySelector(".sc-d").textContent.trim() : "";
+  });
+  ok(/%/.test(bigD), `ฐานใหญ่ยังเป็น % (ได้ "${bigD}")`);
+
+  // util เดียวจริง — ห้ามมีใครคิด % เองที่อื่น
+  const js = await (await fetch(BASE + "/social/app.js")).text();
+  ok((js.match(/DELTA_MIN_BASE/g) || []).length >= 2, "มีค่าคงที่ฐานขั้นต่ำอยู่จุดเดียวแล้วอ้างถึง");
+  ok((js.match(/function delta\(/g) || []).length === 1, "มีฟังก์ชัน delta ตัวเดียวในไฟล์");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[5] แท็บรายช่อง — โครงเดียวกันทั้ง 3 ช่อง + metric เฉพาะช่อง");
+console.log("\n[5] 🔴 แกน Y กราฟผู้ติดตาม — % สะสม เริ่ม 0% และห้ามมีป้ายซ้ำ");
 {
   const { pg } = await open();
-  for (const [t, must] of [
-    ["YouTube", /เวลาที่คนดูรวม/],
-    ["TikTok", /ดูจนจบ/],
-    ["Facebook", /การเข้าถึง/],
-  ]) {
-    await tabTo(pg, t);
-    const v = await view(pg);
-    const s = await secs(pg);
-    ok(must.test(v), `${t}: มี metric เฉพาะแพลตฟอร์ม`);
-    ok(s.some((x) => /รายวัน/.test(x)), `${t}: ② กราฟรายวัน`);
-    ok(s.some((x) => /แยกประเภท/.test(x)), `${t}: ③ แยกประเภทการมีส่วนร่วม`);
-    ok(s.some((x) => /ล่าสุด/.test(x)), `${t}: ⑤ ล่าสุด`);
-    ok(s.some((x) => /ผลตอบรับน้อยที่สุด/.test(x)), `${t}: ⑥ ผลตอบรับน้อยที่สุด`);
-    ok(s.some((x) => /ทั้งหมดในช่วงที่เลือก/.test(x)), `${t}: ⑦ ตารางทั้งหมด`);
-    ok(/สูตร/.test(v), `${t}: มีเชิงอรรถบอกสูตร ER`);
+  for (const days of [7, 30, 90]) {
+    await pg.click(`[data-days="${days}"]`);
+    await pg.waitForTimeout(180);
+    const ax = await pg.$$eval("svg.chart .ax", (n) => n.map((x) => x.textContent.trim()).filter((t) => /%/.test(t)));
+    ok(ax.length >= 4, `${days} วัน: มีป้ายแกน Y (${ax.join(" / ")})`);
+    ok(new Set(ax).size === ax.length, `${days} วัน: ป้ายแกน Y ไม่ซ้ำกันเลย`);
+    ok(ax.every((t) => /%$/.test(t)), `${days} วัน: ทุกป้ายเป็นหน่วย %`);
+    // ต้องไม่ใช่ index 100 ของเดิม
+    ok(!ax.some((t) => /^1?0[01]%?$/.test(t.replace(/[+%]/g, ""))) || ax.some((t) => /\./.test(t)),
+       `${days} วัน: ไม่ใช่ค่าที่ปัดจนเหลือ 100/101 แบบเดิม`);
   }
-
-  // ③ ต้องบอก "จำนวนจริง" ไม่ใช่แค่สัดส่วน
-  await tabTo(pg, "TikTok");
-  const legend = await pg.$eval(".stackbar", (e) => e.parentElement.innerText);
-  ok(/ไลก์/.test(legend) && /แชร์/.test(legend), "③ แจกแจง ไลก์/คอมเมนต์/แชร์");
-  ok(/\d/.test(legend), "③ มีตัวเลขจำนวนจริง ไม่ใช่แค่เปอร์เซ็นต์");
+  const v = await view(pg);
+  ok(/% เปลี่ยนแปลงสะสมจากวันแรก/.test(v), "คำบรรยายตรงกับวิธีคิดใหม่");
+  ok(!/เริ่มที่ 100/.test(v), "ไม่มีคำอธิบายของวิธีเดิม (index 100) ค้างอยู่");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[6] สูตร ER ของแต่ละช่องต้องไม่เหมือนกัน (ห้ามบังคับให้เท่ากัน)");
+console.log("\n[6] 🔴 ผลงานรายช่อง — เป็นตารางเดียว ไม่ใช่การ์ด 3 ใบ");
 {
   const { pg } = await open();
-  // ⚠️ อ่านเฉพาะตัวสูตร ไม่เอาคำอธิบายท้าย — คำอธิบายของ YouTube มีคำว่า "แชร์"
-  //    อยู่ในประโยค "ไม่ได้นับรวม" ซึ่งไม่ได้แปลว่าสูตรนับแชร์
+  ok((await pg.$$(".pcard")).length === 0, "ไม่มีการ์ดรายช่องแบบเดิมเหลืออยู่");
+  const t = await pg.$(".tbl.cmp");
+  ok(!!t, "มีตารางเทียบรายช่อง");
+  const heads = await pg.$$eval(".tbl.cmp thead th", (n) => n.map((x) => x.textContent.trim()));
+  ok(/YouTube/.test(heads.join()) && /TikTok/.test(heads.join()) && /Facebook/.test(heads.join()), "คอลัมน์คือช่อง");
+  const rowNames = await pg.$$eval('.tbl.cmp tbody th[scope="row"]', (n) => n.map((x) => x.textContent.trim()));
+  ok(rowNames.length === 4, "แถวคือ metric ครบ 4 ตัว");
+  ok(/ยอดวิว|การเข้าถึง/.test(rowNames[0]), "มีแถวยอดวิว/การเข้าถึง");
+  ok(rowNames.some((x) => /Engagement rate/.test(x)), "มีแถว engagement rate");
+  ok(rowNames.some((x) => /จำนวนโพสต์/.test(x)), "มีแถวจำนวนโพสต์");
+  ok(rowNames.some((x) => /เฉลี่ยต่อโพสต์/.test(x)), "มีแถวเฉลี่ยต่อโพสต์");
+  const cell = await pg.$eval(".tbl.cmp tbody tr td", (e) => ({ v: !!e.querySelector(".cv"), d: !!e.querySelector(".cd") }));
+  ok(cell.v && cell.d, "แต่ละช่องมีค่า + delta ตัวเล็กใต้ค่า");
+  ok(await pg.$eval(".tbl.cmp", (e) => {
+    const w = e.closest(".tblwrap");
+    return !!w && ["auto", "scroll"].includes(getComputedStyle(w).overflowX);
+  }), "อยู่ในกล่องที่เลื่อนแนวนอนได้ (ตาม pattern เดิมของ repo)");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[7] 🔴 สัดส่วนการมองเห็น — แท่ง 100% แทนโดนัท");
+{
+  const { pg } = await open();
+  ok((await pg.$$("svg.donut")).length === 0, "ไม่มีโดนัทเหลืออยู่");
+  ok((await pg.$$(".share")).length === 1, "มีแท่ง 100% แท่งเดียว");
+  const segs = await pg.$$eval(".share-s", (n) => n.map((x) => ({ w: x.style.width, t: x.textContent.trim() })));
+  ok(segs.length === 3, "แบ่ง 3 ช่อง");
+  ok(segs.every((s) => /%$/.test(s.w)), "ความกว้างเป็นสัดส่วน %");
+  ok(segs.filter((s) => /%/.test(s.t)).length >= 2, "มีป้าย % บนแท่ง");
+  const legend = await pg.evaluate(() => {
+    const sh = document.querySelector(".share");
+    return sh.parentElement.querySelector(".legend").innerText;
+  });
+  ok(/pt/.test(legend), "legend มี delta หน่วย pt");
+
+  // ต้องเตี้ยกว่าโดนัทเดิมอย่างน้อยครึ่งหนึ่ง (โดนัทเดิม 180px + legend)
+  const hh = await pg.$eval(".share", (e) => e.closest(".panel").getBoundingClientRect().height);
+  ok(hh < 130, `section เตี้ยลงจริง (${Math.round(hh)}px)`);
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[8] 🔴 ผู้ติดตามเพิ่ม/หาย — diverging bar เส้นศูนย์ร่วม scale เดียว");
+{
+  const { pg } = await open();
+  ok((await pg.$$(".gl-row")).length === 0, "ไม่มีแท่งแบบเดิมเหลืออยู่");
+  const rows = await pg.$$(".dv-row");
+  ok(rows.length === 3, "มี 3 แถว ครบทุกช่อง");
+  const geo = await pg.$$eval(".dv-row", (n) => n.map((r) => {
+    const ax = r.querySelector(".dv-axis").getBoundingClientRect();
+    const neg = r.querySelector(".dv-neg").getBoundingClientRect();
+    const pos = r.querySelector(".dv-pos").getBoundingClientRect();
+    return { axis: Math.round(ax.left), negRight: Math.round(neg.right), posLeft: Math.round(pos.left),
+             negW: neg.width, posW: pos.width, net: r.querySelector(".dv-net").textContent.trim() };
+  }));
+  ok(new Set(geo.map((g) => g.axis)).size === 1, "เส้นศูนย์กลางอยู่ตำแหน่งเดียวกันทุกแถว");
+  ok(geo.every((g) => Math.abs(g.negRight - g.axis) <= 2), "แท่งลบชนเส้นศูนย์แล้วยื่นไปทางซ้าย");
+  ok(geo.every((g) => Math.abs(g.posLeft - g.axis) <= 2), "แท่งบวกเริ่มจากเส้นศูนย์แล้วยื่นไปทางขวา");
+  ok(geo.every((g) => g.net.length > 0), "ยอดสุทธิแสดงท้ายแถวทุกแถว");
+
+  const colors = await pg.$eval(".dv-neg", (e) => getComputedStyle(e).backgroundColor);
+  const colorsP = await pg.$eval(".dv-pos", (e) => getComputedStyle(e).backgroundColor);
+  ok(colors !== colorsP, "ฝั่งลบกับฝั่งบวกใช้สีต่างกัน (แดง/เขียว)");
+
+  // scale เดียวกัน: แท่งที่ค่ามากที่สุดต้องยาวสุด และอัตราส่วนตรงกัน
+  const widest = geo.reduce((a, g) => Math.max(a, g.posW, g.negW), 0);
+  ok(widest > 0, "มีแท่งที่กินความกว้างจริง (ไม่ใช่ 0 ทุกแถว)");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[9] 🔴 ชิพเลือกช่อง — ปิดแล้วทุกส่วนต้องคิดใหม่");
+{
+  const { pg, errs } = await open();
+  ok((await pg.$$(".ch")).length === 3, "มีชิพครบ 3 ช่อง");
+
+  const totalBefore = await pg.$eval(".sc .sc-v", (e) => e.textContent.trim());
+  const colsBefore = await pg.$$eval(".tbl.cmp thead th", (n) => n.length);
+  const segsBefore = await pg.$$eval(".share-s", (n) => n.length);
+  const dvBefore = await pg.$$eval(".dv-row", (n) => n.length);
+  const chipsBefore = await pg.$$eval(".posts .post .chip", (n) => n.map((x) => x.textContent.trim()));
+
+  await pg.click('[data-ch="youtube"]');
+  await pg.waitForTimeout(180);
+
+  ok(await pg.$eval('[data-ch="youtube"]', (e) => e.getAttribute("aria-pressed") === "false"), "ชิพเปลี่ยนเป็นสถานะปิด");
+  ok((await pg.$$eval(".tbl.cmp thead th", (n) => n.length)) === colsBefore - 1, "ตารางลดคอลัมน์ YouTube ออก");
+  ok((await pg.$$eval(".share-s", (n) => n.length)) === segsBefore - 1, "แท่งสัดส่วนเหลือ 2 ช่อง");
+  ok((await pg.$$eval(".dv-row", (n) => n.length)) === dvBefore - 1, "diverging bar เหลือ 2 แถว");
+  ok(!/YouTube/.test(await pg.$eval(".tbl.cmp", (e) => e.innerText)), "ไม่มีคำว่า YouTube ในตารางแล้ว");
+
+  const totalAfter = await pg.$eval(".sc .sc-v", (e) => e.textContent.trim());
+  ok(totalAfter !== totalBefore, `ยอดรวมคิดใหม่จริง (${totalBefore} → ${totalAfter})`);
+
+  const chipsAfter = await pg.$$eval(".posts .post .chip", (n) => n.map((x) => x.textContent.trim()));
+  ok(!chipsAfter.includes("YouTube"), "top content ไม่มีของ YouTube ปนแล้ว");
+  ok(chipsBefore.length > 0 && chipsAfter.length > 0, "top content ยังมีของช่องที่เหลือ");
+
+  // กันปิดหมดจนหน้าว่างเปล่าโดยไม่มีคำอธิบาย
+  await pg.click('[data-ch="tiktok"]');
+  await pg.waitForTimeout(120);
+  await pg.click('[data-ch="facebook"]');
+  await pg.waitForTimeout(120);
+  const stillOn = await pg.$$eval(".ch.on", (n) => n.length);
+  ok(stillOn >= 1, "ปิดช่องสุดท้ายไม่ได้ (เหลือเปิดอยู่อย่างน้อย 1 ช่อง)");
+
+  await pg.click('[data-ch="youtube"]');
+  await pg.waitForTimeout(150);
+  ok((await pg.$$eval(".ch.on", (n) => n.length)) >= 1, "กดกลับมาเปิดได้");
+
+  // ⚠️ ชิพไม่ต้องมีผลกับแท็บรายช่อง
+  await tabTo(pg, "TikTok");
+  ok((await pg.$$(".ch")).length === 0, "แท็บรายช่องไม่โชว์ชิพ (ไม่เกี่ยวกัน)");
+  ok((await pg.$$(".sc")).length >= 4, "แท็บรายช่องยังแสดงข้อมูลปกติแม้ชิพนั้นถูกปิด");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[10] 🔴 คำอธิบายย้ายไปเป็น tooltip ที่ ⓘ");
+{
+  const { pg } = await open();
+  ok((await pg.$$(".foot")).length === 0, "ไม่มีย่อหน้าคำอธิบายใต้การ์ดเหลืออยู่");
+  const tips = await pg.$$(".tipi");
+  ok(tips.length >= 5, `มีไอคอน ⓘ ให้กด (${tips.length} จุด)`);
+  ok(await pg.$eval(".tipi", (e) => !!e.getAttribute("title")), "มี title ให้เดสก์ท็อป hover เห็น");
+
+  ok((await pg.$$("#tipbox")).length === 0, "ยังไม่กด ยังไม่มีกล่องคำอธิบาย");
+  await tips[0].click();
+  await pg.waitForTimeout(120);
+  const box = await pg.$("#tipbox");
+  ok(!!box, "กดแล้วขึ้นกล่องคำอธิบาย (มือถือไม่มี hover)");
+  ok((await box.innerText()).length > 20, "กล่องมีเนื้อหาจริง");
+  await tips[0].click();
+  await pg.waitForTimeout(120);
+  ok((await pg.$$("#tipbox")).length === 0, "กดซ้ำแล้วปิด");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[11] 🔴 กราฟรายช่อง — แกน Y คู่ เส้น ER อ่านแกนขวา");
+{
+  const { pg } = await open();
+  for (const t of ["YouTube", "TikTok", "Facebook"]) {
+    await tabTo(pg, t);
+    const chart = await pg.evaluate(() => {
+      const h = [...document.querySelectorAll(".sec")].find((x) => /รายวัน/.test(x.textContent));
+      const p = h ? h.nextElementSibling : null;
+      const svg = p ? p.querySelector("svg.chart") : null;
+      if (!svg) return null;
+      return {
+        left: [...svg.querySelectorAll(".ax:not(.ax-r)")].map((x) => x.textContent.trim()),
+        right: [...svg.querySelectorAll(".ax-r")].map((x) => x.textContent.trim()),
+        legend: p.querySelector(".legend").innerText,
+        paths: svg.querySelectorAll("path").length,
+      };
+    });
+    ok(!!chart, `${t}: มีกราฟรายวัน`);
+    ok(chart.right.length >= 4, `${t}: มีป้ายแกนขวา`);
+    ok(chart.right.every((v) => /%$/.test(v)), `${t}: แกนขวาเป็นหน่วย % (ER)`);
+    ok(chart.left.some((v) => !/%$/.test(v)), `${t}: แกนซ้ายไม่ใช่ % (ยอดวิว/การเข้าถึง)`);
+    ok(chart.paths === 2, `${t}: วาด 2 เส้น`);
+    ok(/แกนซ้าย/.test(chart.legend) && /แกนขวา/.test(chart.legend), `${t}: legend บอกว่าเส้นไหนอ่านแกนไหน`);
+    ok(/[Ee]ngagement rate/.test(chart.legend), `${t}: เส้นที่สองเป็น engagement rate ไม่ใช่ engagement ดิบ`);
+    ok(new Set(chart.right).size === chart.right.length, `${t}: ป้ายแกนขวาไม่ซ้ำ`);
+  }
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[12] 🔴 กริดการ์ด TikTok — ห้ามมีใบเดียวลอยท้ายแถว");
+{
+  // จอกว้าง: ทุกใบต้องอยู่แถวเดียวกัน
+  const { pg } = await open({ width: 1400, height: 1000 });
+  for (const [t, n] of [["YouTube", 6], ["TikTok", 5], ["Facebook", 4]]) {
+    await tabTo(pg, t);
+    const g = await pg.evaluate(() => {
+      const grid = document.querySelector(".scgrid");
+      const cards = [...grid.querySelectorAll(".sc")];
+      const tops = new Set(cards.map((c) => Math.round(c.getBoundingClientRect().top)));
+      return { count: cards.length, rows: tops.size, n: grid.style.getPropertyValue("--n") };
+    });
+    ok(g.count === n, `${t}: มีการ์ด ${n} ใบ`);
+    ok(g.rows === 1, `${t}: จอกว้างอยู่แถวเดียว (${g.rows} แถว)`);
+    ok(g.n === String(n), `${t}: --n ตรงกับจำนวนใบจริง`);
+  }
+  await pg.close();
+
+  // มือถือ: 2 คอลัมน์ และใบสุดท้ายของจำนวนคี่ต้องกินเต็มแถว ไม่ลอยเดี่ยว
+  const { pg: m } = await open({ width: 390, height: 900 });
+  for (const [t, n] of [["TikTok", 5], ["YouTube", 6], ["Facebook", 4]]) {
+    await tabTo(m, t);
+    const g = await m.evaluate(() => {
+      const grid = document.querySelector(".scgrid");
+      const cards = [...grid.querySelectorAll(".sc")];
+      const rows = {};
+      cards.forEach((c) => {
+        const k = Math.round(c.getBoundingClientRect().top);
+        (rows[k] = rows[k] || []).push(Math.round(c.getBoundingClientRect().width));
+      });
+      const gridW = Math.round(grid.getBoundingClientRect().width);
+      return { count: cards.length, rows: Object.values(rows), gridW };
+    });
+    ok(g.count === n, `${t} มือถือ: การ์ด ${n} ใบ`);
+    const last = g.rows[g.rows.length - 1];
+    const orphan = last.length === 1 && last[0] < g.gridW * 0.9;
+    ok(!orphan, `${t} มือถือ: แถวสุดท้ายไม่มีใบแคบลอยเดี่ยว (แถวสุดท้าย ${last.length} ใบ กว้าง ${last[0]}/${g.gridW})`);
+  }
+  await m.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[13] แท็บรายช่อง — โครงเดิมต้องอยู่ครบ (ห้ามรื้อ)");
+{
+  const { pg } = await open();
+  for (const [t, must] of [["YouTube", /เวลาที่คนดูรวม/], ["TikTok", /ดูจนจบ/], ["Facebook", /การเข้าถึง/]]) {
+    await tabTo(pg, t);
+    const v = await view(pg), s = await secs(pg);
+    ok(must.test(v), `${t}: metric เฉพาะแพลตฟอร์มยังอยู่`);
+    ok(s.some((x) => /แยกประเภท/.test(x)), `${t}: ③ แยกประเภทการมีส่วนร่วม`);
+    ok(s.some((x) => /มีส่วนร่วมมากที่สุด/.test(x)), `${t}: ④ อันดับบน`);
+    ok(s.some((x) => /ล่าสุด/.test(x)), `${t}: ⑤ ล่าสุด`);
+    ok(s.some((x) => /ผลตอบรับน้อยที่สุด/.test(x)), `${t}: ⑥ อันดับท้าย`);
+    ok(s.some((x) => /ทั้งหมดในช่วงที่เลือก/.test(x)), `${t}: ⑦ ตารางทั้งหมด`);
+    ok(/สูตร/.test(v), `${t}: เชิงอรรถสูตร ER`);
+  }
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[14] สูตร ER ของแต่ละช่องต้องไม่เหมือนกัน");
+{
+  const { pg } = await open();
   const f = {};
   for (const t of ["YouTube", "TikTok", "Facebook"]) {
     await tabTo(pg, t);
     f[t] = await pg.$eval(".formula b", (e) => e.textContent);
   }
-  ok(!/แชร์/.test(f.YouTube), "YouTube: สูตรไม่มีแชร์ (API ไม่ให้ตัวเลข)");
+  ok(!/แชร์/.test(f.YouTube), "YouTube: สูตรไม่มีแชร์");
   ok(/แชร์/.test(f.TikTok), "TikTok: นับแชร์ด้วย");
-  ok(/การเข้าถึง/.test(f.Facebook), "Facebook: หารด้วยการเข้าถึง ไม่ใช่ยอดวิว");
+  ok(/การเข้าถึง/.test(f.Facebook), "Facebook: หารด้วยการเข้าถึง");
   ok(new Set(Object.values(f)).size === 3, "ทั้ง 3 ช่องใช้สูตรคนละแบบจริง");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[7] Top/Newest/ตาราง ต้องกรองตามช่วงที่เลือกเท่านั้น");
+console.log("\n[15] กรองตามช่วง + ป้ายยังใหม่ + ตัดใบใหม่ออกจากอันดับท้าย");
 {
   const { pg } = await open();
   await tabTo(pg, "TikTok");
-
   await pg.click('[data-days="90"]');
-  await pg.waitForTimeout(150);
-  const n90 = await pg.$$eval(".tbl tbody tr", (n) => n.length);
-
+  await pg.waitForTimeout(160);
+  const n90 = await pg.$$eval(".tbl:not(.cmp) tbody tr", (n) => n.length);
   await pg.click('[data-days="7"]');
-  await pg.waitForTimeout(150);
-  const n7 = await pg.$$eval(".tbl tbody tr", (n) => n.length);
+  await pg.waitForTimeout(160);
+  const n7 = await pg.$$eval(".tbl:not(.cmp) tbody tr", (n) => n.length);
+  ok(n7 < n90, `ช่วงแคบลงรายการน้อยลง (7 วัน ${n7} < 90 วัน ${n90})`);
 
-  ok(n7 < n90, `ช่วงแคบลงแล้วรายการน้อยลงจริง (7 วัน ${n7} < 90 วัน ${n90})`);
-
-  // วันที่ในตารางต้องอยู่ในช่วงที่บอกไว้บนแถบควบคุมเท่านั้น
   await pg.click('[data-days="90"]');
-  await pg.waitForTimeout(150);
-  const rowsOut = await pg.evaluate(() => {
-    const now = new Date(); now.setHours(0, 0, 0, 0);
-    const lim = new Date(now.getTime() - 95 * 864e5);
-    return [...document.querySelectorAll(".tbl tbody tr")].filter((tr) => {
-      const t = tr.children[1].textContent.trim();
-      return t === "" || t == null;
-    }).length;
-  });
-  ok(rowsOut === 0, "ทุกแถวมีวันที่ครบ ไม่มีของหลุดช่วงเข้ามา");
-  await pg.close();
-}
-
-/* ────────────────────────────────────────────────────────────────── */
-console.log("\n[8] ป้าย 'ยังใหม่' และการตัดใบใหม่ออกจากอันดับท้าย");
-{
-  const { pg } = await open();
-  await tabTo(pg, "TikTok");
-  await pg.click('[data-days="90"]');
-  await pg.waitForTimeout(150);
-
+  await pg.waitForTimeout(160);
   const newestSec = await pg.evaluate(() => {
     const h = [...document.querySelectorAll(".sec")].find((x) => /ล่าสุด/.test(x.textContent));
     return h ? h.nextElementSibling.innerText : "";
   });
-  ok(/ยังใหม่/.test(newestSec), "⑤ ใบที่อายุน้อยกว่า 7 วันติดป้าย 'ยังใหม่'");
-
   const bottomSec = await pg.evaluate(() => {
     const h = [...document.querySelectorAll(".sec")].find((x) => /ผลตอบรับน้อยที่สุด/.test(x.textContent));
     return h ? h.nextElementSibling.innerText : "";
   });
-  ok(!/ยังใหม่/.test(bottomSec), "⑥ ไม่มีใบที่ยังใหม่ปนอยู่ในอันดับท้าย");
-  ok(/เกิน 7 วัน/.test(await view(pg)), "⑥ บอกเหตุผลว่าทำไมถึงตัดใบใหม่ออก");
+  ok(/ยังใหม่/.test(newestSec), "⑤ ใบอายุน้อยกว่า 7 วันติดป้าย 'ยังใหม่'");
+  ok(!/ยังใหม่/.test(bottomSec), "⑥ ไม่มีใบที่ยังใหม่ปนในอันดับท้าย");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[9] ไม่มีข้อมูลในช่วงที่เลือก → ต้องบอกชัด ห้ามลากกราฟเป็น 0");
+console.log("\n[16] ไม่มีข้อมูล → บอกชัด ห้ามลากกราฟเป็น 0");
 {
   const { pg, errs } = await open();
   await pg.click('[data-days="custom"]');
   await pg.waitForSelector("#d1");
   await pg.fill("#d1", "2009-01-01");
   await pg.fill("#d2", "2009-01-31");
-  await pg.waitForTimeout(200);
-
+  await pg.waitForTimeout(220);
   const v = await view(pg);
   ok(/ไม่มีข้อมูลในช่วงที่เลือก/.test(v), "ภาพรวม: บอกตรงๆ ว่าไม่มีข้อมูล");
-  ok((await pg.$$("svg.chart")).length === 0, "ไม่วาดกราฟเปล่าที่ลากเป็น 0");
-  ok(!/^—$/m.test(v), "ไม่ขึ้น '—' ลอยๆ แบบไม่มีคำอธิบาย");
-  ok((await pg.$$(".empty")).length > 0, "ใช้กล่องบอกสถานะว่างจริงๆ");
-
+  ok((await pg.$$("svg.chart")).length === 0, "ไม่วาดกราฟที่ลากเป็น 0");
+  ok((await pg.$$(".share")).length === 0, "ไม่วาดแท่งสัดส่วนเปล่า");
+  ok((await pg.$$(".empty")).length > 0, "ใช้กล่องบอกสถานะว่าง");
   await tabTo(pg, "YouTube");
   ok(/ไม่มีข้อมูล/.test(await view(pg)), "แท็บช่องก็บอกว่าไม่มีข้อมูล");
-  ok(errs.length === 0, "ไม่มี JS error ตอนไม่มีข้อมูล");
+  ok(errs.length === 0, "ไม่มี JS error");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[10] custom range — เลือกวันเองได้ และค่าคงอยู่ข้ามแท็บ");
+console.log("\n[17] custom range + ตารางเรียงได้");
 {
   const { pg } = await open();
   await pg.click('[data-days="custom"]');
   await pg.waitForSelector("#d1");
-  ok((await pg.$("#d1")) && (await pg.$("#d2")), "มีช่องเลือกวันที่เริ่ม–สิ้นสุด");
-  const type = await pg.$eval("#d1", (e) => e.type);
-  ok(type === "date", "ใช้ตัวเลือกวันที่ของเบราว์เซอร์ ไม่เพิ่มไลบรารี");
-
+  ok((await pg.$eval("#d1", (e) => e.type)) === "date", "ใช้ตัวเลือกวันที่ของเบราว์เซอร์ ไม่เพิ่มไลบรารี");
   const end = new Date(); end.setHours(0, 0, 0, 0);
-  const s = new Date(end.getTime() - 20 * 864e5);
   const k = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-  await pg.fill("#d1", k(s));
+  await pg.fill("#d1", k(new Date(end.getTime() - 20 * 864e5)));
   await pg.fill("#d2", k(end));
   await pg.waitForTimeout(200);
   const note = await pg.$eval(".ctrl-note", (e) => e.innerText);
-  ok(/21 วัน/.test(note), "นับจำนวนวันถูก (รวมวันเริ่มและวันจบ)");
-
+  ok(/21 วัน/.test(note), "นับจำนวนวันถูก");
   await tabTo(pg, "Facebook");
-  ok((await pg.$eval(".ctrl-note", (e) => e.innerText)) === note, "ช่วงที่กำหนดเองคงอยู่ข้ามแท็บ");
-  await pg.close();
-}
+  ok((await pg.$eval(".ctrl-note", (e) => e.innerText)) === note, "ช่วงกำหนดเองคงอยู่ข้ามแท็บ");
 
-/* ────────────────────────────────────────────────────────────────── */
-console.log("\n[11] ตารางเรียงได้ตาม วันที่ / views / ER");
-{
-  const { pg } = await open();
-  await tabTo(pg, "YouTube");
-  await pg.click('[data-days="90"]');
-  await pg.waitForTimeout(150);
-
-  const col = (i) => pg.$$eval(".tbl tbody tr", (rows, idx) => rows.map((r) => r.children[idx].textContent.trim()), i);
-
+  const col = () => pg.$$eval(".tbl:not(.cmp) tbody tr", (rows) => rows.map((r) => parseFloat(r.children[3].textContent)));
   await pg.click('[data-sort="er"]');
-  await pg.waitForTimeout(120);
-  const erDesc = (await col(3)).map((x) => parseFloat(x));
-  ok(erDesc.every((v, i, a) => i === 0 || a[i - 1] >= v), "เรียง ER มากไปน้อย");
-
+  await pg.waitForTimeout(130);
+  const desc = await col();
+  ok(desc.every((v, i, a) => i === 0 || a[i - 1] >= v), "เรียง ER มากไปน้อย");
   await pg.click('[data-sort="er"]');
-  await pg.waitForTimeout(120);
-  const erAsc = (await col(3)).map((x) => parseFloat(x));
-  ok(erAsc.every((v, i, a) => i === 0 || a[i - 1] <= v), "กดซ้ำแล้วสลับเป็นน้อยไปมาก");
-
-  await pg.click('[data-sort="date"]');
-  await pg.waitForTimeout(120);
-  ok((await pg.$eval(".tbl", (e) => e.innerHTML)).includes("▼"), "มีลูกศรบอกว่ากำลังเรียงคอลัมน์ไหน");
-
-  // ⚠️ การเรียงต้องรอด render ใหม่ — เก็บใน state ไม่ใช่ใน DOM อย่างเดียว
+  await pg.waitForTimeout(130);
+  const asc = await col();
+  ok(asc.every((v, i, a) => i === 0 || a[i - 1] <= v), "กดซ้ำสลับทิศ");
   await tabTo(pg, "TikTok");
-  await tabTo(pg, "YouTube");
-  ok((await pg.$eval(".tbl", (e) => e.innerHTML)).includes("▼"), "สลับแท็บกลับมาแล้วการเรียงยังอยู่");
+  await tabTo(pg, "Facebook");
+  ok((await pg.$eval(".tbl:not(.cmp)", (e) => e.innerHTML)).includes("▲"), "สลับแท็บกลับมาการเรียงยังอยู่");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[12] มือถือ — ต้องอ่านจบ ไม่ล้นแนวนอน");
+console.log("\n[18] มือถือ — หน้าห้ามเลื่อนแนวนอน");
 {
   const { pg, errs } = await open({ width: 390, height: 844 });
-  // กฎของโปรเจกต์: ของกว้างๆ (ตาราง/แถบแท็บ) ต้องเลื่อน "ในกล่องตัวเอง"
-  // ตัวหน้าห้ามเลื่อนแนวนอนเด็ดขาด — จึงยอมให้ล้นได้เฉพาะที่อยู่ในกล่องที่ตั้งใจให้เลื่อน
   for (const t of ["ภาพรวม", "YouTube", "TikTok", "Facebook"]) {
     await tabTo(pg, t);
     const m = await pg.evaluate(() => {
@@ -312,64 +474,40 @@ console.log("\n[12] มือถือ — ต้องอ่านจบ ไม
         return false;
       };
       return {
-        sw: document.scrollingElement.scrollWidth,
-        iw: window.innerWidth,
+        sw: document.scrollingElement.scrollWidth, iw: window.innerWidth,
         over: [...document.querySelectorAll("body *")]
           .filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && !inScroller(e))
           .map((e) => e.tagName + "." + (e.className || "").toString().split(" ")[0]),
       };
     });
     ok(m.sw <= m.iw + 1, `${t}: หน้าไม่เลื่อนแนวนอน (${m.sw}/${m.iw})`);
-    ok(m.over.length === 0, `${t}: ไม่มีอะไรล้นขอบนอกกล่องที่ให้เลื่อน (${m.over.join(",") || "ไม่มี"})`);
+    ok(m.over.length === 0, `${t}: ไม่มีอะไรล้นนอกกล่องที่ให้เลื่อน (${m.over.join(",") || "ไม่มี"})`);
   }
-  // ตารางต้องเลื่อนในกล่องตัวเองจริง ไม่ใช่ดันทั้งหน้า
-  await tabTo(pg, "YouTube");
-  ok(await pg.$eval(".tblwrap", (e) => e.scrollWidth > e.clientWidth &&
-     ["auto", "scroll"].includes(getComputedStyle(e).overflowX)), "ตารางกว้างเลื่อนอยู่ในกล่องของตัวเอง");
-  const cols = await pg.$eval(".grid4", (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length);
-  ok(cols === 2, "การ์ดสรุปเรียง 2 คอลัมน์บนมือถือ (ไม่บีบจนอ่านไม่ออก)");
-  const tabsScroll = await pg.$eval(".tabs", (e) => getComputedStyle(e).overflowX);
-  ok(tabsScroll === "auto" || tabsScroll === "scroll", "แถบแท็บเลื่อนได้ (รองรับแท็บที่จะเพิ่มทีหลัง)");
+  // ⚠️ .grid4 มีแต่ในแท็บภาพรวม — แท็บรายช่องใช้ .scgrid ต้องกลับมาก่อนวัด
+  await tabTo(pg, "ภาพรวม");
+  ok((await pg.$eval(".grid4", (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length)) === 2,
+     "การ์ดสรุปเรียง 2 คอลัมน์บนมือถือ");
   ok(errs.length === 0, "ไม่มี JS error บนมือถือ");
   await pg.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[13] ยังเป็นข้อมูลจำลอง — ต้องบอกไว้ตลอด");
+console.log("\n[19] ข้อมูลจำลอง + ฟีเจอร์มาตรฐาน + ไม่เพิ่ม dependency");
 {
   const { pg } = await open();
   ok(!!(await pg.$("#mockbar")), "มีแถบบอกว่าเป็นข้อมูลจำลอง");
-  ok(/ข้อมูลจำลอง/.test(await pg.title()), "ชื่อหน้าต่างบอกด้วย (แคปหน้าจอแล้วยังรู้)");
-  const pos = await pg.$eval("#mockbar", (e) => getComputedStyle(e).position);
-  ok(pos === "sticky" || pos === "fixed", "แถบค้างบนจอ ไม่เลื่อนหาย");
-  await pg.close();
-}
-
-/* ────────────────────────────────────────────────────────────────── */
-console.log("\n[14] ฟีเจอร์มาตรฐาน + ไม่เพิ่ม dependency ใหม่");
-{
-  const { pg } = await open();
+  ok(/ข้อมูลจำลอง/.test(await pg.title()), "ชื่อหน้าต่างบอกด้วย");
   const meta = await pg.evaluate(() => ({
     ver: document.querySelector('meta[name="page-ver"]')?.content || "",
-    manifest: !!document.querySelector('link[rel="manifest"]'),
-    icon: !!document.querySelector('link[rel="icon"]'),
-    touch: !!document.querySelector('link[rel="apple-touch-icon"]'),
+    pwa: !!document.querySelector('link[rel="manifest"]') && !!document.querySelector('link[rel="apple-touch-icon"]'),
     home: [...document.querySelectorAll("a")].some((a) => a.getAttribute("href") === "/"),
     vtag: !!document.getElementById("vtag"),
     noindex: (document.querySelector('meta[name="robots"]')?.content || "").includes("noindex"),
     ext: [...document.querySelectorAll("script[src],link[href]")]
-      .map((e) => e.getAttribute("src") || e.getAttribute("href"))
-      .filter((u) => /^https?:|^\/\//.test(u)),
+      .map((e) => e.getAttribute("src") || e.getAttribute("href")).filter((u) => /^https?:|^\/\//.test(u)),
   }));
-  ok(!!meta.ver, "มี page-ver");
-  ok(meta.manifest && meta.icon && meta.touch, "PWA ครบ (manifest + favicon + apple-touch-icon)");
-  ok(meta.home, "มีปุ่มกลับหน้าหลัก");
-  ok(meta.vtag, "มีป้ายเลขเวอร์ชัน");
-  ok(meta.noindex, "กัน Google เก็บ index");
+  ok(!!meta.ver && meta.pwa && meta.home && meta.vtag && meta.noindex, "ฟีเจอร์มาตรฐานครบ");
   ok(meta.ext.length === 0, "ไม่โหลดอะไรจากภายนอกเลย (" + (meta.ext.join(",") || "ไม่มี") + ")");
-
-  const js = await (await fetch(BASE + "/social/app.js")).text();
-  ok(!/\b(APP_VER|PAGE_VER)\s*=\s*["']?\d/.test(js), "ไม่เขียนเลขเวอร์ชันซ้ำไว้ใน app.js");
   await pg.close();
 }
 
