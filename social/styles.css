@@ -1,5 +1,6 @@
-/* Social Media Dashboard — สถิติช่องของเราเอง
-   โหมดมืดล้วน เหมือน /trend/ /ir/ /issue/ (เจ้าของสั่งไม่ต้องทำโหมดสว่าง) */
+/* Social Dashboard — สถิติช่องของเราเอง
+   โหมดมืดล้วน เหมือน /trend/ /ir/ /issue/ (เจ้าของสั่งไม่ต้องทำโหมดสว่าง)
+   เขียนแบบ mobile-first: กฎพื้นฐานคือของจอแคบ แล้วค่อยขยายด้วย min-width */
 
 :root {
   color-scheme: dark;
@@ -7,7 +8,7 @@
   --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
   --border:rgba(255,255,255,0.10); --accent:#3987e5;
   --yt:#ff3d3d; --fb:#4a8cff; --tt:#25f4ee;
-  --warn:#f5a524; --bad:#f2555a; --radius:14px;
+  --warn:#f5a524; --bad:#f2555a; --good:#4ade80; --radius:14px;
 }
 
 * { box-sizing:border-box; }
@@ -18,84 +19,191 @@ body {
   line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 
-.wrap { max-width:1400px; margin:0 auto; padding:0 16px 48px; }
+.wrap { max-width:1280px; margin:0 auto; padding:0 14px 56px; }
 
-/* ── แถบบน ───────────────────────────────────────────────────────────── */
-.appbar {
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:14px 0; border-bottom:1px solid var(--border); margin-bottom:18px; flex-wrap:wrap;
+/* แถบเตือนข้อมูลจำลอง — ค้างบนจอเสมอ ไม่มีปุ่มปิดโดยตั้งใจ */
+#mockbar {
+  position:sticky; top:0; z-index:60; background:var(--warn); color:#3b2600;
+  font-weight:700; text-align:center; padding:8px 12px; font-size:.82rem;
 }
-.logo { display:flex; align-items:center; gap:9px; font-weight:650; font-size:1.05rem; }
-.bar-right { display:flex; align-items:center; gap:10px; }
+
+/* ── แถบบน ───────────────────────────────────────────────────────── */
+.appbar {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:12px 0; border-bottom:1px solid var(--border); flex-wrap:wrap;
+}
+.logo { display:flex; align-items:center; gap:8px; font-weight:650; font-size:1rem; }
+.bar-right { display:flex; align-items:center; gap:8px; }
 .btn {
   border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
-  border-radius:999px; padding:7px 13px; font-size:.82rem; cursor:pointer;
+  border-radius:999px; padding:7px 13px; font-size:.8rem; cursor:pointer;
   text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-family:inherit;
 }
 .btn:hover { background:var(--surface-2); color:var(--ink); }
-#vtag { color:var(--muted); font-size:.74rem; }
+#vtag { color:var(--muted); font-size:.72rem; }
 
-/* ── กระดาน 3 คอลัมน์ ─────────────────────────────────────────────────── */
-/* ⚠️ ตั้งใจใช้ grid ที่ยุบเป็นแนวตั้งบนจอแคบ ไม่ใช่ carousel แบบ /trend/
-   เพราะคอลัมน์นี้เป็นตัวเลขสรุปสั้นๆ ไม่ใช่รายการข่าวยาวที่ต้องปัดเทียบกัน
-   การเลื่อนลงอ่านต่อเนื่องเป็นธรรมชาติกว่าการปัดซ้ายขวา */
-.board { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }
-@media (max-width:1000px) { .board { grid-template-columns:1fr; } }
-
-.col {
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:var(--radius); overflow:hidden;
+/* ── แถบควบคุมกลาง (ช่วงเวลา + โหมดเทียบ) ────────────────────────────
+   ⚠️ ติดบนสุดไว้ตลอด เพราะทุกตัวเลขบนหน้าอ่านค่าจากตรงนี้
+      ถ้าเลื่อนหายไป ผู้ใช้จะลืมว่ากำลังดูช่วงไหนอยู่ */
+.sticky {
+  position:sticky; top:0; z-index:50; background:var(--plane);
+  border-bottom:1px solid var(--border); padding-bottom:8px;
 }
-.col-head {
-  display:flex; align-items:center; justify-content:space-between; gap:10px;
-  padding:13px 15px; border-bottom:1px solid var(--border); background:var(--surface-2);
+#mockbar ~ .wrap .sticky { top:36px; }
+
+.ctrl-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding-top:10px; }
+.seg { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:3px; gap:2px; }
+.seg button {
+  border:0; background:transparent; color:var(--ink-2); font-family:inherit; font-size:.78rem;
+  padding:6px 11px; border-radius:999px; cursor:pointer; white-space:nowrap;
 }
-.col-title { display:flex; align-items:center; gap:8px; font-weight:650; font-size:.98rem; }
-.dot { width:9px; height:9px; border-radius:50%; flex:none; }
-.dot.yt { background:var(--yt); } .dot.fb { background:var(--fb); } .dot.tt { background:var(--tt); }
-.col-body { padding:14px 15px 16px; }
+.seg button:hover { color:var(--ink); }
+.seg button.on { background:var(--accent); color:#fff; font-weight:600; }
 
-/* ── ตัวเลขสรุป ───────────────────────────────────────────────────────── */
-.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(88px,1fr)); gap:9px; margin-bottom:14px; }
-.stat { background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:9px 10px; }
-.stat b { display:block; font-size:1.16rem; font-weight:700; letter-spacing:-.02em; }
-.stat span { display:block; font-size:.72rem; color:var(--muted); margin-top:1px; }
-.stat.na b { color:var(--muted); font-weight:600; font-size:.95rem; }
-
-.who { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-.who img { width:36px; height:36px; border-radius:50%; flex:none; background:var(--surface-2); }
-.who .nm { font-weight:600; font-size:.92rem; }
-.who a { color:var(--muted); font-size:.76rem; text-decoration:none; }
-.who a:hover { color:var(--accent); text-decoration:underline; }
-
-/* ── รายการคลิป/โพสต์ ─────────────────────────────────────────────────── */
-.sub { font-size:.78rem; color:var(--muted); margin:0 0 8px; text-transform:uppercase; letter-spacing:.04em; }
-.items { display:flex; flex-direction:column; gap:8px; }
-.item {
-  display:flex; gap:10px; text-decoration:none; color:inherit;
-  background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:9px 10px;
+.dates label { font-size:.78rem; color:var(--muted); display:inline-flex; align-items:center; gap:6px; }
+.dates input {
+  background:var(--surface); border:1px solid var(--border); color:var(--ink);
+  border-radius:8px; padding:6px 9px; font-family:inherit; font-size:.8rem; color-scheme:dark;
 }
-.item:hover { border-color:var(--accent); }
-.item img { width:64px; height:40px; object-fit:cover; border-radius:6px; flex:none; background:#000; }
-.item .t { font-size:.83rem; line-height:1.35; margin-bottom:3px;
-           display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.item .m { font-size:.72rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:8px; }
+.ctrl-note { font-size:.75rem; color:var(--muted); padding-top:7px; }
+.ctrl-note .vs { color:var(--ink-2); }
 
-/* ── สถานะ: รอโหลด / ยังไม่เชื่อมต่อ / พัง ─────────────────────────────── */
-.note { font-size:.86rem; color:var(--ink-2); display:flex; align-items:flex-start; gap:8px; padding:6px 0; }
-.note.warn { color:var(--warn); } .note.bad { color:var(--bad); }
-.note .ic { flex:none; }
-.needs { margin:8px 0 0; padding:9px 11px; background:var(--surface-2); border:1px solid var(--border);
-         border-radius:9px; font-size:.78rem; color:var(--muted); }
-.needs code { color:var(--ink-2); background:rgba(255,255,255,.06); border-radius:4px; padding:1px 5px; }
-
-/* ⚠️ ไอคอนหมุนแปลว่า "กำลังมา" เท่านั้น — โหลดเสร็จแล้วไม่มีข้อมูลต้องบอกว่าไม่มี ห้ามหมุนค้าง */
-.spin {
-  width:12px; height:12px; border:2px solid var(--muted); border-top-color:transparent;
-  border-radius:50%; display:inline-block; animation:sp .8s linear infinite; flex:none; margin-top:3px;
+/* ── แท็บ ─────────────────────────────────────────────────────────
+   ⚠️ เลื่อนแนวนอนได้บนจอแคบ — เพิ่มแท็บใหม่ (เช่น โฆษณา) แล้วต้องไม่ดันหน้าพัง */
+.tabs {
+  display:flex; gap:6px; overflow-x:auto; padding:9px 0 2px;
+  scrollbar-width:none; -webkit-overflow-scrolling:touch;
 }
-@keyframes sp { to { transform:rotate(360deg); } }
-@media (prefers-reduced-motion:reduce) { .spin { animation-duration:2.4s; } }
+.tabs::-webkit-scrollbar { display:none; }
+.tab {
+  flex:none; border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  border-radius:999px; padding:8px 15px; font-size:.83rem; font-family:inherit; cursor:pointer;
+  display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+}
+.tab:hover { color:var(--ink); }
+.tab.on { background:var(--ink); color:var(--plane); border-color:var(--ink); font-weight:650; }
+.tab .ti { font-size:.9em; opacity:.85; }
 
-.stale { font-size:.74rem; color:var(--warn); margin-top:10px; }
-.foot { margin-top:20px; text-align:center; color:var(--muted); font-size:.76rem; }
+/* ── หัวข้อ / กล่อง ──────────────────────────────────────────────── */
+.sec { font-size:.95rem; font-weight:650; margin:26px 0 10px; display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
+.sec .sub { font-size:.76rem; color:var(--muted); font-weight:400; }
+.panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; }
+.foot { font-size:.74rem; color:var(--muted); margin:10px 0 0; line-height:1.55; }
+.formula { font-size:.75rem; color:var(--muted); margin:22px 0 0; padding:11px 13px;
+           background:var(--surface); border:1px solid var(--border); border-radius:10px; line-height:1.6; }
+.formula b { color:var(--ink-2); }
+
+/* ── การ์ดตัวเลข ─────────────────────────────────────────────────── */
+.grid4 { display:grid; grid-template-columns:repeat(2,1fr); gap:9px; }
+.grid3 { display:grid; grid-template-columns:1fr; gap:11px; }
+.grid4.tight { margin-top:9px; }
+
+.sc { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:11px 12px; }
+.sc-l { font-size:.73rem; color:var(--muted); display:flex; align-items:center; gap:5px; }
+.sc-v { font-size:1.32rem; font-weight:700; letter-spacing:-.02em; margin-top:2px; }
+.sc.na .sc-v { color:var(--muted); font-size:1.05rem; font-weight:600; }
+.sc-d { margin-top:3px; min-height:17px; }
+.hint { cursor:help; color:var(--muted); font-size:.9em; }
+
+/* ป้ายเทียบกับช่วงก่อน */
+.dlt { font-size:.72rem; font-weight:650; display:inline-flex; align-items:center; gap:3px; }
+.dlt.up { color:var(--good); }
+.dlt.down { color:var(--bad); }
+.dlt.flat { color:var(--muted); }
+.dlt.none { color:var(--muted); font-weight:400; font-size:.68rem; }
+
+/* ── การ์ดรายช่อง ────────────────────────────────────────────────── */
+.pcard { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.pcard-h { display:flex; align-items:center; gap:8px; padding:11px 14px;
+           border-bottom:1px solid var(--border); background:var(--surface-2); font-weight:650; font-size:.9rem; }
+.pdot { width:9px; height:9px; border-radius:50%; background:var(--pc); flex:none; }
+.pcard-b { padding:11px 14px 13px; }
+.mini { display:flex; flex-direction:column; gap:7px; }
+.mr { display:grid; grid-template-columns:1fr auto auto; gap:9px; align-items:baseline; }
+.mr-l { font-size:.76rem; color:var(--muted); }
+.mr-v { font-size:.94rem; font-weight:650; }
+
+/* ── กราฟ ────────────────────────────────────────────────────────── */
+.chart { width:100%; height:auto; display:block; overflow:visible; }
+.chart .grid { stroke:rgba(255,255,255,.08); stroke-width:1; vector-effect:non-scaling-stroke; }
+.chart .ax { fill:var(--muted); font-size:10px; font-family:system-ui,sans-serif; }
+.donut { width:150px; height:150px; flex:none; }
+.donut .dc { fill:var(--ink); font-size:22px; font-weight:700; font-family:system-ui,sans-serif; }
+.donut .dcs { fill:var(--muted); font-size:10px; font-family:system-ui,sans-serif; }
+
+.donutwrap { display:flex; flex-direction:column; align-items:center; gap:14px; }
+.legend { display:flex; flex-direction:column; gap:7px; width:100%; }
+.legend.row { flex-direction:row; flex-wrap:wrap; gap:12px; margin-top:10px; }
+.lg { display:flex; align-items:center; gap:7px; font-size:.78rem; }
+.lg-d { width:9px; height:9px; border-radius:2px; flex:none; }
+.lg-n { color:var(--ink-2); }
+.lg-v { font-weight:650; margin-left:auto; }
+.legend.row .lg-v { margin-left:0; }
+.lg-s { color:var(--muted); font-size:.72rem; }
+
+/* แท่งซ้อน */
+.stackbar { display:flex; height:15px; border-radius:999px; overflow:hidden; background:var(--surface-2); }
+.stackbar span { display:block; height:100%; }
+
+/* ผู้ติดตามเพิ่ม/ลด */
+.gl-row { display:grid; grid-template-columns:1fr auto; gap:6px 12px; align-items:center; padding:9px 0; border-bottom:1px solid var(--border); }
+.gl-row:last-child { border-bottom:0; }
+.gl-name { font-size:.82rem; font-weight:600; }
+.gl-bars { grid-column:1/-1; display:flex; flex-direction:column; gap:4px; }
+.gl-bar { position:relative; height:16px; background:var(--surface-2); border-radius:5px; display:flex; align-items:center; }
+.gl-fill { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
+.gl-fill.up { background:var(--good); opacity:.75; }
+.gl-fill.down { background:var(--bad); opacity:.75; }
+.gl-val { position:relative; font-size:.7rem; padding-left:7px; font-weight:650; }
+.gl-net { font-size:.95rem; font-weight:700; }
+.gl-net.up { color:var(--good); }
+.gl-net.down { color:var(--bad); }
+
+/* ── คอนเทนต์ ────────────────────────────────────────────────────── */
+.posts { display:flex; flex-direction:column; gap:8px; }
+.post { display:flex; gap:10px; text-decoration:none; color:inherit;
+        background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 9px; }
+.post:hover { border-color:var(--accent); }
+.post img { width:70px; height:44px; object-fit:cover; border-radius:6px; flex:none; background:#000; }
+.post-b { min-width:0; }
+.post-t { font-size:.83rem; line-height:1.35; margin-bottom:3px;
+          display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.post-m { font-size:.71rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.chip { border:1px solid var(--border); border-radius:999px; padding:0 7px; font-size:.68rem; }
+.badge { font-size:.65rem; border-radius:999px; padding:1px 7px; margin-left:6px; vertical-align:middle; }
+.badge.new { background:var(--accent); color:#fff; }
+
+/* ── ตาราง ───────────────────────────────────────────────────────── */
+/* ⚠️ ตารางกว้างต้องเลื่อนในกล่องตัวเอง ห้ามดันให้ทั้งหน้าเลื่อนแนวนอน */
+.tblwrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.tbl { width:100%; border-collapse:collapse; font-size:.79rem; min-width:420px; }
+.tbl th, .tbl td { padding:8px 9px; text-align:left; border-bottom:1px solid var(--border); }
+.tbl th { color:var(--muted); font-weight:600; font-size:.74rem; position:sticky; top:0; background:var(--surface); }
+.tbl td:first-child { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tbl .num { text-align:right; font-variant-numeric:tabular-nums; }
+.tbl .sortable { cursor:pointer; user-select:none; }
+.tbl .sortable:hover { color:var(--ink); }
+.tbl tbody tr:hover { background:var(--surface-2); }
+
+/* ── ไม่มีข้อมูล ─────────────────────────────────────────────────── */
+/* ⚠️ ไม่มีข้อมูล ต้องบอกว่าไม่มี — ห้ามลากกราฟเป็น 0 หรือขึ้น "—" ลอยๆ
+      เส้นที่ลากถึง 0 อ่านว่า "ยอดตกเป็นศูนย์" ซึ่งคนละความหมายกับ "ไม่มีข้อมูล" */
+.empty { display:flex; gap:11px; align-items:flex-start; padding:20px 4px; color:var(--muted); font-size:.83rem; }
+.empty-i { font-size:1.3rem; line-height:1; opacity:.6; }
+.empty b { color:var(--ink-2); display:block; font-size:.88rem; }
+
+/* ── จอกว้างขึ้น ─────────────────────────────────────────────────── */
+@media (min-width:640px) {
+  .wrap { padding:0 18px 64px; }
+  .grid4 { grid-template-columns:repeat(4,1fr); }
+  .donutwrap { flex-direction:row; align-items:center; gap:26px; }
+  .donut { width:180px; height:180px; }
+  .legend { width:auto; flex:1; }
+  .gl-row { grid-template-columns:130px 1fr auto; }
+  .gl-bars { grid-column:auto; }
+}
+
+@media (min-width:900px) {
+  .grid3 { grid-template-columns:repeat(3,1fr); }
+  .sec { margin-top:30px; }
+}

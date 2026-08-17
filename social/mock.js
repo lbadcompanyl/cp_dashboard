@@ -1,0 +1,186 @@
+/* ข้อมูลจำลองสำหรับออกแบบหน้าเว็บ — ยังไม่ได้ต่อ API จริง
+ *
+ * 🔴 ไฟล์นี้แยกออกมาโดยตั้งใจ ให้ถอดทิ้งได้ทั้งไฟล์ตอนต่อของจริง
+ *    โครงข้อมูลที่คืนออกไปคือ "สัญญา" ที่ฝั่ง API ต้องส่งมาให้เหมือนกันเป๊ะ
+ *    เปลี่ยนรูปร่างตรงนี้เมื่อไหร่ ต้องเปลี่ยนฝั่ง functions/social/api/ ตามด้วย
+ *
+ * โครงที่ตกลงไว้ (ต่อ 1 ช่อง):
+ *   daily[]     { date, views|reach, likes, comments, shares, ...extras เฉพาะช่อง }
+ *   followers[] { date, value, gained, lost }
+ *   posts[]     { id, title, thumb, url, publishedAt, views|reach, likes, comments, shares }
+ *
+ * ⚠️ ตัวเลขทั้งหมดสุ่มจาก seed คงที่ — เปิดกี่ครั้งก็ได้เลขเดิม
+ *    ไม่งั้นทีมออกแบบเทียบหน้าจอกันคนละรอบแล้วเลขไม่ตรง คุยกันไม่รู้เรื่อง
+ */
+(function () {
+  "use strict";
+
+  // ต้องมีข้อมูลย้อนหลังพอสำหรับ "90 วัน + เทียบปีก่อน" = 365 + 90 + เผื่อ
+  var DAYS = 500;
+
+  /** สุ่มแบบมี seed — ผลเหมือนเดิมทุกครั้งที่เปิด */
+  function makeRng(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+  }
+
+  function dayKey(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  /** วันนี้แบบตัดเวลาออก — ใช้เป็นจุดอ้างอิงเดียวของทั้งไฟล์ */
+  function today() {
+    var d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function addDays(d, n) {
+    var x = new Date(d.getTime());
+    x.setDate(x.getDate() + n);
+    return x;
+  }
+
+  /* รูปย่อแบบวาดเอง — ห้ามใช้รูปจากอินเทอร์เน็ต หน้านี้ต้องเปิดได้โดยไม่ต้องยิงเน็ต */
+  function thumb(color, n) {
+    var svg =
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100'>" +
+      "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>" +
+      "<stop offset='0' stop-color='" + color + "' stop-opacity='.85'/>" +
+      "<stop offset='1' stop-color='#111' stop-opacity='.9'/></linearGradient></defs>" +
+      "<rect width='160' height='100' fill='url(#g)'/>" +
+      "<text x='80' y='58' font-family='system-ui' font-size='26' font-weight='700' " +
+      "fill='rgba(255,255,255,.85)' text-anchor='middle'>" + n + "</text></svg>";
+    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  }
+
+  /* หัวข้อจำลอง — เขียนให้ความยาวหลากหลาย จะได้เห็นว่าตัดบรรทัดแล้วหน้าตาเป็นยังไง */
+  var TITLES = [
+    "เบื้องหลังการผลิตที่ไม่เคยเปิดเผยมาก่อน",
+    "สรุปข่าวประจำสัปดาห์",
+    "พาชมโรงงานแบบเจาะลึกทุกขั้นตอน ตั้งแต่วัตถุดิบจนถึงมือผู้บริโภค",
+    "ตอบคำถามที่ถูกถามมากที่สุด",
+    "5 เรื่องที่หลายคนเข้าใจผิด",
+    "สัมภาษณ์พิเศษ",
+    "อัปเดตความคืบหน้าโครงการปีนี้ พร้อมตัวเลขที่เปิดเผยได้ทั้งหมด",
+    "วันเดียวกับทีมงานเบื้องหลัง",
+    "ประกาศผลกิจกรรมประจำเดือน",
+    "รีวิวจากผู้ใช้จริง",
+    "เปิดตัวอย่างเป็นทางการ",
+    "ถาม-ตอบสดกับทีมงาน ครั้งที่ผ่านมาที่หลายคนพลาด",
+  ];
+
+  /** โครงของแต่ละช่อง — ตัวเลขฐานต่างกันมากโดยตั้งใจ (เป็นเหตุผลที่กราฟ follower ต้องใช้ index 100) */
+  var SHAPE = {
+    youtube: { seed: 11, followers0: 128400, viewsBase: 42000, viewsSwing: 0.55, er: 0.041, postEvery: 4, growth: 90 },
+    tiktok:  { seed: 22, followers0: 43900,  viewsBase: 96000, viewsSwing: 1.15, er: 0.082, postEvery: 3, growth: 210 },
+    facebook:{ seed: 33, followers0: 86300,  viewsBase: 21000, viewsSwing: 0.40, er: 0.028, postEvery: 5, growth: 35 },
+  };
+
+  function buildPlatform(pk) {
+    var cfg = SHAPE[pk];
+    var rnd = makeRng(cfg.seed);
+    var C = window.SOCIAL_CONFIG.PLATFORMS[pk];
+    var reachKey = C.reachKey;
+
+    var start = addDays(today(), -(DAYS - 1));
+    var daily = [], followers = [], posts = [];
+
+    // เดินย้อนจากยอดผู้ติดตามปัจจุบัน กลับไปหาอดีต แล้วค่อยกลับด้าน
+    // ทำแบบนี้เพื่อให้ "ยอดวันนี้" ตรงกับเลขที่ตั้งไว้เป๊ะ ไม่ใช่ค่าที่บวกสะสมแล้วเลยเถิด
+    var followerSeries = new Array(DAYS);
+    var cur = cfg.followers0;
+    for (var i = DAYS - 1; i >= 0; i--) {
+      followerSeries[i] = Math.round(cur);
+      var wobble = 0.55 + rnd() * 0.9;
+      cur -= (cfg.growth / 30) * wobble;   // growth = ต่อเดือน → ต่อวัน
+    }
+
+    for (var d = 0; d < DAYS; d++) {
+      var date = addDays(start, d);
+      var dow = date.getDay();
+      // เสาร์-อาทิตย์คนดูน้อยลง — ใส่ไว้ให้กราฟมีจังหวะ ไม่ใช่เส้นเรียบจนดูปลอม
+      var weekend = (dow === 0 || dow === 6) ? 0.78 : 1;
+      // ขยับขึ้นช้าๆ ตามเวลา เพื่อให้ "ช่วงก่อนหน้า" กับ "ปีก่อน" ต่างกันจริง
+      var trend = 0.72 + (d / DAYS) * 0.5;
+      var spike = rnd() < 0.035 ? 2.4 + rnd() * 2.2 : 1;   // มีวันไวรัลบ้าง
+      var noise = 1 + (rnd() - 0.5) * cfg.viewsSwing;
+
+      var reach = Math.max(120, Math.round(cfg.viewsBase * weekend * trend * spike * noise));
+      var erDay = cfg.er * (0.7 + rnd() * 0.7);
+      var eng = Math.round(reach * erDay);
+
+      var row = { date: dayKey(date) };
+      row[reachKey] = reach;
+      // แบ่ง engagement ตามส่วนประกอบที่ช่องนั้นนับจริง
+      if (pk === "youtube") {
+        row.likes = Math.round(eng * 0.88);
+        row.comments = eng - row.likes;
+        row.shares = 0;                        // YouTube ไม่ให้ตัวเลขแชร์
+        row.watchTime = Math.round(reach * (2.4 + rnd() * 2.6) / 60);      // ชั่วโมง
+        row.avgViewDuration = Math.round(150 + rnd() * 190);               // วินาที
+      } else if (pk === "tiktok") {
+        row.likes = Math.round(eng * 0.80);
+        row.comments = Math.round(eng * 0.07);
+        row.shares = eng - row.likes - row.comments;
+        row.completionRate = 0.32 + rnd() * 0.28;
+      } else {
+        row.likes = Math.round(eng * 0.74);
+        row.comments = Math.round(eng * 0.14);
+        row.shares = eng - row.likes - row.comments;
+      }
+      daily.push(row);
+
+      // ผู้ติดตาม: เก็บทั้งยอดสะสม และ เพิ่ม/ลด ของวันนั้น
+      var prev = d === 0 ? followerSeries[0] : followerSeries[d - 1];
+      var net = followerSeries[d] - prev;
+      var lost = Math.round(Math.abs(net) * (0.35 + rnd() * 0.5) + rnd() * 12);
+      followers.push({ date: dayKey(date), value: followerSeries[d], gained: net + lost, lost: lost });
+    }
+
+    // โพสต์ — กระจายตามความถี่ของช่องนั้น
+    var pid = 0;
+    for (var p = 0; p < DAYS; p += cfg.postEvery) {
+      var pd = addDays(start, p + Math.floor(rnd() * cfg.postEvery));
+      if (pd > today()) break;
+      pid++;
+      var vspike = rnd() < 0.09 ? 3.2 + rnd() * 4 : 0.55 + rnd() * 1.1;
+      var pv = Math.max(90, Math.round(cfg.viewsBase * 0.42 * vspike));
+      var per = cfg.er * (0.35 + rnd() * 1.7);   // ให้มีทั้งใบที่ ER ดีและแย่ ไว้ทดสอบ top/bottom
+      var pe = Math.round(pv * per);
+
+      var post = {
+        id: pk + "-" + pid,
+        title: TITLES[pid % TITLES.length],
+        thumb: thumb(C.rawColor, pid),
+        url: "#",
+        publishedAt: dayKey(pd),
+      };
+      post[reachKey] = pv;
+      if (pk === "youtube") {
+        post.likes = Math.round(pe * 0.88);
+        post.comments = pe - post.likes;
+        post.shares = 0;
+      } else {
+        post.likes = Math.round(pe * (pk === "tiktok" ? 0.80 : 0.74));
+        post.comments = Math.round(pe * (pk === "tiktok" ? 0.07 : 0.14));
+        post.shares = Math.max(0, pe - post.likes - post.comments);
+      }
+      posts.push(post);
+    }
+
+    return { daily: daily, followers: followers, posts: posts };
+  }
+
+  var platforms = {};
+  window.SOCIAL_CONFIG.ORDER.forEach(function (pk) { platforms[pk] = buildPlatform(pk); });
+
+  window.SOCIAL_MOCK = {
+    isMock: true,               // ⚠️ หน้าเว็บใช้ธงนี้ตัดสินใจว่าจะขึ้นแถบเตือน
+    generatedAt: new Date().toISOString(),
+    platforms: platforms,
+  };
+})();
