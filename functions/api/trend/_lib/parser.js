@@ -43,10 +43,15 @@ const DATE_STAMP_RE = new RegExp("\\d{1,2}\\s*" + TH_MONTH + "\\s*\\d{4}", "g");
 const LEAD_JUNK_RE = new RegExp(
   "^\\s*(?:\\d{4}\\s*[|·]|\\d{1,2}:\\d{2}\\s*น\\.|น\\.\\s|\\d{1,2}\\s*" + TH_MONTH + ")"
 );
+// ตัวคั่นรายการ (· หรือ |) ที่ตามด้วยวันที่ไทย = กำลังไล่ข่าวหลายใบ แม้วันที่จะไม่มีปีก็ตาม
+// เจอจริง 14 ส.ค. 2026 (ryt9): "...ซูเปอร์ทัวร์ 2026 ครั้งที่ 17 · 11 ส.ค. เซ็นทรัลเวิลด์ เปิดสถิติ..."
+const SEP_DATE_RE = new RegExp("[·|]\\s*\\d{1,2}\\s*" + TH_MONTH);
+
 export function looksLikeListing(s = "") {
   const t = stripMarks(String(s || "")).trim();
   if (!t) return false;
   if (LEAD_JUNK_RE.test(t)) return true;
+  if (SEP_DATE_RE.test(t)) return true;
   DATE_STAMP_RE.lastIndex = 0;
   return (t.match(DATE_STAMP_RE) || []).length >= 2;
 }

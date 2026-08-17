@@ -67,7 +67,9 @@ export const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 
 export const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
-export const PR_HOSTS = ["newswit.com", "thaipr.net", "prnewswire.com", "businesswire.com"];
+// ⚠️ ryt9.com เพิ่ม 14 ส.ค. 2026 — เป็นเว็บแจกข่าว PR เหมือนกัน และสรุปที่ติดมากับฟีด
+// เป็น "ข่าวอื่นที่พ่วงมา" (เจอจริง: การ์ด "อิน-องศา" มีสรุปเป็นข่าว ซีพี แอ็กซ์ตร้า คนละใบ)
+export const PR_HOSTS = ["newswit.com", "thaipr.net", "prnewswire.com", "businesswire.com", "ryt9.com"];
 
 export const JOB_HOSTS = [
   "jobsdb", "jooble", "jobbkk", "jobthai", "indeed.", "glassdoor", "linkedin.", "jobtopgun",
@@ -169,7 +171,7 @@ export function noiseReason(it, title, src) {
   // เงื่อนไข "ต้องมีชื่อเครือ CP ในพาดหัว" จึงตัดข่าวที่ถูกต้องทิ้งหมด
   // (เจอจริง: TFG แจ้งผลประกอบการ Q2/69 · กรมประมงยืนยันมาตรฐานเชื้อดื้อยาในสัตว์น้ำ)
   // ข่าวใน alert2 ผ่านด่าน keyword ของคอลัมน์มาแล้ว การมาจากเว็บแจกข่าวไม่ใช่เหตุผลให้ตัด
-  if (src === "alert1" && hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && !realCP(title)) return "pr";
+  if (src === "alert1" && hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && cpEvidence(title) !== "strong") return "pr";
   const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
   const text = title + " " + snip;
   if (DAILY_RE.test(text)) return "daily";
@@ -286,4 +288,32 @@ export function cpExamples(decisions, max = 8) {
   const no = pick(d.blocked, false, () => true);
   // คละสองฝั่งเสมอ ไม่ให้ AI เห็นแต่ n แล้วตอบ n รัว
   return [...yes, ...no].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, max);
+}
+
+// ---------- ชื่อเครืออยู่ "เป็นคำของตัวเอง" หรือ "ไปเจอกลางคำอื่น" ----------
+// ภาษาไทยไม่มีช่องว่างคั่นคำ การเทียบแบบ includes จึงไปเจอชื่อเครือกลางคำอื่นได้
+// เจอจริง 14 ส.ค. 2026: "คาราจีแนน ฟู้ดเจล อควา **เอ็มซีพีไอ**" ของ halal.co.th
+// — คำว่า `ซีพี` ซ่อนอยู่ใน `เอ็ม-ซีพี-ไอ` (สารเคมี MCP) แต่ระบบนับว่าเป็นข่าวของเครือ
+// แล้วปล่อยผ่านตั้งแต่ด่านแรก **ไม่มีวันไปถึงชั้น AI**
+//
+// weak = ชื่อเครือถูกขนาบด้วยตัวอักษรไทย "ทั้งสองข้าง" = อยู่กลางคำอื่นแน่ๆ
+// จงใจตั้งเกณฑ์ให้แคบ: "เครือซีพี" / "ซีพีเอฟ" มีขอบด้านหนึ่งเป็นช่องว่าง/ขอบข้อความ = strong
+// (weak ไม่ได้แปลว่าตัดทิ้ง แค่ส่งให้ AI อ่านพาดหัวตัดสินอีกที)
+const THAI_LETTER = /[ก-ฮะ-๎]/;
+/** @returns "strong" | "weak" | "" (ไม่เจอชื่อเครือเลย) */
+export function cpEvidence(text) {
+  const hay = dropFalseCP(String(text || "").replace(/\[\[\/?hl\]\]/g, "")).toLowerCase();
+  let found = "";
+  for (const b of CP_BRANDS) {
+    let i = hay.indexOf(b);
+    while (i !== -1) {
+      const before = i > 0 ? hay[i - 1] : "";
+      const after = i + b.length < hay.length ? hay[i + b.length] : "";
+      // คำละตินมี (?<![a-z0-9]) คุมอยู่แล้วใน termPattern — ที่นี่ดูเฉพาะการฝังกลางคำไทย
+      if (!(THAI_LETTER.test(before) && THAI_LETTER.test(after))) return "strong";
+      found = "weak";
+      i = hay.indexOf(b, i + 1);
+    }
+  }
+  return found;
 }

@@ -6,7 +6,7 @@ import feeds from "../../../ir-feeds.config.js";
 import { parseGeneric } from "../trend/_lib/parser.js";
 import { readDecisions } from "../allow.js";
 import {
-  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed, cpExamples,
+  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -16,7 +16,7 @@ import {
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "67"; // bump: ติดวันที่ไปกับรายการที่ถูกตัด (หน้า admin กรอง 3 วัน)
+const CACHE_VER = "69"; // bump: ryt9 เป็นเว็บแจกข่าว PR + สรุปแบบรายการข่าว
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -622,7 +622,33 @@ async function mapPoolResults(items, limit, fn) {
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch) → cold ใช้พาดหัวอย่างเดียว (ตัด) แล้ว background ค่อยกู้คืนถ้าเนื้อจริงมีคำโดเมน
 const BODY_FETCH_MAX = 12; // เพดานยิงอ่านเนื้อข่าวต่อ 1 build — กันชนโควตา subrequest 50 ของ Cloudflare
-const VFY_VER = 1; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const VFY_VER = 2; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const AI_CP_MAX = 12; // เพดานใบที่ถาม AI ต่อ 1 build — คำตอบถูกจำไว้ ใบเดิมจึงถามครั้งเดียวตลอด
+
+// ถาม AI แล้ว "จำคำตอบไว้ 7 วัน" ต่อข่าว 1 ใบ — ไม่งั้นทุก build จะถามซ้ำทั้งคอลัมน์
+// (คอลัมน์ละ ~50 ใบ × ทุกชั่วโมง × ทุกแดชบอร์ด = เรียก AI หลายพันครั้ง/วัน)
+// ⚠️ ใช้ edge cache ไม่ใช่ KV — โควตาเขียน KV มีแค่ 1,000 ครั้ง/วันใช้ร่วมทั้งโปรเจกต์
+async function cachedHeadlineIsCP(cache, env, titles, links, examples) {
+  const out = new Array(titles.length).fill(null);
+  const keyOf = (l) => new Request("https://verify.local/cpai1?u=" + encodeURIComponent(l || ""), { method: "GET" });
+  const ask = [];
+  await Promise.all(titles.map(async (_, k) => {
+    try { const hit = await cache.match(keyOf(links[k])); if (hit) { const j = await hit.json(); if (typeof j.y === "boolean") out[k] = j.y; return; } } catch {}
+    ask.push(k);
+  }));
+  if (ask.length) {
+    const ans = await aiHeadlineIsCP(env, ask.map((k) => titles[k]), examples);
+    if (ans) await Promise.all(ask.map(async (k, j) => {
+      out[k] = ans[j];
+      try {
+        await cache.put(keyOf(links[k]), new Response(JSON.stringify({ y: ans[j] }),
+          { headers: { "content-type": "application/json", "cache-control": "public, max-age=604800" } }));
+      } catch {}
+    }));
+  }
+  return out; // null = ตัดสินไม่ได้ (ผู้เรียกต้องเก็บใบนั้นไว้)
+}
+
 // ชั้น 4 ของคอลัมน์ CP — เปิดอ่านเนื้อข่าวไม่ได้ (เว็บบล็อกบอต/ช้า/paywall) เดิม "ปล่อยผ่านตาบอด"
 // ให้ AI (โมเดลเดียวกับที่จัดหมวดข่าว) อ่านพาดหัวตัดสินแทน — ดูหมายเหตุเต็มที่ trend/feeds.js
 // · AI ตอบไม่ครบ/ล้ม/ไม่มี binding → ปล่อยผ่านเหมือนเดิม (พลาดฝั่งเก็บ ดีกว่าทำข่าวจริงหาย)
@@ -672,7 +698,11 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
       // "cep" ไม่ได้อยู่ใน WEAK_TERMS และมันก็อยู่ในพาดหัวจริงๆ ด่านเดิมจึงปล่อยผ่าน
       // ไล่เติมทีละคำเป็นการวิ่งไล่ไม่จบ — เปลี่ยนเป็นถามว่า "เป็นชื่อเครือ CP ไหม" แทน
       if (src === "alert1") {
-        if (realCP(bare)) return { ok: true, mark: true };       // ชั้น 1 — ชื่อเครืออยู่ใน "พาดหัว"
+        // ชั้น 1 — ชื่อเครืออยู่ใน "พาดหัว" **และยืนเป็นคำของตัวเอง**
+        // ถ้าไปเจอกลางคำอื่น (เอ็ม-ซีพี-ไอ) ไม่ให้ผ่านฟรี ส่งไปให้ AI อ่านตัดสิน (ชั้น 4)
+        const ev = cpEvidence(bare);
+        if (ev === "strong") return { ok: true, mark: true };
+        if (ev === "weak") return { ok: "ai", why: "ai-weak-cp", terms, bare, link: it.link };
         // ⚠️ **ห้ามตัดสินจาก it.snippet** (เจ้าของสั่ง 13 ส.ค. 2026)
         // สรุปที่ติดมากับฟีดเป็น "ข่าวที่เกี่ยวข้อง" ไม่ใช่เนื้อข่าวใบนี้ — ชื่อเครือที่โผล่ตรงนั้น
         // จึงไม่ได้แปลว่าข่าวใบนี้เป็นข่าวของเครือ (เจอจริง: "7 ยักษ์ผูกเหลาฟาม์าห์ เขย่าธุรกิจร้านยา"
@@ -686,7 +716,8 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
       return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link }; // ค้างไว้เช็คเนื้อ (ชั้น 3)
     });
     const needBody = [];
-    verdict.forEach((v, i) => { if (v.ok === "body") needBody.push(i); });
+    const needAI = []; // ชื่อเครือโผล่กลางคำอื่น — ข้ามการอ่านเนื้อ ให้ AI ดูพาดหัวพอ
+    verdict.forEach((v, i) => { if (v.ok === "body") needBody.push(i); else if (v.ok === "ai") needAI.push(i); });
     if (allowFetch && needBody.length) {
       // เพดานต่อ build — ด่านนี้ตรวจของเก่าจากคลังด้วย (รอบสอง) รอบแรกหลัง release มี backlog
       // เยอะ ยิงหมดทีเดียวจะชนโควตา subrequest ของ Cloudflare · เกินเพดาน = เก็บไว้ก่อน
@@ -705,6 +736,22 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
     } else {
       // รอบนี้ยังไม่มีสิทธิ์ยิงอ่านเนื้อข่าว — เก็บไว้ก่อน รอบเบื้องหลังจะมาตัดสินให้เอง
       needBody.forEach((i) => { verdict[i].ok = true; });
+    }
+    // ใบที่ชื่อเครืออยู่กลางคำอื่น — ถาม AI (จำคำตอบไว้ ถามครั้งเดียวต่อข่าว 1 ใบ)
+    if (needAI.length) {
+      if (allowFetch) {
+        const pick = needAI.slice(0, AI_CP_MAX);
+        needAI.slice(AI_CP_MAX).forEach((i) => { verdict[i].ok = true; }); // เกินเพดาน = รอรอบหน้า
+        const ans = await cachedHeadlineIsCP(cache, env, pick.map((i) => verdict[i].bare),
+                                             pick.map((i) => items[i].link), cpEx);
+        pick.forEach((i, k) => {
+          if (ans[k] === null) { verdict[i].ok = true; return; }  // AI ตอบไม่ได้ → เก็บไว้ ไม่ติดธง
+          verdict[i].ok = ans[k];
+          if (ans[k]) verdict[i].mark = true;
+        });
+      } else {
+        needAI.forEach((i) => { verdict[i].ok = true; }); // ยังยิงไม่ได้ รอบเบื้องหลังตัดสินเอง
+      }
     }
     const kept = [];
     verdict.forEach((v, i) => {

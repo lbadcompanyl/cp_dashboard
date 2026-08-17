@@ -29,7 +29,9 @@ async function clientFrom(file) {
   const block =
     grab(/^const PIN_FALSE_RE = .*$/m, "PIN_FALSE_RE") + "\n" +
     grab(/^const PIN_CP_RE = .*$/m, "PIN_CP_RE") + "\n" +
-    grab(/^const PIN_FOOD_RE = .*$/m, "PIN_FOOD_RE") + "\n" +
+    grab(/^const PIN_FOOD_STRONG_RE = .*$/m, "PIN_FOOD_STRONG_RE") + "\n" +
+    grab(/^const PIN_FOOD_AMBIG_RE = .*$/m, "PIN_FOOD_AMBIG_RE") + "\n" +
+    grab(/^const PIN_FOOD_CTX_RE = .*$/m, "PIN_FOOD_CTX_RE") + "\n" +
     grab(/^const PIN_FOOD_BRAND_RE = .*$/m, "PIN_FOOD_BRAND_RE") + "\n" +
     grab(/^const FOOD_CAT = .*$/m, "FOOD_CAT") + "\n" +
     grab(/^function pinScore\(it\) \{[\s\S]*?^\}$/m, "pinScore") + "\n" +
