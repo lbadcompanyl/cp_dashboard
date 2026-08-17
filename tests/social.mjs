@@ -225,6 +225,52 @@ console.log("\n[10] คอลัมน์หนึ่งอืด ต้อง�
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[11] โหมดตัวอย่าง — ต้องดูออกทันทีว่าไม่ใช่ของจริง");
+{
+  const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  // ⚠️ ด่านสำคัญ: โหมดตัวอย่างต้องไม่ยิง API เลยสักครั้ง
+  let calls = 0;
+  await pg.route("**/social/api/**", async (route) => { calls++; await route.abort(); });
+  await pg.goto(BASE + "/social/?demo", { waitUntil: "domcontentloaded" });
+  await pg.waitForFunction(() => document.querySelector('[data-body="youtube"]').innerText.includes("ผู้ติดตาม"));
+
+  ok(calls === 0, `ไม่ยิง API เลย (ยิงไป ${calls} ครั้ง)`);
+
+  const bar = await pg.$("#demobar");
+  ok(!!bar, "มีแถบเตือนว่าเป็นข้อมูลตัวอย่าง");
+  const barTxt = bar ? await bar.innerText() : "";
+  ok(/ไม่ใช่ตัวเลขจริง/.test(barTxt), "แถบบอกตรงๆ ว่าไม่ใช่ตัวเลขจริง");
+  ok(/[ตัวอย่าง]/.test(await pg.title()), "ชื่อหน้าต่างมีคำว่าตัวอย่าง (แคปหน้าจอแล้วยังรู้)");
+
+  // แถบต้องค้างอยู่แม้เลื่อนหน้าลงไป — sticky ไม่ใช่เลื่อนหายไปกับเนื้อหา
+  const stick = await pg.$eval("#demobar", (e) => getComputedStyle(e).position);
+  ok(stick === "sticky" || stick === "fixed", "แถบเตือนค้างอยู่บนจอ ไม่เลื่อนหาย");
+
+  // ⚠️ ต่อให้แถบหลุดหาย ตัวข้อมูลเองต้องยังบอกได้ว่าเป็นของสมมติ
+  for (const k of ["youtube", "facebook", "tiktok"]) {
+    ok(/สมมติ/.test(await text(pg, k)), `${k}: ชื่อช่องบอกว่าเป็นข้อมูลสมมติ`);
+  }
+
+  const t = await text(pg, "tiktok");
+  ok(t.includes("1.2M") || t.includes("1M"), "ตัวเลขหลักล้านไม่ล้นช่อง");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[12] ไม่ใส่ ?demo ต้องไม่มีอะไรของโหมดตัวอย่างติดมา");
+{
+  const { pg } = await open(() => ({ ok: true, status: "ok", data: { channel: { title: "ช่องจริง", subs: 7 }, videos: [] } }));
+  await pg.waitForFunction(() => document.querySelector('[data-body="youtube"]').innerText.includes("ผู้ติดตาม"));
+  ok(!(await pg.$("#demobar")), "ไม่มีแถบตัวอย่างโผล่มาเอง");
+  ok(!/ตัวอย่าง/.test(await pg.title()), "ชื่อหน้าต่างปกติ");
+  ok(!/สมมติ/.test(await text(pg, "youtube")), "ไม่มีข้อมูลสมมติปนเข้ามา");
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);

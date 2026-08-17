@@ -25,6 +25,56 @@
   var state = {};   // key → payload ล่าสุด
   var timer = null;
 
+  /* ── โหมดข้อมูลตัวอย่าง: /social/?demo ────────────────────────────
+   * มีไว้ให้ทีมออกแบบทำงานได้โดยไม่ต้องรอ token ครบทุกช่อง
+   *
+   * ⚠️ กฎ 3 ข้อที่ห้ามแก้:
+   *   1. เปิดด้วย URL เท่านั้น — ไม่มีทางติดมาเองโดยบังเอิญ
+   *   2. ต้องมีแถบเตือนค้างบนจอตลอดเวลา ไม่มีปุ่มปิด
+   *      (ตัวเลขดูสมจริงเพื่อให้ออกแบบได้ ความเสี่ยงคือมีคนแคปไปใช้จริง แถบนี้คือตัวกัน)
+   *   3. ชื่อช่องต้องบอกว่าเป็นตัวอย่าง — ต่อให้แถบหลุดหาย ยังอ่านออกจากตัวข้อมูลเอง
+   */
+  var DEMO = /[?&]demo\b/.test(location.search);
+
+  var SAMPLE = {
+    youtube: { ok: true, status: "ok", at: Date.now(), data: {
+      channel: { title: "ช่องตัวอย่าง (ข้อมูลสมมติ)", url: "#", subs: 128400, views: 52840000, videos: 412 },
+      videos: [
+        { id: "d1", title: "ตัวอย่างพาดหัวคลิปที่ยาวพอสมควร เอาไว้ดูว่าตัดบรรทัดแล้วหน้าตาเป็นยังไง", url: "#", at: new Date(Date.now() - 5 * 36e5).toISOString(), views: 48200, likes: 1820, comments: 143 },
+        { id: "d2", title: "คลิปสั้น ชื่อไม่ยาว", url: "#", at: new Date(Date.now() - 28 * 36e5).toISOString(), views: 15600, likes: 604, comments: 38 },
+        { id: "d3", title: "รายงานพิเศษ ตัวอย่างข้อมูลสมมติ", url: "#", at: new Date(Date.now() - 74 * 36e5).toISOString(), views: 9120, likes: 287, comments: 12 },
+        { id: "d4", title: "คลิปที่ปิดยอดไลก์ไว้ ใช้ดูว่าช่องว่างหน้าตาเป็นยังไง", url: "#", at: new Date(Date.now() - 120 * 36e5).toISOString(), views: 3400, likes: null, comments: null },
+      ],
+    } },
+    facebook: { ok: true, status: "ok", at: Date.now(), data: {
+      page: { name: "เพจตัวอย่าง (ข้อมูลสมมติ)", url: "#", followers: 86300, fans: 84150 },
+      posts: [
+        { id: "p1", title: "ข้อความโพสต์ตัวอย่าง เอาไว้ดูว่าข้อความยาวๆ ในการ์ดจะตัดตรงไหน และเหลือที่ให้ตัวเลขพอไหม", url: "#", at: new Date(Date.now() - 3 * 36e5).toISOString(), views: 24800, reach: 19200, engaged: 1640 },
+        { id: "p2", title: "โพสต์สั้น", url: "#", at: new Date(Date.now() - 26 * 36e5).toISOString(), views: 8900, reach: 7100, engaged: 410 },
+        { id: "p3", title: "(โพสต์ไม่มีข้อความ)", url: "#", at: new Date(Date.now() - 50 * 36e5).toISOString(), views: 5200, reach: 4300, engaged: 168 },
+      ],
+    } },
+    tiktok: { ok: true, status: "ok", at: Date.now(), data: {
+      account: { name: "บัญชีตัวอย่าง (ข้อมูลสมมติ)", url: "#", followers: 43900, likes: 512000, videos: 186 },
+      videos: [
+        { id: "t1", title: "คลิปตัวอย่างที่ยอดวิวสูงกว่าคลิปอื่นมาก ใช้ดูว่าเลขหลักล้านล้นช่องไหม", url: "#", at: new Date(Date.now() - 8 * 36e5).toISOString(), views: 1240000, likes: 88400, comments: 2130, shares: 5600 },
+        { id: "t2", title: "คลิปทั่วไป", url: "#", at: new Date(Date.now() - 40 * 36e5).toISOString(), views: 62000, likes: 3100, comments: 88, shares: 210 },
+        { id: "t3", title: "คลิปที่ยอดยังน้อย", url: "#", at: new Date(Date.now() - 96 * 36e5).toISOString(), views: 4300, likes: 190, comments: 6, shares: 11 },
+      ],
+    } },
+  };
+
+  function demoBanner() {
+    if (document.getElementById("demobar")) return;
+    var b = document.createElement("div");
+    b.id = "demobar";
+    b.textContent = "⚠️ ข้อมูลตัวอย่าง — ไม่ใช่ตัวเลขจริง ห้ามนำไปใช้อ้างอิง";
+    b.style.cssText = "position:sticky;top:0;z-index:9999;background:#f5a524;color:#3b2600;" +
+      "font-weight:700;text-align:center;padding:9px 14px;font-size:.86rem;letter-spacing:.01em";
+    document.body.insertBefore(b, document.body.firstChild);
+    document.title = "[ตัวอย่าง] " + document.title;
+  }
+
   /* ── ตัวช่วยแสดงผล ─────────────────────────────────────────────── */
 
   function esc(s) {
@@ -199,6 +249,14 @@
      ต้นทางตัวหนึ่งอืดต้องไม่ทำให้อีก 2 คอลัมน์ค้างตามไปด้วย */
   function loadOne(key, isAuto) {
     if (!isAuto) { state[key] = null; paint(key); }
+
+    // ⚠️ โหมดตัวอย่างไม่ยิง API เลย — กันไม่ให้เผลอกินโควตาของต้นทางระหว่างออกแบบ
+    if (DEMO) {
+      state[key] = SAMPLE[key];
+      paint(key);
+      return Promise.resolve();
+    }
+
     return fetch("/social/api/" + key, { headers: { accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (p) { state[key] = p; paint(key); })
@@ -216,6 +274,7 @@
   }
 
   function start() {
+    if (DEMO) demoBanner();
     COLS.forEach(function (c) { paint(c.key); });  // ขึ้นไอคอนหมุนก่อน แล้วค่อยยิง
     loadAll(false);
 
