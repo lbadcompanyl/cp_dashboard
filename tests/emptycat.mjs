@@ -8,9 +8,13 @@ const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++
 const FEEDS = { generatedAt: new Date().toISOString(), sources: {} };
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 
+// ⚠️ เลขพวกนี้ต้องขยับตามทุกครั้งที่ bump `app.js?v=` ของหน้านั้น
+//    เทสต์นี้ไม่ได้เช็คว่า "เลขเป็นเท่าไหร่" แต่เช็คว่า APP_VER อ่านจาก DOM จริง
+//    ไม่ใช่เลขที่พิมพ์ค้างไว้ในโค้ด — เลขซ้ำ 2 ที่แล้วลืม bump คู่กัน คือต้นเหตุที่
+//    แถบ "มีเวอร์ชันใหม่" เคยเด้งไม่หยุดทั้งวัน (ดู CLAUDE.md)
 const DASH = [
-  { name: "trend", url: "http://127.0.0.1:8899/trend/", ver: 110 },
-  { name: "issue", url: "http://127.0.0.1:8899/issue/", ver: 59 },
+  { name: "trend", url: "http://127.0.0.1:8899/trend/", ver: 111 },
+  { name: "issue", url: "http://127.0.0.1:8899/issue/", ver: 60 },
 ];
 
 for (const D of DASH) {
