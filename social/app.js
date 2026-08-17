@@ -152,8 +152,14 @@
         (c.url ? '<a href="' + esc(c.url) + '" target="_blank" rel="noopener">เปิดช่อง ↗</a>' : "") +
         "</div></div>";
     }
-    h += '<div class="stats">' + stat(c.subs, "ผู้ติดตาม") + stat(c.views, "ยอดวิวรวม") + stat(c.videos, "คลิป") + "</div>";
+    // ⚠️ ติดป้าย "โดยประมาณ" เมื่อ YouTube ปัดเศษมาให้ — ห้ามโชว์เป็นเลขเป๊ะ
+    h += '<div class="stats">' + stat(c.subs, c.subsApprox ? "ผู้ติดตาม (ประมาณ)" : "ผู้ติดตาม") +
+      stat(c.views, "ยอดวิวรวม") + stat(c.videos, "คลิป") + "</div>";
     if (c.subsHidden) h += '<div class="note"><span class="ic">ℹ️</span><div>ช่องนี้ตั้งค่าซ่อนยอดผู้ติดตามไว้</div></div>';
+    else if (c.subsApprox) {
+      h += '<div class="note"><span class="ic">ℹ️</span><div>YouTube ปัดยอดผู้ติดตามให้เหลือ 3 หลัก ' +
+        '(เช่น 52,437 จะได้มาเป็น 52,400) — <b>ใช้ดูภาพรวมได้ แต่เอาไปนับว่าวันนี้เพิ่มกี่คนไม่ได้</b></div></div>';
+    }
 
     var vs = d.videos || [];
     h += '<p class="sub">คลิปล่าสุด</p>';

@@ -102,6 +102,17 @@ async function buildYouTube(env, ch) {
     //    ต้องส่ง null ไม่ใช่ 0 ไม่งั้นหน้าเว็บจะโชว์ "0 ผู้ติดตาม" ซึ่งผิด
     subs: st.hiddenSubscriberCount ? null : num(st.subscriberCount),
     subsHidden: !!st.hiddenSubscriberCount,
+
+    // 🔴 YouTube ปัดยอดผู้ติดตามเหลือ "เลขนัยสำคัญ 3 ตัว" ก่อนส่งมาให้เสมอ
+    //    52,437 → ได้มาเป็น 52,400 · ไม่ใช่บั๊กของเรา เป็นข้อจำกัดของ Data API
+    //
+    //    ผลที่ตามมาที่ต้องรู้: **เอาตัวเลขนี้ไปทำ "ผู้ติดตามเพิ่มขึ้นกี่คนวันนี้" ไม่ได้**
+    //    ช่องขนาดนี้ต้องเพิ่มเป็นหลักร้อยกว่าตัวเลขจะขยับสักครั้ง วันที่เพิ่ม 30 คนจะเห็นเป็น 0
+    //    ถ้าอยากได้ตัวเลขจริงรายวัน ต้องใช้ YouTube Analytics API ซึ่งต้องทำ OAuth (ยังไม่ได้ทำ)
+    //
+    //    ⚠️ ห้ามเอาธงนี้ออกโดยไม่เปลี่ยนไปใช้ Analytics API จริง —
+    //    หน้าเว็บใช้ธงนี้ติดป้าย "โดยประมาณ" ไม่ให้เจ้าของเข้าใจว่าเป็นเลขเป๊ะ
+    subsApprox: !st.hiddenSubscriberCount && num(st.subscriberCount) != null,
     views: num(st.viewCount),
     videos: num(st.videoCount),
   };

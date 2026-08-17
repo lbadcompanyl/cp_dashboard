@@ -226,6 +226,32 @@ console.log("\n[10] คอลัมน์หนึ่งอืด ต้อง�
 }
 
 /* ────────────────────────────────────────────────────────────────── */
+console.log("\n[10b] ยอดผู้ติดตาม YouTube ถูกปัดเศษ — ห้ามโชว์เหมือนเป็นเลขเป๊ะ");
+{
+  const { pg } = await open((key) =>
+    key === "youtube"
+      ? { ok: true, status: "ok", data: {
+          channel: { title: "ช่อง", subs: 52400, subsApprox: true, views: 100, videos: 5 }, videos: [] } }
+      : { ok: true, status: "ok", data: {} });
+  await pg.waitForFunction(() => document.querySelector('[data-body="youtube"]').innerText.includes("ผู้ติดตาม"));
+  const t = await text(pg, "youtube");
+  ok(/ประมาณ/.test(t), "ติดป้ายว่าเป็นตัวเลขโดยประมาณ");
+  ok(/เพิ่มกี่คนไม่ได้/.test(t), "เตือนว่าเอาไปนับยอดเพิ่มรายวันไม่ได้");
+  await pg.close();
+
+  // ถ้าช่องซ่อนยอดไว้ ต้องไม่ขึ้นป้าย "ประมาณ" ซ้อนกับ "ซ่อนอยู่" ให้งง
+  const { pg: pg2 } = await open((key) =>
+    key === "youtube"
+      ? { ok: true, status: "ok", data: {
+          channel: { title: "ช่อง", subs: null, subsHidden: true, subsApprox: false, views: 1, videos: 1 }, videos: [] } }
+      : { ok: true, status: "ok", data: {} });
+  await pg2.waitForFunction(() => document.querySelector('[data-body="youtube"]').innerText.includes("ผู้ติดตาม"));
+  const t2 = await text(pg2, "youtube");
+  ok(/ซ่อนยอดผู้ติดตาม/.test(t2) && !/ปัดยอด/.test(t2), "ช่องที่ซ่อนยอด ขึ้นเหตุผลเดียว ไม่ซ้อนกัน");
+  await pg2.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
 console.log("\n[11] โหมดตัวอย่าง — ต้องดูออกทันทีว่าไม่ใช่ของจริง");
 {
   const pg = await browser.newPage({ viewport: { width: 1280, height: 900 } });
