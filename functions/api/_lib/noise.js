@@ -67,7 +67,9 @@ export const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 
 export const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
-export const PR_HOSTS = ["newswit.com", "thaipr.net", "prnewswire.com", "businesswire.com"];
+// ⚠️ ryt9.com เพิ่ม 14 ส.ค. 2026 — เป็นเว็บแจกข่าว PR เหมือนกัน และสรุปที่ติดมากับฟีด
+// เป็น "ข่าวอื่นที่พ่วงมา" (เจอจริง: การ์ด "อิน-องศา" มีสรุปเป็นข่าว ซีพี แอ็กซ์ตร้า คนละใบ)
+export const PR_HOSTS = ["newswit.com", "thaipr.net", "prnewswire.com", "businesswire.com", "ryt9.com"];
 
 export const JOB_HOSTS = [
   "jobsdb", "jooble", "jobbkk", "jobthai", "indeed.", "glassdoor", "linkedin.", "jobtopgun",
@@ -169,7 +171,7 @@ export function noiseReason(it, title, src) {
   // เงื่อนไข "ต้องมีชื่อเครือ CP ในพาดหัว" จึงตัดข่าวที่ถูกต้องทิ้งหมด
   // (เจอจริง: TFG แจ้งผลประกอบการ Q2/69 · กรมประมงยืนยันมาตรฐานเชื้อดื้อยาในสัตว์น้ำ)
   // ข่าวใน alert2 ผ่านด่าน keyword ของคอลัมน์มาแล้ว การมาจากเว็บแจกข่าวไม่ใช่เหตุผลให้ตัด
-  if (src === "alert1" && hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && !realCP(title)) return "pr";
+  if (src === "alert1" && hostOf(it.link || "") && PR_HOSTS.some((h) => hostOf(it.link || "").includes(h)) && cpEvidence(title) !== "strong") return "pr";
   const snip = (it.snippet || "").replace(/\[\[\/?hl\]\]/g, "").toLowerCase();
   const text = title + " " + snip;
   if (DAILY_RE.test(text)) return "daily";

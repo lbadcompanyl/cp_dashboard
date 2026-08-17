@@ -95,6 +95,17 @@ console.log("\n════════ เคสที่เจ้าของ�
 
 // ---- ด่านกันโค้ดถูกก๊อปกลับไปวางในแต่ละแดชบอร์ดอีก ----
 // เจ้าของสั่ง (13 ส.ค. 2026): ตัดที่เดียว = ตัดทุกแดชบอร์ด · มีสำเนาเมื่อไหร่ กฎก็เพี้ยนกันอีก
+console.log("\n════════ ryt9 — เว็บแจกข่าว PR อีกเจ้า (เจ้าของแจ้ง 14 ส.ค. 2026) ════════");
+{
+  const { noiseReason } = await load(FILES.trend);
+  const t1 = `"อิน-องศา"บุกตลาด "A FAIR" เซ็นทรัล ลาดพร้าวแฟนคลับเต็มสตรีม | RYT9`;
+  const w = (title, src) => noiseReason({ link: "https://www.ryt9.com/s/prg/1", title, snippet: "ซีพี แอ็กซ์ตร้า ปักหมุด" }, title.toLowerCase(), src);
+  ok("พาดหัวไม่มีชื่อเครือ → ตัด (คอลัมน์ CP)", w(t1, "alert1") === "pr", String(w(t1, "alert1")));
+  ok("พาดหัวมีชื่อเครือจริง → เก็บ", w("ซีพี แอ็กซ์ตร้า โชว์ผลงานครึ่งปีแรก | RYT9", "alert1") === null);
+  ok("คอลัมน์อื่นไม่โดนกฎนี้", w(t1, "alert2") === null, String(w(t1, "alert2")));
+  ok("ชื่อเครือกลางคำอื่น ไม่นับว่ามีในพาดหัว", w("อควา เอ็มซีพีไอ | RYT9", "alert1") === "pr");
+}
+
 console.log("\n════════ ตัวกรองต้องมีชุดเดียว ════════");
 {
   const SHARED = ["SHOP_HOSTS", "STREAM_HOSTS", "JOB_HOSTS", "PROP_HOSTS", "PR_HOSTS", "CP_BRANDS",
