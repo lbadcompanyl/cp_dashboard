@@ -8,9 +8,18 @@ const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++
 const FEEDS = { generatedAt: new Date().toISOString(), sources: {} };
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 
+// ⚠️ อ่านเลขเวอร์ชันจาก index.html เอง — ของเดิมพิมพ์เลขไว้ในเทสต์ แล้วตกทุกครั้งที่ bump
+// (ตกด้วยเหตุผลที่ไม่ใช่บั๊ก = คนจะเริ่มไม่เชื่อเทสต์)
+import fs from "node:fs";
+const verOf = (page) => {
+  const html = fs.readFileSync(new URL(`../${page}/index.html`, import.meta.url), "utf8");
+  const m = html.match(/app\.js\?v=(\d+)/);
+  if (!m) throw new Error(`หาเลขเวอร์ชันใน ${page}/index.html ไม่เจอ`);
+  return +m[1];
+};
 const DASH = [
-  { name: "trend", url: "http://127.0.0.1:8899/trend/", ver: 110 },
-  { name: "issue", url: "http://127.0.0.1:8899/issue/", ver: 59 },
+  { name: "trend", url: "http://127.0.0.1:8899/trend/", ver: verOf("trend") },
+  { name: "issue", url: "http://127.0.0.1:8899/issue/", ver: verOf("issue") },
 ];
 
 for (const D of DASH) {
@@ -82,7 +91,13 @@ for (const D of DASH) {
 }
 
 console.log("\n════════ landing + sd ════════");
-for (const [name, url, expect] of [["landing", "http://127.0.0.1:8899/", 15], ["sd", "http://127.0.0.1:8899/sd.html", 13]]) {
+const metaVer = (file) => {
+  const html = fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+  const m = html.match(/<meta name="page-ver" content="(\d+)"\s*\/?>/); // landing เขียนแบบ <... />
+  if (!m) throw new Error(`หา page-ver ใน ${file} ไม่เจอ`);
+  return +m[1];
+};
+for (const [name, url, expect] of [["landing", "http://127.0.0.1:8899/", metaVer("index.html")], ["sd", "http://127.0.0.1:8899/sd.html", metaVer("sd.html")]]) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
   const page = await ctx.newPage();
   await page.route("**://ssl.gstatic.com/**", (r) => r.abort());

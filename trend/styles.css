@@ -447,7 +447,13 @@ body {
   align-content: start;
 }
 @media (max-width: 640px) {
-  /* มือถือเป็น carousel ปัด — กลับไปเรียงเดี่ยวเหมือนคอลัมน์อื่น */
+  /* มือถือเป็น carousel ปัด — กลับไปเรียงเดี่ยวเหมือนคอลัมน์อื่น
+     ⚠️ ต้องล้าง max-height ให้ครบ **ทั้ง 3 คอลัมน์** — เดิมลืม trends ไว้คอลัมน์เดียว
+     ผลคือคอลัมน์ Google Trends สูงแค่ 68vh (622px จาก 737px ที่มี) เหลือช่องว่างใต้การ์ด
+     ส่วนคอลัมน์อื่นเต็มจอหมด ดูเผินๆ เหมือนหน้าเว็บพังเฉพาะจุด (เจ้าของแจ้ง 14 ส.ค. 2026)
+     กฎเดสก์ท็อปที่ตั้ง clamp(420px, 68vh, 760px) อยู่ "หลัง" กฎ .panel ของมือถือในไฟล์
+     จึงชนะด้วยลำดับ ถ้าเพิ่มคอลัมน์ใหม่ที่มี max-height ต้องมาล้างตรงนี้ด้วยทุกครั้ง */
+  .panel[data-source="trends"],
   .panel[data-source="xtrends"],
   .panel[data-source="yttrends"] { max-height: none; }
   .panel[data-source="xtrends"] .list { display: block; }
