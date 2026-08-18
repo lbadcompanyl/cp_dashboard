@@ -36,6 +36,8 @@
     end: null,
     compare: "prev",     // prev | yoy | none
     sort: { key: "date", dir: -1 },
+    // กางการ์ดสรุปให้เห็นตัวเลขรายช่อง — ของหน้าภาพรวมเท่านั้น
+    breakdown: false,
     // ชิพเลือกช่องของหน้าภาพรวม — ไม่ต้องข้ามไปมีผลกับแท็บรายช่อง
     channels: { youtube: true, tiktok: true, facebook: true },
   };
@@ -179,28 +181,39 @@
     if (cur == null || prev == null) return '<span class="dlt none">ไม่มีข้อมูลเทียบ</span>';
     opt = opt || {};
 
+    /* ⚠️ ลูกศรกับตัวเลขต้องเล่าเรื่องเดียวกัน
+     *    เคยได้ "▬ 0.1%" อยู่ข้าง "▲ 0.1%" เพราะเกณฑ์ "ถือว่าเท่าเดิม" กับจำนวน
+     *    ทศนิยมที่แสดง ใช้คนละค่ากัน · ตอนนี้ยึดค่าที่ "แสดงจริงหลังปัด" เป็นตัวตัดสิน
+     *    → ลูกศรราบ ก็ต่อเมื่อเลขที่เห็นเป็น 0 เท่านั้น */
+    var dirOf = function (shown, signed) {
+      return Number(shown) === 0 ? "flat" : signed > 0 ? "up" : "down";
+    };
+
     // อัตราส่วน (ER, completion rate) → เทียบเป็น percentage point เสมอ
     if (opt.pp) {
       var d = (cur - prev) * 100;
-      var dir0 = Math.abs(d) < 0.05 ? "flat" : d > 0 ? "up" : "down";
-      return '<span class="dlt ' + dir0 + '">' + arrow(dir0) + " " + Math.abs(d).toFixed(1) + " pt</span>";
+      var dTxt = Math.abs(d).toFixed(1);
+      var dir0 = dirOf(dTxt, d);
+      return '<span class="dlt ' + dir0 + '">' + arrow(dir0) + " " + dTxt + " pt</span>";
     }
 
     var diff = cur - prev;
-    var dirA = Math.abs(diff) < 0.5 ? "flat" : diff > 0 ? "up" : "down";
 
     // 🔴 ฐานเล็ก → จำนวนจริง (เช่น +7) เพราะ % บนฐานหลักสิบหลักร้อยหลอกตา
     if (Math.abs(prev) < DELTA_MIN_BASE) {
       var mag = Math.abs(diff);
-      var txt = mag < 1 ? mag.toFixed(1) : Math.round(mag).toLocaleString("th-TH");
+      var txt = mag < 1 ? mag.toFixed(1) : String(Math.round(mag));
+      var dirA = dirOf(txt, diff);
       return '<span class="dlt ' + dirA + '" title="เทียบเป็นจำนวนจริงเพราะฐานน้อยกว่า ' +
-        DELTA_BASE_LABEL + '">' + arrow(dirA) + " " + (dirA === "down" ? "−" : dirA === "up" ? "+" : "") + txt + "</span>";
+        DELTA_BASE_LABEL + '">' + arrow(dirA) + " " + (dirA === "down" ? "−" : dirA === "up" ? "+" : "") +
+        Number(txt).toLocaleString("th-TH") + "</span>";
     }
 
     if (!prev) return '<span class="dlt none">ไม่มีข้อมูลเทียบ</span>';
-    var rr = diff / Math.abs(prev);
-    var dir = Math.abs(rr) < 0.001 ? "flat" : rr > 0 ? "up" : "down";
-    return '<span class="dlt ' + dir + '">' + arrow(dir) + " " + Math.abs(rr * 100).toFixed(1) + "%</span>";
+    var rr = (diff / Math.abs(prev)) * 100;
+    var rTxt = Math.abs(rr).toFixed(1);
+    var dir = dirOf(rTxt, rr);
+    return '<span class="dlt ' + dir + '">' + arrow(dir) + " " + rTxt + "%</span>";
   }
   var DELTA_BASE_LABEL = DELTA_MIN_BASE.toLocaleString("th-TH");
 
@@ -219,7 +232,7 @@
       (o.tip ? ' <button type="button" class="tipi" data-tip="' + esc(o.tip) + '" title="' + esc(o.tip) + '" aria-label="คำอธิบาย">ⓘ</button>' : "") +
       "</div>" +
       '<div class="sc-v">' + esc(o.value == null ? "—" : o.value) + "</div>" +
-      '<div class="sc-d">' + (o.delta || "") + "</div></div>";
+      '<div class="sc-d">' + (o.delta || "") + "</div>" + (o.extra || "") + "</div>";
   }
 
   function empty(msg, sub) {
@@ -274,17 +287,46 @@
     });
     var erNow = tv ? te / tv : null, erPrev = pv ? pe / pv : null;
 
+    /* แถวรายช่องใต้ยอดรวม — โผล่เมื่อกดปุ่ม "แยกช่อง"
+     * ⚠️ อ่านจาก order (ช่องที่เปิดอยู่) เหมือนยอดรวม ปิดช่องไหนต้องหายทั้งคู่
+     *    ไม่งั้นยอดรวมกับรายช่องจะบวกกันไม่ลง แล้วดูเหมือนคำนวณผิด */
+    function bd(pick, opt) {
+      if (!state.breakdown) return "";
+      var rows = order.map(function (pk) {
+        var P = C.PLATFORMS[pk];
+        var v = pick(cur[pk], prev[pk], pk, r, cr);
+        return '<div class="bd-r"><span class="bd-d" style="background:' + P.rawColor + '"></span>' +
+          '<span class="bd-n">' + esc(P.short) + '</span><span class="bd-v">' +
+          esc(v.text == null ? "—" : v.text) + "</span>" +
+          delta(v.cur, v.prev, opt) + "</div>";
+      }).join("");
+      return '<div class="bd">' + rows + "</div>";
+    }
+
     h += '<div class="grid4">' +
-      card({ label: "ผู้ติดตามรวม", value: num(tf), delta: delta(tf, cr ? pf : null) }) +
+      card({ label: "ผู้ติดตามรวม", value: num(tf), delta: delta(tf, cr ? pf : null),
+             extra: bd(function (a, b, pk) {
+               var g = growth(pk, r), pg2 = cr ? growth(pk, cr) : null;
+               return { text: g ? num(g.end) : null, cur: g ? g.end : null, prev: pg2 ? pg2.end : null };
+             }) }) +
       card({ label: "การมองเห็นรวม", value: num(tv),
              tip: "YouTube และ TikTok นับเป็นยอดวิว · Facebook นับเป็นการเข้าถึง (จำนวนคนที่เห็นโพสต์) สองอย่างนี้ไม่ใช่หน่วยเดียวกัน แต่รวมไว้เพื่อดูภาพกว้าง",
-             delta: delta(tv, cr ? pv : null) }) +
+             delta: delta(tv, cr ? pv : null),
+             extra: bd(function (a, b) {
+               return { text: a ? num(a.reach) : null, cur: a ? a.reach : null, prev: b ? b.reach : null };
+             }) }) +
       card({ label: "การมีส่วนร่วมรวม", value: num(te),
              tip: "ไลก์ + คอมเมนต์ + แชร์ ตามที่แต่ละช่องนับได้ · YouTube ไม่มีตัวเลขแชร์ให้",
-             delta: delta(te, cr ? pe : null) }) +
+             delta: delta(te, cr ? pe : null),
+             extra: bd(function (a, b) {
+               return { text: a ? num(a.engagement) : null, cur: a ? a.engagement : null, prev: b ? b.engagement : null };
+             }) }) +
       card({ label: "Engagement rate รวม", value: pct(erNow),
-             tip: "การมีส่วนร่วมรวม ÷ การมองเห็นรวม ของช่องที่เปิดอยู่",
-             delta: delta(erNow, cr ? erPrev : null, { pp: true }) }) +
+             tip: "การมีส่วนร่วมรวม ÷ การมองเห็นรวม ของช่องที่เปิดอยู่ · ค่ารายช่องคิดด้วยสูตรของช่องนั้นเอง จึงเทียบข้ามช่องตรงๆ ไม่ได้",
+             delta: delta(erNow, cr ? erPrev : null, { pp: true }),
+             extra: bd(function (a, b) {
+               return { text: a ? pct(a.er) : null, cur: a ? a.er : null, prev: b ? b.er : null };
+             }, { pp: true }) }) +
       "</div>";
 
     // ② ตารางเทียบรายช่อง (เดิมเป็นการ์ด 3 ใบ)
@@ -552,6 +594,13 @@
           'aria-pressed="' + (on ? "true" : "false") + '" style="--pc:' + P.rawColor + '">' +
           '<span class="pdot"></span>' + esc(P.label) + "</button>";
       }).join("") + "</div>";
+
+      // กางตัวเลขรายช่องใต้ยอดรวม — ของหน้าภาพรวมเหมือนกัน
+      // ⚠️ ไม่ใช้ class .ch — นั่นสงวนไว้ให้ "ชิพเลือกช่อง" เท่านั้น
+      //    ปนกันเมื่อไหร่ ตัวนับช่องจะนับปุ่มนี้เป็นช่องที่ 4
+      h += '<button type="button" class="bd-btn' + (state.breakdown ? " on" : "") + '" data-bd="1" ' +
+        'aria-pressed="' + (state.breakdown ? "true" : "false") + '">' +
+        (state.breakdown ? "▾" : "▸") + " แยกช่อง</button>";
     }
     h += "</div>";
 
@@ -586,10 +635,12 @@
     var tip = e.target.closest(".tipi");
     if (tip) { showTip(tip); return; }
 
-    var t = e.target.closest("[data-tab],[data-days],[data-cmp],[data-sort],[data-ch]");
+    var t = e.target.closest("[data-tab],[data-days],[data-cmp],[data-sort],[data-ch],[data-bd]");
     if (!t) return;
 
     if (t.dataset.tab) { state.tab = t.dataset.tab; render(); return; }
+
+    if (t.dataset.bd) { state.breakdown = !state.breakdown; render(); return; }
 
     if (t.dataset.ch) {
       var pk = t.dataset.ch;

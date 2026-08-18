@@ -251,6 +251,75 @@ console.log("\n[9] 🔴 ชิพเลือกช่อง — ปิดแล
 }
 
 /* ────────────────────────────────────────────────────────────────── */
+console.log("\n[9b] 🔴 ปุ่มแยกช่อง — กางตัวเลขรายช่องใต้ยอดรวม");
+{
+  const { pg, errs } = await open();
+  ok((await pg.$$(".bd-r")).length === 0, "ยังไม่กด ยังไม่มีแถวรายช่อง");
+
+  await pg.click("[data-bd]");
+  await pg.waitForTimeout(180);
+  ok((await pg.$$(".bd-r")).length === 12, "กางแล้วได้ 12 แถว (4 การ์ด × 3 ช่อง)");
+  ok(await pg.$eval("[data-bd]", (e) => e.getAttribute("aria-pressed") === "true"), "ปุ่มเป็นสถานะกางอยู่");
+
+  const first = await pg.$eval(".sc", (e) => e.innerText);
+  ok(/YT/.test(first) && /TT/.test(first) && /FB/.test(first), "การ์ดแรกแจกแจงครบ 3 ช่อง");
+  ok((await pg.$$(".bd-r .dlt")).length === 12, "ทุกแถวรายช่องมี delta ของตัวเอง");
+
+  // 🔴 รายช่องต้องบวกกันได้เท่ายอดรวม ไม่งั้นดูเหมือนคำนวณผิด
+  const sums = await pg.evaluate(() => {
+    const card = [...document.querySelectorAll(".sc")].find((c) => /การมองเห็นรวม/.test(c.querySelector(".sc-l").textContent));
+    const parse = (t) => {
+      const m = String(t).replace(/,/g, "").match(/([\d.]+)\s*([KM])?/);
+      if (!m) return 0;
+      return parseFloat(m[1]) * (m[2] === "M" ? 1e6 : m[2] === "K" ? 1e3 : 1);
+    };
+    return {
+      total: parse(card.querySelector(".sc-v").textContent),
+      parts: [...card.querySelectorAll(".bd-v")].map((x) => parse(x.textContent)),
+    };
+  });
+  // ⚠️ เทียบจากตัวเลขที่ "แสดงบนจอ" ซึ่งย่อเป็น K/M ทศนิยม 1 ตำแหน่ง
+  //    ผลรวมของค่าที่ปัดแล้วจึงไม่มีทางตรงเป๊ะ — เผื่อความคลาดเคลื่อนของการปัดไว้
+  //    (ถ้าคำนวณผิดจริง เช่น นับช่องที่ปิดอยู่เข้ามาด้วย จะเพี้ยนหลักสิบเปอร์เซ็นต์ ไม่ใช่หลักหน่วย)
+  const partSum = sums.parts.reduce((a, b) => a + b, 0);
+  const gap = Math.abs(partSum - sums.total) / sums.total;
+  ok(gap < 0.05, `รายช่องบวกกันแล้วเท่ายอดรวม คลาดเคลื่อน ${(gap * 100).toFixed(1)}% ` +
+     `(${Math.round(partSum)} vs ${Math.round(sums.total)})`);
+
+  // ปิดช่อง → ต้องหายทั้งยอดรวมและรายช่อง ไม่งั้นบวกกันไม่ลง
+  await pg.click('[data-ch="youtube"]');
+  await pg.waitForTimeout(180);
+  ok((await pg.$$(".bd-r")).length === 8, "ปิด YouTube → เหลือ 8 แถว");
+  ok(!/YT/.test(await pg.$eval(".grid4", (e) => e.innerText)), "ไม่มี YT ค้างในการ์ดสรุป");
+
+  await pg.click("[data-bd]");
+  await pg.waitForTimeout(150);
+  ok((await pg.$$(".bd-r")).length === 0, "กดซ้ำแล้วยุบกลับ");
+
+  // ไม่โผล่ในแท็บรายช่อง (ช่องเดียวอยู่แล้ว ไม่มีอะไรให้แยก)
+  await tabTo(pg, "TikTok");
+  ok((await pg.$$("[data-bd]")).length === 0, "แท็บรายช่องไม่มีปุ่มแยกช่อง");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[9c] ลูกศรกับตัวเลขของ delta ต้องเล่าเรื่องเดียวกัน");
+{
+  const { pg } = await open();
+  await pg.click("[data-bd]");
+  await pg.waitForTimeout(180);
+  // เคยเจอ "▬ 0.1%" อยู่ข้าง "▲ 0.1%" — ลูกศรราบต้องคู่กับเลข 0 เท่านั้น
+  const bad = await pg.$$eval(".dlt", (n) => n.map((e) => e.textContent.trim()).filter((t) => {
+    const flat = t.startsWith("▬");
+    const zero = /(^|\s)0(\.0)?\s*(%|pt)?$/.test(t.replace(/[▬▲▼+−]/g, "").trim());
+    return flat !== zero;      // ราบแต่ไม่ใช่ศูนย์ หรือ ศูนย์แต่ไม่ราบ
+  }));
+  ok(bad.length === 0, "ไม่มีป้ายที่ลูกศรขัดกับตัวเลข (" + (bad.slice(0, 3).join(" / ") || "ไม่มี") + ")");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
 console.log("\n[10] 🔴 คำอธิบายย้ายไปเป็น tooltip ที่ ⓘ");
 {
   const { pg } = await open();

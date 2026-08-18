@@ -130,6 +130,24 @@ body {
 .sc.na .sc-v { color:var(--muted); font-size:1.05rem; font-weight:600; }
 .sc-d { margin-top:3px; min-height:17px; }
 
+/* แถวรายช่องใต้ยอดรวม — โผล่เมื่อกด "แยกช่อง"
+   ⚠️ อ่านจากช่องที่เปิดอยู่ชุดเดียวกับยอดรวม ปิดช่องไหนต้องหายทั้งคู่
+      ไม่งั้นรายช่องบวกกันแล้วไม่เท่ายอดรวม จะดูเหมือนคำนวณผิด */
+.bd { margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-direction:column; gap:5px; }
+.bd-r { display:grid; grid-template-columns:auto auto 1fr auto; gap:6px; align-items:baseline; font-size:.72rem; }
+.bd-d { width:7px; height:7px; border-radius:2px; align-self:center; }
+.bd-n { color:var(--muted); }
+.bd-v { font-weight:650; text-align:right; font-variant-numeric:tabular-nums; }
+.bd .dlt { font-size:.66rem; }
+/* ปุ่มกางรายช่อง — หน้าตาเหมือนชิพ แต่คนละ class โดยตั้งใจ (.ch สงวนให้ชิพเลือกช่อง) */
+.bd-btn {
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-family:inherit;
+  border:1px solid var(--border); background:var(--surface); color:var(--muted);
+  border-radius:999px; padding:6px 12px; font-size:.78rem; font-variant-numeric:tabular-nums;
+}
+.bd-btn:hover { color:var(--ink); }
+.bd-btn.on { color:var(--ink); background:var(--surface-2); border-color:var(--accent); font-weight:600; }
+
 /* ป้ายเทียบกับช่วงก่อน */
 .dlt { font-size:.72rem; font-weight:650; display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
 .dlt.up { color:var(--good); }

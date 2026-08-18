@@ -14,9 +14,9 @@
 <meta name="apple-mobile-web-app-title" content="Social" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <!-- ⭐ bump เลขนี้ที่เดียวทุกครั้งที่แก้หน้านี้ -->
-<meta name="page-ver" content="5" />
+<meta name="page-ver" content="7" />
 <script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){/* เช็ค service worker ตัวใหม่ "วันละครั้ง" พอ (เจ้าของสั่ง 11 ส.ค. 2026) — เดิมเช็คทุกครั้งที่สลับกลับเข้าแอป พอ deploy บ่อยๆ ป้าย "มีเวอร์ชันใหม่" เด้งทั้งวัน · ตัวเช็คหน้าเว็บ (page-ver) เป็นวันละครั้งอยู่แล้ว เหลือตัวนี้ที่ยังถี่อยู่ · ทางลัด: แตะที่ป้ายเลขเวอร์ชัน = สั่งเช็คเดี๋ยวนี้ ใช้ตอนเพิ่ง release แล้วอยากรู้ว่าถึงเครื่องหรือยัง */var __verEvery=864e5,__verKey="swChkAt";function __verDue(){try{return Date.now()-(+localStorage.getItem(__verKey)||0)>__verEvery;}catch(x){return true;}}function __verMark(){try{localStorage.setItem(__verKey,String(Date.now()));}catch(x){}}addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;function chk(force){if(!force&&!__verDue())return;__verMark();r.update();}chk(false);document.addEventListener("visibilitychange",function(){if(!document.hidden)chk(false);});var vt=document.getElementById("vtag");if(vt){vt.style.cursor="pointer";vt.title="แตะเพื่อเช็คเวอร์ชันใหม่เดี๋ยวนี้ (ปกติเช็คให้เองวันละครั้ง)";vt.addEventListener("click",function(){var t=vt.textContent;vt.textContent="กำลังเช็ค…";setTimeout(function(){if(vt.textContent==="กำลังเช็ค…")vt.textContent=t;},1500);chk(true);});}}).catch(function(){});});/* ⚠️ "เพิ่งติดตั้ง sw ครั้งแรก" ไม่ใช่ "มีเวอร์ชันใหม่" — sw ยิง sw-updated ตอน activate เสมอ รวมถึงครั้งแรกสุด ทำให้คนเปิดเว็บครั้งแรก (หรือ iOS ล้าง sw ทิ้งตอนไม่ได้เปิดเกิน 7 วัน) เจอแถบ "มีเวอร์ชันใหม่" ทั้งที่เพิ่งโหลดของล่าสุดมาหมาดๆ ดูจาก controller ตอนหน้าเริ่มทำงาน: ไม่มี = ติดตั้งครั้งแรก ไม่ต้องบอกอะไร */var __hadCtrl=!!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;if(!__hadCtrl)return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
-<link rel="stylesheet" href="styles.css?v=5" />
+<link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
 <div class="wrap">
@@ -38,9 +38,9 @@
   <div id="view"></div>
 
 </div>
-<script src="metrics.js?v=5"></script>
-<script src="mock.js?v=5"></script>
-<script src="charts.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="metrics.js?v=7"></script>
+<script src="mock.js?v=7"></script>
+<script src="charts.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
