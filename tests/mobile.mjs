@@ -1,5 +1,5 @@
 // วัดเลย์เอาต์มือถือของจริงด้วย Chromium — ไม่เดาจาก CSS
-import { chromium } from "/tmp/claude-0/-home-user-test/be7fa817-d985-5289-8b20-fc2b22afab7c/scratchpad/node_modules/playwright/index.mjs";
+import { chromium } from "playwright";
 
 const PAGES = ["/trend/", "/ir/", "/issue/"];
 const VIEWPORTS = [
@@ -45,6 +45,17 @@ for (const path of PAGES) {
         tbW: tb ? tb.getBoundingClientRect().width : -1,
         panelW: panel ? panel.getBoundingClientRect().width : -1,
         panels: document.querySelectorAll(".panel").length,
+        // คอลัมน์ทุกอันต้องสูงเต็มพื้นที่ในบอร์ด — เคยพลาด: กฎ max-height ของเดสก์ท็อป
+        // (clamp 68vh) ไม่ถูกล้างบนมือถือสำหรับคอลัมน์ Google Trends คอลัมน์เดียว
+        // เหลือช่องว่างใต้การ์ดเฉพาะคอลัมน์นั้น (เจ้าของแจ้ง 14 ส.ค. 2026)
+        shortPanels: (() => {
+          if (!board) return [];
+          const cs = getComputedStyle(board);
+          const inner = board.getBoundingClientRect().height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+          return [...document.querySelectorAll(".panel")]
+            .map((el) => ({ s: el.dataset.source || "?", h: Math.round(el.getBoundingClientRect().height), need: Math.round(inner) }))
+            .filter((x) => x.h < x.need - 2);
+        })(),
         // ลูกของ body ที่อยู่ใน flow ทุกตัวต้องกว้างเต็มจอและชิดซ้าย
         // (auto margin บนแกนขวางของ flex ทำให้ตัวไหนก็ตามหดเป็นเท่าเนื้อหาได้)
         badKids: [...document.body.children]
@@ -64,6 +75,7 @@ for (const path of PAGES) {
     ok("ขอบล่างบอร์ดชนขอบจอพอดี", Math.abs(m.boardBottom - m.vh) <= 2, `bottom ${Math.round(m.boardBottom)} vs vh ${m.vh}`);
     ok("หน้าไม่เลื่อนแนวตั้ง (คอลัมน์เลื่อนในตัวเอง)", m.docScrollH <= m.vh + 1, `scrollH ${m.docScrollH} vs vh ${m.vh}`);
     ok("ลูกของ body ทุกตัวกว้างเต็มจอและชิดซ้าย", m.badKids.length === 0, JSON.stringify(m.badKids));
+    ok("ทุกคอลัมน์สูงเต็มพื้นที่ ไม่มีช่องว่างใต้การ์ด", m.shortPanels.length === 0, JSON.stringify(m.shortPanels));
 
     await ctx.close();
   }
