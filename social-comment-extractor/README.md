@@ -57,6 +57,22 @@ npx wrangler secret put SCRAPECREATORS_API_KEY
 
 > deploy หน้าเว็บขึ้น **Cloudflare Pages** ได้เหมือน static site ทั่วไป (build command เว้นว่าง, output = `/`)
 
+### ทดสอบก่อน: ตรวจว่า Worker ทำงาน
+- เปิด `https://<worker>.workers.dev/` ในเบราว์เซอร์ → ควรเห็น `{"ok":true,...}`
+- `https://<worker>.workers.dev/credits` → เห็นเครดิต ScrapeCreators (ถ้าตั้ง key แล้ว)
+- **เริ่มจาก YouTube ก่อน** (ฟรี) เพื่อพิสูจน์ flow เต็มก่อนจ่ายเงิน scraper
+
+## ⚠️ ข้อควรรู้ตอน deploy จริง
+1. **โหมด Live ใช้ในหน้า preview ของ claude.ai ไม่ได้** — sandbox ของ artifact บล็อกการเรียก
+   ข้ามโดเมน (CSP) → ต้องเปิดหน้าเว็บจาก **Cloudflare Pages หรือ localhost** แล้วค่อยวาง URL Worker
+   (พรีวิว claude.ai ใช้ได้เฉพาะโหมด Demo)
+2. **Cloudflare Workers Free จำกัด 50 subrequest/คำขอ** — 1 โพส = ดึงคอมเมนต์หลายหน้า + เรียก
+   Claude หลาย batch. แนะนำตั้ง **"ดึงกี่คอมเมนต์" ≤ 400** บนแพลนฟรี (โพสใหญ่กว่านั้นอาจชนลิมิต/
+   ใช้เวลานาน) — อัปเกรด Workers Paid ได้ถ้าต้องดึงเยอะ
+3. **ตรวจ field ของ ScrapeCreators ครั้งแรก** — ครั้งแรกที่ดึง FB/TikTok จริง ให้เช็คว่า
+   ข้อความ/like/เวลา มาครบ; ถ้า field ชื่อไม่ตรง แก้ที่ `pickField()` ใน `worker.js` (คอมเมนต์กำกับไว้)
+4. (แนะนำ) ตั้ง `ALLOW_ORIGIN` ใน `wrangler.toml` เป็นโดเมนหน้าเว็บของคุณ แทน `"*"` เพื่อกันคนอื่นยิง Worker
+
 ## โมเดล sentiment
 ตั้งใน `wrangler.toml` → `CLAUDE_MODEL`:
 - `claude-haiku-4-5` — **ค่าเริ่มต้น** ถูก เหมาะจัดหมวดคอมเมนต์จำนวนมาก
