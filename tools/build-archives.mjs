@@ -5,8 +5,13 @@
 // สคริปต์นี้รันด้วยมือเมื่อข้อมูลในชีตเปลี่ยน แล้ว **commit ไฟล์ JSON ที่ได้เข้า repo**
 // หน้าเว็บอ่านไฟล์นิ่งๆ อย่างเดียว **ไม่มีการเรียก Google Sheets API ตอนผู้ใช้เปิดหน้า**
 //
-//   node tools/build-archives.mjs <SHEET_ID>   # ดึงของจริง (ชีตต้องแชร์แบบ "ใครมีลิงก์ก็ดูได้")
-//   node tools/build-archives.mjs --mock       # สร้างข้อมูลจำลองโครงเดียวกัน (ยังไม่มี sheet id)
+//   node tools/build-archives.mjs <SHEET_ID> [gid]  # ดึงของจริง (ชีตต้องแชร์แบบ "ใครมีลิงก์ก็ดูได้")
+//   node tools/build-archives.mjs --csv <ไฟล์>       # แปลงจากไฟล์ CSV ที่โหลดมาเองแล้ว
+//   node tools/build-archives.mjs --mock            # สร้างข้อมูลจำลองโครงเดียวกัน (ไว้ลองของ)
+//
+// ⚠️ **โหมด `--csv` มีไว้เพราะเครื่องที่รัน session ยิงเข้า Google ไม่ได้** (โดนบล็อก 403)
+//    ดาวน์โหลดชีตเป็น CSV มาก่อน แล้วชี้ไฟล์ให้ · ผลลัพธ์เหมือนกับดึงเองทุกอย่าง
+//    เจ้าของรันบนเครื่องตัวเองใช้ `<SHEET_ID>` ได้ตามปกติ
 //
 // ผลลัพธ์:
 //   archives/data/index.json  — รายชื่อปี + จำนวนแถวต่อปี + เวลาที่สร้าง
@@ -121,7 +126,7 @@ export function buildRows(table) {
 // ---------- ข้อมูลจำลอง (ใช้ตอนยังไม่มี sheet id) ----------
 // โครงเหมือนของจริงทุกอย่าง รวมถึงข้อมูลที่ "ไม่สวย" ที่ต้องรับมือ:
 // พาดหัวมีหางชื่อคอลัมน์/สำนัก · สำนักข่าวปนทั้งชื่อไทย/โดเมน/ชื่อ Alert · หมวดหลายค่า
-function mockTable(n = 18000) {
+export function mockTable(n = 18000) {
   const outlets = [
     ["ข่าวสด", 1], ["khaosod.co.th", 1], ["ไทยรัฐ", 1], ["thairath.co.th", 1],
     ["มติชน", 1], ["matichon.co.th", 1], ["เดลินิวส์", 1], ["dailynews.co.th", 1],
@@ -178,7 +183,7 @@ function mockTable(n = 18000) {
 // วันที่เก็บเป็นวินาที (ตัวเลข) ไม่ใช่สตริง ISO — สั้นกว่าและเรียงเร็วกว่า
 //   { o:[สำนัก], c:[หมวด], r:[[พาดหัว, ลิงก์, วินาที, ลำดับสำนัก, [ลำดับหมวด]], …] }
 // ฝั่งหน้าเว็บคลี่กลับใน expand() ของ app.js — **แก้โครงตรงนี้ต้องแก้ที่นั่นด้วย**
-function packYear(rows) {
+export function packYear(rows) {
   const oList = [], oIx = new Map(), cList = [], cIx = new Map();
   const idx = (v, list, map) => {
     if (!map.has(v)) { map.set(v, list.length); list.push(v); }
@@ -229,13 +234,18 @@ function write(rows) {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const arg = process.argv[2];
   if (!arg) {
-    console.error("ใช้: node tools/build-archives.mjs <SHEET_ID>   หรือ   --mock");
+    console.error("ใช้: node tools/build-archives.mjs <SHEET_ID> [gid]   หรือ   --csv <ไฟล์>   หรือ   --mock");
     process.exit(1);
   }
   let table;
   if (arg === "--mock") {
-    console.log("สร้างข้อมูลจำลอง (ยังไม่มี sheet id)…");
+    console.log("สร้างข้อมูลจำลอง (ไม่ใช่ข่าวจริง)…");
     table = mockTable();
+  } else if (arg === "--csv") {
+    const file = process.argv[3];
+    if (!file) { console.error("ใช้: node tools/build-archives.mjs --csv <ไฟล์.csv>"); process.exit(1); }
+    console.log("อ่านจากไฟล์ CSV…");
+    table = parseCSV(fs.readFileSync(file, "utf8"));
   } else {
     const gid = process.argv[3] || "0";
     const url = `https://docs.google.com/spreadsheets/d/${arg}/export?format=csv&gid=${gid}`;

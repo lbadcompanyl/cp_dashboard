@@ -17,8 +17,40 @@
  *  [10] มือถือ: กล่องตัวกรองซ้อนแนวตั้ง ไม่ล้นจอ
  */
 import { chromium } from "playwright";
+import { mockTable, buildRows, packYear } from "../tools/build-archives.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:8899";
+
+// ⚠️ **เทสต์สร้างข้อมูลของตัวเอง ไม่ได้อ่าน archives/data/ ที่ commit ไว้**
+//    ของที่ commit เป็นข่าวจริงจากชีต ซึ่งเปลี่ยนทุกครั้งที่สร้างใหม่ (ตอนนี้มีปีเดียว)
+//    ถ้าเทสต์ไปผูกกับมัน พอเจ้าของอัปข้อมูล เทสต์จะตกเองทั้งที่โค้ดไม่ได้พัง
+//    ที่นี่จึงปลอมไฟล์ด้วย page.route แบบเดียวกับที่เทสต์ตัวอื่นปลอม API
+const FIX = (() => {
+  const rows = buildRows(mockTable(18000));
+  const byYear = new Map();
+  for (const r of rows) {
+    const y = r.d.slice(0, 4);
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y).push(r);
+  }
+  const years = [...byYear.keys()].sort().reverse();
+  const files = { "index.json": JSON.stringify({
+    generatedAt: "2026-08-19T00:00:00.000Z",
+    total: rows.length, noDate: 0,
+    years: years.map((y) => ({ y: +y, n: byYear.get(y).length })),
+  }) };
+  for (const y of years) files[y + ".json"] = JSON.stringify(packYear(byYear.get(y)));
+  return files;
+})();
+
+async function fakeData(ctx) {
+  await ctx.route("**/archives/data/*.json", (route) => {
+    const name = route.request().url().split("/").pop().split("?")[0];
+    const body = FIX[name];
+    if (!body) return route.fulfill({ status: 404, body: "no fixture: " + name });
+    route.fulfill({ status: 200, contentType: "application/json", body });
+  });
+}
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => {
   if (cond) { pass++; console.log("  ✅", name); }
@@ -38,6 +70,7 @@ async function open(ctx, qs = "") {
 }
 
 const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+await fakeData(ctx);
 const page = await open(ctx);
 
 // ── [1] ค้นภาษาไทยแบบ substring ────────────────────────────────────────
@@ -129,6 +162,29 @@ console.log("\n[4] ตัดหางพาดหัวตอนแสดง แ
   ok("หางถูกตัดออกจากที่แสดงผลแล้ว", stillTailed.length === 0, JSON.stringify(stillTailed.slice(0, 2)));
   const empty = shown.filter((t) => t.length < 10);
   ok("ไม่มีพาดหัวที่ถูกตัดจนสั้นผิดปกติ", empty.length === 0, JSON.stringify(empty.slice(0, 3)));
+
+  // ⚠️ หางมีทั้ง "ชื่อคอลัมน์" และ "ชื่อสำนัก" ต่อกัน 2 ชั้น — ต้องตัดให้หมดทั้งสองชั้น
+  //    (เคสที่เจ้าของยกมา: "… - เทคโนโลยีชาวบ้าน - ข่าวสด")
+  const stillSection = shown.filter((t) => /เทคโนโลยีชาวบ้าน\s*$/.test(t));
+  ok("ตัดชื่อคอลัมน์ที่อยู่หน้าชื่อสำนักด้วย ไม่ใช่ตัดแค่ชั้นเดียว",
+    stillSection.length === 0, JSON.stringify(stillSection.slice(0, 2)));
+
+  // ห้ามตัดจนพาดหัวเพี้ยน — ที่แสดงต้องเป็น "ต้นของ" พาดหัวจริงเสมอ
+  const bad = await page.evaluate(async () => {
+    const idx = await fetch("data/index.json").then((r) => r.json());
+    const y = idx.years.map((x) => x.y).sort((a, b) => b - a)[0];
+    const pack = await fetch(`data/${y}.json`).then((r) => r.json());
+    const orig = new Set(pack.r.map((r) => String(r[0]).replace(/\s+/g, " ").trim()));
+    const out = [];
+    for (const el of document.querySelectorAll("#list .item a.t")) {
+      const s = el.textContent.trim();
+      let hit = false;
+      for (const o of orig) if (o === s || o.startsWith(s)) { hit = true; break; }
+      if (!hit) out.push(s);
+    }
+    return out;
+  });
+  ok("ที่แสดงเป็นต้นของพาดหัวจริงทุกใบ (ไม่ได้ตัดกลาง)", bad.length === 0, JSON.stringify(bad.slice(0, 2)));
 }
 
 // ── [5] ตัวกรอง ────────────────────────────────────────────────────────
@@ -284,6 +340,7 @@ console.log("\n[9] ขยายช่วงวันที่ย้อนไป�
 console.log("\n[10] มือถือ");
 {
   const m = await browser.newContext({ viewport: { width: 390, height: 780 }, isMobile: true, hasTouch: true });
+  await fakeData(m);
   const p = await open(m);
   const over = await p.evaluate(() => document.scrollingElement.scrollWidth - innerWidth);
   ok("ไม่มีอะไรล้นออกนอกจอ", over <= 1, `เกิน ${over}px`);
@@ -313,6 +370,7 @@ console.log("\n[10] มือถือ");
 console.log("\n[10b] โหมดมืด");
 {
   const d = await browser.newContext({ viewport: { width: 1200, height: 900 }, colorScheme: "dark" });
+  await fakeData(d);
   const p = await open(d);
   const bg = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);
   ok("โหมดมืดเปลี่ยนสีพื้นจริง", bg === "rgb(13, 17, 23)", bg);

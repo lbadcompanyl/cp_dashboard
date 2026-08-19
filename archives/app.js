@@ -40,6 +40,22 @@ const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
 // ⚠️ ตัดเฉพาะ "ตอนแสดงผล" — ตัวที่ใช้ค้นหายังเป็นพาดหัวต้นฉบับ
 //    ไม่งั้นค้นคำที่อยู่ในหางแล้วจะไม่เจอ ทั้งที่ในชีตมีอยู่จริง
 const TAIL_SEP = /\s+[-|–—·]\s+/;
+
+// ⚠️ ท่อนที่โผล่เป็นหางของข่าว "ตั้งแต่ 2 ใบขึ้นไป" = ชื่อคอลัมน์/ชื่อเว็บ ไม่ใช่เนื้อพาดหัว
+//    นับจากข้อมูลจริงที่โหลดมา จึงตามข้อมูลใหม่ได้เองโดยไม่ต้องไปเติมในไฟล์ config
+//    (ที่ยังต้องมี ARCHIVE_TAILS เพราะท่อนที่โผล่ครั้งเดียวกฎนี้จับไม่ได้)
+const TAIL_SEEN = new Map();
+const EXTRA_TAILS = new Set((window.ARCHIVE_TAILS || []).map((s) => norm(s)));
+function countTails(title) {
+  const parts = String(title || "").split(TAIL_SEP);
+  for (let k = 1; k < parts.length; k++) {
+    const s = norm(parts[k]);
+    if (s && s.length <= 28) TAIL_SEEN.set(s, (TAIL_SEEN.get(s) || 0) + 1);
+  }
+}
+const isTail = (s, outletNames) =>
+  outletNames.has(s) || EXTRA_TAILS.has(s) || (TAIL_SEEN.get(s) || 0) >= 2;
+
 function stripTail(title, outletNames) {
   let t = String(title || "").trim();
   for (let i = 0; i < 3; i++) {           // ตัดได้ไม่เกิน 3 ท่อน กันตัดจนพาดหัวหาย
@@ -47,7 +63,7 @@ function stripTail(title, outletNames) {
     if (parts.length < 2) break;
     const last = parts[parts.length - 1].trim();
     if (!last || last.length > 28) break;  // ท่อนยาว = น่าจะเป็นเนื้อพาดหัวจริง ไม่ใช่ชื่อสำนัก
-    if (!outletNames.has(norm(last))) break;
+    if (!isTail(norm(last), outletNames)) break;
     const rest = parts.slice(0, -1).join(" - ").trim();
     if (rest.length < 10) break;           // เหลือสั้นเกินไป = ตัดผิดแน่ๆ
     t = rest;
@@ -78,6 +94,7 @@ function expand(pack) {
     // ⚠️ ยุบช่องว่างซ้ำ "ตั้งแต่ตอนเก็บ" ไม่ใช่ตอนค้น — ไม่งั้น t กับ n ยาวไม่เท่ากัน
     //    แล้วตำแหน่งที่หาเจอใน n จะเอาไปตัดชิ้นจาก t ไม่ได้ (ไฮไลต์จะเพี้ยนทั้งพาดหัว)
     const title = String(r[0] || "").replace(/\s+/g, " ").trim();
+    countTails(title);
     out.push({
       t: title,                      // พาดหัวต้นฉบับ (ใช้ค้นหา · ยังมีหางสำนักข่าวอยู่)
       n: title.toLowerCase(),        // ตัวที่ใช้ค้น — ความยาวเท่ากับ t เสมอ
