@@ -15,7 +15,10 @@
 
   var C = window.SOCIAL_CONFIG;
   var CH = window.SOCIAL_CHARTS;
-  var DATA = window.SOCIAL_MOCK;          // ← จุดเดียวที่ต้องเปลี่ยนตอนต่อของจริง
+  /* ⚠️ ตั้งค่าตอนโหลดเสร็จ ไม่ใช่ตอนไฟล์ถูกอ่าน — ข้อมูลจริงมาจาก API ซึ่งต้องรอ
+     ระหว่างรอ render() ต้องวาดสถานะ "กำลังโหลด" ไม่ใช่วาดของว่างๆ ให้ดูเหมือนไม่มีข้อมูล */
+  var DATA = null;
+  var LOAD_ERR = null;
 
   /* ชุดช่วงเวลาสำเร็จรูป — เรียงจากสั้นไปยาว แล้วปิดท้ายด้วย "กำหนดเอง"
    * ⚠️ ชื่อกับวิธีคิดอยู่คู่กันที่นี่ที่เดียว เพิ่มตัวเลือกใหม่เติมแค่ในลิสต์นี้
@@ -202,14 +205,68 @@
    *    ถ้าขึ้นข้อความเดียวกัน เจ้าของจะไล่หาสาเหตุผิดทาง (ขยายช่วงเวลาเท่าไหร่ก็ไม่มา)
    *    ช่องที่ยังไม่เชื่อมจึงบอกตรงๆ ว่าต้องใส่ค่าอะไรถึงจะใช้ได้ */
   function statusOf(pk) {
-    var st = (DATA.platforms[pk] || {}).status;
-    return st || { connected: true, need: [] };
+    var st = ((DATA && DATA.platforms[pk]) || {}).status;
+    return st || { connected: true, partial: false, need: [] };
   }
   function isOn(pk) { return statusOf(pk).connected !== false; }
+  /* เชื่อมแล้วแต่ต้นทางให้ได้แค่ยอด ณ ตอนนี้ ยังไม่มีประวัติรายวัน
+     ⚠️ คนละเรื่องกับ "ยังไม่ได้เชื่อม" — ตัวเลขที่มีอยู่ต้องแสดง ไม่ใช่ทิ้งทั้งช่อง */
+  function isPartial(pk) { return !!statusOf(pk).partial; }
+  function nowOf(pk) { return ((DATA && DATA.platforms[pk]) || {}).now || null; }
 
-  /** ช่องที่ผู้ใช้เปิดไว้ "และ" เชื่อมต่อแล้ว — ยอดรวมทุกใบนับจากชุดนี้ */
+  /** ช่องที่ผู้ใช้เปิดไว้ "และ" มีตัวเลขรายวันให้คิด — ยอดรวมทุกใบนับจากชุดนี้
+   * ⚠️ ช่องที่เชื่อมแล้วแต่ยังไม่มีประวัติรายวัน (partial) ต้องไม่อยู่ในชุดนี้
+   *    ใส่เข้ามาแล้วมันจะบวกเป็น 0 ทำให้ยอดรวมต่ำกว่าความจริงโดยไม่มีอะไรบอก */
   function activeOrder() {
-    return C.ORDER.filter(function (pk) { return state.channels[pk] && isOn(pk); });
+    return C.ORDER.filter(function (pk) { return state.channels[pk] && isOn(pk) && !isPartial(pk); });
+  }
+
+  /* กล่องบอกว่า "เชื่อมแล้ว แต่ได้ข้อมูลไม่ครบ"
+   * 🔴 ต้องบอกให้ชัดว่า "ส่วนไหนจริง ส่วนไหนยังไม่มี" — ไม่งั้นเจ้าของจะเห็นกราฟว่าง
+   *    แล้วเข้าใจว่าระบบพัง ทั้งที่มันแค่ยังไม่ได้ต่อชั้นที่ 2 */
+  function partialNote(pk) {
+    var P = C.PLATFORMS[pk], st = statusOf(pk), n = nowOf(pk);
+    var bits = [];
+    if (n) {
+      if (n.followers != null) {
+        bits.push("ผู้ติดตาม " + num(n.followers) + (n.followersApprox ? " (โดยประมาณ)" : ""));
+      }
+      if (n.viewsAllTime != null) bits.push("ยอดวิวรวมทั้งช่อง " + num(n.viewsAllTime));
+      if (n.contentCount != null) bits.push(esc(P.contentWord) + "ทั้งหมด " + num(n.contentCount));
+    }
+    return '<div class="partial"><div class="partial-h">⚠️ ' + esc(P.label) +
+      ": เชื่อมต่อแล้ว แต่ยังไม่มีตัวเลขรายวัน</div>" +
+      '<p class="partial-p">' + esc(st.why || st.message) + "</p>" +
+      (bits.length
+        ? '<div class="partial-now"><span class="partial-lb">ตัวเลขจริงที่ได้มาแล้ว</span>' +
+          bits.map(function (b) { return "<b>" + b + "</b>"; }).join('<span class="partial-sep">·</span>') + "</div>"
+        : "") +
+      (st.need && st.need.length
+        ? '<div class="setup-n"><span class="setup-nl">ต้องใส่เพิ่มใน Cloudflare</span>' +
+          st.need.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join("") + "</div>"
+        : "") +
+      "</div>";
+  }
+
+  /* คอนเทนต์ของช่องที่ยังไม่มีตัวเลขรายวัน — ส่วนนี้เป็นของจริงและใช้ได้เลย
+   * ⚠️ ไม่กรองตามช่วงเวลา เพราะต้นทางให้มาแค่ "ล่าสุด N ชิ้น" ไม่ได้ให้เลือกช่วง
+   *    กรองแล้วจะว่างเปล่าทั้งที่มีข้อมูลอยู่ — ต้องเขียนบอกด้วยว่าไม่ได้ยึดตามช่วงที่เลือก */
+  function partialContent(pk) {
+    var P = C.PLATFORMS[pk];
+    var posts = ((DATA && DATA.platforms[pk]) || {}).posts || [];
+    if (!posts.length) return "";
+
+    var sorted = posts.slice().sort(function (x, y) {
+      return x.publishedAt < y.publishedAt ? 1 : -1;
+    });
+    /* ⚠️ คำเตือนนี้ต้อง "มองเห็น" ไม่ใช่ซ่อนไว้หลัง ⓘ — เจ้าของจะเปลี่ยนช่วงเวลา
+       แล้วงงว่าทำไมรายการไม่เปลี่ยน ซึ่งเป็นคำถามที่เกิดก่อนจะไปกด ⓘ */
+    return sec(P.contentWord + "ล่าสุด", "ไม่ได้ยึดตามช่วงเวลาที่เลือก",
+      "ต้นทางให้มาเป็น \"ล่าสุดเท่านั้น\" เลือกช่วงเองไม่ได้ · ตัวเลขในนี้เป็นของจริงจากต้นทาง " +
+      "· ถ้าอยากได้รายการตามช่วงเวลา ต้องต่อ YouTube Analytics เพิ่ม") +
+      '<div class="panel"><div class="posts">' +
+      sorted.map(function (po) { return postRow(po, pk, { newBadge: true }); }).join("") +
+      "</div></div>";
   }
 
   /** กล่องบอกว่าช่องนี้ยังไม่ได้เชื่อม — เป็นสถานะที่ตั้งใจ ไม่ใช่ข้อผิดพลาด */
@@ -534,12 +591,22 @@
 
   function renderSummary() {
     var order = activeOrder();
-    /* ⚠️ "ไม่มีช่องเปิดอยู่" มีได้ 2 สาเหตุ ต้องแยกให้ออก
-       ปิดชิพเอง = บอกให้กดกลับ · ยังไม่ได้เชื่อมสักช่อง = บอกวิธีเชื่อม */
+    /* ⚠️ "ไม่มีช่องให้รวม" มีได้ 3 สาเหตุ ต้องแยกให้ออก ไม่งั้นเจ้าของไล่หาสาเหตุผิดทาง
+       ปิดชิพเอง = บอกให้กดกลับ
+       ยังไม่ได้เชื่อม = บอกว่าต้องใส่อะไร
+       เชื่อมแล้วแต่ยังไม่มีตัวเลขรายวัน = ขยายช่วงเวลาเท่าไหร่ก็ไม่มี ต้องต่อชั้นที่ 2 */
     if (!order.length) {
       var offAll = C.ORDER.filter(function (pk) { return !isOn(pk); });
-      if (offAll.length === C.ORDER.length) {
-        return '<div class="setups">' + offAll.map(notConnected).join("") + "</div>";
+      var partAll = C.ORDER.filter(isPartial);
+      if (offAll.length + partAll.length === C.ORDER.length) {
+        return (partAll.length
+            ? '<div class="empty"><div class="empty-i">◔</div><div>' +
+              "<b>ยังไม่มีช่องไหนที่มีตัวเลขรายวัน</b>" +
+              "<div>หน้าภาพรวมทั้งหน้าคิดจากข้อมูลรายวัน — เปิดแท็บของแต่ละช่องเพื่อดูตัวเลขที่มีอยู่แล้ว</div>" +
+              "</div></div>"
+            : "") +
+          '<div class="setups">' +
+          partAll.map(partialNote).join("") + offAll.map(notConnected).join("") + "</div>";
       }
       return empty("ยังไม่ได้เลือกช่องไหนเลย", "กดชิพช่องด้านบนให้ติดอย่างน้อย 1 ช่อง");
     }
@@ -633,12 +700,20 @@
     /* ①c ช่องที่ยังไม่ได้เชื่อม — บอกไว้ตรงนี้ให้เห็นคู่กับยอดรวม
        ไม่งั้นเจ้าของจะอ่านยอดรวมโดยไม่รู้ว่ามีช่องที่ไม่ได้ถูกนับ */
     var offList = C.ORDER.filter(function (pk) { return !isOn(pk); });
+    var partList = C.ORDER.filter(isPartial);
+    var link = function (pk) {
+      return '<button type="button" class="offlink" data-tab="' + esc(pk) + '">' +
+        esc(C.PLATFORMS[pk].label) + "</button>";
+    };
     if (offList.length) {
-      h += '<div class="offnote">ยอดรวมข้างบนยังไม่ได้นับ ' +
-        offList.map(function (pk) {
-          return '<button type="button" class="offlink" data-tab="' + esc(pk) + '">' +
-            esc(C.PLATFORMS[pk].label) + "</button>";
-        }).join(" · ") + " เพราะยังไม่ได้เชื่อมต่อ</div>";
+      h += '<div class="offnote">ยอดรวมข้างบนยังไม่ได้นับ ' + offList.map(link).join(" · ") +
+        " เพราะยังไม่ได้เชื่อมต่อ</div>";
+    }
+    /* ⚠️ ช่องที่เชื่อมแล้วแต่ยังไม่มีตัวเลขรายวัน ก็ไม่ได้ถูกนับเหมือนกัน
+       แต่คนละเหตุผล ต้องแยกบรรทัด ไม่งั้นเจ้าของจะไปไล่ตั้งค่าที่ตั้งไปแล้ว */
+    if (partList.length) {
+      h += '<div class="offnote">' + partList.map(link).join(" · ") +
+        " เชื่อมต่อแล้วแต่ยังไม่มีตัวเลขรายวัน จึงยังไม่ถูกนับในยอดรวม — กดดูตัวเลขที่มีอยู่ได้ในแท็บของช่องนั้น</div>";
     }
 
     /* ② แนวโน้ม — กราฟเดียวสลับ metric ได้ คู่กับแท่งผู้ติดตามเพิ่ม/หาย
@@ -1181,6 +1256,11 @@
     var P = C.PLATFORMS[pk], r = range(), cr = compareRange();
     var a = agg(pk, r), b = cr ? agg(pk, cr) : null;
     var g = growth(pk, r), pg = cr ? growth(pk, cr) : null;
+
+    /* ⚠️ ช่องที่ยังไม่มีตัวเลขรายวัน ต้องโชว์ของที่มีจริง (ยอดปัจจุบัน + คอนเทนต์)
+       ไม่ใช่บอกว่า "ไม่มีข้อมูล ลองขยายช่วงเวลา" ซึ่งชี้ทางผิด — ขยายเท่าไหร่ก็ไม่มี */
+    if (isPartial(pk)) return partialNote(pk) + partialContent(pk);
+
     if (!a) return empty("ไม่มีข้อมูลของ " + P.label + " ในช่วงที่เลือก", "ลองขยายช่วงเวลา หรือเลือกวันที่ใหม่");
 
     var h = "";
@@ -1500,10 +1580,12 @@
         var P = C.PLATFORMS[pk], on = state.channels[pk] && isOn(pk);
         /* ⚠️ ช่องที่ยังไม่เชื่อมต้องกดไม่ได้ ไม่ใช่กดติดแล้วไม่มีอะไรเปลี่ยน
            (กดแล้วหน้าเหมือนเดิม = ดูเหมือนปุ่มเสีย) */
-        if (!isOn(pk)) {
-          return '<button type="button" class="ch off" disabled ' +
-            'title="ยังไม่ได้เชื่อมต่อ — เปิดแท็บของช่องนี้เพื่อดูว่าต้องใส่ค่าอะไร" ' +
-            'style="--pc:' + P.rawColor + '"><span class="pdot"></span>' + esc(P.label) + " (ยังไม่เชื่อม)</button>";
+        if (!isOn(pk) || isPartial(pk)) {
+          var why = isOn(pk)
+            ? { tip: "เชื่อมต่อแล้ว แต่ยังไม่มีตัวเลขรายวัน — เปิดแท็บของช่องนี้เพื่อดูตัวเลขที่มีอยู่", tag: " (ไม่มีรายวัน)" }
+            : { tip: "ยังไม่ได้เชื่อมต่อ — เปิดแท็บของช่องนี้เพื่อดูว่าต้องใส่ค่าอะไร", tag: " (ยังไม่เชื่อม)" };
+          return '<button type="button" class="ch off" disabled title="' + esc(why.tip) + '" ' +
+            'style="--pc:' + P.rawColor + '"><span class="pdot"></span>' + esc(P.label) + esc(why.tag) + "</button>";
         }
         return '<button type="button" class="ch' + (on ? " on" : "") + '" data-ch="' + pk + '" ' +
           'aria-pressed="' + (on ? "true" : "false") + '" style="--pc:' + P.rawColor + '">' +
@@ -1526,6 +1608,19 @@
   }
 
   function render() {
+    /* ⚠️ ยังไม่มีข้อมูล = "กำลังมา" ต้องมีไอคอนหมุน ไม่ใช่หน้าว่างเปล่า
+       (ฟีเจอร์มาตรฐานข้อ 6 ของโปรเจกต์ — ข้อความเปล่าๆ อ่านแล้วเหมือนหน้าค้าง) */
+    if (!DATA) {
+      document.getElementById("periodbox").innerHTML = "";
+      document.getElementById("controls").innerHTML = "";
+      document.getElementById("tabs").innerHTML = "";
+      document.getElementById("view").innerHTML = LOAD_ERR
+        ? '<div class="empty"><div class="empty-i">⚠️</div><div><b>โหลดข้อมูลไม่สำเร็จ</b>' +
+          "<div>" + esc(LOAD_ERR) + "</div></div></div>"
+        : '<div class="loading"><span class="spin"></span> กำลังดึงข้อมูล…</div>';
+      return;
+    }
+
     document.getElementById("periodbox").innerHTML = renderPeriod();
     document.getElementById("controls").innerHTML = renderControls();
     document.getElementById("tabs").innerHTML = renderTabs();
@@ -1754,6 +1849,7 @@
   }
 
   function mockBanner() {
+    if (document.getElementById("mockbar")) return;
     var b = document.createElement("div");
     b.id = "mockbar";
     b.textContent = "⚠️ ข้อมูลจำลองสำหรับออกแบบ — ยังไม่ได้ต่อข้อมูลจริง ห้ามนำตัวเลขไปใช้อ้างอิง";
@@ -1762,10 +1858,18 @@
   }
 
   function start() {
-    if (DATA && DATA.isMock) mockBanner();
     document.addEventListener("click", onClick);
     document.addEventListener("change", onChange);
-    render();
+    render();   // วาดสถานะกำลังโหลดก่อน
+
+    window.SOCIAL_DATA.load().then(function (d) {
+      DATA = d;
+      if (DATA && DATA.isMock) mockBanner();
+      render();
+    }).catch(function (e) {
+      LOAD_ERR = e && (e.message || String(e));
+      render();
+    });
   }
 
   if (document.readyState !== "loading") start();

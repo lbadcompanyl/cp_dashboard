@@ -15,12 +15,15 @@ const ok = (c, m) => { c ? (pass++, console.log("  ✅ " + m)) : (fail++, consol
 
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 
-async function open(viewport = { width: 1400, height: 1000 }) {
+/* ⚠️ ต้องเปิดด้วย ?mock=1 — ตอนนี้หน้าเว็บยิง /social/api/* ของจริงเป็นค่าปริยาย
+   เซิร์ฟเวอร์ static ของเทสต์ไม่มี endpoint พวกนั้น จะได้สถานะ "ยังไม่ได้เชื่อมต่อ" ทั้งหมด
+   เทสต์ชุดนี้คุมเรื่องหน้าตา/ตรรกะการคำนวณ จึงต้องใช้ข้อมูลจำลองที่คาดเดาได้ */
+async function open(viewport = { width: 1400, height: 1000 }, query = "") {
   const pg = await browser.newPage({ viewport });
   const errs = [];
   pg.on("pageerror", (e) => errs.push(String(e)));
   pg.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); });
-  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.goto(BASE + "/social/?mock=1" + query, { waitUntil: "load" });
   await pg.waitForSelector(".sc");
   return { pg, errs };
 }
@@ -918,7 +921,7 @@ console.log("\n[20] 🔴 โหมดสว่าง — ต้องใช้�
   ok(Object.values(fam).every((v) => v.bg === ref.bg), "แดชบอร์ดพี่น้องใช้สีพื้นชุดเดียวกัน");
 
   const p3 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  await p3.goto(BASE + "/social/", { waitUntil: "load" });
+  await p3.goto(BASE + "/social/?mock=1", { waitUntil: "load" });
   const mine = await p3.evaluate(() => {
     const s = getComputedStyle(document.documentElement);
     return { bg: s.getPropertyValue("--plane").trim(), surface: s.getPropertyValue("--surface").trim(),
@@ -1334,7 +1337,7 @@ console.log("\n[33] 🔴 แถบควบคุมติดขอบบน —
 
   /* ⚠️ แถบติดขอบกินพื้นที่อ่านข้อมูลตลอดเวลา — บนมือถือห้ามเกิน 1 ใน 3 ของจอ */
   const m = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  await m.goto(BASE + "/social/", { waitUntil: "load" });
+  await m.goto(BASE + "/social/?mock=1", { waitUntil: "load" });
   await m.waitForSelector(".sc");
   const h = await m.$eval(".sticky", (e) => e.getBoundingClientRect().height);
   ok(h <= 844 / 3, `มือถือ: แถบติดขอบสูง ${Math.round(h)}px ไม่เกิน 1/3 ของจอ (281px)`);
@@ -1674,6 +1677,119 @@ console.log("\n[41] 🔴 ปุ่มช่วงเวลาต้องบอ�
   await setCompare(pg, "prev");
   await tabTo(pg, "TikTok");
   ok(/เทียบกับ/.test(await cmp()), "แท็บรายช่องก็เห็นบรรทัดนี้");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[42] 🔴 ต่อข้อมูลจริง — แปลงคำตอบของ API เป็นโครงที่หน้าเว็บใช้");
+{
+  /* 🔴 YouTube ที่ใส่แค่ API key อยู่ในสถานะ "เชื่อมแล้วแต่ไม่มีตัวเลขรายวัน"
+     ⚠️ สถานะนี้ห้ามยุบไปรวมกับอันไหน
+        นับเป็น "เชื่อมแล้ว" → กราฟว่างโดยไม่มีคำอธิบาย (ดูเหมือนระบบพัง)
+        นับเป็น "ยังไม่เชื่อม" → ตัวเลขจริงที่มีอยู่ถูกทิ้งไปเปล่าๆ */
+  const YT = {
+    ok: true, status: "ok", need: [], message: "", at: 1,
+    data: {
+      channel: { id: "UC1", title: "ช่องทดสอบ", subs: 52400, subsApprox: true, subsHidden: false,
+                 views: 8123456, videos: 214, url: "https://youtube.com/@x" },
+      videos: [
+        { id: "v1", title: "คลิปทดสอบหนึ่ง", at: "2026-08-15T03:00:00Z", thumb: "",
+          url: "https://www.youtube.com/watch?v=v1", views: 12345, likes: 890, comments: 45 },
+        { id: "v2", title: "คลิปทดสอบสอง", at: "2026-08-10T03:00:00Z", thumb: "",
+          url: "https://www.youtube.com/watch?v=v2", views: 8000, likes: 400, comments: 20 },
+      ],
+    },
+  };
+  const OFF = { ok: false, status: "not-configured", need: ["FB_PAGE_ID"], message: "ยังไม่ได้เชื่อมต่อ" };
+
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  const json = (b) => ({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  await pg.route("**/social/api/youtube", (r) => r.fulfill(json(YT)));
+  await pg.route("**/social/api/tiktok", (r) => r.fulfill(json(OFF)));
+  await pg.route("**/social/api/facebook", (r) => r.fulfill(json(OFF)));
+
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".partial, .setup", { timeout: 5000 });
+
+  // ⚠️ โหมดจริงห้ามขึ้นแบนเนอร์ "ข้อมูลจำลอง" — ไม่งั้นเจ้าของไม่กล้าเชื่อตัวเลขจริง
+  ok((await pg.$$("#mockbar")).length === 0, "ไม่มีแบนเนอร์ข้อมูลจำลองในโหมดจริง");
+  ok(!/ข้อมูลจำลอง/.test(await pg.title()), "ชื่อหน้าไม่มีคำว่าข้อมูลจำลอง");
+
+  const sum = await pg.$eval("#view", (e) => e.innerText);
+  ok(/ยังไม่มีช่องไหนที่มีตัวเลขรายวัน/.test(sum), "ภาพรวมบอกตรงๆ ว่าทำไมยังไม่มีอะไรให้ดู");
+  ok(!/ลองขยายช่วงเวลา/.test(sum), "ไม่ชี้ทางผิดว่าให้ขยายช่วงเวลา (ขยายเท่าไหร่ก็ไม่มี)");
+
+  // ชิพต้องแยกเหตุผล 2 แบบ ไม่ใช่บอกเหมือนกันหมด
+  const chips = await pg.$$eval("#chips .ch", (n) => n.map((x) => ({ t: x.textContent.trim(), off: x.disabled })));
+  ok(chips.every((c) => c.off), "ยังกดใช้ไม่ได้ทุกช่อง");
+  ok(/ไม่มีรายวัน/.test(chips[0].t), `YouTube บอกว่าไม่มีรายวัน (${chips[0].t})`);
+  ok(/ยังไม่เชื่อม/.test(chips[1].t), `TikTok บอกว่ายังไม่เชื่อม (${chips[1].t})`);
+
+  // แท็บ YouTube: ต้องโชว์ตัวเลขจริงที่มี ไม่ใช่บอกว่าไม่มีข้อมูล
+  await tabTo(pg, "YouTube");
+  const v = await pg.$eval("#view", (e) => e.innerText);
+  ok(/เชื่อมต่อแล้ว แต่ยังไม่มีตัวเลขรายวัน/.test(v), "บอกสถานะให้ชัด");
+  ok(/52K/.test(v), "โชว์ผู้ติดตามจริงที่ได้มา");
+  /* 🔴 YouTube ปัดยอดผู้ติดตามเหลือเลขนัยสำคัญ 3 ตัวก่อนส่งมา (52,437 → 52,400)
+     ไม่ติดป้ายว่าเป็นค่าประมาณ = เจ้าของเอาไปอ้างอิงเป็นเลขเป๊ะ */
+  ok(/โดยประมาณ/.test(v), "ติดป้ายว่าผู้ติดตามเป็นค่าประมาณ");
+  ok(/8\.1M/.test(v), "โชว์ยอดวิวรวมทั้งช่อง");
+  ok(/GOOGLE_CLIENT_ID/.test(v) && /YT_REFRESH_TOKEN/.test(v), "บอกว่าต้องใส่อะไรเพิ่มถึงจะมีตัวเลขรายวัน");
+
+  // คลิปจริงต้องขึ้นและกดเปิดได้
+  const posts = await pg.$$eval(".posts .post", (n) =>
+    n.map((e) => ({ tag: e.tagName, href: e.getAttribute("href"), t: e.innerText })));
+  ok(posts.length === 2, `โชว์คลิปที่ได้มาครบ (${posts.length})`);
+  ok(posts.every((x) => x.tag === "A" && /youtube\.com/.test(x.href)), "กดเปิดคลิปจริงได้");
+  ok(/12,345|12K/.test(posts[0].t), `ยอดวิวเป็นของจริง (${posts[0].t.replace(/\n/g, " ")})`);
+  /* ⚠️ รายการนี้ไม่ได้ยึดตามช่วงเวลาที่เลือก เพราะต้นทางให้มาแค่ "ล่าสุด N ชิ้น"
+     ไม่เขียนบอก เจ้าของจะเปลี่ยนช่วงเวลาแล้วงงว่าทำไมรายการไม่เปลี่ยน */
+  ok(/ไม่ได้ยึดตามช่วงเวลา/.test(v), "บอกว่ารายการนี้ไม่ได้ยึดตามช่วงเวลาที่เลือก");
+
+  // ช่องที่ยังไม่เชื่อม ยังเป็นการ์ดบอกวิธีเชื่อมเหมือนเดิม
+  await tabTo(pg, "TikTok");
+  ok(/ยังไม่ได้เชื่อมต่อ/.test(await pg.$eval("#view", (e) => e.innerText)), "ช่องที่ยังไม่เชื่อมขึ้นการ์ดตั้งค่า");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[43] ต่อ API ไม่ติด ≠ ยังไม่ได้ตั้งค่า");
+{
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  // ⚠️ ยิงไม่ถึง endpoint กับ ยังไม่ได้ใส่ค่า เป็นคนละเรื่อง
+  //    บอกผิด เจ้าของจะไปนั่งไล่ตั้งค่าใหม่ทั้งที่ตั้งไปแล้ว
+  await pg.route("**/social/api/**", (r) => r.abort());
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForTimeout(700);
+  const v = await pg.$eval("#view", (e) => e.innerText);
+  ok(/ต่อกับเซิร์ฟเวอร์ไม่ได้|เชื่อมต่อ/.test(v), "ยังบอกสถานะบางอย่าง ไม่ใช่หน้าว่าง");
+  ok(errs.length === 0, "ต่อไม่ติดแล้วต้องไม่พังทั้งหน้า");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[44] เปิดหน้ามาต้องขึ้นไอคอนหมุน ไม่ใช่หน้าว่าง");
+{
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  /* ฟีเจอร์มาตรฐานข้อ 6 ของโปรเจกต์ — ข้อความเปล่าๆ อ่านแล้วเหมือนหน้าค้าง
+     หน่วง API ไว้แล้ววัดว่าระหว่างรอเห็นอะไร */
+  await pg.route("**/social/api/**", async (r) => {
+    await new Promise((res) => setTimeout(res, 1200));
+    r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ ok: false, status: "not-configured", need: ["X"], message: "" }) });
+  });
+  await pg.goto(BASE + "/social/", { waitUntil: "domcontentloaded" });
+  await pg.waitForTimeout(350);
+  ok((await pg.$$(".loading .spin")).length === 1, "ระหว่างรอมีไอคอนหมุน");
+  ok(/กำลังดึงข้อมูล/.test(await pg.$eval("#view", (e) => e.innerText)), "บอกว่ากำลังดึงข้อมูล");
+
+  await pg.waitForTimeout(1400);
+  ok((await pg.$$(".loading")).length === 0, "โหลดเสร็จแล้วไอคอนหมุนต้องหาย ไม่หมุนค้าง");
   await pg.close();
 }
 
