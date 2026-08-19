@@ -146,6 +146,23 @@ for (const [tag, file] of [["trend", "../functions/api/trend/feeds.js"],
     why("อ้อม พิยดา คว้ารางวัลใหญ่ งาน นาคราช อวอร์ด", "https://www.thairath.co.th/x") === null);
 }
 
+console.log("\n════════ หน้างานอีเวนต์/นิทรรศการ — เจ้าของแจ้ง 14 ส.ค. 2026 ════════");
+{
+  const { noiseReason } = await load("../functions/api/trend/feeds.js");
+  const w = (link, title, src = "alert2") => noiseReason({ link, title, snippet: "" }, title.toLowerCase(), src);
+  ok("เคสจริง: นิทรรศการบน greener.bangkok.go.th",
+     w("https://greener.bangkok.go.th/en/event/shared-sensibilities/", "Shared Sensibilities: ผัสสะ - สัมผัส - Greener Bangkok") === "event-page");
+  ok("/events/ ก็ตัด", w("https://x.go.th/events/expo-2026/", "งานเอ็กซ์โป") === "event-page");
+  ok("/exhibition/ ก็ตัด", w("https://x.com/en/exhibition/abc/", "นิทรรศการ ABC") === "event-page");
+  ok("ตัดทุกคอลัมน์ (alert1 ด้วย)", w("https://x.go.th/event/a/", "ซีพี ร่วมงาน", "alert1") === "event-page");
+  // ⚠️ ห้ามจับที่พาดหัว — "นิทรรศการ" โผล่ในข่าวจริงบ่อย
+  ok("ข่าวจริงที่พาดหัวมีคำว่านิทรรศการ → ไม่ตัด",
+     w("https://www.thairath.co.th/news/local/2891234", "ซีพี ออกบูทในนิทรรศการอาหารโลก") === null,
+     String(w("https://www.thairath.co.th/news/local/2891234", "ซีพี ออกบูทในนิทรรศการอาหารโลก")));
+  ok("ข่าวศิลปะบนเว็บข่าว → ไม่ตัด",
+     w("https://www.bangkokpost.com/life/arts-and-entertainment/29", "งานศิลปะที่หอศิลป์") === null);
+}
+
 console.log("\n════════ หน้ารวมบทความ (Archives) — เจ้าของสั่งตัดทั้งหมด 14 ส.ค. 2026 ════════");
 {
   const { noiseReason } = await load("../functions/api/trend/feeds.js");

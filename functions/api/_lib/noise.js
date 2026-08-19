@@ -72,6 +72,15 @@ export const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 // \b ใช้ได้กับพาดหัวไทยด้วย เพราะอักษรไทยไม่ใช่ \w จึงนับเป็นขอบคำอยู่แล้ว
 export const ARCHIVE_RE = /\barchives?\b/i;
 
+// หน้า "งานอีเวนต์/นิทรรศการ" ของเว็บองค์กร-หน่วยงาน ไม่ใช่ข่าว — เจ้าของแจ้ง 14 ส.ค. 2026
+// เจอจริง: นิทรรศการศิลปะ "Shared Sensibilities" บน greener.bangkok.go.th หลุดเข้าคอลัมน์
+// หัวข้อที่จับตามอง เพราะเมนูบนสุดของเว็บมีคำว่า "PM 2.5 dust" อยู่ทุกหน้า
+// (Google Alert เห็นคำในเมนู ไม่ใช่ในเนื้อหน้า)
+//
+// ⚠️ ดูจาก **path ของลิงก์** ไม่ใช่พาดหัว — คำว่า "นิทรรศการ" โผล่ในข่าวจริงได้บ่อย
+// (เช่นข่าวเครือ CP ออกบูทในนิทรรศการ) ถ้าจับที่พาดหัวจะตัดข่าวจริงไปด้วย
+export const EVENT_PATH_RE = /\/(?:events?|exhibitions?|นิทรรศการ)\//i;
+
 export const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
 // ⚠️ ryt9.com เพิ่ม 14 ส.ค. 2026 — เป็นเว็บแจกข่าว PR เหมือนกัน และสรุปที่ติดมากับฟีด
@@ -167,6 +176,7 @@ export function noiseReason(it, title, src) {
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost"; // เดิมมีแค่ฝั่ง IR — รวมมาแล้ว ใช้ทุกแดชบอร์ด
   if (ARCHIVE_RE.test(title)) return "archive-page"; // หน้ารวมบทความ ไม่ใช่ข่าว
+  if (EVENT_PATH_RE.test(link)) return "event-page";  // หน้างานอีเวนต์/นิทรรศการ ไม่ใช่ข่าว
   if (PR_RE.test(title)) return "pr";
   // เว็บรับแจกข่าวประชาสัมพันธ์ — ใช้กับ **คอลัมน์ CP (alert1) เท่านั้น**
   //
