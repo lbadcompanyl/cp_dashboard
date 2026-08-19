@@ -885,34 +885,51 @@
     h += '<div class="scgrid" style="--n:' + cards.length + '">' +
       cards.map(function (c2) { return card({ label: c2.label, value: c2.value, tip: c2.tip, delta: c2.d }); }).join("") + "</div>";
 
-    // ② กราฟรายวัน — แกนซ้าย views/reach · แกนขวา ER%
-    // 🔴 เดิมวาด engagement ดิบบนแกนเดียวกับ views ซึ่งต่างกันหลักร้อยเท่า
-    //    เส้น engagement เลยแบนติดพื้นอ่านไม่ได้ — เปลี่ยนเป็น ER% แกนขวาแยก
+    /* ② กราฟรายวัน — แยกเป็น 2 กราฟ (เจ้าของสั่ง 19 ส.ค. 2026)
+     * 🔴 เดิมเป็นกราฟเดียวแกนคู่: ยอดวิวอ่านแกนซ้าย ER อ่านแกนขวา
+     *    ปัญหาคือ 2 เส้นตัดกันไปมาโดยที่ "จุดตัด" ไม่มีความหมายอะไรเลย
+     *    (คนละหน่วย คนละแกน) ตาอ่านแล้วเข้าใจว่าเส้นแซงกัน ทั้งที่เทียบกันไม่ได้
+     * ⚠️ แยกแล้วต้องใช้แกนเวลาชุดเดียวกันทั้ง 2 กราฟ — วันที่ตรงกันตามแนวตั้ง
+     *    ไม่งั้นแยกแล้วยิ่งอ่านยากกว่าเดิม
+     * ⚠️ กราฟ ER ห้ามกดพื้นให้เป็น 0 — ความน่าสนใจอยู่ในช่วงแคบ (5–11%)
+     *    ลากถึง 0 เมื่อไหร่เส้นจะแบนจนดูไม่ออกว่าวันไหนดีวันไหนแย่ */
     var rows = dailyIn(pk, r);
-    h += sec(P.reachLabel + "และ engagement rate รายวัน", null,
-      "เส้นสีของช่องอ่านแกนซ้าย (" + P.reachLabel + ") · เส้นเทาประอ่านแกนขวา (engagement rate %) " +
-      "สองอย่างนี้หน่วยต่างกันหลักร้อยเท่า ถ้าใช้แกนเดียวกันเส้นหนึ่งจะแบนติดพื้นจนดูไม่ออก");
-    h += '<div class="panel">';
-    if (rows.length) {
-      var s1 = { label: P.reachLabel, color: P.rawColor, axis: "left", axisNote: "แกนซ้าย", tipFmt: "num",
-                 points: rows.map(function (x) { return { y: x[P.reachKey] }; }) };
-      var s2 = { label: "Engagement rate", color: "#6b7280", axis: "right", dash: true, axisNote: "แกนขวา", tipFmt: "pctnum",
-                 points: rows.map(function (x) {
-                   var base = x[P.reachKey] || 0;
-                   // ไม่มีฐาน = ไม่รู้ ไม่ใช่ 0 → ส่ง null ให้เส้นขาด
-                   return { y: base ? (C.engagementOf(pk, x) / base) * 100 : null };
-                 }) };
-      var cid = "p-" + pk;
-      h += CH.line({
-        id: cid, hidden: hiddenOf(cid),
-        labels: rows.map(function (x) { return thaiShort(x.date); }),
-        series: [s1, s2], height: 220, zeroFloor: true, zeroFloorRight: true,
-        fmtY: function (v) { return num(v); }, unitRight: "%", aria: "รายวัน",
-      }) + legendOf([s1, s2], cid);
-    } else {
-      h += empty("ไม่มีข้อมูลรายวันในช่วงนี้");
+    var dayLabels = rows.map(function (x) { return thaiShort(x.date); });
+
+    function dailyPanel(title, tip, series, opt) {
+      var out = sec(title, null, tip) + '<div class="panel">';
+      out += rows.length
+        ? CH.line({
+            id: opt.id, labels: dayLabels, series: [series], height: 190,
+            zeroFloor: true, baseZero: opt.baseZero, fmtY: opt.fmtY, unitLeft: opt.unit || "",
+            aria: title,
+          })
+        : empty("ไม่มีข้อมูลรายวันในช่วงนี้");
+      return out + "</div>";
     }
-    h += "</div>";
+
+    var sView = {
+      label: P.reachLabel, color: P.rawColor, tipFmt: "num",
+      points: rows.map(function (x) { return { y: x[P.reachKey] }; }),
+    };
+    var sEr = {
+      label: "Engagement rate", color: "#4b5563", tipFmt: "pctnum",
+      points: rows.map(function (x) {
+        var base = x[P.reachKey] || 0;
+        // ไม่มีฐาน = ไม่รู้ ไม่ใช่ 0 → ส่ง null ให้เส้นขาด
+        return { y: base ? (C.engagementOf(pk, x) / base) * 100 : null };
+      }),
+    };
+
+    h += '<div class="duo">' +
+      '<div class="duo-c">' + dailyPanel(P.reachLabel + "รายวัน",
+        "จำนวน" + P.reachLabel + "ที่เกิดขึ้นในแต่ละวัน · วันที่ไม่มีข้อมูลเส้นจะขาด ไม่ใช่ลากลงศูนย์",
+        sView, { id: "p-" + pk + "-v", baseZero: true, fmtY: function (v) { return num(v); } }) + "</div>" +
+      '<div class="duo-c">' + dailyPanel("Engagement rate รายวัน",
+        P.erFormula + " · " + P.erNote +
+        " · แกนไม่ได้เริ่มจาก 0 เพราะค่าจริงอยู่ในช่วงแคบ ให้ดูรูปทรงว่าวันไหนดีกว่าวันไหน ไม่ใช่ดูความสูงของเส้น",
+        sEr, { id: "p-" + pk + "-er", unit: "%" }) + "</div>" +
+      "</div>";
 
     // ③ แยกประเภทการมีส่วนร่วม
     var parts = P.parts.map(function (p) { return { key: p.key, label: p.label, value: a[p.key] || 0, color: p.color }; });

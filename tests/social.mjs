@@ -425,33 +425,63 @@ console.log("\n[10] 🔴 คำอธิบายย้ายไปเป็น 
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[11] 🔴 กราฟรายช่อง — แกน Y คู่ เส้น ER อ่านแกนขวา");
+console.log("\n[11] 🔴 กราฟรายช่อง — แยก ยอดวิว กับ engagement rate เป็นคนละกราฟ");
 {
   const { pg } = await open();
   for (const t of ["YouTube", "TikTok", "Facebook"]) {
     await tabTo(pg, t);
-    const chart = await pg.evaluate(() => {
-      const h = [...document.querySelectorAll(".sec")].find((x) => /รายวัน/.test(x.textContent));
-      const p = h ? h.nextElementSibling : null;
-      const svg = p ? p.querySelector("svg.chart") : null;
-      if (!svg) return null;
-      return {
-        left: [...svg.querySelectorAll(".ax:not(.ax-r)")].map((x) => x.textContent.trim()),
-        right: [...svg.querySelectorAll(".ax-r")].map((x) => x.textContent.trim()),
-        legend: p.querySelector(".legend").innerText,
-        paths: svg.querySelectorAll("path").length,
-      };
+    const g = await pg.evaluate(() => {
+      const heads = [...document.querySelectorAll(".sec")].filter((x) => /รายวัน/.test(x.textContent));
+      return heads.map((h) => {
+        const p = h.nextElementSibling;
+        const svg = p ? p.querySelector("svg.chart") : null;
+        return {
+          title: h.textContent.replace(/ⓘ.*/s, "").trim(),
+          // ⚠️ ป้ายแกนเวลาก็ class .ax เหมือนกัน ต้องตัด .ax-x ออก ไม่งั้นได้วันที่ปนมา
+          ax: svg ? [...svg.querySelectorAll(".ax:not(.ax-r):not(.ax-x)")].map((x) => x.textContent.trim()) : [],
+          axR: svg ? svg.querySelectorAll(".ax-r").length : -1,
+          paths: svg ? svg.querySelectorAll("path").length : -1,
+          pts: svg ? (svg.querySelector("path").getAttribute("d").match(/[ML]/g) || []).length : 0,
+        };
+      });
     });
-    ok(!!chart, `${t}: มีกราฟรายวัน`);
-    ok(chart.right.length >= 4, `${t}: มีป้ายแกนขวา`);
-    ok(chart.right.every((v) => /%$/.test(v)), `${t}: แกนขวาเป็นหน่วย % (ER)`);
-    ok(chart.left.some((v) => !/%$/.test(v)), `${t}: แกนซ้ายไม่ใช่ % (ยอดวิว/การเข้าถึง)`);
-    ok(chart.paths === 2, `${t}: วาด 2 เส้น`);
-    ok(/แกนซ้าย/.test(chart.legend) && /แกนขวา/.test(chart.legend), `${t}: legend บอกว่าเส้นไหนอ่านแกนไหน`);
-    ok(/[Ee]ngagement rate/.test(chart.legend), `${t}: เส้นที่สองเป็น engagement rate ไม่ใช่ engagement ดิบ`);
-    ok(new Set(chart.right).size === chart.right.length, `${t}: ป้ายแกนขวาไม่ซ้ำ`);
+    ok(g.length === 2, `${t}: มีกราฟรายวัน 2 อัน (${g.map((x) => x.title).join(" / ")})`);
+
+    /* 🔴 เดิมเป็นกราฟเดียวแกนคู่ — 2 เส้นตัดกันไปมาโดยที่จุดตัดไม่มีความหมาย
+       (คนละหน่วย คนละแกน) เจ้าของสั่งแยกเป็น 2 กราฟ 19 ส.ค. 2026 */
+    for (const c of g) {
+      ok(c.paths === 1, `${t} · ${c.title}: มีเส้นเดียว (${c.paths})`);
+      ok(c.axR === 0, `${t} · ${c.title}: ไม่มีแกนขวาแล้ว`);
+    }
+    const [v, er] = g;
+    ok(!/%$/.test(v.ax[0] || ""), `${t}: กราฟแรกเป็นยอดวิว/การเข้าถึง ไม่ใช่ % (${v.ax.join(" ")})`);
+    ok(er.ax.every((x) => /%$/.test(x)), `${t}: กราฟที่สองเป็นหน่วย % ทุกป้าย (${er.ax.join(" ")})`);
+    ok(!er.ax.some((x) => x.startsWith("+")), `${t}: แกน ER ไม่มีเครื่องหมาย + (เป็นระดับ ไม่ใช่การเปลี่ยนแปลง)`);
+    ok(new Set(er.ax).size === er.ax.length, `${t}: ป้ายแกน ER ไม่ซ้ำ`);
+
+    // ⚠️ แยกแล้วต้องอยู่บนแกนเวลาชุดเดียวกัน ไม่งั้นอ่านเทียบกันไม่ได้
+    ok(v.pts === er.pts && v.pts > 1, `${t}: ทั้ง 2 กราฟใช้แกนเวลาชุดเดียวกัน (${v.pts} จุดเท่ากัน)`);
+
+    /* ⚠️ แกน ER ห้ามกดพื้นเป็น 0 — ค่าจริงอยู่ในช่วงแคบ (5–11%)
+       ลากถึง 0 เมื่อไหร่เส้นจะแบนจนดูไม่ออกว่าวันไหนดีวันไหนแย่ */
+    // ป้ายแกน Y เรียงจากน้อยไปมาก ตัวแรกคือค่าต่ำสุดของแกน
+    ok(parseFloat(er.ax[0]) > 0.5, `${t}: แกน ER ไม่เริ่มจาก 0 (ต่ำสุด ${er.ax[0]})`);
+
+    // กราฟยอดวิวเริ่มจาก 0 ได้ เพราะ 0 มีความหมายจริง (วันนั้นไม่มีคนดู)
+    ok(/^0$/.test(v.ax[0]), `${t}: แกนยอดวิวเริ่มจาก 0 (${v.ax[0]})`);
   }
+
+  // จอกว้างวางคู่ซ้าย-ขวา · มือถือยุบเป็นบน-ล่าง
+  const cols = await pg.$$eval(".duo", (n) => n.map((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length));
+  ok(cols.every((c) => c === 2), `จอกว้าง: กราฟ 2 อันวางคู่กัน (${cols})`);
   await pg.close();
+
+  const { pg: m } = await open({ width: 390, height: 900 });
+  await tabTo(m, "YouTube");
+  const mc = await m.$eval(".duo", (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length);
+  ok(mc === 1, "มือถือ: ยุบเป็นบน-ล่าง");
+  ok(await m.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth), "มือถือ: ไม่ล้นแนวนอน");
+  await m.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */

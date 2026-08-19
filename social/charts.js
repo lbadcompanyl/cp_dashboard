@@ -93,6 +93,10 @@
     var L = extent(vis, function (s) { return s.axis !== "right"; });
     var R = hasRight ? extent(vis, function (s) { return s.axis === "right"; }) : null;
     if (o.zeroFloor && L && L.lo < 0) L.lo = 0;
+    /* baseZero = "ให้แกนเริ่มที่ 0 เสมอ" ต่างจาก zeroFloor ที่แค่กันไม่ให้ต่ำกว่า 0
+       ⚠️ ใช้กับค่าที่ 0 มีความหมายจริง (ยอดวิวรายวัน = วันนั้นไม่มีคนดู)
+          ห้ามใช้กับอัตราส่วนอย่าง ER ที่ค่าจริงอยู่ในช่วงแคบ — ลากถึง 0 แล้วเส้นจะแบนจนอ่านไม่ออก */
+    if (o.baseZero && L && L.lo > 0) L.lo = 0;
     if (R && o.zeroFloorRight && R.lo < 0) R.lo = 0;
 
     var iw = W - PAD_L - PAD_R, ih = H - PAD_T - PAD_B;
@@ -141,7 +145,7 @@
 
     [0, Math.floor((count - 1) / 2), count - 1].forEach(function (i, k) {
       if (i < 0 || !labels[i]) return;
-      out += '<text x="' + n(X(i)) + '" y="' + (H - 8) + '" class="ax" text-anchor="' +
+      out += '<text x="' + n(X(i)) + '" y="' + (H - 8) + '" class="ax ax-x" text-anchor="' +
         (k === 0 ? "start" : k === 2 ? "end" : "middle") + '">' + esc(labels[i]) + "</text>";
     });
     out += "</svg>";
