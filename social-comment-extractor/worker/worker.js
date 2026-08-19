@@ -69,13 +69,16 @@ async function analyze(opts, env) {
 
   const texts = comments.map(c => c.text).filter(Boolean);
 
+  // ตัวสะสมการใช้ token ของ Claude
+  const tokens = { input: 0, output: 0, rate_remaining: null };
+
   // 2) ตี sentiment ทีละ chunk ด้วย Claude
-  const labels = await classifySentiment(texts, env);
+  const labels = await classifySentiment(texts, env, tokens);
   const sentiment = { positive: 0, neutral: 0, negative: 0 };
   for (const l of labels) if (sentiment[l] != null) sentiment[l]++;
 
   // 3) สรุป + keyword + ตัวอย่าง (ถอดความ)
-  const synth = await synthesize(texts.slice(0, SYNTH_SAMPLE), wantSamples, env);
+  const synth = await synthesize(texts.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens);
 
   // 4) รวมเป็น aggregate (ไม่คืน raw รายบุคคล / ชื่อถูกตัดออก)
   const engagement = aggregateEngagement(comments);
@@ -93,6 +96,8 @@ async function analyze(opts, env) {
     summary: synth.summary || "",
     samples: wantSamples ? (synth.samples || []) : [],
     credits_remaining: collected.credits_remaining ?? null,
+    claude_usage: { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output },
+    claude_rate_remaining: tokens.rate_remaining,
     model: env.CLAUDE_MODEL || DEFAULT_MODEL,
   };
 }
@@ -249,7 +254,7 @@ function aggregateTime(comments) {
 
 /* ---------------- Claude sentiment ---------------- */
 
-async function callClaude(env, system, userText, maxTokens) {
+async function callClaude(env, system, userText, maxTokens, acc) {
   const model = env.CLAUDE_MODEL || DEFAULT_MODEL;
   const r = await fetch(ANTHROPIC_URL, {
     method: "POST",
@@ -267,6 +272,11 @@ async function callClaude(env, system, userText, maxTokens) {
   });
   const data = await r.json();
   if (!r.ok) throw new Error("Claude API: " + (data?.error?.message || ("HTTP " + r.status)));
+  if (acc) {
+    if (data.usage) { acc.input += data.usage.input_tokens || 0; acc.output += data.usage.output_tokens || 0; }
+    const rr = r.headers.get("anthropic-ratelimit-tokens-remaining");
+    if (rr != null) acc.rate_remaining = +rr;
+  }
   return (data.content || []).map(b => b.text || "").join("").trim();
 }
 
@@ -279,7 +289,7 @@ function extractJson(s) {
   return JSON.parse(s);
 }
 
-async function classifySentiment(texts, env) {
+async function classifySentiment(texts, env, acc) {
   const labels = [];
   for (let i = 0; i < texts.length; i += CHUNK) {
     const batch = texts.slice(i, i + CHUNK);
@@ -289,7 +299,7 @@ async function classifySentiment(texts, env) {
       "จำแนกแต่ละคอมเมนต์เป็น positive, neutral หรือ negative โดยพิจารณาบริบท ประชด และภาษาวิบัติ " +
       'ตอบกลับเป็น JSON array ของสตริงเท่านั้น เช่น ["positive","negative",...] ' +
       "ความยาว array ต้องเท่ากับจำนวนคอมเมนต์ ห้ามมีข้อความอื่น";
-    const out = await callClaude(env, system, "คอมเมนต์:\n" + numbered, 1500);
+    const out = await callClaude(env, system, "คอมเมนต์:\n" + numbered, 1500, acc);
     let arr;
     try { arr = extractJson(out); } catch (e) { arr = []; }
     for (let j = 0; j < batch.length; j++) {
@@ -300,7 +310,7 @@ async function classifySentiment(texts, env) {
   return labels;
 }
 
-async function synthesize(sampleTexts, wantSamples, env) {
+async function synthesize(sampleTexts, wantSamples, env, acc) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const system =
     "คุณเป็นนักวิเคราะห์ social listening ภาษาไทย วิเคราะห์คอมเมนต์ที่ให้มาแล้วตอบเป็น JSON object เท่านั้น " +
@@ -312,7 +322,7 @@ async function synthesize(sampleTexts, wantSamples, env) {
         '(2-4 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 ถ้ามีในข้อมูล ไม่ต้องมี neutral)'
       : '"samples": []') +
     "} ห้ามมีข้อความนอก JSON และห้ามคัดลอกข้อความต้นฉบับตรงๆ ในตัวอย่าง (ให้ถอดความ)";
-  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined, 1500);
+  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined, 1500, acc);
   try {
     const obj = extractJson(out);
     return {

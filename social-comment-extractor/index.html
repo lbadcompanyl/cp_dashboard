@@ -169,6 +169,7 @@
   <div class="appbar">
     <div class="logo"><span class="logo-mark">💬</span><span>Comment Sentiment<small>วิเคราะห์ความเห็นโพส FB · TikTok · YouTube → Excel</small></span></div>
     <div class="appbar-actions">
+      <button class="btn ghost" id="claudeChip" type="button" title="Claude tokens ที่ใช้ในการวิเคราะห์ล่าสุด (input + output)">🧠 tokens: <span id="claudeChipVal">—</span></button>
       <button class="btn ghost" id="creditsChip" type="button" title="เครดิต ScrapeCreators คงเหลือ — กดเพื่อตรวจสอบ (ต้องอยู่โหมด Live)">💠 เครดิต: <span id="creditsChipVal">—</span></button>
       <button class="btn ghost" id="themeBtn" type="button"><span id="themeIcon">🌙</span><span id="themeLabel">โหมดมืด</span></button>
     </div>
@@ -365,6 +366,18 @@ async function checkCredits(){
 el("checkCreditsBtn").onclick = checkCredits;
 el("creditsChip").onclick = checkCredits;
 
+/* ---------------- Claude token usage ---------------- */
+function showClaudeTokens(usage, rateRemaining){
+  const c = el("claudeChipVal");
+  if (!c) return;
+  if (!usage || usage.total == null){ c.textContent = "—"; el("claudeChip").title = "Claude tokens ที่ใช้ในการวิเคราะห์ล่าสุด (input + output)"; return; }
+  c.textContent = Number(usage.total).toLocaleString();
+  el("claudeChip").title =
+    `Claude tokens วิเคราะห์ล่าสุด: input ${Number(usage.input||0).toLocaleString()} + output ${Number(usage.output||0).toLocaleString()} = ${Number(usage.total).toLocaleString()}` +
+    (rateRemaining != null ? `\ncost ต่อนาที (rate-limit) เหลือ: ${Number(rateRemaining).toLocaleString()} tokens` : "") +
+    `\n(หมายเหตุ: Anthropic ไม่มี API บอกยอดเครดิตคงเหลือของบัญชี — ดูใน console.anthropic.com)`;
+}
+
 /* ---------------- analyze ---------------- */
 el("analyzeBtn").onclick = analyze;
 el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
@@ -428,6 +441,8 @@ async function demoResult(opts){
       { term:"รอนาน", count:12 }, { term:"ประทับใจ", count:11 },
     ],
     summary: "คอมเมนต์ส่วนใหญ่เป็นเชิงบวก ชื่นชมรสชาติและความคุ้มค่า มีบางส่วนบ่นเรื่องการจัดส่งช้าและการรอคิว โดยรวมกระแสตอบรับดี",
+    claude_usage: { input: total * 12, output: 240, total: total * 12 + 240 },
+    claude_rate_remaining: 380000,
     samples: opts.samples ? [
       { sentiment:"positive", text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน" },
       { sentiment:"positive", text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย" },
@@ -449,6 +464,7 @@ function renderResult(d){
     (d.demo ? ` <span class="demo-tag">● ข้อมูลตัวอย่าง (Demo)</span>` : "") +
     (!d.demo && d.credits_remaining!=null ? ` · เครดิต ScrapeCreators คงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : "");
   if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
+  showClaudeTokens(d.claude_usage, d.claude_rate_remaining);
 
   const css = getComputedStyle(document.documentElement);
   const cPos = css.getPropertyValue("--pos"), cNeu = css.getPropertyValue("--neu"), cNeg = css.getPropertyValue("--neg");
