@@ -147,7 +147,8 @@
 
   .samples { display:flex; flex-direction:column; gap:16px; }
   .sample-group { display:flex; flex-direction:column; gap:7px; }
-  .sg-head { font-size:0.74rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+  .sg-head { font-size:0.8rem; font-weight:600; }
+  .sg-head .sg-cnt { color:var(--muted); font-weight:400; font-size:0.92em; }
   .sample { border:1px solid var(--border); border-left-width:3px; border-radius:8px; padding:10px 13px; font-size:0.86rem; color:var(--ink-2); background:var(--plane); }
   .sample.pos { border-left-color:var(--pos); }
   .sample.neu { border-left-color:var(--neu); }
@@ -256,9 +257,9 @@
       <h2>ส่งออก</h2>
       <p class="sub">ดาวน์โหลดผลวิเคราะห์แบบ aggregate (ไม่มี raw รายบุคคล)</p>
       <div class="toolbar">
-        <button class="btn primary" id="xlsxBtn" type="button">📊 ดาวน์โหลด Excel (.xlsx)</button>
-        <button class="btn" id="csvBtn" type="button">📄 CSV</button>
-        <button class="btn" id="jsonBtn" type="button">{ } JSON</button>
+        <button class="btn primary" id="pdfBtn" type="button">📄 PDF</button>
+        <button class="btn" id="jpegBtn" type="button">🖼️ JPEG</button>
+        <button class="btn" id="xlsxBtn" type="button">📊 Excel (.xlsx)</button>
       </div>
     </div>
   </div>
@@ -461,7 +462,7 @@ function renderResult(d){
   const eng = d.engagement || {};
   const stats = [
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
-    ["ยอด Like รวม", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
+    ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
     ["จำนวน Reply", (eng.total_replies!=null? Number(eng.total_replies).toLocaleString() : "—")],
     ["ผู้คอมเมนต์ (ไม่ซ้ำ)", (eng.unique_commenters!=null? Number(eng.unique_commenters).toLocaleString() : "—")],
   ];
@@ -482,13 +483,13 @@ function renderResult(d){
   const samples = d.samples || [];
   el("sampleCard").style.display = samples.length ? "" : "none";
   const groups = [
-    ["positive","บวก 😊","--pos","pos"],
-    ["negative","ลบ 😞","--neg","neg"],
+    ["positive","บวก 😊","--pos","pos", pp, s.positive],
+    ["negative","ลบ 😞","--neg","neg", pn, s.negative],
   ];
-  el("sampleList").innerHTML = groups.map(([key,label,color,cls]) => {
+  el("sampleList").innerHTML = groups.map(([key,label,color,cls,gp,gc]) => {
     const items = samples.filter(x => x.sentiment === key);
     if (!items.length) return "";
-    return `<div class="sample-group"><div class="sg-head" style="color:var(${color})">${label}</div>` +
+    return `<div class="sample-group"><div class="sg-head" style="color:var(${color})">${label} · ${gp}% <span class="sg-cnt">(${gc} คอมเมนต์)</span></div>` +
       items.map(x => `<div class="sample ${cls}">${escapeHtml(x.text)}</div>`).join("") + `</div>`;
   }).join("");
 
@@ -498,8 +499,19 @@ function renderResult(d){
 
 /* ---------------- export ---------------- */
 el("xlsxBtn").onclick = async () => { if (lastResult && await writeXlsx(buildSheets(lastResult), "comment-sentiment.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
-el("csvBtn").onclick = exportCsv;
-el("jsonBtn").onclick = async () => { if (lastResult && await saveFile("comment-sentiment.json", JSON.stringify(lastResult, null, 2), "application/json")) toast("ดาวน์โหลด JSON แล้ว ✓"); };
+el("jpegBtn").onclick = async () => {
+  if (!lastResult) return;
+  const r = await renderReport(lastResult);
+  if (r.blob && await saveFile("comment-sentiment.jpg", r.blob, "image/jpeg")) toast("ดาวน์โหลด JPEG แล้ว ✓");
+};
+el("pdfBtn").onclick = async () => {
+  if (!lastResult) return;
+  const r = await renderReport(lastResult);
+  if (r.jpeg){
+    const pdf = buildPdf(r.jpeg, r.pw, r.ph, r.iw, r.ih);
+    if (await saveFile("comment-sentiment.pdf", pdf, "application/pdf")) toast("ดาวน์โหลด PDF แล้ว ✓");
+  }
+};
 
 function buildSheets(d){
   const s = d.sentiment||{}; const eng = d.engagement||{};
@@ -532,16 +544,190 @@ function buildSheets(d){
   }
   return sheets;
 }
-async function exportCsv(){
-  if (!lastResult) return;
-  const sheets = buildSheets(lastResult);
-  let out = "";
-  for (const [name, rows] of Object.entries(sheets)){
-    out += "# " + name + "\n" + rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n\n";
+/* ---------------- report image (canvas) → JPEG / PDF ---------------- */
+const RC = { bg:"#ffffff", ink:"#141619", ink2:"#4a4e57", muted:"#878b95", border:"#e3e6ea",
+  pos:"#2e9160", neu:"#8a8f99", neg:"#d94b4b", accent:"#3d6ee0", track:"#eef1f5" };
+const FF = '"IBM Plex Sans Thai", system-ui, sans-serif';
+function setFont(ctx,w,s){ ctx.font = w + " " + s + 'px ' + FF; }
+function roundRect(ctx,x,y,w,h,r){ r=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function wrapLines(ctx,text,maxW){
+  const lines=[]; let line="";
+  for (const ch of String(text)){
+    if (ch === "\n"){ lines.push(line); line=""; continue; }
+    const t = line + ch;
+    if (ctx.measureText(t).width > maxW && line){ lines.push(line); line=ch; } else line=t;
   }
-  if (await saveFile("comment-sentiment.csv", "﻿"+out, "text/csv")) toast("ดาวน์โหลด CSV แล้ว ✓");
+  if (line) lines.push(line);
+  return lines;
 }
-function csvCell(v){ v = v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+async function ensureFont(){
+  try { if (document.fonts && document.fonts.load){
+    await Promise.all([
+      document.fonts.load('700 27px "IBM Plex Sans Thai"'),
+      document.fonts.load('600 15px "IBM Plex Sans Thai"'),
+      document.fonts.load('400 14px "IBM Plex Sans Thai"'),
+    ]); await document.fonts.ready;
+  }} catch(e){}
+}
+
+function reportPass(ctx, d, draw){
+  const W=900, pad=44, cw=W-2*pad;
+  const s=d.sentiment||{}; const total=(s.positive||0)+(s.neutral||0)+(s.negative||0);
+  const pp=pct(s.positive,total), pnu=pct(s.neutral,total), pn=100-pp-pnu;
+  const eng=d.engagement||{};
+  let y=42;
+
+  if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,700,27); ctx.fillText("รายงานวิเคราะห์ความเห็น (Sentiment)", pad, y); }
+  y+=26;
+  if (draw){ ctx.fillStyle=RC.muted; setFont(ctx,400,13.5);
+    ctx.fillText(`${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์${d.demo?" · ข้อมูลตัวอย่าง (Demo)":""}`, pad, y); }
+  y+=20;
+  if (draw){ ctx.strokeStyle=RC.border; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke(); }
+  y+=26;
+
+  // donut + legend
+  const R=62, cx=pad+R, cy=y+R;
+  if (draw){
+    let a=-Math.PI/2;
+    for (const [p,col] of [[pp,RC.pos],[pnu,RC.neu],[pn,RC.neg]]){
+      const ang=(p/100)*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R,a,a+ang); ctx.closePath(); ctx.fillStyle=col; ctx.fill(); a+=ang;
+    }
+    ctx.beginPath(); ctx.arc(cx,cy,R*0.58,0,Math.PI*2); ctx.fillStyle=RC.bg; ctx.fill();
+    ctx.textAlign="center"; ctx.fillStyle=RC.pos; setFont(ctx,700,23); ctx.fillText(pp+"%", cx, cy+3);
+    ctx.fillStyle=RC.muted; setFont(ctx,400,11); ctx.fillText("เชิงบวก", cx, cy+19); ctx.textAlign="left";
+    const lx=pad+2*R+34; let ly=y+14;
+    for (const [lab,col,p,n] of [["เชิงบวก",RC.pos,pp,s.positive],["กลาง",RC.neu,pnu,s.neutral],["เชิงลบ",RC.neg,pn,s.negative]]){
+      ctx.fillStyle=col; roundRect(ctx,lx,ly-10,11,11,3); ctx.fill();
+      ctx.fillStyle=RC.ink2; setFont(ctx,400,14); ctx.fillText(lab, lx+20, ly);
+      ctx.fillStyle=RC.ink; setFont(ctx,600,14); ctx.fillText(p+"%", lx+120, ly);
+      ctx.fillStyle=RC.muted; setFont(ctx,400,13); ctx.fillText(n+" คอมเมนต์", lx+172, ly);
+      ly+=30;
+    }
+  }
+  y+=2*R+20;
+
+  // stats
+  const boxes=[["คอมเมนต์ที่วิเคราะห์", String(d.analyzed_count||total)],
+    ["ยอดถูกใจ/รีแอกชัน", eng.total_likes!=null?Number(eng.total_likes).toLocaleString():"—"],
+    ["จำนวน Reply", eng.total_replies!=null?Number(eng.total_replies).toLocaleString():"—"],
+    ["ผู้คอมเมนต์ (ไม่ซ้ำ)", eng.unique_commenters!=null?Number(eng.unique_commenters).toLocaleString():"—"]];
+  const gap=12, bw=(cw-3*gap)/4, bh=60;
+  if (draw){ boxes.forEach((b,i)=>{ const bx=pad+i*(bw+gap);
+    ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,bx,y,bw,bh,10); ctx.stroke();
+    ctx.fillStyle=RC.muted; setFont(ctx,400,11); ctx.fillText(b[0], bx+12, y+21, bw-20);
+    ctx.fillStyle=RC.ink; setFont(ctx,600,19); ctx.fillText(b[1], bx+12, y+46);
+  }); }
+  y+=bh+28;
+
+  // keywords
+  const kws=(d.keywords||[]).slice(0,8);
+  if (kws.length){
+    if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("คำที่พูดถึงบ่อย", pad, y); }
+    y+=22;
+    const maxN=kws.reduce((m,k)=>Math.max(m,k.count||0),0)||1;
+    const termW=150, barX=pad+termW+10, barW=cw-termW-10-46;
+    for (const k of kws){
+      if (draw){
+        ctx.fillStyle=RC.ink2; setFont(ctx,400,13); ctx.fillText(String(k.term).slice(0,22), pad, y+11, termW);
+        ctx.fillStyle=RC.track; roundRect(ctx,barX,y+2,barW,10,5); ctx.fill();
+        ctx.fillStyle=RC.accent; roundRect(ctx,barX,y+2,Math.max(3,barW*(k.count||0)/maxN),10,5); ctx.fill();
+        ctx.fillStyle=RC.muted; setFont(ctx,400,12); ctx.textAlign="right"; ctx.fillText(String(k.count||0), W-pad, y+11); ctx.textAlign="left";
+      }
+      y+=22;
+    }
+    y+=16;
+  }
+
+  // summary
+  if (d.summary){
+    if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("สรุปภาพรวม", pad, y); }
+    y+=22;
+    setFont(ctx,400,14);
+    for (const ln of wrapLines(ctx,d.summary,cw)){ if (draw){ ctx.fillStyle=RC.ink2; ctx.fillText(ln, pad, y+12); } y+=21; }
+    y+=16;
+  }
+
+  // samples grouped w/ %
+  const samples=d.samples||[];
+  if (samples.length){
+    if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("ตัวอย่างคอมเมนต์ (ถอดความ)", pad, y); }
+    y+=24;
+    for (const [key,lab,col,gp,gc] of [["positive","บวก",RC.pos,pp,s.positive],["negative","ลบ",RC.neg,pn,s.negative]]){
+      const items=samples.filter(x=>x.sentiment===key);
+      if (!items.length) continue;
+      if (draw){ ctx.fillStyle=col; setFont(ctx,600,13); ctx.fillText(`${lab} · ${gp}%  (${gc} คอมเมนต์)`, pad, y+10); }
+      y+=22;
+      setFont(ctx,400,13);
+      for (const it of items){
+        const lines=wrapLines(ctx,"“"+it.text+"”",cw-18);
+        const boxH=lines.length*19+14;
+        if (draw){
+          ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,cw,boxH,8); ctx.stroke();
+          ctx.fillStyle=col; ctx.fillRect(pad,y,3,boxH);
+          ctx.fillStyle=RC.ink2; let ty=y+18; for (const ln of lines){ ctx.fillText(ln, pad+14, ty); ty+=19; }
+        }
+        y+=boxH+8;
+      }
+      y+=6;
+    }
+  }
+
+  // footer
+  y+=4;
+  if (draw){ ctx.strokeStyle=RC.border; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke();
+    ctx.fillStyle=RC.muted; setFont(ctx,400,11);
+    ctx.fillText("ปกปิดชื่ออัตโนมัติ · aggregate เท่านั้น · Comment Sentiment", pad, y+18);
+    ctx.textAlign="right"; ctx.fillText(String((d.time_range||{}).latest||""), W-pad, y+18); ctx.textAlign="left";
+  }
+  y+=28;
+  return { W, H: Math.ceil(y) };
+}
+
+function drawReportCanvas(d, scale){
+  const scratch=document.createElement("canvas").getContext("2d");
+  const { W, H } = reportPass(scratch, d, false);
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(W*scale); canvas.height=Math.round(H*scale);
+  canvas._W=W; canvas._H=H;
+  const ctx=canvas.getContext("2d");
+  ctx.scale(scale,scale);
+  ctx.fillStyle=RC.bg; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  reportPass(ctx, d, true);
+  return canvas;
+}
+
+async function renderReport(d){
+  await ensureFont();
+  const canvas=drawReportCanvas(d, 2);
+  const blob=await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.92));
+  const jpeg=blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+  return { blob, jpeg, pw:canvas._W, ph:canvas._H, iw:canvas.width, ih:canvas.height };
+}
+
+/* minimal single-page PDF embedding a JPEG (DCTDecode) — no external libs */
+function buildPdf(jpeg, pageW, pageH, imgW, imgH){
+  const enc = s => new TextEncoder().encode(s);
+  const parts=[]; let len=0; const off=[];
+  const push = b => { parts.push(b); len += b.length; };
+  const put = (n, str) => { off[n]=len; push(enc(str)); };
+  push(enc("%PDF-1.3\n"));
+  put(1, "1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n");
+  put(2, "2 0 obj\n<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n");
+  put(3, `3 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${pageW} ${pageH}]/Resources<</XObject<</Im0 4 0 R>>>>/Contents 5 0 R>>\nendobj\n`);
+  off[4]=len; push(enc(`4 0 obj\n<</Type/XObject/Subtype/Image/Width ${imgW}/Height ${imgH}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ${jpeg.length}>>\nstream\n`));
+  push(jpeg); push(enc("\nendstream\nendobj\n"));
+  const content = `q ${pageW} 0 0 ${pageH} 0 0 cm /Im0 Do Q`;
+  put(5, `5 0 obj\n<</Length ${content.length}>>\nstream\n${content}\nendstream\nendobj\n`);
+  const xrefAt=len;
+  let xref="xref\n0 6\n0000000000 65535 f \n";
+  for (let i=1;i<=5;i++) xref += String(off[i]).padStart(10,"0")+" 00000 n \n";
+  push(enc(xref));
+  push(enc(`trailer\n<</Size 6/Root 1 0 R>>\nstartxref\n${xrefAt}\n%%EOF`));
+  let total=0; for (const p of parts) total+=p.length;
+  const out=new Uint8Array(total); let o=0; for (const p of parts){ out.set(p,o); o+=p.length; }
+  return out;
+}
 
 /* ดาวน์โหลด: ใช้ downloads capability เมื่ออยู่ในพรีวิว claude.ai,
    ไม่งั้นดาวน์โหลดผ่านเบราว์เซอร์ตามปกติ (เว็บที่ deploy จริง) */
