@@ -49,6 +49,24 @@
     return function (v) { return v.toFixed(3) + unit; };
   }
 
+  /**
+   * เลือกจำนวนทศนิยมให้ตัวย่อเลข (num ของ app.js) จนกว่าป้ายแกนจะไม่ซ้ำกัน
+   * 🔴 ต่างจาก axisFmt ตรงที่ตัวนี้ใช้กับตัวย่อแบบ K/M — ปัดเป็น K เฉยๆ แล้วช่วงข้อมูลแคบ
+   *    จะได้ป้ายซ้ำ (258K / 258K / 259K / 259K) อ่านไม่ออกว่าแกนไล่ยังไง
+   */
+  function pickFmt(values, fn) {
+    for (var d = 0; d <= 2; d++) {
+      var seen = {}, dup = false;
+      for (var i = 0; i < values.length; i++) {
+        var t = fn(values[i], d);
+        if (seen[t]) { dup = true; break; }
+        seen[t] = 1;
+      }
+      if (!dup) return (function (dd) { return function (v) { return fn(v, dd); }; })(d);
+    }
+    return function (v) { return fn(v, 2); };
+  }
+
   function extent(series, pick) {
     var lo = Infinity, hi = -Infinity;
     series.forEach(function (s) {
@@ -106,7 +124,7 @@
 
     var ticks = [0, 1, 2, 3];
     var lVals = L ? ticks.map(function (g) { return L.lo + ((L.hi - L.lo) * g) / 3; }) : [];
-    var fmtL = L ? (o.fmtY || axisFmt(lVals, o.unitLeft || "")) : null;
+    var fmtL = L ? (o.fmtYNum ? pickFmt(lVals, o.fmtYNum) : (o.fmtY || axisFmt(lVals, o.unitLeft || ""))) : null;
     var rVals = R ? ticks.map(function (g) { return R.lo + ((R.hi - R.lo) * g) / 3; }) : [];
     var fmtR = R ? (o.fmtYRight || axisFmt(rVals, o.unitRight || "")) : null;
 
@@ -192,7 +210,7 @@
     var list = (parts || []).filter(function (p) { return p.value > 0; });
     var total = list.reduce(function (a, p) { return a + p.value; }, 0);
     if (!total) return "";
-    var out = '<div class="stackbar" role="img" aria-label="สัดส่วนการมีส่วนร่วม">';
+    var out = '<div class="stackbar" role="img" aria-label="สัดส่วน Engagement แยกประเภท">';
     list.forEach(function (p) {
       out += '<span style="width:' + n((p.value / total) * 100) + "%;background:" + esc(p.color) +
         '" title="' + esc(p.label + " " + p.value.toLocaleString("th-TH")) + '"></span>';

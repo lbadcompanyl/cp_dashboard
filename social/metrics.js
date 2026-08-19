@@ -1,7 +1,7 @@
 /* นิยาม metric ของแต่ละช่อง — จุดเดียวในระบบที่กำหนดว่าแต่ละช่องวัดอะไรด้วยสูตรไหน
  *
  * ⚠️ แต่ละแพลตฟอร์มนับไม่เหมือนกันโดยธรรมชาติ ห้ามบังคับให้เท่ากัน
- *    Facebook ไม่มี "ยอดวิว" แบบ YouTube — ตัวที่เทียบได้คือ "การเข้าถึง (reach)"
+ *    Facebook ไม่มี "Views" แบบ YouTube — ตัวที่เทียบได้คือ "Reach" (จำนวนคนที่เห็น)
  *    TikTok นับแชร์เข้า engagement ด้วย ส่วน YouTube ไม่มีตัวเลขแชร์ให้เลย
  *    เอา 3 ช่องมาหารด้วยสูตรเดียวกันเมื่อไหร่ = ตัวเลขที่ได้เทียบกันไม่ได้จริง
  *
@@ -25,11 +25,11 @@
       rawColor: "#dc2626",
       icon: "▶",
       contentWord: "คลิป",
-      // ⚠️ ชื่อ metric หลักของแต่ละช่องไม่เหมือนกัน — ใช้ค่านี้ตั้งป้ายทุกที่ ห้ามฮาร์ดโค้ดคำว่า "ยอดวิว"
+      // ⚠️ ชื่อ metric หลักของแต่ละช่องไม่เหมือนกัน — ใช้ค่านี้ตั้งป้ายทุกที่ ห้ามฮาร์ดโค้ดคำว่า "Views"
       reachKey: "views",
-      reachLabel: "ยอดวิว",
+      reachLabel: "Views",
       erLabel: "Engagement rate",
-      erFormula: "(ไลก์ + คอมเมนต์) ÷ ยอดวิว",
+      erFormula: "(ไลก์ + คอมเมนต์) ÷ Views",
       erNote: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API จึงไม่ได้นับรวม",
       er: function (a) { return rate(a.likes + a.comments, a.views); },
       // ส่วนประกอบของ engagement — ใช้วาด stacked bar และโชว์จำนวนจริง
@@ -53,9 +53,9 @@
       icon: "♪",
       contentWord: "คลิป",
       reachKey: "views",
-      reachLabel: "ยอดวิว",
+      reachLabel: "Views",
       erLabel: "Engagement rate",
-      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ ยอดวิว",
+      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ Views",
       erNote: "TikTok นับแชร์รวมด้วย ตัวเลข ER จึงมักสูงกว่าช่องอื่นโดยธรรมชาติ",
       er: function (a) { return rate(a.likes + a.comments + a.shares, a.views); },
       parts: [
@@ -64,7 +64,7 @@
         { key: "shares", label: "แชร์", color: "#7048c4" },
       ],
       extras: [
-        { key: "views", label: "ยอดวิววิดีโอ", fmt: "num" },
+        { key: "views", label: "Views ของวิดีโอ", fmt: "num" },
         { key: "completionRate", label: "ดูจนจบ", fmt: "pct" },
       ],
     },
@@ -77,11 +77,11 @@
       rawColor: "#2563eb",
       icon: "f",
       contentWord: "โพสต์",
-      // 🔴 Facebook ใช้ reach ไม่ใช่ views — เทียบกับ 2 ช่องบนแบบตรงๆ ไม่ได้
+      // 🔴 Facebook ใช้ Reach ไม่ใช่ Views — เทียบกับ 2 ช่องบนแบบตรงๆ ไม่ได้
       reachKey: "reach",
-      reachLabel: "การเข้าถึง",
+      reachLabel: "Reach",
       erLabel: "Engagement rate",
-      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ การเข้าถึง",
+      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ Reach",
       erNote: "Facebook วัดจากจำนวนคนที่เห็นโพสต์ (reach) ไม่ใช่จำนวนครั้งที่ถูกเปิด",
       er: function (a) { return rate(a.likes + a.comments + a.shares, a.reach); },
       parts: [
@@ -90,7 +90,7 @@
         { key: "shares", label: "แชร์", color: "#8257c9" },
       ],
       extras: [
-        { key: "reach", label: "การเข้าถึง", fmt: "num" },
+        { key: "reach", label: "Reach", fmt: "num" },
       ],
     },
   };
