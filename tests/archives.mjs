@@ -1,0 +1,343 @@
+/* คลังข่าว (/archives/) — เปิดหน้าจริงใน Chromium แล้วกดใช้งานจริง
+ *
+ *   python3 -m http.server 8899 --directory .. &
+ *   node archives.mjs
+ *
+ * คุมอะไร:
+ *   [1] ค้นภาษาไทยแบบ substring — "กุ้ง" ต้องเจอ "โรคกุ้ง" / "ผลผลิตกุ้งทะเล"
+ *       (ข้อห้ามข้อใหญ่ที่สุดของหน้านี้: ห้ามใช้ search library ที่ตัดคำด้วยช่องว่าง)
+ *   [2] ไฮไลต์ทุกตำแหน่งที่ตรง รวมกลางคำ และห้ามทำพาดหัวเพี้ยน
+ *   [3] หมวดเป็น array ไม่ใช่สตริงเดียว
+ *   [4] หางพาดหัวถูกตัดตอนแสดง แต่ยังค้นเจอ
+ *   [5] ตัวกรอง 3 ตัว (วันที่ · หมวด · สำนักข่าว) + ล้างทั้งหมด
+ *   [6] URL เก็บสถานะครบ · ก๊อปแล้วเปิดได้ผลเดิม · ปุ่ม back ย้อนได้
+ *   [7] ว่าง 2 แบบต้องพูดคนละอย่าง
+ *   [8] โหลดทีละ 50 + ปุ่มโหลดเพิ่ม
+ *   [9] เลือกวันที่ย้อนไปปีเก่า → โหลดปีนั้นให้เอง
+ *  [10] มือถือ: กล่องตัวกรองซ้อนแนวตั้ง ไม่ล้นจอ
+ */
+import { chromium } from "playwright";
+
+const BASE = process.env.BASE || "http://127.0.0.1:8899";
+let pass = 0, fail = 0;
+const ok = (name, cond, extra = "") => {
+  if (cond) { pass++; console.log("  ✅", name); }
+  else { fail++; console.log("  ❌", name, extra); }
+};
+
+const browser = await chromium.launch({
+  executablePath: "/opt/pw-browsers/chromium",
+  args: ["--no-sandbox"],
+});
+
+async function open(ctx, qs = "") {
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}/archives/${qs}`, { waitUntil: "load" });
+  await page.waitForSelector("#list .item, #list .empty", { timeout: 15000 });
+  return page;
+}
+
+const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+const page = await open(ctx);
+
+// ── [1] ค้นภาษาไทยแบบ substring ────────────────────────────────────────
+console.log("\n[1] ค้นภาษาไทยกลางคำ");
+{
+  // ⚠️ ข้อพิสูจน์ที่ตรงที่สุด: เอาพาดหัวจริงมาแล้ว **ตัดชิ้นกลางๆ ออกมาเป็นคำค้น**
+  //    ชิ้นแบบนี้คร่อมกลางคำและไม่มีช่องว่างติดมาเลย
+  //    ตัวค้นหาที่ตัดคำด้วยช่องว่าง (Lunr/Fuse/…) จะหาไม่เจอสักใบ
+  const titles = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent.trim()));
+  let midOK = 0, midTried = 0;
+  for (const t of titles.slice(0, 8)) {
+    const piece = t.slice(4, 9);
+    if (piece.length < 5 || /\s/.test(piece)) continue;   // เอาเฉพาะชิ้นที่คร่อมกลางคำจริงๆ
+    midTried++;
+    await page.fill("#q", piece);
+    await page.waitForTimeout(300);
+    const hits = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent));
+    if (hits.length && hits.every((h) => h.includes(piece))) midOK++;
+  }
+  ok("ตัดชิ้นกลางพาดหัวมาค้น เจอครบทุกชิ้น", midTried > 0 && midOK === midTried, `${midOK}/${midTried}`);
+
+  // เคสที่เจ้าของยกมาเอง
+  for (const kw of ["กุ้ง", "ปลา", "ซีพี"]) {
+    await page.fill("#q", kw);
+    await page.waitForTimeout(400);
+    const hits = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent));
+    ok(`ค้น "${kw}" มีผลลัพธ์`, hits.length > 0, `เจอ ${hits.length}`);
+    const wrong = hits.find((h) => !h.includes(kw));
+    ok(`ค้น "${kw}" ทุกใบมีคำนั้นจริง`, !wrong, wrong || "");
+  }
+
+  // ⚠️ เคสที่เจ้าของยกมาตรงๆ: "กุ้ง" ต้องเจอ "โรคกุ้ง" กับ "ผลผลิตกุ้งทะเล" ด้วย
+  //    ดูจากผลลัพธ์ทั้งชุด ไม่ใช่แค่ 50 ใบแรก (ใบแรกๆ จะเป็นอันไหนขึ้นกับวันที่ล้วนๆ)
+  await page.fill("#q", "กุ้ง");
+  await page.waitForTimeout(400);
+  const shrimp = await page.evaluate(async () => {
+    const idx = await fetch("data/index.json").then((r) => r.json());
+    const y = idx.years.map((x) => x.y).sort((a, b) => b - a)[0];
+    const pack = await fetch(`data/${y}.json`).then((r) => r.json());
+    return pack.r.map((r) => r[0]).filter((t) => t.includes("กุ้ง"));
+  });
+  ok('ในข้อมูลมีพาดหัวที่ "กุ้ง" ฝังอยู่กลางคำอื่น', shrimp.some((t) => t.indexOf("กุ้ง") > 0),
+    JSON.stringify(shrimp.slice(0, 2)));
+  const shown = await page.$eval("#count", (e) => e.textContent);
+  ok('ค้น "กุ้ง" นับได้เท่ากับที่มีอยู่จริงในข้อมูล',
+    shown.includes(shrimp.length.toLocaleString("th-TH")), `${shown} · ในข้อมูล ${shrimp.length}`);
+}
+
+// ── [2] ไฮไลต์ ─────────────────────────────────────────────────────────
+console.log("\n[2] ไฮไลต์");
+{
+  await page.fill("#q", "กุ้ง");
+  await page.waitForTimeout(400);
+  const first = await page.$("#list .item a.t");
+  const html = await first.evaluate((e) => e.innerHTML);
+  const text = await first.evaluate((e) => e.textContent);
+  const marks = await first.$$eval("mark", (m) => m.map((x) => x.textContent));
+  ok("มี <mark> ครอบคำที่ค้น", marks.length > 0 && marks.every((m) => m === "กุ้ง"), JSON.stringify(marks));
+  ok("จำนวน mark เท่ากับจำนวนครั้งที่คำนั้นอยู่ในพาดหัว",
+    marks.length === text.split("กุ้ง").length - 1, `${marks.length} vs ${text.split("กุ้ง").length - 1}`);
+  ok("ข้อความหลังไฮไลต์ไม่เพี้ยน (ยังมีคำค้นอยู่ครบ)", text.includes("กุ้ง"), text);
+  ok("ไม่ใส่แท็กมั่วลงในพาดหัว", !/<(?!\/?mark\b)[a-z]/i.test(html), html.slice(0, 120));
+}
+
+// ── [3] หมวดเป็น array ─────────────────────────────────────────────────
+console.log("\n[3] หมวดหลายค่า");
+{
+  await page.fill("#q", "");
+  await page.waitForTimeout(400);
+  const tagCounts = await page.$$eval("#list .item", (els) =>
+    els.map((e) => e.querySelectorAll(".tag").length));
+  ok("มีข่าวที่ติดหมวดมากกว่า 1 หมวด (ไม่ได้เก็บเป็นสตริงเดียว)",
+    tagCounts.some((n) => n > 1), JSON.stringify(tagCounts.slice(0, 10)));
+  const withComma = await page.$$eval("#list .tag", (els) =>
+    els.map((e) => e.textContent).filter((t) => t.includes(",")));
+  ok("ไม่มีชิพหมวดที่ยังมีจุลภาคค้างอยู่", withComma.length === 0, JSON.stringify(withComma.slice(0, 3)));
+}
+
+// ── [4] หางพาดหัว ──────────────────────────────────────────────────────
+console.log("\n[4] ตัดหางพาดหัวตอนแสดง แต่ยังค้นเจอ");
+{
+  // หาสำนักข่าวที่โผล่เป็นหางพาดหัวในข้อมูลจำลอง
+  const tailWord = "ข่าวสด";
+  await page.fill("#q", tailWord);
+  await page.waitForTimeout(400);
+  const shown = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent.trim()));
+  ok(`ค้น "${tailWord}" ที่อยู่ในหางพาดหัว ยังเจอ`, shown.length > 0, `เจอ ${shown.length}`);
+  const stillTailed = shown.filter((t) => new RegExp(`\\s+[-|–—·]\\s+${tailWord}$`).test(t));
+  ok("หางถูกตัดออกจากที่แสดงผลแล้ว", stillTailed.length === 0, JSON.stringify(stillTailed.slice(0, 2)));
+  const empty = shown.filter((t) => t.length < 10);
+  ok("ไม่มีพาดหัวที่ถูกตัดจนสั้นผิดปกติ", empty.length === 0, JSON.stringify(empty.slice(0, 3)));
+}
+
+// ── [5] ตัวกรอง ────────────────────────────────────────────────────────
+console.log("\n[5] ตัวกรอง");
+{
+  await page.fill("#q", "");
+  await page.waitForTimeout(400);
+  const all = await page.$eval("#count", (e) => e.textContent);
+
+  // หมวด
+  const cat = await page.$eval("#cats .ch", (b) => b.dataset.cat);
+  await page.click(`#cats [data-cat="${cat}"]`);
+  await page.waitForTimeout(150);
+  const catOnly = await page.$$eval("#list .item", (els) =>
+    els.map((e) => [...e.querySelectorAll(".tag")].map((t) => t.textContent)));
+  ok(`เลือกหมวด "${cat}" แล้วทุกใบมีหมวดนั้น`, catOnly.every((c) => c.includes(cat)),
+    JSON.stringify(catOnly.slice(0, 2)));
+
+  // เลือก 2 หมวด = เจอหมวดใดหมวดหนึ่งก็นับ (OR)
+  const cat2 = await page.$$eval("#cats .ch", (bs) => bs[1].dataset.cat);
+  await page.click(`#cats [data-cat="${cat2}"]`);
+  await page.waitForTimeout(150);
+  const both = await page.$$eval("#list .item", (els) =>
+    els.map((e) => [...e.querySelectorAll(".tag")].map((t) => t.textContent)));
+  ok("เลือก 2 หมวดเป็นแบบ OR", both.every((c) => c.includes(cat) || c.includes(cat2)));
+  ok("เลือก 2 หมวดได้ผลไม่น้อยกว่าเลือกหมวดเดียว",
+    (await page.$$eval("#list .item", (e) => e.length)) >= catOnly.length);
+
+  // ล้างทั้งหมด
+  const clearVisible = await page.$eval("#clearall", (b) => !b.hidden);
+  ok("ปุ่มล้างตัวกรองขึ้นเมื่อมีตัวกรอง", clearVisible);
+  await page.click("#clearall");
+  await page.waitForTimeout(150);
+  ok("ล้างแล้วกลับมาเท่าเดิม", (await page.$eval("#count", (e) => e.textContent)) === all);
+  ok("ล้างแล้วปุ่มล้างหายไป", await page.$eval("#clearall", (b) => b.hidden));
+
+  // สำนักข่าว — ค้นในรายการได้ · เรียงมากไปน้อย
+  const counts = await page.$$eval("#srcs .src .n", (els) =>
+    els.map((e) => +e.textContent.replace(/[^\d]/g, "")));
+  ok("รายชื่อสำนักข่าวเรียงจากข่าวมากไปน้อย",
+    counts.every((n, i) => i === 0 || counts[i - 1] >= n), JSON.stringify(counts.slice(0, 6)));
+  const src = await page.$eval("#srcs .src", (b) => b.dataset.src);
+  await page.fill("#srcq", src.slice(0, 3));
+  await page.waitForTimeout(150);
+  const listed = await page.$$eval("#srcs .src .nm", (els) => els.map((e) => e.textContent));
+  ok("พิมพ์ค้นในรายชื่อสำนักข่าวได้", listed.length > 0 && listed.length < counts.length,
+    `${listed.length} / ${counts.length}`);
+  await page.click(`#srcs [data-src="${src}"]`);
+  await page.waitForTimeout(150);
+  const outlets = await page.$$eval("#list .meta .o", (els) => [...new Set(els.map((e) => e.textContent))]);
+  ok(`เลือกสำนัก "${src}" แล้วเหลือเจ้าเดียว`, outlets.length === 1 && outlets[0] === src, JSON.stringify(outlets));
+  await page.click("#clearall");
+  await page.fill("#srcq", "");
+  await page.waitForTimeout(150);
+}
+
+// ── [6] URL + ปุ่ม back ────────────────────────────────────────────────
+console.log("\n[6] URL เก็บสถานะ");
+{
+  await page.fill("#q", "ซีพี");
+  await page.waitForTimeout(400);
+  const cat = await page.$eval("#cats .ch", (b) => b.dataset.cat);
+  await page.click(`#cats [data-cat="${cat}"]`);
+  await page.waitForTimeout(200);
+  const url = page.url();
+  ok("URL มีคำค้น", url.includes("q="), url);
+  ok("URL มีหมวด", url.includes("cat="), url);
+  const before = await page.$eval("#count", (e) => e.textContent);
+
+  const page2 = await ctx.newPage();
+  await page2.goto(url, { waitUntil: "load" });
+  await page2.waitForSelector("#list .item, #list .empty", { timeout: 15000 });
+  await page2.waitForTimeout(200);
+  ok("ก๊อป URL ไปเปิดใหม่ได้ผลเดิม", (await page2.$eval("#count", (e) => e.textContent)) === before,
+    `${await page2.$eval("#count", (e) => e.textContent)} vs ${before}`);
+  ok("ช่องค้นหาถูกเติมกลับจาก URL", (await page2.inputValue("#q")) === "ซีพี");
+  ok("ชิพหมวดถูกกดค้างไว้จาก URL", await page2.$eval(`#cats [data-cat="${cat}"]`, (b) => b.classList.contains("on")));
+  await page2.close();
+
+  await page.goBack();
+  await page.waitForTimeout(300);
+  ok("กด back แล้วชิพหมวดหลุดออก", !page.url().includes("cat="), page.url());
+  ok("กด back แล้วคำค้นยังอยู่ (พิมพ์ไม่สร้างประวัติทีละตัวอักษร)", page.url().includes("q="), page.url());
+  ok("กด back แล้วหน้าจอตามไปด้วย", !(await page.$eval(`#cats [data-cat="${cat}"]`, (b) => b.classList.contains("on"))));
+}
+
+// ── [7] ว่าง 2 แบบ ─────────────────────────────────────────────────────
+console.log("\n[7] สถานะว่าง");
+{
+  const p = await open(ctx);
+  const n = await p.$$eval("#list .item", (e) => e.length);
+  ok("ยังไม่ได้พิมพ์อะไร = โชว์ข่าวล่าสุด ไม่ใช่หน้าว่าง", n > 0, `เจอ ${n}`);
+
+  await p.fill("#q", "ไม่มีทางมีคำนี้อยู่จริงหรอกนะจ๊ะ");
+  await p.waitForTimeout(400);
+  const txt = await p.$eval("#list", (e) => e.textContent);
+  ok("กรองแล้วไม่พบ = บอกให้ชัด", /ไม่พบ/.test(txt), txt.slice(0, 80));
+  ok("กรองแล้วไม่พบ = มีปุ่มล้างตัวกรองให้กด", !!(await p.$("#list [data-clear]")));
+  await p.click("#list [data-clear]");
+  await p.waitForTimeout(200);
+  ok("กดล้างจากหน้าว่างแล้วข่าวกลับมา", (await p.$$eval("#list .item", (e) => e.length)) > 0);
+  ok("กดล้างแล้วช่องค้นหาว่างจริง", (await p.inputValue("#q")) === "");
+  await p.close();
+}
+
+// ── [8] โหลดทีละ 50 ────────────────────────────────────────────────────
+console.log("\n[8] แบ่งหน้า");
+{
+  const p = await open(ctx);
+  ok("รอบแรกแสดง 50 ใบ", (await p.$$eval("#list .item", (e) => e.length)) === 50);
+  ok("มีปุ่มโหลดเพิ่ม", !!(await p.$("#more [data-more]")));
+  await p.click("#more [data-more]");
+  await p.waitForTimeout(200);
+  const n2 = await p.$$eval("#list .item", (e) => e.length);
+  ok("กดโหลดเพิ่มแล้วได้ 100 ใบ", n2 === 100, `ได้ ${n2}`);
+
+  const ts = await p.$$eval("#list .meta .dt", (els) => els.map((e) => e.textContent.trim()));
+  const toNum = (s) => { const [d, t] = s.split(" "); const [D, M, Y] = d.split("/"); return `${Y}${M}${D}${t.replace(":", "")}`; };
+  const nums = ts.map(toNum);
+  ok("เรียงข่าวใหม่ไปเก่า", nums.every((v, i) => i === 0 || nums[i - 1] >= v), JSON.stringify(nums.slice(0, 4)));
+
+  const link = await p.$eval("#list .item a.t", (a) => [a.target, a.rel]);
+  ok("พาดหัวเปิดแท็บใหม่ + rel=noopener", link[0] === "_blank" && link[1].includes("noopener"), JSON.stringify(link));
+  ok("ทุกใบมีปุ่มคัดลอกลิงก์", (await p.$$eval("#list .copy", (e) => e.length)) === 100);
+  await p.close();
+}
+
+// ── [9] โหลดปีเก่าเอง ──────────────────────────────────────────────────
+console.log("\n[9] ขยายช่วงวันที่ย้อนไปปีเก่า");
+{
+  const p = await open(ctx);
+  const idx = await p.evaluate(() => fetch("data/index.json").then((r) => r.json()));
+  const years = idx.years.map((x) => x.y).sort((a, b) => b - a);
+  ok("index.json แยกไฟล์ตามปี", years.length > 1, JSON.stringify(years));
+
+  const before = await p.$eval("#count", (e) => e.textContent);
+  ok("ตอนเปิดหน้าโหลดแค่ปีล่าสุด", before.includes(String(years[0])) && before.includes("ยังไม่รวม"), before);
+
+  const oldest = years[years.length - 1];
+  await p.fill("#from", `${oldest}-01-01`);
+  await p.dispatchEvent("#from", "change");
+  await p.waitForTimeout(1500);
+  const after = await p.$eval("#count", (e) => e.textContent);
+  ok(`เลือกวันที่ย้อนถึงปี ${oldest} แล้วโหลดปีนั้นให้เอง`, after.includes(String(oldest)) && !after.includes("ยังไม่รวม"), after);
+
+  const dates = await p.$$eval("#list .meta .dt", (els) => els.map((e) => e.textContent.trim()));
+  const yearOf = (d) => +d.split("/")[2].slice(0, 4);
+  ok("ผลลัพธ์ยังอยู่ในช่วงวันที่ที่เลือก", dates.every((d) => yearOf(d) >= oldest), JSON.stringify(dates.slice(0, 3)));
+  await p.close();
+}
+
+// ── [10] มือถือ ────────────────────────────────────────────────────────
+console.log("\n[10] มือถือ");
+{
+  const m = await browser.newContext({ viewport: { width: 390, height: 780 }, isMobile: true, hasTouch: true });
+  const p = await open(m);
+  const over = await p.evaluate(() => document.scrollingElement.scrollWidth - innerWidth);
+  ok("ไม่มีอะไรล้นออกนอกจอ", over <= 1, `เกิน ${over}px`);
+
+  const boxes = await p.$$eval(".fbox", (els) => els.map((e) => {
+    const r = e.getBoundingClientRect();
+    return { x: Math.round(r.x), w: Math.round(r.width) };
+  }));
+  ok("กล่องตัวกรองมี 3 กล่อง", boxes.length === 3, JSON.stringify(boxes));
+  ok("จอแคบ = ซ้อนแนวตั้ง (ทุกกล่องชิดซ้ายเท่ากัน)",
+    boxes.every((b) => b.x === boxes[0].x), JSON.stringify(boxes));
+
+  const wide = await p.$$eval("#list .item, .fbox, #q", (els) =>
+    els.filter((e) => e.getBoundingClientRect().right > innerWidth + 1).length);
+  ok("ไม่มีการ์ด/กล่องตัวไหนยื่นเลยขอบจอ", wide === 0, `${wide} ตัว`);
+
+  // จอกว้างต้องเรียงแนวนอน
+  const p2 = await open(ctx);
+  const bx = await p2.$$eval(".fbox", (els) => els.map((e) => Math.round(e.getBoundingClientRect().x)));
+  ok("จอกว้าง = เรียงแนวนอน 3 คอลัมน์", new Set(bx).size === 3, JSON.stringify(bx));
+  await p2.close();
+  await p.close();
+  await m.close();
+}
+
+// ── [10b] โหมดมืด
+console.log("\n[10b] โหมดมืด");
+{
+  const d = await browser.newContext({ viewport: { width: 1200, height: 900 }, colorScheme: "dark" });
+  const p = await open(d);
+  const bg = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  ok("โหมดมืดเปลี่ยนสีพื้นจริง", bg === "rgb(13, 17, 23)", bg);
+  await p.fill("#q", "กุ้ง");
+  await p.waitForTimeout(400);
+  const m = await p.$eval("#list mark", (e) => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]);
+  ok("ไฮไลต์ในโหมดมืดไม่ใช่ตัวหนังสือดำบนพื้นเหลือง", m[0] !== "rgb(0, 0, 0)" && m[1] !== "rgb(255, 255, 0)", JSON.stringify(m));
+  await p.close();
+  await d.close();
+}
+
+// ── [11] ข้อห้ามเรื่อง search library ──────────────────────────────────
+console.log("\n[11] ข้อห้าม");
+{
+  const src = await (await fetch(`${BASE}/archives/app.js`)).text();
+  const banned = ["lunr", "Fuse", "minisearch", "flexsearch"].filter((n) =>
+    new RegExp(`\\b${n}\\b`, "i").test(src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
+  ok("ไม่มี search library ในโค้ด", banned.length === 0, JSON.stringify(banned));
+  ok("ใช้ includes() ค้นตรงๆ", /\.n\.includes\(/.test(src));
+  const scripts = await page.$$eval("script[src]", (els) => els.map((e) => e.getAttribute("src")));
+  ok("ไม่มีสคริปต์จากข้างนอก", scripts.every((s) => !/^https?:|^\/\//.test(s)), JSON.stringify(scripts));
+}
+
+await page.close();
+await ctx.close();
+await browser.close();
+console.log(`\n${fail === 0 ? "✅ ผ่านหมด" : "❌ ตก"} — ผ่าน ${pass} · ตก ${fail}`);
+process.exit(fail ? 1 : 0);

@@ -1,0 +1,181 @@
+/* คลังข่าว — ค้นข่าว PR ย้อนหลัง
+   ธีมเดียวกับ /trend/ /ir/ /issue/ — สว่าง/มืดตามเครื่องผู้ใช้
+
+   📌 ค่าสีพื้นฐานก๊อปมาจาก trend/styles.css + social/styles.css ตรงๆ ห้ามคิดเอง
+      แก้ชุดสีของตระกูลนี้เมื่อไหร่ ต้องแก้ให้ครบทุกหน้า ไม่งั้นสลับหน้าแล้วสีเพี้ยน
+
+   เขียนแบบ mobile-first: กฎพื้นฐานคือของจอแคบ แล้วค่อยขยายด้วย min-width */
+
+:root {
+  color-scheme: light dark;
+  /* ↓ ตรงกับ trend/ir/issue/social */
+  --plane:#f4f6fb; --surface:#ffffff; --border:#e4e8f0;
+  --ink:#1f2937; --muted:#6b7280;
+  --surface-2:#eef1f7; --ink-2:#4b5563; --accent:#2563eb;
+  --good:#15803d; --mark:#fde68a; --mark-ink:#1f2937; --on-accent:#fff; --radius:14px;
+}
+
+/* ⚠️ ตามเครื่องผู้ใช้ เหมือน trend/ir/issue เป๊ะ (ค่าสีชุดเดียวกัน)
+   /social/ ตรึงเป็นโหมดสว่างอย่างเดียว — อันนั้นเป็นข้อยกเว้น ไม่ใช่มาตรฐานของตระกูลนี้
+   ⚠️ ไฮไลต์คำค้นต้องกำหนดสีตัวอักษรเองทั้งสองโหมด — ค่าเริ่มต้นของ <mark>
+      เป็นตัวหนังสือดำบนพื้นเหลือง พอเป็นโหมดมืดจะกลายเป็นตัวหนังสือจางบนพื้นสว่าง อ่านไม่ออก */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --plane:#0d1117; --surface:#161b22; --border:#262c36;
+    --ink:#e6edf3; --muted:#8b949e;
+    --surface-2:#1c232c; --ink-2:#b6c2cf; --accent:#60a5fa;
+    --good:#4ade80; --mark:#7c5e10; --mark-ink:#fff8dc; --on-accent:#0d1117;
+  }
+}
+
+* { box-sizing:border-box; }
+
+body {
+  margin:0; min-height:100vh; background:var(--plane); color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI","Sarabun","Noto Sans Thai",Roboto,sans-serif;
+  line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+
+.wrap { max-width:1100px; margin:0 auto; padding:0 14px 56px; }
+
+/* ── แถบบน ───────────────────────────────────────────────────────── */
+.appbar {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:12px 0; flex-wrap:wrap;
+}
+.logo { display:flex; align-items:center; gap:8px; font-weight:650; font-size:1rem; }
+.bar-right { display:flex; align-items:center; gap:8px; }
+.btn {
+  border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  border-radius:999px; padding:7px 13px; font-size:.8rem; cursor:pointer;
+  text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-family:inherit;
+}
+.btn:hover { background:var(--surface-2); color:var(--ink); }
+.btn.sm { padding:5px 11px; font-size:.75rem; }
+#vtag { color:var(--muted); font-size:.72rem; }
+
+/* ── ช่องค้นหา ───────────────────────────────────────────────────
+   ⚠️ ติดบนสุดตลอด — เลื่อนดูผลลัพธ์ยาวๆ แล้วยังพิมพ์แก้คำค้นได้ทันที */
+.sticky { position:sticky; top:0; z-index:50; background:var(--plane); padding:4px 0 10px; }
+.searchrow { position:relative; display:flex; align-items:center; }
+.sicon {
+  position:absolute; left:14px; font-size:.95rem; pointer-events:none; opacity:.75;
+}
+#q {
+  width:100%; font-family:inherit; font-size:1rem; color:var(--ink);
+  background:var(--surface); border:1px solid var(--border); border-radius:999px;
+  padding:13px 44px 13px 42px; -webkit-appearance:none; appearance:none;
+}
+#q::-webkit-search-cancel-button { display:none; }
+#q:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,.13); }
+.qclear {
+  position:absolute; right:8px; border:0; background:transparent; color:var(--muted);
+  font-family:inherit; font-size:1rem; cursor:pointer; padding:8px 10px; line-height:1; border-radius:999px;
+}
+.qclear:hover { color:var(--ink); background:var(--surface-2); }
+
+/* ── กล่องตัวกรอง 3 ตัว ───────────────────────────────────────────
+   จอแคบซ้อนแนวตั้ง · จอกว้างเรียงแนวนอน (ดู @media ท้ายไฟล์) */
+.filters { display:grid; grid-template-columns:1fr; gap:10px; }
+.fbox { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 13px; }
+.fh { margin:0 0 9px; font-size:.82rem; font-weight:650; display:flex; gap:7px; align-items:baseline; flex-wrap:wrap; }
+.fhint { font-size:.7rem; color:var(--muted); font-weight:400; }
+.fnote { margin:9px 0 0; font-size:.7rem; color:var(--muted); }
+
+.dates { display:flex; flex-wrap:wrap; gap:8px; }
+.dates label { font-size:.76rem; color:var(--muted); display:inline-flex; align-items:center; gap:6px; flex:1 1 140px; }
+.dates input {
+  flex:1; min-width:0; background:var(--surface); border:1px solid var(--border); color:var(--ink);
+  border-radius:8px; padding:7px 9px; font-family:inherit; font-size:.8rem;
+}
+.dates input:focus { outline:none; border-color:var(--accent); }
+
+/* ชิพหมวด — กดเลือกได้หลายอัน (เจอหมวดใดหมวดหนึ่งก็นับ) */
+.chips { display:flex; gap:6px; flex-wrap:wrap; }
+.ch {
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-family:inherit;
+  border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  border-radius:999px; padding:6px 12px; font-size:.78rem;
+}
+.ch:hover { border-color:var(--accent); color:var(--ink); }
+.ch.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600; }
+.ch .n { font-size:.72rem; opacity:.7; font-variant-numeric:tabular-nums; }
+.ch.on .n { opacity:.85; }
+
+/* รายชื่อสำนักข่าว — เรียงข่าวมากไปน้อย พิมพ์ค้นในรายการได้ */
+.minisearch {
+  width:100%; font-family:inherit; font-size:.8rem; color:var(--ink);
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:7px 10px; margin-bottom:8px; -webkit-appearance:none; appearance:none;
+}
+.minisearch:focus { outline:none; border-color:var(--accent); }
+.srclist { max-height:210px; overflow-y:auto; display:flex; flex-direction:column; gap:1px; }
+.src {
+  display:flex; align-items:center; gap:8px; cursor:pointer; font-family:inherit; text-align:left;
+  border:0; background:transparent; color:var(--ink-2); border-radius:8px;
+  padding:6px 8px; font-size:.79rem; width:100%;
+}
+.src:hover { background:var(--surface-2); color:var(--ink); }
+.src .box {
+  flex:none; width:15px; height:15px; border:1.5px solid var(--border); border-radius:4px;
+  display:inline-flex; align-items:center; justify-content:center; font-size:.62rem; color:var(--on-accent);
+}
+.src.on .box { background:var(--accent); border-color:var(--accent); }
+.src .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.src .n { color:var(--muted); font-size:.72rem; font-variant-numeric:tabular-nums; }
+.src.on { color:var(--ink); font-weight:600; }
+.srcempty { color:var(--muted); font-size:.75rem; padding:6px 8px; }
+
+/* ── แถวสถานะ ────────────────────────────────────────────────────── */
+.statusrow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:16px 2px 10px; }
+.count { font-size:.85rem; font-weight:650; }
+.count .dim { color:var(--muted); font-weight:400; font-size:.8rem; }
+
+/* ── รายการผลลัพธ์ ───────────────────────────────────────────────── */
+.list { display:flex; flex-direction:column; gap:8px; }
+.item {
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:11px 13px;
+}
+.item .top { display:flex; gap:8px; align-items:flex-start; }
+.item a.t {
+  flex:1; min-width:0; color:var(--ink); text-decoration:none; font-size:.92rem;
+  font-weight:600; line-height:1.45;
+}
+.item a.t:hover { color:var(--accent); text-decoration:underline; }
+.item mark { background:var(--mark); color:var(--mark-ink); border-radius:3px; padding:0 1px; }
+.copy {
+  flex:none; border:1px solid var(--border); background:var(--surface); color:var(--muted);
+  border-radius:8px; padding:4px 8px; font-size:.72rem; font-family:inherit; cursor:pointer; line-height:1.4;
+}
+.copy:hover { color:var(--ink); background:var(--surface-2); }
+.copy.done { color:var(--good); border-color:var(--good); }
+.meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:7px; font-size:.73rem; color:var(--muted); }
+.meta .o { color:var(--ink-2); font-weight:600; }
+.meta .sep { opacity:.5; }
+.tag {
+  background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:999px; padding:2px 8px; font-size:.7rem;
+}
+
+/* ── ว่าง / โหลดเพิ่ม ────────────────────────────────────────────── */
+.empty { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+         padding:26px 16px; text-align:center; color:var(--muted); font-size:.86rem; }
+.empty b { display:block; color:var(--ink); font-size:.95rem; margin-bottom:6px; }
+.empty .btn { margin-top:12px; }
+.morewrap { display:flex; justify-content:center; padding:16px 0 0; }
+.morewrap .btn { padding:10px 20px; font-size:.85rem; }
+.loading { color:var(--muted); font-size:.82rem; text-align:center; padding:22px 0; }
+.spin {
+  display:inline-block; width:12px; height:12px; margin-right:7px; vertical-align:-1px;
+  border:2px solid currentColor; border-right-color:transparent; border-radius:50%;
+  animation:sp .7s linear infinite;
+}
+@keyframes sp { to { transform:rotate(360deg); } }
+
+/* ── จอกว้าง ─────────────────────────────────────────────────────── */
+@media (min-width:760px) {
+  .filters { grid-template-columns:repeat(3,1fr); align-items:start; }
+  .item .top { align-items:baseline; }
+  .item a.t { font-size:.95rem; }
+}
