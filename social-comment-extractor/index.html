@@ -138,7 +138,9 @@
   .kw .track span { display:block; height:100%; background:var(--accent); border-radius:999px; }
   .kw .n { text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
 
-  .samples { display:flex; flex-direction:column; gap:9px; }
+  .samples { display:flex; flex-direction:column; gap:16px; }
+  .sample-group { display:flex; flex-direction:column; gap:7px; }
+  .sg-head { font-size:0.74rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
   .sample { border:1px solid var(--border); border-left-width:3px; border-radius:8px; padding:10px 13px; font-size:0.86rem; color:var(--ink-2); background:var(--plane); }
   .sample.pos { border-left-color:var(--pos); }
   .sample.neu { border-left-color:var(--neu); }
@@ -389,6 +391,7 @@ async function demoResult(opts){
       { sentiment:"positive", text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย" },
       { sentiment:"neutral", text:"รสชาติโอเค ตามราคา ไม่ได้หวือหวาอะไร" },
       { sentiment:"negative", text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย" },
+      { sentiment:"negative", text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก"  },
     ] : [],
   };
 }
@@ -446,11 +449,16 @@ function renderResult(d){
 
   const samples = d.samples || [];
   el("sampleCard").style.display = samples.length ? "" : "none";
-  const tagLabel = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
-  const tagColor = { positive:"--pos", neutral:"--neu", negative:"--neg" };
-  el("sampleList").innerHTML = samples.map(x => {
-    const cls = x.sentiment==="positive"?"pos":x.sentiment==="negative"?"neg":"neu";
-    return `<div class="sample ${cls}"><span class="tag" style="color:var(${tagColor[x.sentiment]||'--neu'})">${tagLabel[x.sentiment]||"?"}</span>${escapeHtml(x.text)}</div>`;
+  const groups = [
+    ["positive","บวก 😊","--pos","pos"],
+    ["neutral","กลาง 😐","--neu","neu"],
+    ["negative","ลบ 😞","--neg","neg"],
+  ];
+  el("sampleList").innerHTML = groups.map(([key,label,color,cls]) => {
+    const items = samples.filter(x => x.sentiment === key);
+    if (!items.length) return "";
+    return `<div class="sample-group"><div class="sg-head" style="color:var(${color})">${label}</div>` +
+      items.map(x => `<div class="sample ${cls}">${escapeHtml(x.text)}</div>`).join("") + `</div>`;
   }).join("");
 
   el("results").classList.add("show");

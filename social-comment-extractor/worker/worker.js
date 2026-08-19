@@ -290,7 +290,8 @@ async function synthesize(sampleTexts, wantSamples, env) {
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
     '"keywords": [{"term":"คำ/หัวข้อ","count":จำนวนโดยประมาณ}], (8-12 รายการ เรียงจากมากไปน้อย) ' +
     (wantSamples
-      ? '"samples": [{"sentiment":"positive|neutral|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] (3-5 รายการ คละอารมณ์)'
+      ? '"samples": [{"sentiment":"positive|neutral|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] ' +
+        '(4-6 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 เสมอถ้ามีในข้อมูล และเพิ่ม neutral ได้)'
       : '"samples": []') +
     "} ห้ามมีข้อความนอก JSON และห้ามคัดลอกข้อความต้นฉบับตรงๆ ในตัวอย่าง (ให้ถอดความ)";
   const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined, 1500);
