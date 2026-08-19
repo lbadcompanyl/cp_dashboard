@@ -84,17 +84,32 @@
       };
     });
 
+    /* ชั้นรายวันมาจาก YouTube Analytics — ไม่มีก็ยังใช้ชั้นสาธารณะได้
+       ⚠️ analyticsError = เชื่อมไว้แล้วแต่สิทธิ์พัง คนละเรื่องกับ "ยังไม่ได้ต่อ"
+          ต้องบอกให้ต่างกัน ไม่งั้นไปไล่ตั้งค่าใหม่ทั้งที่ค่ายังถูก */
+    var an = res.data.analytics;
+    var anErr = res.data.analyticsError || "";
+    var hasDaily = !!(an && an.daily && an.daily.length);
+
     return {
-      daily: [],
-      followers: [],
+      daily: hasDaily ? an.daily : [],
+      followers: hasDaily ? (an.followers || []) : [],
       posts: posts,
-      status: {
-        connected: true,
-        partial: true,                 // ← ยังไม่มีตัวเลขรายวัน
-        need: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_REFRESH_TOKEN"],
-        message: "เชื่อมต่อแล้ว แต่ยังไม่มีตัวเลขรายวันย้อนหลัง",
-        why: "YouTube Data API ให้ได้แค่ยอด ณ ตอนนี้ · ตัวเลขรายวันต้องต่อ YouTube Analytics เพิ่ม",
-      },
+      status: hasDaily
+        ? { connected: true, partial: false, need: [], message: "",
+            /* ⚠️ ระดับของเส้นผู้ติดตามเดินถอยมาจากยอดปัจจุบันซึ่ง YouTube ปัดเลขไว้
+               รูปทรงกับยอดเข้า/ออกรายวันเป็นของจริงเป๊ะ แต่ระดับคลาดได้หลักร้อย */
+            approxFollowerLevel: !!an.approxLevel }
+        : {
+            connected: true,
+            partial: true,                 // ← ยังไม่มีตัวเลขรายวัน
+            need: anErr ? [] : ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_REFRESH_TOKEN"],
+            authFailed: !!anErr,
+            message: anErr || "เชื่อมต่อแล้ว แต่ยังไม่มีตัวเลขรายวันย้อนหลัง",
+            why: anErr
+              ? anErr + " — ตัวเลข ณ ตอนนี้กับคลิปล่าสุดยังใช้ได้ตามปกติ"
+              : "YouTube Data API ให้ได้แค่ยอด ณ ตอนนี้ · ตัวเลขรายวันต้องต่อ YouTube Analytics เพิ่ม",
+          },
       now: {
         followers: ch.subs,
         followersApprox: !!ch.subsApprox,

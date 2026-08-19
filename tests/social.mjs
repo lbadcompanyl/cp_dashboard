@@ -1831,6 +1831,110 @@ console.log("\n[44] เปิดหน้ามาต้องขึ้นไอ
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[45] 🔴 ชั้นรายวันจาก YouTube Analytics — ต่อแล้วต้องใช้ได้ทั้งแดชบอร์ด");
+{
+  const DAYS = 400;
+  const days = [], today = new Date();
+  for (let i = DAYS - 1; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 864e5);
+    const v = 3000 + Math.round(2000 * Math.sin(i / 9)) + i * 3;
+    days.push({
+      date: d.toISOString().slice(0, 10), views: v,
+      likes: Math.round(v * 0.04), comments: Math.round(v * 0.004), shares: Math.round(v * 0.006),
+      watchTime: Math.round(v * 0.05), avgViewDuration: 180 + (i % 40),
+      completionRate: 0.35 + (i % 20) / 100, gained: 40 + (i % 15), lost: 12 + (i % 7),
+    });
+  }
+  let run = 41000;
+  const followers = [];
+  for (let i = days.length - 1; i >= 0; i--) {
+    followers[i] = { date: days[i].date, value: run, gained: days[i].gained, lost: days[i].lost };
+    run -= days[i].gained - days[i].lost;
+  }
+
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  const body = (b) => ({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  await pg.route("**/social/api/youtube", (r) => r.fulfill(body({
+    ok: true, status: "ok", need: [], message: "", at: 1,
+    data: {
+      channel: { id: "UC1", title: "ช่อง", subs: 41000, subsApprox: true, views: 5200000, videos: 1100, url: "#" },
+      videos: [{ id: "v1", title: "คลิปหนึ่ง", at: new Date(Date.now() - 3 * 864e5).toISOString(),
+                 thumb: "", url: "https://youtu.be/v1", views: 12345, likes: 890, comments: 45 }],
+      analytics: { daily: days, followers, approxLevel: true },
+    } })));
+  for (const k of ["tiktok", "facebook"]) {
+    await pg.route(`**/social/api/${k}`, (r) => r.fulfill(body({
+      ok: false, status: "not-configured", need: ["X"], message: "" })));
+  }
+
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".grid4 .sc", { timeout: 5000 });
+
+  /* 🔴 มีตัวเลขรายวันแล้ว = เลิกเป็นสถานะ partial ต้องใช้ได้ทั้งหน้า
+     ⚠️ ถ้ายังขึ้นการ์ด "ยังไม่มีตัวเลขรายวัน" แปลว่าตัวแปลงไม่ได้อ่าน analytics.daily */
+  ok((await pg.$$(".partial")).length === 0, "ไม่ขึ้นการ์ด 'ยังไม่มีตัวเลขรายวัน' แล้ว");
+  ok((await pg.$$(".grid4 .sc")).length === 4, "หน้าภาพรวมมีการ์ดสรุปครบ");
+  ok(/1 ช่อง/.test(await pg.$eval(".grid4 .sc-l", (e) => e.textContent)), "นับเฉพาะช่องที่มีข้อมูลรายวัน");
+
+  const pts = await pg.evaluate(() => (document.querySelector("svg.chart").getAttribute("d") ? 0 :
+    (document.querySelector("svg.chart path").getAttribute("d").match(/[ML]/g) || []).length));
+  ok(pts === 30, `กราฟวาดครบ 30 จุดตามช่วง 30 วัน (${pts})`);
+
+  // ตารางต้องมีตัวเลขจริง ไม่ใช่ "—" ทั้งแถว
+  const row = await pg.$$eval(".tbl.perf tbody tr:first-child td", (n) => n.map((x) => x.innerText.trim()));
+  ok(row.filter((x) => x !== "—").length >= 3, `ตารางมีตัวเลขจริง (${row.join(" | ").replace(/\n/g, " ")})`);
+
+  // แท็บรายช่องต้องมีกราฟ 2 อันเหมือนช่องปกติ
+  await tabTo(pg, "YouTube");
+  ok((await pg.$$("svg.chart")).length === 2, "แท็บรายช่องมีกราฟรายวันครบ 2 อัน");
+  const cards = await pg.$$eval(".scgrid .sc-v", (n) => n.map((x) => x.textContent.trim()));
+  ok(cards.some((x) => /K|M/.test(x)), `การ์ดของช่องมีตัวเลขจริง (${cards.join(" / ")})`);
+
+  /* ⚠️ ผู้ติดตามสะสมย้อนหลังเดินถอยมาจากยอดปัจจุบันซึ่ง YouTube ปัดเลขไว้
+     ระดับของเส้นจึงคลาดได้หลักร้อย — ยอดล่าสุดต้องเท่ากับที่ต้นทางบอกเป๊ะ */
+  const last = followers[followers.length - 1].value;
+  ok(last === 41000, `ยอดผู้ติดตามวันล่าสุดตรงกับที่ต้นทางบอก (${last})`);
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[46] 🔴 สิทธิ์ Analytics พัง แต่ชั้นสาธารณะต้องยังใช้ได้");
+{
+  /* ⚠️ ห้ามทิ้งของที่ได้มาแล้วทั้งหมดเพราะชั้นที่ 2 พัง
+     ยอดผู้ติดตามกับคลิปล่าสุดยังเป็นของจริงและยังใช้ได้ */
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  const body = (b) => ({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  await pg.route("**/social/api/youtube", (r) => r.fulfill(body({
+    ok: true, status: "ok", need: [], message: "", at: 1,
+    data: {
+      channel: { id: "UC1", title: "ช่อง", subs: 41000, subsApprox: true, views: 5200000, videos: 1100, url: "#" },
+      videos: [{ id: "v1", title: "คลิปหนึ่ง", at: "2026-08-15T00:00:00Z", thumb: "",
+                 url: "https://youtu.be/v1", views: 12345, likes: 890, comments: 45 }],
+      analytics: null,
+      analyticsError: "สิทธิ์ของ YouTube Analytics หมดอายุหรือถูกถอน — ต้องกดขออนุญาตใหม่",
+    } })));
+  for (const k of ["tiktok", "facebook"]) {
+    await pg.route(`**/social/api/${k}`, (r) => r.fulfill(body({
+      ok: false, status: "not-configured", need: ["X"], message: "" })));
+  }
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".partial", { timeout: 5000 });
+  await tabTo(pg, "YouTube");
+  const v = await pg.$eval("#view", (e) => e.innerText);
+  ok(/หมดอายุ/.test(v), "บอกว่าสิทธิ์ของชั้นรายวันหมดอายุ");
+  ok(/41K/.test(v), "ยอดผู้ติดตามที่ได้มาแล้วยังแสดงอยู่");
+  ok(/คลิปหนึ่ง/.test(v), "คลิปล่าสุดยังแสดงอยู่");
+  ok(!/GOOGLE_CLIENT_ID/.test(v), "ไม่บอกให้ไปใส่ค่าใหม่ (ค่ายังถูกอยู่ ต้องแค่ขอสิทธิ์ใหม่)");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);

@@ -11,7 +11,32 @@
 import { ST, payload, cached, missingEnv, fetchJSON } from "../_lib/store.js";
 
 // ⭐ บวกเลขนี้ทุกครั้งที่แก้โครงข้อมูลที่คืนออกไป ไม่งั้นผู้ใช้จะเห็นของเก่าค้างเป็นชั่วโมง
-const DATA_VER = "1";
+const DATA_VER = "2";
+
+/* ── ชั้นที่ 2: YouTube Analytics (ตัวเลขรายวัน) ─────────────────────────
+ * ต้องมี refresh token ที่ได้จาก /social/api/connect?p=google
+ * ไม่มีก็ไม่พัง — คืนเฉพาะชั้นสาธารณะเหมือนเดิม แล้วติดธงให้หน้าเว็บรู้
+ *
+ * ⚠️ refresh token ของแอปที่ยังไม่ได้ publish จะหมดอายุทุก 7 วัน
+ *    ตอนหมดต้องคืน AUTH_FAILED ไม่ใช่ NOT_CONFIGURED — คนละวิธีแก้กัน
+ */
+const OAUTH_TOKEN = "https://oauth2.googleapis.com/token";
+const ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports";
+
+/* ดึงย้อนหลังกี่วัน — ต้องคลุมช่วงที่ยาวที่สุดที่หน้าเว็บเลือกได้ (12 เดือน + เทียบปีก่อน)
+   ⚠️ ขอทีเดียวยาวๆ แล้ว cache ดีกว่าขอทีละช่วงตามที่ผู้ใช้เลือก —
+      ผู้ใช้เปลี่ยนช่วงเวลาบ่อยมาก ขอใหม่ทุกครั้งจะยิงต้นทางรัวๆ โดยไม่จำเป็น */
+const ANALYTICS_DAYS = 760;
+
+const METRICS = [
+  "views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
+  "likes", "comments", "shares", "subscribersGained", "subscribersLost",
+].join(",");
+
+function ymd(d) {
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") +
+    "-" + String(d.getUTCDate()).padStart(2, "0");
+}
 
 const API = "https://www.googleapis.com/youtube/v3";
 const MAX_VIDEOS = 12;      // พอสำหรับ "คลิปล่าสุด/ดังสุด" ไม่ต้องดึงทั้งช่อง
@@ -144,5 +169,121 @@ async function buildYouTube(env, ch) {
     }
   }
 
-  return payload({ status: ST.OK, data: { channel, videos } });
+  // ── 4) ชั้นรายวันจาก YouTube Analytics (ถ้าเชื่อมไว้) ────────────────
+  const an = await buildAnalytics(env, channel);
+  if (an && an.authFailed) {
+    /* ⚠️ ได้ข้อมูลสาธารณะมาแล้ว แต่สิทธิ์ของชั้นรายวันหมดอายุ
+       ห้ามทิ้งของที่ได้มาแล้วทั้งหมด — คืนไปด้วย พร้อมบอกว่าชั้นไหนพัง */
+    return payload({
+      status: ST.OK,
+      data: { channel, videos, analytics: null, analyticsError: an.message },
+    });
+  }
+
+  return payload({
+    status: ST.OK,
+    data: { channel, videos, analytics: an ? an.data : null },
+  });
+}
+
+/** แลก refresh token เป็น access token — อายุ 1 ชม. ไม่ต้องเก็บ ใช้แล้วทิ้ง */
+async function accessToken(env) {
+  const r = await fetch(OAUTH_TOKEN, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      refresh_token: env.YT_REFRESH_TOKEN,
+      grant_type: "refresh_token",
+    }).toString(),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !j.access_token) {
+    /* 🔴 invalid_grant = refresh token หมดอายุหรือถูกถอนสิทธิ์
+       เกิดแน่ๆ กับแอปที่ยังไม่ได้ publish (Google ให้ token อายุ 7 วัน) */
+    const why = (j && (j.error_description || j.error)) || `HTTP ${r.status}`;
+    return { error: /invalid_grant/i.test(String(j && j.error)) ? "expired" : "failed", message: why };
+  }
+  return { token: j.access_token };
+}
+
+/**
+ * รายงานรายวันของช่องตัวเอง
+ * ⚠️ Analytics ให้ "ผู้ติดตามเข้า/ออกรายวัน" ไม่ได้ให้ "ยอดสะสมรายวัน"
+ *    ยอดสะสมย้อนหลังจึงต้องเดินถอยจากยอดปัจจุบัน — ดูหมายเหตุตรงจุดที่คำนวณ
+ */
+async function buildAnalytics(env, channel) {
+  const miss = missingEnv(env, ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_REFRESH_TOKEN"]);
+  if (miss.length) return null;          // ยังไม่ได้ต่อชั้นนี้ — ไม่ใช่ข้อผิดพลาด
+
+  const tk = await accessToken(env);
+  if (tk.error) {
+    return { authFailed: true, message: tk.error === "expired"
+      ? "สิทธิ์ของ YouTube Analytics หมดอายุหรือถูกถอน — ต้องกดขออนุญาตใหม่"
+      : "ขอสิทธิ์ YouTube Analytics ไม่สำเร็จ: " + tk.message };
+  }
+
+  const end = new Date();
+  const start = new Date(end.getTime() - ANALYTICS_DAYS * 864e5);
+  const u = ANALYTICS + "?" + new URLSearchParams({
+    ids: "channel==MINE",
+    startDate: ymd(start),
+    endDate: ymd(end),
+    dimensions: "day",
+    metrics: METRICS,
+    sort: "day",
+  }).toString();
+
+  const r = await fetch(u, { headers: { authorization: "Bearer " + tk.token } });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j || !Array.isArray(j.rows)) {
+    const why = (j && j.error && j.error.message) || `HTTP ${r.status}`;
+    // 403 ตรงนี้มักแปลว่าบัญชีที่กดอนุญาตไม่ได้เป็นเจ้าของช่องนี้
+    return { authFailed: r.status === 401 || r.status === 403, message: why };
+  }
+
+  const col = {};
+  (j.columnHeaders || []).forEach((h, i) => { col[h.name] = i; });
+  const at = (row, name) => {
+    const i = col[name];
+    return i == null ? null : row[i];
+  };
+
+  const daily = j.rows.map((row) => ({
+    date: at(row, "day"),
+    views: at(row, "views") || 0,
+    likes: at(row, "likes") || 0,
+    comments: at(row, "comments") || 0,
+    shares: at(row, "shares") || 0,
+    watchTime: Math.round((at(row, "estimatedMinutesWatched") || 0) / 60),   // ชั่วโมง
+    avgViewDuration: at(row, "averageViewDuration") || 0,                    // วินาที
+    completionRate: (at(row, "averageViewPercentage") || 0) / 100,           // 0–1
+    gained: at(row, "subscribersGained") || 0,
+    lost: at(row, "subscribersLost") || 0,
+  }));
+
+  /* ── ยอดผู้ติดตามสะสมรายวัน ─────────────────────────────────────────
+   * 🔴 Analytics ไม่ให้ยอดสะสม ให้แต่เข้า/ออกรายวัน — ต้องเดินถอยจากยอดปัจจุบัน
+   * ⚠️ ยอดปัจจุบันที่ใช้เป็นจุดตั้งต้นมาจาก Data API ซึ่ง **ถูกปัดเป็นเลขนัยสำคัญ 3 ตัว**
+   *    (52,437 → 52,400) ดังนั้น "ระดับ" ของเส้นคลาดได้ถึงหลักร้อย
+   *    แต่ "รูปทรง" กับ "ยอดเข้า/ออกรายวัน" เป็นตัวเลขจริงเป๊ะ
+   *    → หน้าเว็บต้องติดป้ายว่าระดับเป็นค่าประมาณ ห้ามเอาไปอ้างเป็นเลขเป๊ะ
+   * ⚠️ เดินถอยจากวันล่าสุดไปหลัง ไม่ใช่เดินหน้าจากวันแรก — จุดที่เรารู้ค่าจริงคือวันนี้
+   */
+  const followers = [];
+  if (channel.subs != null && daily.length) {
+    let running = channel.subs;
+    for (let i = daily.length - 1; i >= 0; i--) {
+      followers[i] = {
+        date: daily[i].date,
+        value: running,
+        gained: daily[i].gained,
+        lost: daily[i].lost,
+      };
+      running -= (daily[i].gained - daily[i].lost);
+    }
+  }
+
+  return { data: { daily, followers, approxLevel: true } };
 }
