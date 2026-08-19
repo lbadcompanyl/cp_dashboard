@@ -226,20 +226,39 @@ async function buildAnalytics(env, channel) {
 
   const end = new Date();
   const start = new Date(end.getTime() - ANALYTICS_DAYS * 864e5);
-  const u = ANALYTICS + "?" + new URLSearchParams({
-    ids: "channel==MINE",
-    startDate: ymd(start),
-    endDate: ymd(end),
-    dimensions: "day",
-    metrics: METRICS,
-    sort: "day",
-  }).toString();
 
-  const r = await fetch(u, { headers: { authorization: "Bearer " + tk.token } });
-  const j = await r.json().catch(() => null);
+  const ask = async (ids) => {
+    const u = ANALYTICS + "?" + new URLSearchParams({
+      ids, startDate: ymd(start), endDate: ymd(end),
+      dimensions: "day", metrics: METRICS, sort: "day",
+    }).toString();
+    const r = await fetch(u, { headers: { authorization: "Bearer " + tk.token } });
+    const j = await r.json().catch(() => null);
+    return { r, j };
+  };
+
+  /* 🔴 ถามด้วย "รหัสช่องตรงๆ" ก่อน แล้วค่อยตกไปที่ channel==MINE
+   *    เหตุผล: ถ้าบัญชีที่กดอนุญาตไม่ได้เป็นเจ้าของช่องนี้
+   *    - ถามด้วยรหัสช่อง → ตอบ 403 บอกชัดว่าไม่มีสิทธิ์ ← เราอยากได้แบบนี้
+   *    - ถาม channel==MINE → ตอบ 200 พร้อมข้อมูลของ "ช่องของบัญชีนั้น" ซึ่งอาจว่างเปล่า
+   *      = ได้ตัวเลข 0 ทั้งกระดานโดยไม่มีอะไรบอกว่าผิดช่อง (เจอจริง 19 ส.ค. 2026)
+   *    ⚠️ ห้ามสลับลำดับ — ตกไป MINE ก่อนแล้วเจอศูนย์ จะไล่หาสาเหตุไม่เจอเลย
+   */
+  let { r, j } = channel.id ? await ask("channel==" + channel.id) : { r: null, j: null };
+  let usedMine = false;
+  if (!r || !r.ok) {
+    const first = r;
+    ({ r, j } = await ask("channel==MINE"));
+    usedMine = true;
+    if (!r.ok && first && (first.status === 401 || first.status === 403)) {
+      return { authFailed: true,
+        message: "บัญชี Google ที่กดอนุญาตไม่มีสิทธิ์อ่านสถิติของช่องนี้ — " +
+          "ต้องกดอนุญาตด้วยบัญชีที่เป็นเจ้าของหรือผู้จัดการของช่อง" };
+    }
+  }
+
   if (!r.ok || !j || !Array.isArray(j.rows)) {
     const why = (j && j.error && j.error.message) || `HTTP ${r.status}`;
-    // 403 ตรงนี้มักแปลว่าบัญชีที่กดอนุญาตไม่ได้เป็นเจ้าของช่องนี้
     return { authFailed: r.status === 401 || r.status === 403, message: why };
   }
 
@@ -283,6 +302,21 @@ async function buildAnalytics(env, channel) {
       };
       running -= (daily[i].gained - daily[i].lost);
     }
+  }
+
+  /* 🔴 ด่านกันเคส "ได้ 200 แต่เป็นศูนย์ทั้งกระดาน" (เจอจริง 19 ส.ค. 2026)
+   * เกิดตอนบัญชีที่กดอนุญาตไม่ใช่เจ้าของช่องนี้ แล้ว channel==MINE ไปหยิบ
+   * ช่องเปล่าของบัญชีนั้นมาแทน — API ตอบสำเร็จ ไม่มี error อะไรเลย
+   * ⚠️ ปล่อยผ่านคือหน้าเว็บจะโชว์ 0 ทุกช่องเหมือนช่องไม่มีคนดู ซึ่งผิดและหาสาเหตุยากมาก
+   *    เทียบกับยอดวิวสะสมจาก Data API ซึ่งเป็นของช่องที่ถูกแน่ๆ (ระบุด้วยชื่อช่อง)
+   */
+  const sumViews = daily.reduce((t, x) => t + (x.views || 0), 0);
+  if (!sumViews && channel.views > 0) {
+    return { authFailed: true,
+      message: usedMine
+        ? "ดึงสถิติมาได้แต่เป็นศูนย์ทั้งหมด — แปลว่าบัญชี Google ที่กดอนุญาต " +
+          "ไม่ใช่เจ้าของช่องนี้ (ไปหยิบสถิติของอีกช่องมาแทน) ต้องกดอนุญาตใหม่ด้วยบัญชีที่เป็นเจ้าของช่อง"
+        : "ดึงสถิติมาได้แต่เป็นศูนย์ทั้งหมด — ตรวจว่าช่องที่ตั้งไว้กับบัญชีที่กดอนุญาตเป็นช่องเดียวกันหรือไม่" };
   }
 
   return { data: { daily, followers, approxLevel: true } };

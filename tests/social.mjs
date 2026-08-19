@@ -1935,6 +1935,65 @@ console.log("\n[46] 🔴 สิทธิ์ Analytics พัง แต่ชั�
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[47] 🔴 ตัวเลขผู้ติดตามห้ามย่อ + ไม่มีคนเข้าออกต้องบอกว่าไม่มี");
+{
+  const { pg } = await open();
+  /* 🔴 เจ้าของแจ้ง 19 ส.ค. 2026 ว่า "follower โดนตัด" — ย่อเป็น 41K แล้ว
+     ส่วนต่างหลักร้อยคนมองไม่เห็นเลย ทั้งที่เป็นตัวเลขที่คนดูบ่อยที่สุด */
+  const v = await pg.$eval(".grid4 .sc-v", (e) => e.textContent.trim());
+  ok(/,/.test(v), `ผู้ติดตามโชว์เลขเต็มมีลูกน้ำคั่น (${v})`);
+  ok(!/[KM]$/.test(v), `ไม่ย่อเป็น K/M (${v})`);
+
+  // ⚠️ ยอดวิว/engagement ยังย่ออยู่โดยตั้งใจ — หลักล้าน เขียนเต็มแล้วอ่านยากกว่า
+  const others = await pg.$$eval(".grid4 .sc-v", (n) => n.slice(1, 3).map((x) => x.textContent.trim()));
+  ok(others.some((x) => /[KM]/.test(x)), `ยอดวิว/engagement ยังย่อเป็น K/M (${others.join(" / ")})`);
+
+  // การ์ดผู้ติดตามต้องมีคำอธิบายว่าตัวเลขถูกปัดมาจากต้นทาง
+  const tip = await pg.$eval(".grid4 .sc .tipi", (e) => e.getAttribute("title") || "");
+  ok(/ปัด/.test(tip), "บอกไว้ว่าต้นทางปัดตัวเลขมาให้");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[48] 🔴 Analytics ตอบ 200 แต่เป็นศูนย์ทั้งชุด = ผิดช่อง ไม่ใช่ช่องไม่มีคนดู");
+{
+  /* 🔴 เจอจริง 19 ส.ค. 2026 — บัญชี Google ที่กดอนุญาตไม่ใช่เจ้าของช่อง
+     channel==MINE เลยไปหยิบช่องเปล่าของบัญชีนั้นมาแทน API ตอบสำเร็จ ไม่มี error
+     ⚠️ ปล่อยผ่าน = หน้าเว็บโชว์ 0 ทุกช่องเหมือนช่องไม่มีคนดู ซึ่งผิดและหาสาเหตุยากมาก
+        (โพสต์รายใบมีตัวเลขจริงอยู่ ทำให้ยิ่งงงว่าทำไมยอดรวมเป็น 0) */
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  const body = (b) => ({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  await pg.route("**/social/api/youtube", (r) => r.fulfill(body({
+    ok: true, status: "ok", need: [], message: "", at: 1,
+    data: {
+      channel: { id: "UC1", title: "ช่อง", subs: 41000, subsApprox: true, views: 5200000, videos: 1100, url: "#" },
+      videos: [{ id: "v1", title: "EP.90", at: "2026-08-01T00:00:00Z", thumb: "",
+                 url: "https://youtu.be/v1", views: 4500, likes: 55, comments: 0 }],
+      analytics: null,
+      analyticsError: "ดึงสถิติมาได้แต่เป็นศูนย์ทั้งหมด — แปลว่าบัญชี Google ที่กดอนุญาต " +
+        "ไม่ใช่เจ้าของช่องนี้ (ไปหยิบสถิติของอีกช่องมาแทน) ต้องกดอนุญาตใหม่ด้วยบัญชีที่เป็นเจ้าของช่อง",
+    } })));
+  for (const k of ["tiktok", "facebook"]) {
+    await pg.route(`**/social/api/${k}`, (r) => r.fulfill(body({
+      ok: false, status: "not-configured", need: ["X"], message: "" })));
+  }
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".partial", { timeout: 5000 });
+  await tabTo(pg, "YouTube");
+  const v = await pg.$eval("#view", (e) => e.innerText);
+  ok(/ไม่ใช่เจ้าของช่องนี้/.test(v), "บอกสาเหตุจริงว่ากดอนุญาตผิดบัญชี");
+  ok(/กดอนุญาตใหม่/.test(v), "บอกวิธีแก้");
+  /* ⚠️ ห้ามโชว์ 0 เป็นตัวเลขของช่อง — ตัวเลขที่ผิดแย่กว่าไม่มีตัวเลข */
+  ok((await pg.$$(".grid4")).length === 0, "ไม่โชว์การ์ดยอดรวมที่เป็น 0");
+  ok(/41,?000|41K/.test(v), "ยอดผู้ติดตามที่ได้จากชั้นสาธารณะยังแสดงอยู่");
+  ok(/EP\.90/.test(v), "คลิปล่าสุดยังแสดงอยู่");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);

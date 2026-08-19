@@ -387,6 +387,8 @@
     return s + Math.round(v).toLocaleString("th-TH");
   }
   function pct(v) { return v == null || isNaN(v) ? null : (v * 100).toFixed(2).replace(/\.?0+$/, "") + "%"; }
+  /** เลขเต็มมีลูกน้ำคั่น — ใช้กับค่าที่ "ส่วนต่างหลักร้อยมีความหมาย" เช่นยอดผู้ติดตาม */
+  function full(v) { return v == null || isNaN(v) ? null : Math.round(v).toLocaleString("th-TH"); }
   function dur(sec) {
     if (sec == null) return null;
     var m = Math.floor(sec / 60);
@@ -692,10 +694,15 @@
     var nch = " (" + order.length + " ช่อง)";
 
     h += '<div class="grid4">' +
-      card({ label: "ผู้ติดตามรวม" + nch, value: num(tf), delta: delta(tf, cr ? pf : null),
+      /* 🔴 ผู้ติดตามโชว์เลขเต็ม ไม่ย่อเป็น K (เจ้าของแจ้ง 19 ส.ค. 2026 ว่า "โดนตัด")
+         ย่อเป็น 41K แล้วเลขที่ต่างกัน 400 คนมองไม่เห็นเลย ซึ่งเป็นตัวเลขที่คนดูบ่อยที่สุด
+         ⚠️ ยอดวิว/engagement ยังย่ออยู่โดยตั้งใจ — หลักล้าน เขียนเต็มแล้วอ่านยากกว่า */
+      card({ label: "ผู้ติดตามรวม" + nch, value: full(tf), delta: delta(tf, cr ? pf : null),
+             tip: "ตัวเลขจาก YouTube ถูกปัดเป็นเลขนัยสำคัญ 3 ตัวก่อนส่งมา (เช่น 41,437 จะได้มาเป็น 41,400) " +
+                  "จึงใช้ดูระดับได้ แต่เอาไปนับว่าวันนี้เพิ่มกี่คนไม่ได้ — ยอดเพิ่ม/หายรายวันดูที่กราฟข้างๆ",
              extra: bd(function (a, b, pk) {
                var g = growth(pk, r), pg2 = cr ? growth(pk, cr) : null;
-               return { text: g ? num(g.end) : null, cur: g ? g.end : null, prev: pg2 ? pg2.end : null };
+               return { text: g ? full(g.end) : null, cur: g ? g.end : null, prev: pg2 ? pg2.end : null };
              }) }) +
       card({ label: "Views / Reach รวม" + nch, value: num(tv),
              tip: "YouTube และ TikTok นับเป็น Views (จำนวนครั้งที่ถูกเปิดดู) · Facebook นับเป็น Reach (จำนวนคนที่เห็นโพสต์) สองอย่างนี้ไม่ใช่หน่วยเดียวกัน แต่รวมไว้เพื่อดูภาพกว้าง",
@@ -772,7 +779,12 @@
         sec("ผู้ติดตามที่เพิ่มและที่หายไป", null,
           "แท่งแดงยื่นซ้ายคือคนที่เลิกติดตาม แท่งเขียวยื่นขวาคือคนที่เพิ่งติดตาม ทุกช่องใช้มาตราส่วนเดียวกัน " +
           "ยอดสุทธิเท่ากันไม่ได้แปลว่าเหมือนกัน — ได้ 500 เสีย 480 คนละเรื่องกับ ได้ 30 เสีย 10") +
-        '<div class="panel">' + (glRows.length ? CH.diverging(glRows) : empty("ไม่มีข้อมูลผู้ติดตามในช่วงนี้")) + "</div>" +
+        /* ⚠️ ทุกช่องเป็น 0 = วาดแท่งความยาว 0 ได้กล่องเปล่าที่ดูเหมือนหน้าพัง
+           ต้องบอกว่า "ไม่มีคนเข้าออกเลย" ซึ่งเป็นข้อมูลจริง ไม่ใช่ความว่างเปล่า */
+        '<div class="panel">' + (glRows.some(function (x) { return x.gained || x.lost; })
+          ? CH.diverging(glRows)
+          : empty("ไม่มีคนติดตามเข้าหรือออกเลยในช่วงนี้",
+                  glRows.length ? "ถ้าคิดว่าไม่น่าใช่ ให้ตรวจว่าดึงสถิติมาจากช่องที่ถูกต้องหรือไม่" : "")) + "</div>" +
       "</div>" +
       "</div>";
 
@@ -1292,8 +1304,8 @@
     // ⚠️ เดิมแยกเป็น 2 กริด ทำให้ TikTok เหลือใบ "ดูจนจบ" ลอยเดี่ยวท้ายแถว
     //    รวมเป็นกริดเดียวแล้วสั่งจำนวนคอลัมน์ตามจำนวนใบจริง (--n)
     var cards = [
-      { label: "ผู้ติดตาม", value: g ? num(g.end) : null, d: delta(g ? g.end : null, pg ? pg.end : null) },
-      { label: "เพิ่มสุทธิในช่วงนี้", value: g ? num(g.net) : null, d: delta(g ? g.net : null, pg ? pg.net : null) },
+      { label: "ผู้ติดตาม", value: g ? full(g.end) : null, d: delta(g ? g.end : null, pg ? pg.end : null) },
+      { label: "เพิ่มสุทธิในช่วงนี้", value: g ? full(g.net) : null, d: delta(g ? g.net : null, pg ? pg.net : null) },
       { label: P.reachLabel, value: num(a.reach), d: delta(a.reach, b ? b.reach : null) },
       { label: P.erLabel, value: pct(a.er), tip: P.erFormula + " · " + P.erNote, d: delta(a.er, b ? b.er : null, { pp: true }) },
     ];
