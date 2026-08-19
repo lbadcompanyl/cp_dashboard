@@ -122,9 +122,62 @@ console.log("\n[5] 🔴 แกน Y กราฟผู้ติดตาม — 
        `${days} วัน: ไม่ใช่ค่าที่ปัดจนเหลือ 100/101 แบบเดิม`);
   }
   const v = await view(pg);
-  ok(/% เปลี่ยนแปลงสะสมจากวันแรก/.test(v), "คำบรรยายตรงกับวิธีคิดใหม่");
+  ok(/% สะสมจากวันแรก/.test(v), "คำบรรยายตรงกับวิธีคิดใหม่");
   ok(!/เริ่มที่ 100/.test(v), "ไม่มีคำอธิบายของวิธีเดิม (index 100) ค้างอยู่");
   await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[5b] 🔴 แนวโน้มมาก่อน — ผู้ติดตาม แล้วตามด้วย engagement/views คู่ซ้าย-ขวา");
+{
+  const { pg, errs } = await open();
+  const order = await secs(pg);
+  const clean = order.map((s) => s.replace(/ⓘ.*/, "").trim());
+  ok(/แนวโน้มผู้ติดตาม/.test(clean[0]), `หัวข้อแรกคือแนวโน้มผู้ติดตาม (ได้ "${clean[0]}")`);
+  ok(/เพิ่มและที่หายไป/.test(clean[1]), "คู่กับผู้ติดตามที่เพิ่ม/หาย (เรื่องเดียวกัน 2 มุม)");
+  ok(/การมีส่วนร่วมรายวัน/.test(clean[2]), "แถวถัดมาเป็นการมีส่วนร่วมรายวัน");
+  ok(/การมองเห็นรายวัน/.test(clean[3]), "คู่กับการมองเห็นรายวัน");
+  const iTable = clean.findIndex((x) => /ผลงานรายช่อง/.test(x));
+  ok(iTable > 3, "ตารางรายช่องอยู่หลังกลุ่มแนวโน้ม");
+
+  ok((await pg.$$("svg.chart")).length === 3, "มีกราฟเส้น 3 อันบนหน้าภาพรวม");
+
+  // ⚠️ กราฟผู้ติดตามเคยสูงเกินจำเป็นจนกินทั้งหน้าจอ — ต้องย่อลงแล้วมีของวางข้างๆ
+  const fh = await pg.$eval("svg.chart", (e) => e.getBoundingClientRect().height);
+  ok(fh < 190, `กราฟผู้ติดตามไม่สูงเกินไป (${Math.round(fh)}px)`);
+
+  // ซ้าย-ขวาบนจอกว้าง — ทั้ง 2 แถว
+  const duos = await pg.$$eval(".duo", (n) => n.map((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length));
+  ok(duos.length === 2, `มีแถวคู่ซ้าย-ขวา 2 แถว (${duos.length})`);
+  ok(duos.every((c) => c === 2), `ทุกแถวเป็น 2 คอลัมน์บนจอกว้าง (${duos})`);
+  const side = await pg.$$eval(".duo .duo-c .panel", (n) => n.map((e) => Math.round(e.getBoundingClientRect().top)));
+  ok(Math.abs(side[0] - side[1]) < 8 && Math.abs(side[2] - side[3]) < 8, "กล่องซ้าย-ขวาของแต่ละแถวอยู่ระดับเดียวกัน");
+
+  // ⚠️ ทุกช่องต้องวางบนแกนเวลาชุดเดียวกัน — จำนวนจุดต้องเท่ากันทุกเส้น
+  const same = await pg.evaluate(() => {
+    const svg = document.querySelectorAll("svg.chart")[1];
+    const counts = [...svg.querySelectorAll("path")].map((p) => (p.getAttribute("d").match(/[ML]/g) || []).length);
+    return new Set(counts).size === 1;
+  });
+  ok(same, "ทุกเส้นในกราฟเดียวกันมีจำนวนจุดเท่ากัน (แกนเวลาชุดเดียว)");
+
+  // ชิพต้องคุมกราฟใหม่ด้วย
+  const before = await pg.$$eval("svg.chart", (n) => n.map((s) => s.querySelectorAll("path").length));
+  const dvBefore = (await pg.$$(".dv-row")).length;
+  await pg.click('[data-ch="tiktok"]');
+  await pg.waitForTimeout(200);
+  const after = await pg.$$eval("svg.chart", (n) => n.map((s) => s.querySelectorAll("path").length));
+  ok(after.every((v, i) => v === before[i] - 1), `ปิดช่องแล้วทุกกราฟลดเส้น (${before} → ${after})`);
+  ok((await pg.$$(".dv-row")).length === dvBefore - 1, "แท่งเพิ่ม/หายที่อยู่ข้างกันก็ลดตาม");
+  ok(!/TikTok/.test(await pg.$$eval(".duo", (n) => n.map((e) => e.innerText).join())), "legend ของกราฟคู่ไม่มี TikTok เหลือ");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+
+  // จอแคบยุบเป็นบน-ล่าง
+  const { pg: m } = await open({ width: 390, height: 900 });
+  const mduo = await m.$eval(".duo", (e) => getComputedStyle(e).gridTemplateColumns.split(" ").length);
+  ok(mduo === 1, "มือถือยุบเป็นคอลัมน์เดียว");
+  await m.close();
 }
 
 /* ────────────────────────────────────────────────────────────────── */
@@ -578,6 +631,87 @@ console.log("\n[19] ข้อมูลจำลอง + ฟีเจอร์ม
   ok(!!meta.ver && meta.pwa && meta.home && meta.vtag && meta.noindex, "ฟีเจอร์มาตรฐานครบ");
   ok(meta.ext.length === 0, "ไม่โหลดอะไรจากภายนอกเลย (" + (meta.ext.join(",") || "ไม่มี") + ")");
   await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[20] 🔴 โหมดสว่าง — ต้องใช้ชุดสีเดียวกับ /trend/ /ir/ /issue/");
+{
+  // ความสว่างตามสูตรของ WCAG (ต้องแปลง gamma ก่อน ไม่ใช่เฉลี่ย RGB ดิบ)
+  const lum = (rgb) => {
+    const [r, g, b] = String(rgb).match(/\d+/g).map(Number).slice(0, 3).map((v) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a, b) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  const { pg } = await open();
+  const c = await pg.evaluate(() => {
+    const g = (el) => getComputedStyle(el);
+    return {
+      bg: g(document.body).backgroundColor,
+      fg: g(document.body).color,
+      panel: g(document.querySelector(".panel")).backgroundColor,
+      muted: g(document.querySelector(".sc-l")).color,
+      scheme: g(document.documentElement).colorScheme,
+      theme: document.querySelector('meta[name="theme-color"]').content,
+    };
+  });
+  ok(lum(c.bg) > 0.8, `พื้นหลังเป็นสีสว่าง (${c.bg})`);
+  ok(lum(c.fg) < 0.3, `ตัวอักษรเป็นสีเข้ม (${c.fg})`);
+  ok(c.scheme === "light", "ประกาศ color-scheme เป็น light (ช่องกรอกวันที่จะได้ไม่เป็นธีมมืด)");
+  ok(lum(c.theme.match(/\d+/) ? c.theme : "#fff") !== null && /^#f/i.test(c.theme), `theme-color เป็นสีสว่าง (${c.theme})`);
+  // WCAG AA ต้องการ 4.5:1 สำหรับตัวอักษรขนาดปกติ
+  ok(contrast(c.fg, c.bg) >= 4.5, `ตัวอักษรหลักผ่านเกณฑ์อ่านง่าย (${contrast(c.fg, c.bg).toFixed(1)}:1)`);
+  ok(contrast(c.muted, c.panel) >= 4.5, `ตัวอักษรจางยังผ่านเกณฑ์ (${contrast(c.muted, c.panel).toFixed(1)}:1)`);
+
+  // ⚠️ สีของช่องต้องอ่านออกบนพื้นขาว — สีเดิม #25f4ee จางจนเส้นกราฟหาย
+  const lines = await pg.$$eval("svg.chart path[stroke]", (n) => n.map((e) => e.getAttribute("stroke")));
+  const weak = lines.filter((s) => {
+    const m = s.match(/^#(..)(..)(..)$/);
+    if (!m) return false;
+    const [r, g, b] = m.slice(1).map((h) => parseInt(h, 16));
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.6;   // สว่างเกินไปบนพื้นขาว
+  });
+  ok(weak.length === 0, "เส้นกราฟทุกเส้นเข้มพอบนพื้นสว่าง (" + (weak.join(",") || "ผ่านหมด") + ")");
+  await pg.close();
+
+  /* 🔴 ต้องใช้ชุดสีเดียวกับแดชบอร์ดพี่น้อง
+   * (CLAUDE.md เคยเขียนว่า 3 หน้านั้นเป็น "โหมดมืดล้วน" ซึ่งไม่จริง — ทั้งหมดเป็นโหมดสว่าง
+   *  มาตั้งแต่แรก · เทสต์นี้จึงยึดของจริงในโค้ด ไม่ใช่ของที่เอกสารเขียนไว้)
+   * ⚠️ สลับไปมาระหว่างหน้าแล้วสีต้องไม่กระโดด */
+  const fam = {};
+  for (const path of ["/trend/", "/ir/", "/issue/"]) {
+    const p2 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await p2.route("**/api/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+    await p2.goto(BASE + path, { waitUntil: "domcontentloaded" });
+    fam[path] = await p2.evaluate(() => {
+      const s = getComputedStyle(document.documentElement);
+      return { bg: s.getPropertyValue("--bg").trim(), surface: s.getPropertyValue("--surface").trim(),
+               border: s.getPropertyValue("--border").trim(), text: s.getPropertyValue("--text").trim(),
+               muted: s.getPropertyValue("--muted").trim() };
+    });
+    await p2.close();
+  }
+  const ref = fam["/trend/"];
+  ok(Object.values(fam).every((v) => v.bg === ref.bg), "แดชบอร์ดพี่น้องใช้สีพื้นชุดเดียวกัน");
+
+  const p3 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await p3.goto(BASE + "/social/", { waitUntil: "load" });
+  const mine = await p3.evaluate(() => {
+    const s = getComputedStyle(document.documentElement);
+    return { bg: s.getPropertyValue("--plane").trim(), surface: s.getPropertyValue("--surface").trim(),
+             border: s.getPropertyValue("--border").trim(), text: s.getPropertyValue("--ink").trim(),
+             muted: s.getPropertyValue("--muted").trim() };
+  });
+  ["bg", "surface", "border", "text", "muted"].forEach(function (k) {
+    ok(mine[k].toLowerCase() === ref[k].toLowerCase(), `สี ${k} ตรงกับหน้าอื่น (${mine[k]} = ${ref[k]})`);
+  });
+  await p3.close();
 }
 
 await browser.close();

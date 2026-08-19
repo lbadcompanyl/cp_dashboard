@@ -329,7 +329,53 @@
              }, { pp: true }) }) +
       "</div>";
 
-    // ② ตารางเทียบรายช่อง (เดิมเป็นการ์ด 3 ใบ)
+    /* ② แนวโน้ม — วางเป็นคู่ซ้าย-ขวา 2 แถว (จอแคบยุบเป็นบนล่าง)
+     *    แถวบน: ผู้ติดตาม (เส้น) คู่กับ ผู้ติดตามเพิ่ม/หาย (แท่ง) — เรื่องเดียวกัน 2 มุม
+     *    แถวล่าง: การมีส่วนร่วม คู่กับ การมองเห็น
+     * ⚠️ กราฟผู้ติดตามเคยกินเต็มความกว้างแล้วสูงเกินจำเป็น (เจ้าของแจ้ง)
+     *    ย่อลงครึ่งหนึ่งแล้วเอาแท่งเพิ่ม/หายมาวางข้างๆ ได้ข้อมูลมากขึ้นในที่เท่าเดิม
+     * ทุกกราฟอ่านจาก order (ช่องที่เปิดอยู่) → ชิพเลือกช่องคุมได้ทั้งหมด */
+
+    var glRows = [];
+    order.forEach(function (pk) {
+      var g = growth(pk, r);
+      if (!g) return;
+      glRows.push({
+        label: C.PLATFORMS[pk].label, gained: g.gained, lost: g.lost, net: g.net,
+        gainedText: num(g.gained), lostText: num(g.lost), netText: num(Math.abs(g.net)),
+      });
+    });
+
+    h += '<div class="duo">' +
+      '<div class="duo-c">' +
+        sec("แนวโน้มผู้ติดตาม", "% สะสมจากวันแรก",
+          "ทุกเส้นเริ่มที่ 0% ในวันแรกของช่วงที่เลือก แล้ววัดว่าขยับขึ้นลงกี่เปอร์เซ็นต์จากจุดนั้น " +
+          "จำนวนผู้ติดตามของแต่ละช่องต่างกันหลักสิบเท่า ถ้าวาดด้วยตัวเลขดิบ เส้นของช่องที่เล็กกว่าจะแบนติดพื้นจนดูไม่ออก") +
+        '<div class="panel">' + followerTrend(order, r, 168) + "</div>" +
+      "</div>" +
+      '<div class="duo-c">' +
+        sec("ผู้ติดตามที่เพิ่มและที่หายไป", null,
+          "แท่งแดงยื่นซ้ายคือคนที่เลิกติดตาม แท่งเขียวยื่นขวาคือคนที่เพิ่งติดตาม ทุกช่องใช้มาตราส่วนเดียวกัน " +
+          "ยอดสุทธิเท่ากันไม่ได้แปลว่าเหมือนกัน — ได้ 500 เสีย 480 คนละเรื่องกับ ได้ 30 เสีย 10") +
+        '<div class="panel">' + (glRows.length ? CH.diverging(glRows) : empty("ไม่มีข้อมูลผู้ติดตามในช่วงนี้")) + "</div>" +
+      "</div>" +
+      "</div>";
+
+    // การมีส่วนร่วม / การมองเห็น — คู่ซ้าย-ขวาแถวที่สอง
+    h += '<div class="duo">' +
+      '<div class="duo-c">' +
+        sec("การมีส่วนร่วมรายวัน", null,
+          "ไลก์ + คอมเมนต์ + แชร์ ตามที่แต่ละช่องนับได้ · YouTube ไม่มีตัวเลขแชร์ให้ ตัวเลขจึงต่ำกว่าช่องอื่นโดยธรรมชาติ") +
+        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return C.engagementOf(pk, x); }, 175) + "</div>" +
+      "</div>" +
+      '<div class="duo-c">' +
+        sec("การมองเห็นรายวัน", null,
+          "YouTube และ TikTok เป็นยอดวิว · Facebook เป็นการเข้าถึง (จำนวนคนที่เห็นโพสต์) คนละหน่วยกัน วางเส้นไว้ด้วยกันเพื่อดูจังหวะขึ้นลง ไม่ใช่เพื่อเทียบขนาด") +
+        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return x[C.PLATFORMS[pk].reachKey]; }, 175) + "</div>" +
+      "</div>" +
+      "</div>";
+
+    // ③ ตารางเทียบรายช่อง (เดิมเป็นการ์ด 3 ใบ)
     h += sec("ผลงานรายช่อง", null,
       "แต่ละช่องวัดคนละหน่วย: YouTube/TikTok เป็นยอดวิว · Facebook เป็นการเข้าถึง " +
       "ตัวเลขในแถวเดียวกันจึงเทียบขนาดกันตรงๆ ไม่ได้ ใช้ดูทิศทางของแต่ละช่องแทน");
@@ -376,44 +422,6 @@
     });
     h += "</div></div>";
 
-    // ④ กราฟผู้ติดตาม — % เปลี่ยนแปลงสะสมจากวันแรกของช่วง
-    // 🔴 เดิมใช้ index ฐาน 100 แล้วเจอบั๊ก: ช่วงสั้นๆ growth ต่ำมาก
-    //    แกน Y ปัดเป็น 101/100/100/100 ซ้ำกันจนอ่านไม่ได้ความ
-    //    เปลี่ยนมาเป็น % เปลี่ยนแปลง ทุกเส้นเริ่มที่ 0% และแกนเลือกทศนิยมเอง
-    h += sec("แนวโน้มผู้ติดตาม", "% เปลี่ยนแปลงสะสมจากวันแรกของช่วง",
-      "ทุกเส้นเริ่มที่ 0% ในวันแรกของช่วงที่เลือก แล้ววัดว่าขยับขึ้นลงกี่เปอร์เซ็นต์จากจุดนั้น " +
-      "จำนวนผู้ติดตามของแต่ละช่องต่างกันหลักสิบเท่า ถ้าวาดด้วยตัวเลขดิบ เส้นของช่องที่เล็กกว่าจะแบนติดพื้นจนดูไม่ออก");
-    var labels = null, series = [];
-    order.forEach(function (pk) {
-      var f = followersIn(pk, r);
-      if (!f.length) return;
-      if (!labels) labels = f.map(function (x) { return thaiShort(x.date); });
-      var base = f[0].value || 1;
-      series.push({
-        label: C.PLATFORMS[pk].label, color: C.PLATFORMS[pk].rawColor,
-        points: f.map(function (x) { return { y: ((x.value - base) / base) * 100 }; }),
-      });
-    });
-    h += '<div class="panel">' + (series.length
-      ? CH.line({ labels: labels, series: series, height: 210, unitLeft: "%", aria: "แนวโน้มผู้ติดตาม" }) +
-        legendOf(series)
-      : empty("ไม่มีข้อมูลผู้ติดตามในช่วงนี้")) + "</div>";
-
-    // ⑤ ผู้ติดตามเพิ่ม/หาย — diverging bar
-    h += sec("ผู้ติดตามที่เพิ่มและที่หายไป", null,
-      "แท่งแดงยื่นซ้ายคือคนที่เลิกติดตาม แท่งเขียวยื่นขวาคือคนที่เพิ่งติดตาม ทุกช่องใช้มาตราส่วนเดียวกัน " +
-      "ยอดสุทธิเท่ากันไม่ได้แปลว่าเหมือนกัน — ได้ 500 เสีย 480 คนละเรื่องกับ ได้ 30 เสีย 10");
-    var rows = [];
-    order.forEach(function (pk) {
-      var g = growth(pk, r);
-      if (!g) return;
-      rows.push({
-        label: C.PLATFORMS[pk].label, gained: g.gained, lost: g.lost, net: g.net,
-        gainedText: num(g.gained), lostText: num(g.lost), netText: num(Math.abs(g.net)),
-      });
-    });
-    h += '<div class="panel">' + (rows.length ? CH.diverging(rows) : empty("ไม่มีข้อมูลผู้ติดตามในช่วงนี้")) + "</div>";
-
     // ⑥ คอนเทนต์เด่นข้ามช่อง — เฉพาะช่องที่เปิดอยู่
     var all = [];
     order.forEach(function (pk) {
@@ -431,6 +439,67 @@
       : empty("ไม่มีคอนเทนต์ที่เผยแพร่ในช่วงนี้", "ลองขยายช่วงเวลา")) + "</div>";
 
     return h;
+  }
+
+  /** ทุกวันในช่วง เรียงตามลำดับ — ใช้เป็นแกนเวลาร่วมของทุกช่อง */
+  function dateList(r) {
+    var out = [], d = parseKey(r.from), end = parseKey(r.to);
+    while (d <= end) { out.push(key(d)); d = addDays(d, 1); }
+    return out;
+  }
+
+  /**
+   * กราฟเส้นรายวัน แยกเส้นตามช่อง
+   *
+   * ⚠️ ทุกช่องต้องวางบนแกนเวลาชุดเดียวกัน — ถ้าปล่อยให้แต่ละช่องใช้จำนวนจุดของตัวเอง
+   *    ช่องที่ข้อมูลขาดไปบางวันจะถูกดันให้เลื่อนไปตรงกับวันของช่องอื่น = เส้นเพี้ยนทั้งกราฟ
+   * ⚠️ วันที่ไม่มีข้อมูลส่ง null ไม่ใช่ 0 — เส้นจะได้ขาด ไม่ใช่ดิ่งลงพื้นเหมือนยอดตก
+   */
+  function channelTrend(order, r, valueOf, height) {
+    var days = dateList(r);
+    var series = [];
+    order.forEach(function (pk) {
+      var byDate = {};
+      dailyIn(pk, r).forEach(function (x) { byDate[x.date] = x; });
+      if (!Object.keys(byDate).length) return;
+      series.push({
+        label: C.PLATFORMS[pk].label, color: C.PLATFORMS[pk].rawColor,
+        points: days.map(function (dk) {
+          var row = byDate[dk];
+          return { y: row ? valueOf(pk, row) : null };
+        }),
+      });
+    });
+    if (!series.length) return empty("ไม่มีข้อมูลในช่วงนี้");
+    return CH.line({
+      labels: days.map(thaiShort), series: series, height: height || 180,
+      zeroFloor: true, fmtY: function (v) { return num(v); }, aria: "แนวโน้มรายวันแยกช่อง",
+    }) + legendOf(series);
+  }
+
+  /** แนวโน้มผู้ติดตามเป็น % เปลี่ยนแปลงสะสมจากวันแรกของช่วง */
+  function followerTrend(order, r, height) {
+    var days = dateList(r);
+    var series = [];
+    order.forEach(function (pk) {
+      var f = followersIn(pk, r);
+      if (!f.length) return;
+      var byDate = {};
+      f.forEach(function (x) { byDate[x.date] = x.value; });
+      var base = f[0].value || 1;
+      series.push({
+        label: C.PLATFORMS[pk].label, color: C.PLATFORMS[pk].rawColor,
+        points: days.map(function (dk) {
+          var v = byDate[dk];
+          return { y: v == null ? null : ((v - base) / base) * 100 };
+        }),
+      });
+    });
+    if (!series.length) return empty("ไม่มีข้อมูลผู้ติดตามในช่วงนี้");
+    return CH.line({
+      labels: days.map(thaiShort), series: series, height: height || 210,
+      unitLeft: "%", aria: "แนวโน้มผู้ติดตาม",
+    }) + legendOf(series);
   }
 
   function legendOf(series) {
@@ -479,7 +548,7 @@
     if (rows.length) {
       var s1 = { label: P.reachLabel, color: P.rawColor, axis: "left", axisNote: "แกนซ้าย",
                  points: rows.map(function (x) { return { y: x[P.reachKey] }; }) };
-      var s2 = { label: "Engagement rate", color: "#c3c2b7", axis: "right", dash: true, axisNote: "แกนขวา",
+      var s2 = { label: "Engagement rate", color: "#6b7280", axis: "right", dash: true, axisNote: "แกนขวา",
                  points: rows.map(function (x) {
                    var base = x[P.reachKey] || 0;
                    // ไม่มีฐาน = ไม่รู้ ไม่ใช่ 0 → ส่ง null ให้เส้นขาด

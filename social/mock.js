@@ -50,7 +50,7 @@
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100'>" +
       "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>" +
       "<stop offset='0' stop-color='" + color + "' stop-opacity='.85'/>" +
-      "<stop offset='1' stop-color='#111' stop-opacity='.9'/></linearGradient></defs>" +
+      "<stop offset='1' stop-color='#0b0b0b' stop-opacity='.55'/></linearGradient></defs>" +
       "<rect width='160' height='100' fill='url(#g)'/>" +
       "<text x='80' y='58' font-family='system-ui' font-size='26' font-weight='700' " +
       "fill='rgba(255,255,255,.85)' text-anchor='middle'>" + n + "</text></svg>";
@@ -73,7 +73,7 @@
     "ถาม-ตอบสดกับทีมงาน ครั้งที่ผ่านมาที่หลายคนพลาด",
   ];
 
-  /** โครงของแต่ละช่อง — ตัวเลขฐานต่างกันมากโดยตั้งใจ (เป็นเหตุผลที่กราฟ follower ต้องใช้ index 100) */
+  /** โครงของแต่ละช่อง — ตัวเลขฐานต่างกันมากโดยตั้งใจ (เป็นเหตุผลที่กราฟ follower ต้องวัดเป็น % ไม่ใช่ตัวเลขดิบ) */
   var SHAPE = {
     youtube: { seed: 11, followers0: 128400, viewsBase: 42000, viewsSwing: 0.55, er: 0.041, postEvery: 4, growth: 90 },
     tiktok:  { seed: 22, followers0: 43900,  viewsBase: 96000, viewsSwing: 1.15, er: 0.082, postEvery: 3, growth: 210 },

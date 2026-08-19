@@ -22,7 +22,7 @@
       label: "YouTube",
       short: "YT",
       color: "var(--yt)",
-      rawColor: "#ff3d3d",
+      rawColor: "#dc2626",
       icon: "▶",
       contentWord: "คลิป",
       // ⚠️ ชื่อ metric หลักของแต่ละช่องไม่เหมือนกัน — ใช้ค่านี้ตั้งป้ายทุกที่ ห้ามฮาร์ดโค้ดคำว่า "ยอดวิว"
@@ -34,8 +34,8 @@
       er: function (a) { return rate(a.likes + a.comments, a.views); },
       // ส่วนประกอบของ engagement — ใช้วาด stacked bar และโชว์จำนวนจริง
       parts: [
-        { key: "likes", label: "ไลก์", color: "#ff6b6b" },
-        { key: "comments", label: "คอมเมนต์", color: "#ffa94d" },
+        { key: "likes", label: "ไลก์", color: "#dc2626" },
+        { key: "comments", label: "คอมเมนต์", color: "#ea9010" },
       ],
       // metric เฉพาะแพลตฟอร์ม — โผล่เฉพาะในแท็บของช่องนั้น
       extras: [
@@ -49,7 +49,7 @@
       label: "TikTok",
       short: "TT",
       color: "var(--tt)",
-      rawColor: "#25f4ee",
+      rawColor: "#0d9488",
       icon: "♪",
       contentWord: "คลิป",
       reachKey: "views",
@@ -59,9 +59,9 @@
       erNote: "TikTok นับแชร์รวมด้วย ตัวเลข ER จึงมักสูงกว่าช่องอื่นโดยธรรมชาติ",
       er: function (a) { return rate(a.likes + a.comments + a.shares, a.views); },
       parts: [
-        { key: "likes", label: "ไลก์", color: "#25f4ee" },
-        { key: "comments", label: "คอมเมนต์", color: "#4dabf7" },
-        { key: "shares", label: "แชร์", color: "#9775fa" },
+        { key: "likes", label: "ไลก์", color: "#0d9488" },
+        { key: "comments", label: "คอมเมนต์", color: "#1d78c9" },
+        { key: "shares", label: "แชร์", color: "#7048c4" },
       ],
       extras: [
         { key: "views", label: "ยอดวิววิดีโอ", fmt: "num" },
@@ -74,7 +74,7 @@
       label: "Facebook",
       short: "FB",
       color: "var(--fb)",
-      rawColor: "#4a8cff",
+      rawColor: "#2563eb",
       icon: "f",
       contentWord: "โพสต์",
       // 🔴 Facebook ใช้ reach ไม่ใช่ views — เทียบกับ 2 ช่องบนแบบตรงๆ ไม่ได้
@@ -85,9 +85,9 @@
       erNote: "Facebook วัดจากจำนวนคนที่เห็นโพสต์ (reach) ไม่ใช่จำนวนครั้งที่ถูกเปิด",
       er: function (a) { return rate(a.likes + a.comments + a.shares, a.reach); },
       parts: [
-        { key: "likes", label: "ไลก์", color: "#4a8cff" },
-        { key: "comments", label: "คอมเมนต์", color: "#748ffc" },
-        { key: "shares", label: "แชร์", color: "#b197fc" },
+        { key: "likes", label: "ไลก์", color: "#2563eb" },
+        { key: "comments", label: "คอมเมนต์", color: "#4f6ed6" },
+        { key: "shares", label: "แชร์", color: "#8257c9" },
       ],
       extras: [
         { key: "reach", label: "การเข้าถึง", fmt: "num" },

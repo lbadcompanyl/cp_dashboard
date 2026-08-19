@@ -1,14 +1,22 @@
 /* Social Dashboard — สถิติช่องของเราเอง
-   โหมดมืดล้วน เหมือน /trend/ /ir/ /issue/ (เจ้าของสั่งไม่ต้องทำโหมดสว่าง)
+   โหมดสว่าง ใช้ชุดสีเดียวกับ /trend/ /ir/ /issue/ (เจ้าของสั่งเปลี่ยน 17 ส.ค. 2026)
+
+   📌 ค่าสีพื้นฐาน 5 ตัวล่างนี้ก๊อปมาจาก trend/ir/issue ตรงๆ ห้ามคิดเอง
+      แก้ชุดสีของตระกูลนี้เมื่อไหร่ ต้องแก้ให้ครบทุกหน้า ไม่งั้นสลับหน้าแล้วสีเพี้ยน
+   ⚠️ CLAUDE.md เคยเขียนว่า 3 หน้านั้น "เป็นโหมดมืดล้วน" ซึ่งไม่จริง — แก้ในเอกสารแล้ว
+
    เขียนแบบ mobile-first: กฎพื้นฐานคือของจอแคบ แล้วค่อยขยายด้วย min-width */
 
 :root {
-  color-scheme: dark;
-  --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232322;
-  --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
-  --border:rgba(255,255,255,0.10); --accent:#3987e5;
-  --yt:#ff3d3d; --fb:#4a8cff; --tt:#25f4ee;
-  --warn:#f5a524; --bad:#f2555a; --good:#4ade80; --radius:14px;
+  color-scheme: light;
+  /* ↓ ตรงกับ trend/ir/issue */
+  --plane:#f4f6fb; --surface:#ffffff; --border:#e4e8f0;
+  --ink:#1f2937; --muted:#6b7280;
+  /* ↓ เฉพาะหน้านี้ */
+  --surface-2:#eef1f7; --ink-2:#4b5563; --accent:#2563eb;
+  /* ⚠️ สีช่องต้องอ่านออกบนพื้นสว่าง — สีเดิม (#25f4ee ฟ้าอ่อน) จางจนมองไม่เห็นเส้นกราฟ */
+  --yt:#dc2626; --fb:#2563eb; --tt:#0d9488;
+  --warn:#b45309; --bad:#dc2626; --good:#15803d; --radius:14px;
 }
 
 * { box-sizing:border-box; }
@@ -23,7 +31,7 @@ body {
 
 /* แถบเตือนข้อมูลจำลอง — ค้างบนจอเสมอ ไม่มีปุ่มปิดโดยตั้งใจ */
 #mockbar {
-  position:sticky; top:0; z-index:60; background:var(--warn); color:#3b2600;
+  position:sticky; top:0; z-index:60; background:#fbbf24; color:#3b2600;
   font-weight:700; text-align:center; padding:8px 12px; font-size:.82rem;
 }
 
@@ -74,7 +82,7 @@ body {
 .dates label { font-size:.78rem; color:var(--muted); display:inline-flex; align-items:center; gap:6px; }
 .dates input {
   background:var(--surface); border:1px solid var(--border); color:var(--ink);
-  border-radius:8px; padding:6px 9px; font-family:inherit; font-size:.8rem; color-scheme:dark;
+  border-radius:8px; padding:6px 9px; font-family:inherit; font-size:.8rem;
 }
 .ctrl-note { font-size:.75rem; color:var(--muted); padding-top:7px; }
 .ctrl-note .vs { color:var(--ink-2); }
@@ -89,7 +97,7 @@ body {
   display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
 }
 .tab:hover { color:var(--ink); }
-.tab.on { background:var(--ink); color:var(--plane); border-color:var(--ink); font-weight:650; }
+.tab.on { background:var(--ink); color:#fff; border-color:var(--ink); font-weight:650; }
 .tab .ti { font-size:.9em; opacity:.85; }
 
 /* ── หัวข้อ / กล่อง ──────────────────────────────────────────────── */
@@ -163,10 +171,17 @@ body {
 .tbl.cmp .cv { display:block; font-weight:650; font-size:.92rem; }
 .tbl.cmp .cd { display:block; margin-top:1px; }
 
+/* ── กราฟคู่ ซ้าย-ขวา ────────────────────────────────────────────
+   จอแคบยุบเป็นบน-ล่าง · หัวข้อของแต่ละฝั่งอยู่ในคอลัมน์ตัวเอง
+   ⚠️ ใช้ align-items:start ไม่งั้นฝั่งที่เตี้ยกว่าจะถูกยืดจนกล่องสูงไม่เท่าเนื้อหา */
+.duo { display:grid; grid-template-columns:1fr; gap:0 18px; align-items:start; }
+.duo-c { min-width:0; }
+.duo-c .sec { margin-top:24px; }
+
 /* ── กราฟ ────────────────────────────────────────────────────────── */
 .chart { width:100%; height:auto; display:block; overflow:visible; }
-.chart .grid { stroke:rgba(255,255,255,.08); stroke-width:1; vector-effect:non-scaling-stroke; }
-.chart .zero { stroke:rgba(255,255,255,.28); stroke-width:1; vector-effect:non-scaling-stroke; }
+.chart .grid { stroke:#e4e8f0; stroke-width:1; vector-effect:non-scaling-stroke; }
+.chart .zero { stroke:#9aa3b2; stroke-width:1; vector-effect:non-scaling-stroke; }
 .chart .ax { fill:var(--muted); font-size:10px; font-family:system-ui,sans-serif; }
 .chart .ax-r { fill:var(--ink-2); }
 
@@ -182,7 +197,7 @@ body {
 /* แท่งเดียว 100% (แทนโดนัท — สูงไม่ถึงครึ่งของเดิม) */
 .share { display:flex; height:30px; border-radius:8px; overflow:hidden; background:var(--surface-2); }
 .share-s { display:flex; align-items:center; justify-content:center; min-width:2px; }
-.share-s b { font-size:.72rem; font-weight:700; color:rgba(0,0,0,.62); }
+.share-s b { font-size:.72rem; font-weight:700; color:#fff; }
 
 /* แท่งซ้อน (หน้ารายช่อง) */
 .stackbar { display:flex; height:15px; border-radius:999px; overflow:hidden; background:var(--surface-2); }
@@ -200,7 +215,7 @@ body {
 
 .dv-track { grid-column:1 / -1; position:relative; height:22px; display:flex; align-items:center; }
 /* เส้นศูนย์กลางร่วมกันทุกแถว — จุดอ้างอิงที่ทำให้เทียบซ้าย/ขวาได้ */
-.dv-axis { position:absolute; left:50%; top:0; bottom:0; width:1px; background:rgba(255,255,255,.3); }
+.dv-axis { position:absolute; left:50%; top:0; bottom:0; width:1px; background:#9aa3b2; }
 .dv-neg, .dv-pos { position:absolute; top:4px; height:14px; }
 .dv-neg { right:50%; background:var(--bad); opacity:.8; border-radius:4px 0 0 4px; }
 .dv-pos { left:50%; background:var(--good); opacity:.8; border-radius:0 4px 4px 0; }
@@ -213,7 +228,7 @@ body {
 .post { display:flex; gap:10px; text-decoration:none; color:inherit;
         background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 9px; }
 .post:hover { border-color:var(--accent); }
-.post img { width:70px; height:44px; object-fit:cover; border-radius:6px; flex:none; background:#000; }
+.post img { width:70px; height:44px; object-fit:cover; border-radius:6px; flex:none; background:var(--surface-2); }
 .post-b { min-width:0; }
 .post-t { font-size:.83rem; line-height:1.35; margin-bottom:3px;
           display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -251,6 +266,10 @@ body {
 }
 
 @media (min-width:900px) {
+  .duo { grid-template-columns:1fr 1fr; }
+  /* หัวข้อของกราฟคู่อยู่ระดับเดียวกัน ไม่งั้นฝั่งซ้าย-ขวาเหลื่อมกันดูเลอะ */
+  .duo-c .sec { margin-top:26px; }
+
   /* ⚠️ จำนวนคอลัมน์ = จำนวนใบจริง ทุกใบจึงอยู่แถวเดียวกันหมด ไม่มีใบลอยท้ายแถว */
   .scgrid { grid-template-columns:repeat(var(--n,4),1fr); }
   .scgrid > .sc:last-child:nth-child(odd) { grid-column:auto; }
