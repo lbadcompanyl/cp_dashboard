@@ -29,7 +29,8 @@ const view = (pg) => pg.$eval("#view", (e) => e.innerText);
 const secs = (pg) => pg.$$eval(".sec", (n) => n.map((x) => x.textContent.trim()));
 // ช่วงเวลาเป็นแผงแบบกดเปิด — ตัวช่วยตัวเดียวใช้ทั้งไฟล์
 const setPeriod = async (pg, k) => {
-  const map = { 7: "7d", 30: "30d", 90: "90d", custom: "custom" };
+  // ⚠️ 28d / 90d ถูกถอดออกแล้ว (เจ้าของสั่ง 19 ส.ค. 2026) — ช่วงยาวใช้ 3m แทน
+  const map = { 7: "7d", 30: "30d", 90: "3m", custom: "custom" };
   const key = map[k] || String(k);
   if (!(await pg.$(".periodpanel"))) await pg.click('[data-period="toggle"]');
   await pg.waitForSelector(".periodpanel");
@@ -71,7 +72,7 @@ console.log("\n[2] ช่วงเวลา + โหมดเทียบ ใช
   await setPeriod(pg, 90);
   await setCompare(pg, "yoy");
   const before = await pg.$eval(".periodbtn", (e) => e.innerText);
-  ok(/90 วัน/.test(before) && /เทียบกับ/.test(before), "ตั้งค่า 90 วัน + เทียบปีก่อนแล้ว");
+  ok(/3 เดือน/.test(before) && /เทียบกับ/.test(before), "ตั้งค่าช่วงยาว + เทียบปีก่อนแล้ว");
   for (const t of ["YouTube", "TikTok", "Facebook", "ภาพรวม"]) {
     await tabTo(pg, t);
     ok((await pg.$eval(".periodbtn", (e) => e.innerText)) === before, `แท็บ ${t}: ช่วงเวลายังเป็นชุดเดิม`);
@@ -956,12 +957,18 @@ console.log("\n[21] 🔴 แผงเลือกช่วงเวลา — �
   await pg.waitForSelector(".periodpanel");
 
   const items = await pg.$$eval(".pp-i", (n) => n.map((x) => x.innerText.replace(/\n/g, " | ")));
-  ok(items.length >= 12, `มีตัวเลือกครบ (${items.length} ตัว)`);
-  for (const want of ["วันนี้", "เมื่อวาน", "7 วัน", "28 วัน", "30 วัน", "90 วัน",
+  ok(items.length >= 10, `มีตัวเลือกครบ (${items.length} ตัว)`);
+  /* 🔴 ตัด "28 วันล่าสุด" กับ "90 วันล่าสุด" ออก (เจ้าของสั่ง 19 ส.ค. 2026)
+     ซ้ำซ้อนกับ 30 วัน และ 3 เดือน ที่มีอยู่แล้ว */
+  for (const gone of ["28 วัน", "90 วัน"]) {
+    ok(!items.some((i) => i.includes(gone)), `ไม่มีตัวเลือก "${gone}" แล้ว`);
+  }
+  for (const want of ["วันนี้", "เมื่อวาน", "7 วัน", "30 วัน",
                       "เดือนนี้", "เดือนที่แล้ว", "3 เดือน", "12 เดือน", "ปีนี้", "ปีที่แล้ว", "กำหนดเอง"]) {
     ok(items.some((i) => i.includes(want)), `มีตัวเลือก "${want}"`);
   }
-  ok(items.filter((i) => /–/.test(i)).length >= 11, "แต่ละตัวเลือกบอกช่วงวันที่จริงกำกับ");
+  // ทุกตัวยกเว้น "กำหนดเอง" ต้องบอกช่วงวันที่จริงกำกับ
+  ok(items.filter((i) => /–/.test(i)).length === items.length - 1, "แต่ละตัวเลือกบอกช่วงวันที่จริงกำกับ");
 
   // ⚠️ ช่วงที่ข้ามปีต้องมีปีกำกับ ไม่งั้น "20 ส.ค. – 19 ส.ค." อ่านเหมือนช่วงสั้นๆ
   const yr = items.find((i) => i.includes("12 เดือน"));

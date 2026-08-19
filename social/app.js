@@ -26,9 +26,7 @@
     { key: "today", label: "วันนี้", at: function (t) { return [t, t]; } },
     { key: "yesterday", label: "เมื่อวาน", at: function (t) { var y = addDays(t, -1); return [y, y]; } },
     { key: "7d", label: "7 วันล่าสุด", at: function (t) { return [addDays(t, -6), t]; } },
-    { key: "28d", label: "28 วันล่าสุด", at: function (t) { return [addDays(t, -27), t]; } },
     { key: "30d", label: "30 วันล่าสุด", at: function (t) { return [addDays(t, -29), t]; } },
-    { key: "90d", label: "90 วันล่าสุด", at: function (t) { return [addDays(t, -89), t]; } },
     { key: "mtd", label: "เดือนนี้ถึงวันนี้", at: function (t) { return [new Date(t.getFullYear(), t.getMonth(), 1), t]; } },
     { key: "lastmonth", label: "เดือนที่แล้ว (ทั้งเดือน)", at: function (t) {
         return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; } },
@@ -61,7 +59,12 @@
   ];
   function metricOf(k) { return METRICS.filter(function (m) { return m.key === k; })[0] || METRICS[0]; }
 
-  function presetOf(k) { return PRESETS.filter(function (p) { return p.key === k; })[0] || PRESETS[4]; }
+  /* ⚠️ คีย์ที่ไม่รู้จัก (เช่นค่าเก่าอย่าง 28d/90d ที่ถอดออกแล้ว) ต้องตกกลับมาที่ 30 วัน
+     ห้ามคืน undefined — เรียก .at() ต่อแล้วหน้าขาวทั้งหน้า */
+  function presetOf(k) {
+    return PRESETS.filter(function (p) { return p.key === k; })[0] ||
+      PRESETS.filter(function (p) { return p.key === "30d"; })[0];
+  }
   /** ชื่อที่โชว์บนปุ่ม — ตัวที่ผูกกับปีจะต่อเลขปีจริงให้ด้วย */
   function presetLabel(p, t) { return p.label + (p.suffix ? " (" + p.suffix(t) + ")" : ""); }
 
