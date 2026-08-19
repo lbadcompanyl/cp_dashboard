@@ -56,6 +56,8 @@
   a { color:var(--accent); }
 
   .appbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .appbar-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  #creditsChip .low { color:var(--neg); font-weight:600; }
   .logo { display:flex; align-items:center; gap:11px; font-weight:600; font-size:1.05rem; }
   .logo-mark { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:16px; }
   .logo small { display:block; font-weight:400; font-size:0.72rem; color:var(--muted); letter-spacing:.01em; }
@@ -166,7 +168,10 @@
 <div class="wrap">
   <div class="appbar">
     <div class="logo"><span class="logo-mark">💬</span><span>Comment Sentiment<small>วิเคราะห์ความเห็นโพส FB · TikTok · YouTube → Excel</small></span></div>
-    <button class="btn ghost" id="themeBtn" type="button"><span id="themeIcon">🌙</span><span id="themeLabel">โหมดมืด</span></button>
+    <div class="appbar-actions">
+      <button class="btn ghost" id="creditsChip" type="button" title="เครดิต ScrapeCreators คงเหลือ — กดเพื่อตรวจสอบ (ต้องอยู่โหมด Live)">💠 เครดิต: <span id="creditsChipVal">—</span></button>
+      <button class="btn ghost" id="themeBtn" type="button"><span id="themeIcon">🌙</span><span id="themeLabel">โหมดมืด</span></button>
+    </div>
   </div>
 
   <div class="banner">
@@ -336,15 +341,18 @@ el("limit").addEventListener("change", saveCfg);
 
 /* ---------------- ScrapeCreators credits ---------------- */
 function showCredits(n){
+  const low = n != null && n !== "" && Number(n) <= 100;
+  const txtFull = (n == null || n === "") ? "—" : Number(n).toLocaleString() + " credits";
+  const txtShort = (n == null || n === "") ? "—" : Number(n).toLocaleString();
   const v = el("creditsVal");
-  if (n == null || n === ""){ v.textContent = "—"; v.classList.remove("low"); return; }
-  v.textContent = Number(n).toLocaleString() + " credits";
-  v.classList.toggle("low", Number(n) <= 100);
+  if (v){ v.textContent = txtFull; v.classList.toggle("low", low); }
+  const c = el("creditsChipVal");
+  if (c){ c.textContent = txtShort; c.classList.toggle("low", low); }
 }
-el("checkCreditsBtn").onclick = async () => {
+async function checkCredits(){
   const worker = el("worker").value.trim();
   if (!worker){ toast("ใส่ URL ของ Worker ก่อน (ต้องอยู่โหมด Live)"); return; }
-  const btn = el("checkCreditsBtn"); btn.disabled = true;
+  el("checkCreditsBtn").disabled = true; el("creditsChip").disabled = true;
   try {
     const r = await fetch(worker.replace(/\/+$/,"") + "/credits");
     const j = await r.json();
@@ -352,8 +360,10 @@ el("checkCreditsBtn").onclick = async () => {
     showCredits(j.credits_remaining);
     toast("อัปเดตเครดิตแล้ว ✓");
   } catch(e){ showCredits(null); toast("ดึงเครดิตไม่ได้: " + (e.message||e)); }
-  finally { btn.disabled = false; }
-};
+  finally { el("checkCreditsBtn").disabled = false; el("creditsChip").disabled = false; }
+}
+el("checkCreditsBtn").onclick = checkCredits;
+el("creditsChip").onclick = checkCredits;
 
 /* ---------------- analyze ---------------- */
 el("analyzeBtn").onclick = analyze;
