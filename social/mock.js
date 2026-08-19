@@ -68,6 +68,17 @@
     return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
   }
 
+  /* ลิงก์ของโพสต์
+   * 🔴 ของจริงคือ URL โพสต์ที่ API ส่งมา (YouTube watch · TikTok share_url · Facebook permalink)
+   * ⚠️ ของจำลองใช้รูปแบบเดียวกันแต่ใส่ id ที่บอกว่าเป็นของปลอม (`mock-…`)
+   *    ตั้งใจให้กดแล้วเห็นว่าเปิดแท็บใหม่ได้จริง — ปลายทางจะไม่เจอโพสต์ ซึ่งถูกแล้ว
+   *    เพราะห้ามพาไปโพสต์ของคนอื่นแล้วทำให้เข้าใจว่าเป็นของเรา */
+  function postUrl(pk, id) {
+    if (pk === "youtube") return "https://www.youtube.com/watch?v=mock-" + id;
+    if (pk === "tiktok") return "https://www.tiktok.com/@example/video/mock-" + id;
+    return "https://www.facebook.com/permalink.php?story_fbid=mock-" + id;
+  }
+
   /* หัวข้อจำลอง — เขียนให้ความยาวหลากหลาย จะได้เห็นว่าตัดบรรทัดแล้วหน้าตาเป็นยังไง */
   var TITLES = [
     "เบื้องหลังการผลิตที่ไม่เคยเปิดเผยมาก่อน",
@@ -167,7 +178,7 @@
         id: pk + "-" + pid,
         title: TITLES[pid % TITLES.length],
         thumb: thumb(C.rawColor, pid, rnd),
-        url: "#",
+        url: postUrl(pk, pid),
         publishedAt: dayKey(pd),
       };
       post[reachKey] = pv;

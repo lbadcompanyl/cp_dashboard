@@ -27,8 +27,16 @@ async function open(viewport = { width: 1400, height: 1000 }) {
 const tabTo = async (pg, label) => { await pg.click(`.tab:has-text("${label}")`); await pg.waitForTimeout(140); };
 const view = (pg) => pg.$eval("#view", (e) => e.innerText);
 const secs = (pg) => pg.$$eval(".sec", (n) => n.map((x) => x.textContent.trim()));
-// ช่วงเวลาเป็น dropdown แล้ว (เดิมเป็นปุ่ม) — ตัวช่วยตัวเดียวใช้ทั้งไฟล์
-const setPeriod = async (pg, v) => { await pg.selectOption("#period", String(v)); await pg.waitForTimeout(180); };
+// ช่วงเวลาเป็นแผงแบบกดเปิด — ตัวช่วยตัวเดียวใช้ทั้งไฟล์
+const setPeriod = async (pg, k) => {
+  const map = { 7: "7d", 30: "30d", 90: "90d", custom: "custom" };
+  const key = map[k] || String(k);
+  if (!(await pg.$(".periodpanel"))) await pg.click('[data-period="toggle"]');
+  await pg.waitForSelector(".periodpanel");
+  await pg.click(`[data-preset="${key}"]`);
+  await pg.waitForTimeout(200);
+};
+const closePeriod = async (pg) => { if (await pg.$(".periodpanel")) { await pg.click('[data-period="close"]'); await pg.waitForTimeout(150); } };
 
 /* ────────────────────────────────────────────────────────────────── */
 console.log("\n[1] โครงหน้า — แท็บอ่านจาก config ไม่ได้เขียนค้างใน HTML");
@@ -267,7 +275,7 @@ console.log("\n[9] 🔴 ชิพเลือกช่อง — ปิดแล
   const colsBefore = await pg.$$eval(".tbl.cmp thead th", (n) => n.length);
   const segsBefore = await pg.$$eval(".share-s", (n) => n.length);
   const dvBefore = await pg.$$eval(".dv-row", (n) => n.length);
-  const chipsBefore = await pg.$$eval(".posts .post .chip", (n) => n.map((x) => x.textContent.trim()));
+  const headsBefore = await pg.$$eval(".tcard-h", (n) => n.map((x) => x.textContent.trim()));
 
   await pg.click('[data-ch="youtube"]');
   await pg.waitForTimeout(180);
@@ -281,9 +289,9 @@ console.log("\n[9] 🔴 ชิพเลือกช่อง — ปิดแล
   const totalAfter = await pg.$eval(".sc .sc-v", (e) => e.textContent.trim());
   ok(totalAfter !== totalBefore, `ยอดรวมคิดใหม่จริง (${totalBefore} → ${totalAfter})`);
 
-  const chipsAfter = await pg.$$eval(".posts .post .chip", (n) => n.map((x) => x.textContent.trim()));
-  ok(!chipsAfter.includes("YouTube"), "top content ไม่มีของ YouTube ปนแล้ว");
-  ok(chipsBefore.length > 0 && chipsAfter.length > 0, "top content ยังมีของช่องที่เหลือ");
+  const headsAfter = await pg.$$eval(".tcard-h", (n) => n.map((x) => x.textContent.trim()));
+  ok(!headsAfter.some((h) => /YouTube/.test(h)), "กล่องคอนเทนต์ของ YouTube หายไปแล้ว");
+  ok(headsBefore.length === 3 && headsAfter.length === 2, `เหลือกล่องของช่องที่เปิดอยู่ (${headsBefore.length} → ${headsAfter.length})`);
 
   // กันปิดหมดจนหน้าว่างเปล่าโดยไม่มีคำอธิบาย
   await pg.click('[data-ch="tiktok"]');
@@ -715,36 +723,66 @@ console.log("\n[20] 🔴 โหมดสว่าง — ต้องใช้�
 
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[21] 🔴 ตัวเลือกช่วงเวลา — dropdown ขวาบน โชว์แค่ช่วงเวลา");
+console.log("\n[21] 🔴 แผงเลือกช่วงเวลา — ขวาบน มีชุดสำเร็จรูปให้ครบ");
 {
   const { pg } = await open();
-  const sel = await pg.$("#period");
-  ok(!!sel, "เป็น dropdown ไม่ใช่ปุ่มเรียงกัน");
-  const opts = await pg.$$eval("#period option", (n) => n.map((o) => o.textContent.trim()));
-  ok(opts.length === 4, `มี 4 ตัวเลือก (${opts.join(" / ")})`);
-  ok(opts.every((o) => /วัน|กำหนดเอง/.test(o)), "ทุกตัวเลือกเป็นเรื่องช่วงเวลาล้วน");
-  ok(!opts.some((o) => /เทียบ|ปีก่อน|เดือนที่แล้ว/.test(o)), "ไม่มีตัวเลือกเรื่องการเทียบปนมา");
+  const btn = await pg.$(".periodbtn");
+  ok(!!btn, "เป็นปุ่มเปิดแผง ไม่ใช่ dropdown ธรรมดา");
+  const btnTxt = await btn.innerText();
+  ok(/30 วันล่าสุด/.test(btnTxt), `ปุ่มบอกช่วงที่เลือกอยู่ (${btnTxt.replace(/\n/g, " · ")})`);
+  ok(/–/.test(btnTxt), "ปุ่มบอกวันที่จริงของช่วงด้วย");
 
-  // อยู่ขวาบน — ในแถบหัวเรื่อง และอยู่ครึ่งขวาของหน้า
   const geo = await pg.evaluate(() => {
-    const s = document.querySelector("#period").getBoundingClientRect();
+    const s = document.querySelector(".periodbtn").getBoundingClientRect();
     const bar = document.querySelector(".appbar").getBoundingClientRect();
     return { inBar: s.top >= bar.top - 1 && s.bottom <= bar.bottom + 1, rightHalf: s.left > innerWidth / 2 };
   });
-  ok(geo.inBar, "อยู่ในแถบหัวเรื่องด้านบน");
-  ok(geo.rightHalf, "อยู่ครึ่งขวาของหน้า");
+  ok(geo.inBar && geo.rightHalf, "อยู่ขวาบนในแถบหัวเรื่อง");
 
-  await setPeriod(pg, 7);
-  ok(/7 วัน/.test(await pg.$eval(".ctrl-note", (e) => e.innerText)), "เลือกแล้วช่วงเปลี่ยนตาม");
+  ok((await pg.$$(".periodpanel")).length === 0, "ยังไม่กด แผงยังไม่กาง");
+  await pg.click('[data-period="toggle"]');
+  await pg.waitForSelector(".periodpanel");
+
+  const items = await pg.$$eval(".pp-i", (n) => n.map((x) => x.innerText.replace(/\n/g, " | ")));
+  ok(items.length >= 12, `มีตัวเลือกครบ (${items.length} ตัว)`);
+  for (const want of ["วันนี้", "เมื่อวาน", "7 วัน", "28 วัน", "30 วัน", "90 วัน",
+                      "เดือนนี้", "เดือนที่แล้ว", "3 เดือน", "12 เดือน", "ปีนี้", "ปีที่แล้ว", "กำหนดเอง"]) {
+    ok(items.some((i) => i.includes(want)), `มีตัวเลือก "${want}"`);
+  }
+  ok(items.filter((i) => /–/.test(i)).length >= 11, "แต่ละตัวเลือกบอกช่วงวันที่จริงกำกับ");
+
+  // ⚠️ ช่วงที่ข้ามปีต้องมีปีกำกับ ไม่งั้น "20 ส.ค. – 19 ส.ค." อ่านเหมือนช่วงสั้นๆ
+  const yr = items.find((i) => i.includes("12 เดือน"));
+  ok(/\d{4}/.test(yr), `ช่วงข้ามปีมีปีกำกับ (${yr})`);
+  const cur = new Date().getFullYear();
+  ok(items.some((i) => i.includes("ปีนี้") && i.includes(String(cur))), "ตัวเลือกรายปีบอกเลขปีจริง");
+
+  // เลือกแล้วปิดแผงเอง ไม่ต้องกดซ้ำ
+  await pg.click('[data-preset="lastmonth"]');
+  await pg.waitForTimeout(220);
+  ok((await pg.$$(".periodpanel")).length === 0, "เลือกของสำเร็จรูปแล้วแผงปิดเอง");
+  const note = await pg.$eval(".ctrl-note", (e) => e.innerText);
+  ok(/1 ก\.ค\.|1 [ก-๙.]+/.test(note), `ช่วงเปลี่ยนตามที่เลือก (${note.split("\n")[0]})`);
+
+  // เดือนที่แล้วต้องเป็นทั้งเดือนปฏิทิน
+  const days = Number((note.match(/\((\d+) วัน\)/) || [])[1]);
+  ok(days >= 28 && days <= 31, `"เดือนที่แล้ว" ได้ทั้งเดือน (${days} วัน)`);
+
+  // กดนอกแผง = ปิด
+  await pg.click('[data-period="toggle"]');
+  await pg.waitForSelector(".periodpanel");
+  await pg.click("#view", { position: { x: 5, y: 5 } });
+  await pg.waitForTimeout(220);
+  ok((await pg.$$(".periodpanel")).length === 0, "กดนอกแผงแล้วปิด");
   await pg.close();
 }
 
-/* ────────────────────────────────────────────────────────────────── */
 console.log("\n[22] 🔴 ช่องเลือกวันที่ ห้ามเลือกอนาคต");
 {
   const { pg } = await open();
   await setPeriod(pg, "custom");
   await pg.waitForSelector("#d1");
+  ok(!!(await pg.$(".periodpanel #d1")), "ช่องเลือกวันที่อยู่ในแผงเดียวกัน ไม่ได้แยกไปอยู่ข้างล่าง");
   const today = await pg.evaluate(() => {
     const d = new Date(); d.setHours(0, 0, 0, 0);
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
@@ -905,6 +943,67 @@ console.log("\n[27] รูปย่อของคอนเทนต์");
   const js = await (await fetch(BASE + "/social/app.js")).text();
   ok(/<img src="' \+ esc\(p\.thumb\)/.test(js), "โค้ดวาง p.thumb ลง img ตรงๆ (ของจริงใช้ URL จากแพลตฟอร์มได้ทันที)");
   await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[28] 🔴 คอนเทนต์เด่น — แยกกล่องรายช่อง และกดเปิดโพสต์ได้");
+{
+  const { pg } = await open();
+  const cards = await pg.$$(".tcard");
+  ok(cards.length === 3, `แยกกล่องตามช่อง 3 กล่อง (${cards.length})`);
+  const heads = await pg.$$eval(".tcard-h", (n) => n.map((x) => x.textContent.trim()));
+  ok(/YouTube/.test(heads[0]) && /TikTok/.test(heads[1]) && /Facebook/.test(heads[2]), `หัวกล่องเป็นชื่อช่อง (${heads.join(" / ")})`);
+
+  // ⚠️ ห้ามมีกล่องไหนดูดอันดับไปหมด — แต่ละกล่องเรียงเฉพาะของช่องตัวเอง
+  for (let i = 0; i < cards.length; i++) {
+    const chips = await cards[i].$$eval(".chip", (n) => n.map((x) => x.textContent.trim())).catch(() => []);
+    ok(chips.length === 0, `กล่องที่ ${i + 1}: ไม่ต้องติดป้ายช่องซ้ำในแต่ละรายการ`);
+  }
+
+  const links = await pg.$$eval(".tcard .post", (n) => n.map((e) => ({ tag: e.tagName, href: e.getAttribute("href") || "", ext: !!e.querySelector(".ext") })));
+  ok(links.length > 0, `มีรายการในกล่อง (${links.length})`);
+  ok(links.every((l) => l.tag === "A"), "ทุกรายการเป็นลิงก์กดได้");
+  ok(links.every((l) => /^https?:/.test(l.href)), "ลิงก์ชี้ไปโพสต์บนแพลตฟอร์ม");
+  ok(links.every((l) => l.ext), "มีสัญลักษณ์บอกว่ากดแล้วเปิดแท็บใหม่");
+  ok(await pg.$$eval(".tcard .post", (n) => n.every((e) => e.target === "_blank" && /noopener/.test(e.rel))), "เปิดแท็บใหม่อย่างปลอดภัย");
+
+  // ปิดช่อง → กล่องนั้นต้องหายไปด้วย
+  await pg.click('[data-ch="tiktok"]');
+  await pg.waitForTimeout(200);
+  ok((await pg.$$(".tcard")).length === 2, "ปิดช่องแล้วกล่องของช่องนั้นหายไป");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[29] 🔴 ตัวเลขบนแท่งผู้ติดตาม ต้องไม่จมไปกับสีแท่ง");
+{
+  const { pg } = await open();
+  const m = await pg.evaluate(() => {
+    const row = document.querySelector(".dv-row");
+    const neg = row.querySelector(".dv-neg").getBoundingClientRect();
+    const pos = row.querySelector(".dv-pos").getBoundingClientRect();
+    const ln = row.querySelector(".dv-lbl.neg").getBoundingClientRect();
+    const lp = row.querySelector(".dv-lbl.pos").getBoundingClientRect();
+    const over = (a, b) => !(a.right <= b.left + 1 || a.left >= b.right - 1);
+    return { negOverlap: over(ln, neg), posOverlap: over(lp, pos) };
+  });
+  ok(!m.negOverlap, "ตัวเลขฝั่งลบไม่ทับแท่งแดง");
+  ok(!m.posOverlap, "ตัวเลขฝั่งบวกไม่ทับแท่งเขียว");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[30] ถอดทางลัด Social ออกจากหน้าหลักแล้ว");
+{
+  const p2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await p2.route("**/api/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+  await p2.goto(BASE + "/", { waitUntil: "domcontentloaded" });
+  const hrefs = await p2.$$eval(".card", (n) => n.map((e) => e.getAttribute("href")));
+  ok(!hrefs.some((h) => /social/.test(h || "")), `ไม่มีการ์ด Social บน landing (${hrefs.join(", ")})`);
+  // แต่หน้ายังอยู่ เข้าตรงได้
+  const r = await fetch(BASE + "/social/");
+  ok(r.ok, "หน้า /social/ ยังเปิดได้ตามเดิม");
+  await p2.close();
 }
 
 await browser.close();

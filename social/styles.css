@@ -50,16 +50,56 @@ body {
 .btn:hover { background:var(--surface-2); color:var(--ink); }
 #vtag { color:var(--muted); font-size:.72rem; }
 
-/* ตัวเลือกช่วงเวลา — ขวาบน โชว์แค่ช่วงเวลา */
+/* ── แผงเลือกช่วงเวลา (ขวาบน) ─────────────────────────────────────
+   ปุ่มบอกช่วงที่เลือกอยู่ + ช่วงวันที่จริงบรรทัดล่าง กดแล้วกางแผงตัวเลือก */
 .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
-.periodsel select {
-  appearance:none; -webkit-appearance:none; font-family:inherit; font-size:.82rem; font-weight:600;
-  color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:999px;
-  padding:7px 30px 7px 14px; cursor:pointer;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round'/></svg>");
-  background-repeat:no-repeat; background-position:right 11px center; background-size:11px;
+#periodbox { position:relative; }
+.periodbtn {
+  display:grid; grid-template-columns:auto 1fr auto; grid-template-rows:auto auto;
+  align-items:center; gap:0 8px; cursor:pointer; font-family:inherit; text-align:left;
+  background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:6px 11px;
 }
-.periodsel select:hover { border-color:var(--accent); }
+.periodbtn:hover, .periodbtn.on { border-color:var(--accent); }
+.pb-ic { grid-row:1 / span 2; font-size:1rem; opacity:.7; }
+.pb-t { font-size:.82rem; font-weight:650; color:var(--ink); white-space:nowrap; }
+.pb-sub { grid-column:2; font-size:.68rem; color:var(--muted); white-space:nowrap; }
+.pb-caret { grid-row:1 / span 2; color:var(--muted); font-size:.7rem; }
+
+.periodpanel {
+  position:absolute; right:0; top:calc(100% + 6px); z-index:70; width:min(300px, calc(100vw - 28px));
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  box-shadow:0 10px 30px rgba(16,24,40,.16); overflow:hidden;
+}
+.pp-list { display:flex; flex-direction:column; max-height:min(58vh, 380px); overflow-y:auto; padding:5px; }
+.pp-i {
+  display:flex; flex-direction:column; gap:1px; align-items:flex-start; text-align:left;
+  border:0; background:transparent; font-family:inherit; cursor:pointer; border-radius:8px; padding:7px 10px;
+}
+.pp-i:hover { background:var(--surface-2); }
+.pp-i.on { background:var(--accent); }
+.pp-n { font-size:.82rem; color:var(--ink); }
+.pp-r { font-size:.68rem; color:var(--muted); }
+.pp-i.on .pp-n, .pp-i.on .pp-r { color:#fff; }
+.pp-i.on .pp-r { opacity:.85; }
+
+.pp-cal { border-top:1px solid var(--border); padding:10px 12px; display:flex; flex-direction:column; gap:7px; }
+.pp-cal-h { font-size:.74rem; color:var(--muted); font-weight:600; }
+.pp-cal label { display:flex; align-items:center; justify-content:space-between; gap:9px; font-size:.78rem; color:var(--ink-2); }
+.pp-cal input {
+  background:var(--surface); border:1px solid var(--border); color:var(--ink);
+  border-radius:8px; padding:5px 8px; font-family:inherit; font-size:.79rem;
+}
+.pp-note { margin:0; font-size:.68rem; color:var(--muted); }
+
+.pp-foot {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  border-top:1px solid var(--border); padding:8px 12px; background:var(--surface-2);
+}
+.pp-cur { font-size:.72rem; color:var(--muted); }
+.pp-done {
+  border:0; background:var(--accent); color:#fff; font-family:inherit; font-weight:600;
+  font-size:.76rem; border-radius:999px; padding:6px 15px; cursor:pointer;
+}
 .ctrl-lb { font-size:.76rem; color:var(--muted); }
 
 /* ── แถบควบคุมกลาง ────────────────────────────────────────────────
@@ -255,9 +295,15 @@ body {
 .dv-neg, .dv-pos { position:absolute; top:4px; height:14px; }
 .dv-neg { right:50%; background:var(--bad); opacity:.8; border-radius:4px 0 0 4px; }
 .dv-pos { left:50%; background:var(--good); opacity:.8; border-radius:0 4px 4px 0; }
-.dv-lbl { position:absolute; font-size:.7rem; font-style:normal; font-weight:650; font-variant-numeric:tabular-nums; }
-.dv-lbl.neg { right:calc(50% + 4px); color:var(--bad); }
-.dv-lbl.pos { left:calc(50% + 4px); color:var(--good); }
+/* 🔴 ตัวเลขต้องอยู่ "นอกแท่ง" ไม่ใช่ทับบนแท่ง
+   เดิมวางไว้ติดเส้นกลาง = ตัวเลขสีแดงไปทับแท่งสีแดง / เขียวทับเขียว อ่านไม่ออก
+   ย้ายมาชิดขอบซ้าย-ขวาของราง ซึ่งเป็นพื้นอ่อนเสมอ ไม่ว่าแท่งจะยาวแค่ไหน */
+.dv-lbl { position:absolute; font-size:.7rem; font-style:normal; font-weight:700; font-variant-numeric:tabular-nums; }
+.dv-lbl.neg { left:0; color:var(--bad); }
+.dv-lbl.pos { right:0; color:var(--good); }
+/* เว้นที่ให้ป้ายทั้งสองข้าง แท่งจะได้ไม่วิ่งไปทับ */
+.dv-track { padding:0 46px; }
+.dv-neg, .dv-pos { max-width:calc(50% - 46px); }
 
 /* ── คอนเทนต์ ────────────────────────────────────────────────────── */
 .posts { display:flex; flex-direction:column; gap:8px; }
@@ -272,6 +318,19 @@ body {
 .chip { border:1px solid var(--border); border-radius:999px; padding:0 7px; font-size:.68rem; }
 .badge { font-size:.65rem; border-radius:999px; padding:1px 7px; margin-left:6px; vertical-align:middle; }
 .badge.new { background:var(--accent); color:#fff; }
+
+/* กล่องคอนเทนต์เด่นรายช่อง — แยกช่องละกล่อง ไม่เอามาเรียงรวมกัน */
+.tcard { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.tcard-h { display:flex; align-items:center; gap:8px; padding:10px 13px; font-weight:650; font-size:.86rem;
+           border-bottom:1px solid var(--border); background:var(--surface-2); }
+.tcard-h .pdot { width:9px; height:9px; border-radius:50%; background:var(--pc); flex:none; }
+.tcard-b { padding:10px 11px 12px; }
+.tcard .post { background:var(--surface); }
+
+/* ลูกศรบอกว่ากดแล้วเปิดโพสต์จริง · การ์ดที่ไม่มีลิงก์ต้องไม่ทำท่าว่ากดได้ */
+.post .ext { color:var(--accent); font-size:.8em; }
+.post.nolink { cursor:default; }
+.post.nolink:hover { border-color:var(--border); }
 
 /* ── ตาราง ───────────────────────────────────────────────────────── */
 /* ⚠️ ตารางกว้างต้องเลื่อนในกล่องตัวเอง ห้ามดันให้ทั้งหน้าเลื่อนแนวนอน */

@@ -17,11 +17,35 @@
   var CH = window.SOCIAL_CHARTS;
   var DATA = window.SOCIAL_MOCK;          // ← จุดเดียวที่ต้องเปลี่ยนตอนต่อของจริง
 
+  /* ชุดช่วงเวลาสำเร็จรูป — เรียงจากสั้นไปยาว แล้วปิดท้ายด้วย "กำหนดเอง"
+   * ⚠️ ชื่อกับวิธีคิดอยู่คู่กันที่นี่ที่เดียว เพิ่มตัวเลือกใหม่เติมแค่ในลิสต์นี้
+   *    (แผงเลือกวันที่ กับ ตัวคำนวณช่วง อ่านจากลิสต์เดียวกัน)
+   * ⚠️ "ล่าสุด N วัน" นับรวมวันนี้ด้วย — ให้ตรงกับที่คนอ่านเข้าใจ
+   *    ส่วนตัวที่เป็นเดือน/ปี ใช้ขอบเดือน-ปีปฏิทินจริง ไม่ใช่ลบจำนวนวันตายตัว */
   var PRESETS = [
-    { days: 7, label: "7 วัน" },
-    { days: 30, label: "30 วัน" },
-    { days: 90, label: "90 วัน" },
+    { key: "today", label: "วันนี้", at: function (t) { return [t, t]; } },
+    { key: "yesterday", label: "เมื่อวาน", at: function (t) { var y = addDays(t, -1); return [y, y]; } },
+    { key: "7d", label: "7 วันล่าสุด", at: function (t) { return [addDays(t, -6), t]; } },
+    { key: "28d", label: "28 วันล่าสุด", at: function (t) { return [addDays(t, -27), t]; } },
+    { key: "30d", label: "30 วันล่าสุด", at: function (t) { return [addDays(t, -29), t]; } },
+    { key: "90d", label: "90 วันล่าสุด", at: function (t) { return [addDays(t, -89), t]; } },
+    { key: "mtd", label: "เดือนนี้ถึงวันนี้", at: function (t) { return [new Date(t.getFullYear(), t.getMonth(), 1), t]; } },
+    { key: "lastmonth", label: "เดือนที่แล้ว (ทั้งเดือน)", at: function (t) {
+        return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; } },
+    { key: "3m", label: "3 เดือนล่าสุด", at: function (t) {
+        var a = new Date(t.getTime()); a.setMonth(a.getMonth() - 3); return [addDays(a, 1), t]; } },
+    { key: "12m", label: "12 เดือนล่าสุด", at: function (t) {
+        var a = new Date(t.getTime()); a.setFullYear(a.getFullYear() - 1); return [addDays(a, 1), t]; } },
+    { key: "ytd", label: "ปีนี้ถึงวันนี้", at: function (t) { return [new Date(t.getFullYear(), 0, 1), t]; },
+      suffix: function (t) { return String(t.getFullYear()); } },
+    { key: "lastyear", label: "ปีที่แล้ว", at: function (t) {
+        return [new Date(t.getFullYear() - 1, 0, 1), new Date(t.getFullYear() - 1, 11, 31)]; },
+      suffix: function (t) { return String(t.getFullYear() - 1); } },
+    { key: "custom", label: "กำหนดเอง…", custom: true },
   ];
+  function presetOf(k) { return PRESETS.filter(function (p) { return p.key === k; })[0] || PRESETS[4]; }
+  /** ชื่อที่โชว์บนปุ่ม — ตัวที่ผูกกับปีจะต่อเลขปีจริงให้ด้วย */
+  function presetLabel(p, t) { return p.label + (p.suffix ? " (" + p.suffix(t) + ")" : ""); }
 
   /* 🔴 กติกา delta ใช้ร่วมทั้งแอป: ฐานต่ำกว่านี้ให้บอกเป็น "จำนวนจริง" ไม่ใช่ %
    *    เปอร์เซ็นต์บนฐานเลขหลักสิบ/ร้อยหลอกตา — เคสจริงจากรอบรีวิว:
@@ -31,7 +55,7 @@
 
   var state = {
     tab: "summary",
-    preset: 30,          // 7 | 30 | 90 | "custom"
+    preset: "30d",       // คีย์จาก PRESETS
     start: null,
     end: null,
     compare: "prev",     // prev | yoy | none
@@ -43,6 +67,8 @@
     // เส้นที่ผู้ใช้กดปิดจาก legend — แยกตามกราฟ { chartId: [index,...] }
     // ⚠️ ต้องอยู่ใน state ไม่ใช่ใน DOM เพราะ render() สร้าง HTML ใหม่ทั้งก้อน
     hidden: {},
+    // แผงเลือกช่วงเวลาเปิดอยู่ไหม
+    periodOpen: false,
   };
 
   /* ── วันที่ ──────────────────────────────────────────────────────── */
@@ -53,20 +79,42 @@
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
   function parseKey(s) { var p = String(s).split("-"); return midnight(new Date(+p[0], +p[1] - 1, +p[2])); }
+  var TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
   function thaiShort(k) {
-    var M = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
     var d = parseKey(k);
-    return d.getDate() + " " + M[d.getMonth()];
+    return d.getDate() + " " + TH_MON[d.getMonth()];
+  }
+  function thaiFull(k) {
+    var d = parseKey(k);
+    return d.getDate() + " " + TH_MON[d.getMonth()] + " " + d.getFullYear();
+  }
+
+  /**
+   * ข้อความช่วงวันที่
+   * ⚠️ ต้องมีปีกำกับเมื่อช่วงข้ามปี หรือไม่ใช่ปีปัจจุบัน
+   *    ไม่งั้น "12 เดือนล่าสุด" จะขึ้นว่า "20 ส.ค. – 19 ส.ค." ซึ่งอ่านเหมือนช่วงสั้นๆ
+   */
+  function rangeText(from, to) {
+    var a = parseKey(from), b = parseKey(to), now = new Date().getFullYear();
+    var needYear = a.getFullYear() !== b.getFullYear() || a.getFullYear() !== now;
+    return needYear ? thaiFull(from) + " – " + thaiFull(to) : thaiShort(from) + " – " + thaiShort(to);
   }
 
   function range() {
+    var t = midnight(new Date());
+    var a, b;
     if (state.preset === "custom" && state.start && state.end) {
-      var a = parseKey(state.start), b = parseKey(state.end);
-      if (a > b) { var t = a; a = b; b = t; }
-      return { from: key(a), to: key(b), days: Math.round((b - a) / 864e5) + 1 };
+      a = parseKey(state.start); b = parseKey(state.end);
+      if (a > b) { var sw = a; a = b; b = sw; }
+    } else {
+      var p = presetOf(state.preset);
+      var pair = (p.custom ? presetOf("30d") : p).at(t);
+      a = midnight(pair[0]); b = midnight(pair[1]);
     }
-    var end = midnight(new Date());
-    return { from: key(addDays(end, -(state.preset - 1))), to: key(end), days: state.preset };
+    // 🔴 ไม่มีข้อมูลของอนาคต — ตัดปลายไว้ที่วันนี้เสมอ
+    if (b > t) b = t;
+    if (a > b) a = b;
+    return { from: key(a), to: key(b), days: Math.round((b - a) / 864e5) + 1 };
   }
 
   /* ตัวเลือกช่วงเทียบ — ชื่อกับวิธีคิดอยู่ที่เดียวกัน เพิ่มตัวใหม่เติมที่นี่ */
@@ -105,7 +153,7 @@
   function compareText() {
     var cr = compareRange();
     if (!cr) return "";
-    return compareName() + " (" + thaiShort(cr.from) + " – " + thaiShort(cr.to) + ")";
+    return compareName() + " (" + rangeText(cr.from, cr.to) + ")";
   }
 
   /** ช่องที่เปิดอยู่ — หน้าภาพรวมทุกส่วนต้องอ่านจากตัวนี้ ห้ามใช้ C.ORDER ตรงๆ */
@@ -280,15 +328,21 @@
     var reach = p[P.reachKey] || 0;
     var age = Math.round((midnight(new Date()) - parseKey(p.publishedAt)) / 864e5);
     var badge = opts.newBadge && age < 7 ? '<span class="badge new">ยังใหม่</span>' : "";
-    return '<a class="post" href="' + esc(p.url) + '" target="_blank" rel="noopener">' +
+    /* ⚠️ ลิงก์มาจาก post.url ของข้อมูลตรงๆ — ของจริงคือ URL โพสต์บนแพลตฟอร์ม
+       ถ้าไม่มีลิงก์ ให้เป็นการ์ดเฉยๆ ไม่ใช่ <a> ที่กดแล้วไม่ไปไหน (หลอกว่ากดได้) */
+    var live = p.url && p.url !== "#";
+    var tag = live ? "a" : "div";
+    var attr = live ? ' href="' + esc(p.url) + '" target="_blank" rel="noopener"' : "";
+    return "<" + tag + ' class="post' + (live ? "" : " nolink") + '"' + attr + '>' +
       '<img src="' + esc(p.thumb) + '" alt="" loading="lazy">' +
-      '<div class="post-b"><div class="post-t">' + esc(p.title) + badge + "</div>" +
+      '<div class="post-b"><div class="post-t">' + esc(p.title) + badge +
+      (live ? ' <span class="ext">↗</span>' : "") + "</div>" +
       '<div class="post-m">' +
       (opts.showPlatform ? '<span class="chip" style="border-color:' + P.rawColor + '">' + esc(P.label) + "</span>" : "") +
       "<span>" + esc(P.reachLabel) + " " + esc(num(reach)) + "</span>" +
       "<span>ER " + esc(pct(P.er(p)) || "—") + "</span>" +
       "<span>" + esc(thaiShort(p.publishedAt)) + "</span>" +
-      "</div></div></a>";
+      "</div></div></" + tag + ">";
   }
 
   /* ── แท็บภาพรวม ──────────────────────────────────────────────────── */
@@ -457,21 +511,30 @@
     });
     h += "</div></div>";
 
-    // ⑥ คอนเทนต์เด่นข้ามช่อง — เฉพาะช่องที่เปิดอยู่
-    var all = [];
+    /* ⑥ คอนเทนต์เด่น — แยกกล่องรายช่อง
+     * 🔴 เดิมเอาทุกช่องมาเรียงรวมกันแล้วตัด 3 อันดับแรก ซึ่งอ่านผิดได้ง่าย:
+     *    ER ของแต่ละช่องคิดคนละสูตร ช่องที่นับแชร์ด้วย (TikTok) จึงกวาดอันดับไปหมด
+     *    ทั้งที่ไม่ได้แปลว่าคอนเทนต์ดีกว่า — แยกกล่องแล้วเทียบกันในช่องเดียวกันเท่านั้น */
+    h += sec("คอนเทนต์ที่คนมีส่วนร่วมมากที่สุด", "แยกตามช่อง",
+      "แยกกล่องเพราะ engagement rate ของแต่ละช่องคิดคนละสูตร (ดูสูตรได้ในแท็บของช่องนั้น) " +
+      "เอามาเรียงรวมกันแล้วช่องที่นับแชร์ด้วยจะกวาดอันดับไปหมด ทั้งที่ไม่ได้แปลว่าคอนเทนต์ดีกว่า · " +
+      "กดที่รายการเพื่อเปิดโพสต์จริง");
+
+    h += '<div class="grid3">';
     order.forEach(function (pk) {
-      postsIn(pk, r).forEach(function (p) {
-        var er = C.PLATFORMS[pk].er(p);
-        if (er != null) all.push({ p: p, pk: pk, er: er });
-      });
+      var P = C.PLATFORMS[pk];
+      var top = postsIn(pk, r)
+        .map(function (p) { return { p: p, er: P.er(p) }; })
+        .filter(function (x) { return x.er != null; })
+        .sort(function (a, b) { return b.er - a.er; })
+        .slice(0, 3);
+      h += '<div class="tcard" style="--pc:' + P.rawColor + '">' +
+        '<div class="tcard-h"><span class="pdot"></span>' + esc(P.label) + "</div>" +
+        '<div class="tcard-b">' + (top.length
+          ? '<div class="posts">' + top.map(function (x) { return postRow(x.p, pk); }).join("") + "</div>"
+          : empty("ไม่มี" + P.contentWord + "ในช่วงนี้")) + "</div></div>";
     });
-    all.sort(function (a, b) { return b.er - a.er; });
-    h += sec("คอนเทนต์ที่คนมีส่วนร่วมมากที่สุด", "ทุกช่องที่เปิดอยู่",
-      "เรียงตาม engagement rate ซึ่งแต่ละช่องคิดคนละสูตร (ดูสูตรได้ในแท็บของช่องนั้น) " +
-      "ใช้ดูว่าใบไหนคนตอบสนองดี ไม่ใช่ใช้เทียบข้ามช่องแบบตรงๆ");
-    h += '<div class="panel">' + (all.length
-      ? '<div class="posts">' + all.slice(0, 3).map(function (x) { return postRow(x.p, x.pk, { showPlatform: true }); }).join("") + "</div>"
-      : empty("ไม่มีคอนเทนต์ที่เผยแพร่ในช่วงนี้", "ลองขยายช่วงเวลา")) + "</div>";
+    h += "</div>";
 
     return h;
   }
@@ -699,32 +762,58 @@
   /* ── แถบควบคุม + แท็บ ────────────────────────────────────────────── */
 
   /**
-   * ตัวเลือกช่วงเวลา — อยู่ขวาบนของแถบหัวเรื่อง โชว์แค่ช่วงเวลาอย่างเดียว
-   * ⚠️ ใช้ <select> ของเบราว์เซอร์ ไม่ทำ dropdown เอง — บนมือถือได้ตัวเลือกแบบเนทีฟ
-   *    ที่กดง่ายกว่า และไม่ต้องเพิ่มไลบรารีหรือโค้ดจัดการโฟกัส/ปิดนอกกล่องเอง
+   * แผงเลือกช่วงเวลา — ปุ่มบอกช่วงที่เลือกอยู่ กดแล้วกางแผงตัวเลือก
+   * (โครงเดียวกับที่เครื่องมือวิเคราะห์ทั่วไปใช้: รายการสำเร็จรูปด้านหนึ่ง ปฏิทินอีกด้าน)
+   *
+   * ⚠️ ปฏิทินใช้ <input type="date"> ของเบราว์เซอร์ ไม่เขียนปฏิทินเอง —
+   *    ได้ปฏิทินของระบบที่คนคุ้นอยู่แล้ว รองรับคีย์บอร์ด/screen reader ฟรี
+   *    และไม่ต้องเพิ่มไลบรารีหรือดูแลโค้ดปฏิทินเองอีกก้อน
+   * ⚠️ เปิด/ปิดแผงเก็บใน state ไม่ใช่ใน DOM — render() สร้าง HTML ใหม่ทั้งก้อน
    */
   function renderPeriod() {
-    var opts = PRESETS.map(function (p) {
-      return '<option value="' + p.days + '"' + (state.preset === p.days ? " selected" : "") + ">" + esc(p.label) + "</option>";
-    }).join("");
-    opts += '<option value="custom"' + (state.preset === "custom" ? " selected" : "") + ">กำหนดเอง…</option>";
-    return '<label class="periodsel"><span class="sr">ช่วงเวลา</span>' +
-      '<select id="period" aria-label="ช่วงเวลา">' + opts + "</select></label>";
+    var t = midnight(new Date()), r = range();
+    var p = presetOf(state.preset);
+    var btnText = state.preset === "custom" ? rangeText(r.from, r.to) : presetLabel(p, t);
+
+    var h = '<button type="button" class="periodbtn' + (state.periodOpen ? " on" : "") + '" data-period="toggle" ' +
+      'aria-expanded="' + (state.periodOpen ? "true" : "false") + '">' +
+      '<span class="pb-ic">🗓</span><span class="pb-t">' + esc(btnText) + "</span>" +
+      '<span class="pb-sub">' + esc(rangeText(r.from, r.to)) + "</span>" +
+      '<span class="pb-caret">▾</span></button>';
+
+    if (!state.periodOpen) return h;
+
+    var today = key(t);
+    h += '<div class="periodpanel" role="dialog" aria-label="เลือกช่วงเวลา">' +
+      '<div class="pp-list">' + PRESETS.map(function (x) {
+        var on = state.preset === x.key;
+        var rr = x.custom ? null : (function () {
+          var pr = x.at(t), a = midnight(pr[0]), b = midnight(pr[1]);
+          if (b > t) b = t;
+          return rangeText(key(a), key(b));
+        })();
+        return '<button type="button" class="pp-i' + (on ? " on" : "") + '" data-preset="' + esc(x.key) + '">' +
+          '<span class="pp-n">' + esc(presetLabel(x, t)) + "</span>" +
+          (rr ? '<span class="pp-r">' + esc(rr) + "</span>" : "") + "</button>";
+      }).join("") + "</div>";
+
+    if (state.preset === "custom") {
+      h += '<div class="pp-cal"><div class="pp-cal-h">เลือกวันที่เอง</div>' +
+        '<label>ตั้งแต่<input type="date" id="d1" max="' + today + '" value="' + esc(state.start || r.from) + '"></label>' +
+        '<label>ถึง<input type="date" id="d2" max="' + today + '" value="' + esc(state.end || r.to) + '"></label>' +
+        '<p class="pp-note">เลือกได้ถึงวันนี้เท่านั้น</p></div>';
+    }
+
+    h += '<div class="pp-foot"><span class="pp-cur">' + esc(rangeText(r.from, r.to)) +
+      " (" + r.days + " วัน)</span>" +
+      '<button type="button" class="pp-done" data-period="close">เสร็จ</button></div></div>';
+    return h;
   }
 
   function renderControls() {
     var r = range(), cr = compareRange();
-    // 🔴 วันสุดท้ายที่เลือกได้คือวันนี้ — ข้อมูลของอนาคตไม่มีอยู่จริง
-    //    เลือกไปข้างหน้าได้ = ได้ช่วงว่างเปล่าแล้วผู้ใช้นึกว่าระบบพัง
-    var today = key(midnight(new Date()));
 
     var h = "";
-    if (state.preset === "custom") {
-      h += '<div class="ctrl-row dates"><label>ตั้งแต่ <input type="date" id="d1" max="' + today +
-        '" value="' + esc(state.start || r.from) + '"></label>' +
-        '<label>ถึง <input type="date" id="d2" max="' + today + '" value="' + esc(state.end || r.to) + '"></label></div>';
-    }
-
     h += '<div class="ctrl-row"><span class="ctrl-lb">เทียบกับ</span><div class="seg" id="cmp">' +
       COMPARE.map(function (x) {
         return '<button type="button" class="' + (state.compare === x.key ? "on" : "") + '" data-cmp="' + x.key + '">' +
@@ -747,7 +836,7 @@
     h += "</div>";
 
     // ⚠️ ต้องบอกให้ชัดว่ากำลังเทียบกับ "ช่วงไหน" ไม่ใช่แค่บอกว่ามีการเทียบ
-    h += '<div class="ctrl-note">' + esc(thaiShort(r.from)) + " – " + esc(thaiShort(r.to)) + " (" + r.days + " วัน)" +
+    h += '<div class="ctrl-note">' + esc(rangeText(r.from, r.to)) + " (" + r.days + " วัน)" +
       (cr ? ' <span class="vs">เทียบกับ' + esc(compareText()) + "</span>"
           : ' <span class="vs">ไม่ได้เทียบกับช่วงไหน</span>') + "</div>";
     return h;
@@ -849,8 +938,28 @@
     var tip = e.target.closest(".tipi");
     if (tip) { showTip(tip); return; }
 
-    var t = e.target.closest("[data-tab],[data-days],[data-cmp],[data-sort],[data-ch],[data-bd],[data-lg]");
+    var t = e.target.closest("[data-tab],[data-period],[data-preset],[data-cmp],[data-sort],[data-ch],[data-bd],[data-lg]");
+
+    // คลิกนอกแผงเลือกช่วงเวลา = ปิดแผง
+    if (state.periodOpen && !e.target.closest("#periodbox")) { state.periodOpen = false; render(); if (!t) return; }
     if (!t) return;
+
+    if (t.dataset.period) {
+      state.periodOpen = t.dataset.period === "toggle" ? !state.periodOpen : false;
+      render(); return;
+    }
+
+    if (t.dataset.preset) {
+      state.preset = t.dataset.preset;
+      if (state.preset === "custom") {
+        var rr = range();
+        state.start = state.start || rr.from;
+        state.end = state.end || rr.to;
+      } else {
+        state.periodOpen = false;   // เลือกของสำเร็จรูปแล้วปิดแผงเลย ไม่ต้องกดซ้ำ
+      }
+      render(); return;
+    }
 
     // กดป้ายใต้กราฟ = ซ่อน/แสดงเส้นนั้น (แกนจะขยายตามเส้นที่เหลือเอง)
     if (t.dataset.lg) {
@@ -912,16 +1021,6 @@
   }
 
   function onChange(e) {
-    if (e.target.id === "period") {
-      var v = e.target.value;
-      if (v === "custom") {
-        var r = range();
-        state.start = state.start || r.from;
-        state.end = state.end || r.to;
-        state.preset = "custom";
-      } else state.preset = +v;
-      render(); return;
-    }
     if (e.target.id !== "d1" && e.target.id !== "d2") return;
     var d1 = document.getElementById("d1"), d2 = document.getElementById("d2");
     // ⚠️ กันเลือกวันในอนาคตอีกชั้น — บาง browser ไม่บังคับตาม max ให้
