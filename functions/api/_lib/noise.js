@@ -65,6 +65,13 @@ export const DAILY_RE =
 export const IMGPOST_RE = /^\s*S_?\d{4,}\b/i;
 export const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 
+// หน้ารวมบทความของเว็บ (WordPress tag/category archive) ไม่ใช่ข่าว — เจ้าของสั่งตัดทั้งหมด 14 ส.ค. 2026
+// เจอจริง: "สู้ฝุ่น PM 2.5 Archives - ข่าวท้องถิ่น" (สรุปลงท้ายด้วย "Recent Posts.")
+// ⚠️ ดูจาก **พาดหัว** เท่านั้น ห้ามดูจาก URL — เว็บ WordPress จำนวนมากใช้ /archives/12345
+// เป็น permalink ของข่าวจริง ถ้าจับที่ลิงก์จะตัดข่าวจริงหายไปทั้งเว็บ
+// \b ใช้ได้กับพาดหัวไทยด้วย เพราะอักษรไทยไม่ใช่ \w จึงนับเป็นขอบคำอยู่แล้ว
+export const ARCHIVE_RE = /\barchives?\b/i;
+
 export const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 
 // ⚠️ ryt9.com เพิ่ม 14 ส.ค. 2026 — เป็นเว็บแจกข่าว PR เหมือนกัน และสรุปที่ติดมากับฟีด
@@ -159,6 +166,7 @@ export function noiseReason(it, title, src) {
   const link = it.link || "";
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost"; // เดิมมีแค่ฝั่ง IR — รวมมาแล้ว ใช้ทุกแดชบอร์ด
+  if (ARCHIVE_RE.test(title)) return "archive-page"; // หน้ารวมบทความ ไม่ใช่ข่าว
   if (PR_RE.test(title)) return "pr";
   // เว็บรับแจกข่าวประชาสัมพันธ์ — ใช้กับ **คอลัมน์ CP (alert1) เท่านั้น**
   //

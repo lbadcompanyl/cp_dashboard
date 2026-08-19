@@ -146,5 +146,24 @@ for (const [tag, file] of [["trend", "../functions/api/trend/feeds.js"],
     why("อ้อม พิยดา คว้ารางวัลใหญ่ งาน นาคราช อวอร์ด", "https://www.thairath.co.th/x") === null);
 }
 
+console.log("\n════════ หน้ารวมบทความ (Archives) — เจ้าของสั่งตัดทั้งหมด 14 ส.ค. 2026 ════════");
+{
+  const { noiseReason } = await load("../functions/api/trend/feeds.js");
+  const w = (title, link = "https://www.example.com/tag/pm25/", src = "alert2") =>
+    noiseReason({ link, title, snippet: "Recent Posts." }, title.toLowerCase(), src);
+  ok("เคสจริง: สู้ฝุ่น PM 2.5 Archives", w("สู้ฝุ่น PM 2.5 Archives - ข่าวท้องถิ่น") === "archive-page",
+     String(w("สู้ฝุ่น PM 2.5 Archives - ข่าวท้องถิ่น")));
+  ok("เอกพจน์ Archive ก็ตัด", w("PM 2.5 Archive - เชียงใหม่นิวส์") === "archive-page");
+  ok("Category Archives ก็ตัด", w("Category Archives: สิ่งแวดล้อม") === "archive-page");
+  ok("ตัดทุกคอลัมน์ (alert1 ด้วย)", w("ซีพี Archives - ข่าวธุรกิจ", "https://x/t/", "alert1") === "archive-page");
+  // ⚠️ ห้ามจับที่ URL — /archives/12345 เป็น permalink ของข่าวจริงบนเว็บ WordPress
+  ok("ลิงก์ /archives/12345 แต่พาดหัวปกติ → ไม่ตัด",
+     w("ฝุ่น PM2.5 พุ่งสูงในกรุงเทพ", "https://www.thairath.co.th/archives/12345") === null,
+     String(w("ฝุ่น PM2.5 พุ่งสูงในกรุงเทพ", "https://www.thairath.co.th/archives/12345")));
+  ok("ข่าวจริงที่ไม่มีคำนี้ ไม่โดน", w("ฝุ่น PM2.5 พุ่งสูงในกรุงเทพ") === null);
+  ok("คำที่มี archive ซ่อนอยู่ในคำอื่นไม่นับ (archived ก็ยังนับ แต่ archiver ไม่)",
+     w("archiverX ทดสอบ") === null, String(w("archiverX ทดสอบ")));
+}
+
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);
