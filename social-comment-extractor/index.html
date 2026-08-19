@@ -278,13 +278,10 @@
         <button class="btn primary" id="pdfBtn" type="button">📄 PDF</button>
         <button class="btn" id="jpegBtn" type="button">🖼️ JPEG</button>
         <button class="btn" id="xlsxBtn" type="button">📊 Excel (.xlsx)</button>
+        <button class="btn" id="csvBtn" type="button">📑 CSV</button>
       </div>
+      <p class="sub" style="margin:12px 0 0">Excel / CSV มีชีตสรุป + <b>รายคอมเมนต์ (ข้อความ + ผล sentiment)</b> สำหรับตรวจ/แชร์ · PDF / JPEG เป็นรายงานภาพรวม (ไม่มีข้อความรายคน)</p>
     </div>
-
-    <details class="card" id="logCard">
-      <summary class="log-summary">📋 Log การวิเคราะห์ (กดเพื่อเปิด/ปิด)</summary>
-      <pre class="log-box" id="logBox"></pre>
-    </details>
 
     <details class="card" id="auditCard">
       <summary class="log-summary">🔍 ตรวจ sentiment รายคอมเมนต์ (audit)</summary>
@@ -477,23 +474,6 @@ async function demoResult(opts){
       { text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก", sentiment:"negative" },
       { text:"รอคิวนานมาก ไม่ค่อยประทับใจ", sentiment:"negative" },
     ],
-    log: (() => {
-      const nB = Math.ceil(total/40);
-      const L = [
-        `[+0.0s] เริ่ม · แพลตฟอร์ม = ${opts.platform} · ขอสูงสุด ${opts.limit} คอมเมนต์`,
-        `[+0.6s] ดึงคอมเมนต์สำเร็จ ${total} รายการ`,
-        `[+0.6s] ตี sentiment ด้วย claude-haiku-4-5 · ${nB} batch (batch ละ 40)`,
-      ];
-      let done=0, t=0.6;
-      for (let i=0;i<nB;i++){ const n=Math.min(40,total-done); const p=Math.round(n*0.58),g=Math.round(n*0.16),nu=n-p-g; t+=0.5; done+=n;
-        L.push(`[+${t.toFixed(1)}s]   batch ${i+1}/${nB}: บวก ${p} · กลาง ${nu} · ลบ ${g} (${n} คอมเมนต์)`); }
-      t+=0.4;
-      L.push(`[+${t.toFixed(1)}s] รวมผล → บวก ${pos} · กลาง ${neu} · ลบ ${neg}`);
-      L.push(`[+${(t+0.5).toFixed(1)}s] สรุป+keyword: 8 คำ · ตัวอย่าง 4 รายการ`);
-      L.push(`[+${(t+0.5).toFixed(1)}s] Claude tokens: input ${(total*12).toLocaleString()} + output 240 = ${(total*12+240).toLocaleString()}`);
-      L.push(`[+${(t+0.6).toFixed(1)}s] เสร็จสิ้น (ข้อมูลตัวอย่าง Demo)`);
-      return L;
-    })(),
     samples: opts.samples ? [
       { sentiment:"positive", text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน" },
       { sentiment:"positive", text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย" },
@@ -570,9 +550,6 @@ function renderResult(d){
       items.map(x => `<div class="sample ${cls}">${escapeHtml(x.text)}</div>`).join("") + `</div>`;
   }).join("");
 
-  const logArr = d.log || [];
-  el("logCard").style.display = logArr.length ? "" : "none";
-  el("logBox").textContent = logArr.join("\n");
   renderAudit(d);
 
   el("results").classList.add("show");
@@ -605,6 +582,7 @@ function renderAudit(d){
 
 /* ---------------- export ---------------- */
 el("xlsxBtn").onclick = async () => { if (lastResult && await writeXlsx(buildSheets(lastResult), "comment-sentiment.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
+el("csvBtn").onclick = exportCsv;
 el("jpegBtn").onclick = async () => {
   if (!lastResult) return;
   const r = await renderReport(lastResult);
@@ -645,11 +623,25 @@ function buildSheets(d){
   ];
   const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term, k.count||0])];
   const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
+  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  if ((d.audit||[]).length){
+    sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...(d.audit).map(a=>[sentTh[a.sentiment]||a.sentiment, a.text])];
+  }
   if ((d.samples||[]).length){
-    sheets["Samples"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[x.sentiment,x.text])];
+    sheets["ตัวอย่าง"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[sentTh[x.sentiment]||x.sentiment, x.text])];
   }
   return sheets;
 }
+async function exportCsv(){
+  if (!lastResult) return;
+  const sheets = buildSheets(lastResult);
+  let out = "";
+  for (const [name, rows] of Object.entries(sheets)){
+    out += "# " + name + "\n" + rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n\n";
+  }
+  if (await saveFile("comment-sentiment.csv", "﻿"+out, "text/csv")) toast("ดาวน์โหลด CSV แล้ว ✓");
+}
+function csvCell(v){ v = v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
 /* ---------------- report image (canvas) → JPEG / PDF ---------------- */
 const RC = { bg:"#ffffff", ink:"#141619", ink2:"#4a4e57", muted:"#878b95", border:"#e3e6ea",
   pos:"#2e9160", neu:"#8a8f99", neg:"#d94b4b", accent:"#3d6ee0", track:"#eef1f5" };
