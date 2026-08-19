@@ -43,6 +43,24 @@
       suffix: function (t) { return String(t.getFullYear() - 1); } },
     { key: "custom", label: "กำหนดเอง…", custom: true },
   ];
+  /* ชุด metric ที่สลับดูได้ในกราฟเดียว (แทนการวางกราฟใหญ่เรียงกันหลายอัน)
+   * ⚠️ แต่ละตัวคืน "ค่าเป็นรายวันต่อช่อง" — ตัววาดไม่ต้องรู้ว่าเป็น metric อะไร
+   *    เพิ่ม metric ใหม่ เติมที่นี่ที่เดียว ชิพกับกราฟตามเอง */
+  var METRICS = [
+    { key: "followers", label: "ผู้ติดตาม", tipFmt: "num", source: "followers",
+      at: function (pk, x) { return x.value; } },
+    { key: "reach", label: "ยอดวิว / การเข้าถึง", tipFmt: "num", source: "daily",
+      at: function (pk, x) { return x[C.PLATFORMS[pk].reachKey]; } },
+    { key: "engagement", label: "การมีส่วนร่วม", tipFmt: "num", source: "daily",
+      at: function (pk, x) { return C.engagementOf(pk, x); } },
+    { key: "er", label: "Engagement rate", tipFmt: "pctnum", unit: "%", source: "daily",
+      at: function (pk, x) {
+        var base = x[C.PLATFORMS[pk].reachKey] || 0;
+        return base ? (C.engagementOf(pk, x) / base) * 100 : null;   // ไม่มีฐาน = ไม่รู้ ไม่ใช่ 0
+      } },
+  ];
+  function metricOf(k) { return METRICS.filter(function (m) { return m.key === k; })[0] || METRICS[0]; }
+
   function presetOf(k) { return PRESETS.filter(function (p) { return p.key === k; })[0] || PRESETS[4]; }
   /** ชื่อที่โชว์บนปุ่ม — ตัวที่ผูกกับปีจะต่อเลขปีจริงให้ด้วย */
   function presetLabel(p, t) { return p.label + (p.suffix ? " (" + p.suffix(t) + ")" : ""); }
@@ -69,6 +87,8 @@
     hidden: {},
     // แผงเลือกช่วงเวลาเปิดอยู่ไหม
     periodOpen: false,
+    // metric ที่กำลังดูอยู่ในกราฟหลักของหน้าภาพรวม
+    metric: "followers",
   };
 
   /* ── วันที่ ──────────────────────────────────────────────────────── */
@@ -157,8 +177,35 @@
   }
 
   /** ช่องที่เปิดอยู่ — หน้าภาพรวมทุกส่วนต้องอ่านจากตัวนี้ ห้ามใช้ C.ORDER ตรงๆ */
+  /* ── ช่องที่ยังไม่ได้เชื่อมต่อ ───────────────────────────────────────
+   * ⚠️ "ยังไม่ได้เชื่อม" กับ "เชื่อมแล้วแต่ช่วงนี้ไม่มีข้อมูล" คนละเรื่องกัน
+   *    ถ้าขึ้นข้อความเดียวกัน เจ้าของจะไล่หาสาเหตุผิดทาง (ขยายช่วงเวลาเท่าไหร่ก็ไม่มา)
+   *    ช่องที่ยังไม่เชื่อมจึงบอกตรงๆ ว่าต้องใส่ค่าอะไรถึงจะใช้ได้ */
+  function statusOf(pk) {
+    var st = (DATA.platforms[pk] || {}).status;
+    return st || { connected: true, need: [] };
+  }
+  function isOn(pk) { return statusOf(pk).connected !== false; }
+
+  /** ช่องที่ผู้ใช้เปิดไว้ "และ" เชื่อมต่อแล้ว — ยอดรวมทุกใบนับจากชุดนี้ */
   function activeOrder() {
-    return C.ORDER.filter(function (pk) { return state.channels[pk]; });
+    return C.ORDER.filter(function (pk) { return state.channels[pk] && isOn(pk); });
+  }
+
+  /** กล่องบอกว่าช่องนี้ยังไม่ได้เชื่อม — เป็นสถานะที่ตั้งใจ ไม่ใช่ข้อผิดพลาด */
+  function notConnected(pk) {
+    var P = C.PLATFORMS[pk], need = statusOf(pk).need || [];
+    return '<div class="setup"><div class="setup-i" style="background:' + P.rawColor + '">' +
+      esc(P.label.charAt(0)) + "</div>" +
+      '<div class="setup-b"><div class="setup-t">ยังไม่ได้เชื่อมต่อ ' + esc(P.label) + "</div>" +
+      '<p class="setup-p">ตัวเลขของช่องนี้จะขึ้นเองทันทีที่เชื่อมต่อเสร็จ ระหว่างนี้ยอดรวมบนหน้าภาพรวม' +
+      "<b>ไม่ได้นับช่องนี้</b> จึงไม่ใช่ว่าตัวเลขหาย</p>" +
+      (need.length
+        ? '<div class="setup-n"><span class="setup-nl">ต้องใส่ค่าใน Cloudflare ก่อน</span>' +
+          need.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join("") + "</div>"
+        : "") +
+      '<p class="setup-p sm">ใส่เป็น Secret ทั้ง Production และ Preview แล้วสั่ง Retry deployment</p>' +
+      "</div></div>";
   }
 
   /* ── รวมตัวเลข ───────────────────────────────────────────────────── */
@@ -345,11 +392,113 @@
       "</div></div></" + tag + ">";
   }
 
+  /* ── กล่องสรุปให้อ่าน (แบบ Insights ของ GA4) ─────────────────────────
+   * 🔴 เป็น "กฎตายตัว" ไม่ใช่ AI — อ่านจากตัวเลขชุดเดียวกับที่วาดบนหน้า
+   *    จึงอธิบายได้เสมอว่าทำไมถึงขึ้นข้อความนี้ และเขียนเทสต์คุมได้
+   * ⚠️ ข้อที่ต้องเทียบกับช่วงก่อนหน้า จะไม่ขึ้นเลยถ้าผู้ใช้เลือก "ไม่เทียบ"
+   *    ห้ามเดาแทน — ไม่มีของให้เทียบ = ไม่มีอะไรจะบอก
+   * ⚠️ ฐานเล็กห้ามคิดเป็น % (จาก 2 เป็น 4 = +100% ซึ่งไม่มีความหมาย) */
+  var INSIGHT_MIN_BASE = 500;
+
+  function insights(order, r, cr, cur, prev) {
+    var out = [];
+
+    // ⓪ ภาพรวมก่อน: การมองเห็นรวมขยับไปทางไหน
+    if (cr) {
+      var tc = 0, tp = 0;
+      order.forEach(function (pk) {
+        if (cur[pk]) tc += cur[pk].reach;
+        if (prev[pk]) tp += prev[pk].reach;
+      });
+      if (tp >= INSIGHT_MIN_BASE) {
+        var tch = (tc - tp) / tp;
+        out.push(Math.abs(tch) < 0.05
+          ? { tone: "flat", text: "การมองเห็นรวมทรงตัว เปลี่ยนจากช่วงก่อนหน้าไม่ถึง 5%" }
+          : {
+              tone: tch > 0 ? "up" : "down",
+              text: "การมองเห็นรวม" + (tch > 0 ? "เพิ่มขึ้น " : "ลดลง ") + Math.round(Math.abs(tch) * 100) +
+                "% เทียบกับ" + compareText(),
+            });
+      }
+    }
+
+    // ① ช่องที่การมองเห็นขยับแรงที่สุด (บวกหรือลบก็ได้)
+    if (cr) {
+      var mv = null;
+      order.forEach(function (pk) {
+        var a = cur[pk], b = prev[pk];
+        if (!a || !b || b.reach < INSIGHT_MIN_BASE) return;
+        var ch = (a.reach - b.reach) / b.reach;
+        if (!mv || Math.abs(ch) > Math.abs(mv.ch)) mv = { pk: pk, ch: ch };
+      });
+      if (mv && Math.abs(mv.ch) >= 0.1) {
+        out.push({
+          tone: mv.ch > 0 ? "up" : "down",
+          text: C.PLATFORMS[mv.pk].label + " เปลี่ยนแปลงมากที่สุด — " +
+            C.PLATFORMS[mv.pk].reachLabel + (mv.ch > 0 ? "เพิ่มขึ้น " : "ลดลง ") +
+            Math.round(Math.abs(mv.ch) * 100) + "% เทียบกับช่วงก่อนหน้า",
+        });
+      }
+    }
+
+    // ② ช่องที่คนมีส่วนร่วมดีที่สุดในช่วงนี้ (ER ของช่องนั้นเทียบกับตัวเอง)
+    var bestEr = null;
+    order.forEach(function (pk) {
+      var a = cur[pk];
+      if (!a || a.er == null || !a.reach) return;
+      if (!bestEr || a.er > bestEr.er) bestEr = { pk: pk, er: a.er };
+    });
+    if (bestEr) {
+      out.push({
+        tone: "flat",
+        text: C.PLATFORMS[bestEr.pk].label + " มีสัดส่วนคนมีส่วนร่วมสูงสุดที่ " + pct(bestEr.er) +
+          " — แต่ละช่องคิด ER คนละสูตร ใช้ดูว่าช่องไหนคนตอบสนองดีเทียบกับคนที่เห็น",
+      });
+    }
+
+    // ③ ช่องที่ผู้ติดตามลดสุทธิ — เตือนเสมอ ไม่ต้องรอให้เทียบช่วง
+    var losing = order.filter(function (pk) {
+      var g = growth(pk, r);
+      return g && g.net < 0;
+    });
+    if (losing.length) {
+      out.push({
+        tone: "down",
+        text: losing.map(function (pk) { return C.PLATFORMS[pk].label; }).join(" · ") +
+          " ผู้ติดตามลดลงสุทธิในช่วงนี้ — ดูกราฟแท่งเพิ่ม/หาย ว่าคนเลิกติดตามเยอะขึ้น หรือคนใหม่เข้ามาน้อยลง",
+      });
+    }
+
+    // ④ ช่องที่ไม่ได้โพสต์เลยในช่วงนี้
+    var quiet = order.filter(function (pk) { return !postsIn(pk, r).length; });
+    if (quiet.length && quiet.length < order.length) {
+      out.push({
+        tone: "flat",
+        text: quiet.map(function (pk) { return C.PLATFORMS[pk].label; }).join(" · ") +
+          " ไม่มีคอนเทนต์เผยแพร่ในช่วงนี้ ตัวเลขที่เห็นจึงมาจากโพสต์เก่า",
+      });
+    }
+
+    if (!out.length) return "";
+    var ICON = { up: "▲", down: "▼", flat: "•" };
+    return '<div class="insight"><div class="insight-h">สิ่งที่เห็นจากตัวเลขชุดนี้</div><ul class="insight-l">' +
+      out.slice(0, 3).map(function (x) {
+        return '<li class="ins-' + x.tone + '"><span class="ins-i">' + ICON[x.tone] + "</span>" +
+          esc(x.text) + "</li>";
+      }).join("") + "</ul></div>";
+  }
+
   /* ── แท็บภาพรวม ──────────────────────────────────────────────────── */
 
   function renderSummary() {
     var order = activeOrder();
+    /* ⚠️ "ไม่มีช่องเปิดอยู่" มีได้ 2 สาเหตุ ต้องแยกให้ออก
+       ปิดชิพเอง = บอกให้กดกลับ · ยังไม่ได้เชื่อมสักช่อง = บอกวิธีเชื่อม */
     if (!order.length) {
+      var offAll = C.ORDER.filter(function (pk) { return !isOn(pk); });
+      if (offAll.length === C.ORDER.length) {
+        return '<div class="setups">' + offAll.map(notConnected).join("") + "</div>";
+      }
       return empty("ยังไม่ได้เลือกช่องไหนเลย", "กดชิพช่องด้านบนให้ติดอย่างน้อย 1 ช่อง");
     }
 
@@ -391,25 +540,29 @@
       return '<div class="bd">' + rows + "</div>";
     }
 
+    /* ⚠️ ป้าย "รวม" ต้องบอกว่ารวมกี่ช่อง — ชิพเลือกช่องปิดได้ทีละช่อง
+       ตัวเลขจึงเปลี่ยนได้โดยที่ป้ายยังเขียนว่า "รวม" เหมือนเดิม (เข้าใจผิดว่าตัวเลขผิด) */
+    var nch = " (" + order.length + " ช่อง)";
+
     h += '<div class="grid4">' +
-      card({ label: "ผู้ติดตามรวม", value: num(tf), delta: delta(tf, cr ? pf : null),
+      card({ label: "ผู้ติดตามรวม" + nch, value: num(tf), delta: delta(tf, cr ? pf : null),
              extra: bd(function (a, b, pk) {
                var g = growth(pk, r), pg2 = cr ? growth(pk, cr) : null;
                return { text: g ? num(g.end) : null, cur: g ? g.end : null, prev: pg2 ? pg2.end : null };
              }) }) +
-      card({ label: "การมองเห็นรวม", value: num(tv),
+      card({ label: "การมองเห็นรวม" + nch, value: num(tv),
              tip: "YouTube และ TikTok นับเป็นยอดวิว · Facebook นับเป็นการเข้าถึง (จำนวนคนที่เห็นโพสต์) สองอย่างนี้ไม่ใช่หน่วยเดียวกัน แต่รวมไว้เพื่อดูภาพกว้าง",
              delta: delta(tv, cr ? pv : null),
              extra: bd(function (a, b) {
                return { text: a ? num(a.reach) : null, cur: a ? a.reach : null, prev: b ? b.reach : null };
              }) }) +
-      card({ label: "การมีส่วนร่วมรวม", value: num(te),
+      card({ label: "การมีส่วนร่วมรวม" + nch, value: num(te),
              tip: "ไลก์ + คอมเมนต์ + แชร์ ตามที่แต่ละช่องนับได้ · YouTube ไม่มีตัวเลขแชร์ให้",
              delta: delta(te, cr ? pe : null),
              extra: bd(function (a, b) {
                return { text: a ? num(a.engagement) : null, cur: a ? a.engagement : null, prev: b ? b.engagement : null };
              }) }) +
-      card({ label: "Engagement rate รวม", value: pct(erNow),
+      card({ label: "Engagement rate รวม" + nch, value: pct(erNow),
              tip: "การมีส่วนร่วมรวม ÷ การมองเห็นรวม ของช่องที่เปิดอยู่ · ค่ารายช่องคิดด้วยสูตรของช่องนั้นเอง จึงเทียบข้ามช่องตรงๆ ไม่ได้",
              delta: delta(erNow, cr ? erPrev : null, { pp: true }),
              extra: bd(function (a, b) {
@@ -417,13 +570,24 @@
              }, { pp: true }) }) +
       "</div>";
 
-    /* ② แนวโน้ม — วางเป็นคู่ซ้าย-ขวา 2 แถว (จอแคบยุบเป็นบนล่าง)
-     *    แถวบน: ผู้ติดตาม (เส้น) คู่กับ ผู้ติดตามเพิ่ม/หาย (แท่ง) — เรื่องเดียวกัน 2 มุม
-     *    แถวล่าง: การมีส่วนร่วม คู่กับ การมองเห็น
-     * ⚠️ กราฟผู้ติดตามเคยกินเต็มความกว้างแล้วสูงเกินจำเป็น (เจ้าของแจ้ง)
-     *    ย่อลงครึ่งหนึ่งแล้วเอาแท่งเพิ่ม/หายมาวางข้างๆ ได้ข้อมูลมากขึ้นในที่เท่าเดิม
-     * ทุกกราฟอ่านจาก order (ช่องที่เปิดอยู่) → ชิพเลือกช่องคุมได้ทั้งหมด */
+    // ①b กล่องสรุปให้อ่าน — วางใต้ตัวเลขรวม ก่อนกราฟ (เหมือน Insights ของ GA4)
+    h += insights(order, r, cr, cur, prev);
 
+    /* ①c ช่องที่ยังไม่ได้เชื่อม — บอกไว้ตรงนี้ให้เห็นคู่กับยอดรวม
+       ไม่งั้นเจ้าของจะอ่านยอดรวมโดยไม่รู้ว่ามีช่องที่ไม่ได้ถูกนับ */
+    var offList = C.ORDER.filter(function (pk) { return !isOn(pk); });
+    if (offList.length) {
+      h += '<div class="offnote">ยอดรวมข้างบนยังไม่ได้นับ ' +
+        offList.map(function (pk) {
+          return '<button type="button" class="offlink" data-tab="' + esc(pk) + '">' +
+            esc(C.PLATFORMS[pk].label) + "</button>";
+        }).join(" · ") + " เพราะยังไม่ได้เชื่อมต่อ</div>";
+    }
+
+    /* ② แนวโน้ม — กราฟเดียวสลับ metric ได้ คู่กับแท่งผู้ติดตามเพิ่ม/หาย
+     * 🔴 เดิมวางกราฟใหญ่ 3 อันเรียงกัน หน้ายาวมากและอ่านทีละอันไม่ได้เทียบอะไร
+     *    ยุบเหลืออันเดียวแล้วสลับด้วยชิพ — หน้าสั้นลงเกินครึ่ง
+     * ทุกกราฟอ่านจาก order (ช่องที่เปิดอยู่) → ชิพเลือกช่องคุมได้ทั้งหมด */
     var glRows = [];
     order.forEach(function (pk) {
       var g = growth(pk, r);
@@ -436,31 +600,22 @@
 
     h += '<div class="duo">' +
       '<div class="duo-c">' +
-        sec("แนวโน้มผู้ติดตาม", "จำนวนคน",
-          "จำนวนผู้ติดตามของแต่ละช่องต่างกันหลายเท่า เส้นจึงอยู่คนละระดับและดูแบน " +
-          "ถ้าอยากเห็นรูปทรงของช่องไหนชัดๆ ให้กดปิดช่องอื่นที่ป้ายใต้กราฟ แกนจะขยายตามช่องที่เหลือเอง · " +
-          "เอาเมาส์ชี้บนกราฟเพื่อดูตัวเลขรายวัน") +
-        '<div class="panel">' + followerTrend(order, r, 168, "sum-fol") + "</div>" +
+        sec("แนวโน้มรายวัน", null,
+          "เส้นดำคือผลรวมของทุกช่องที่เปิดอยู่ · เส้นสีคือรายช่อง — กดที่ป้ายใต้กราฟเพื่อซ่อน/แสดงเส้นได้ " +
+          "แกนจะขยายตามเส้นที่เหลือ ทำให้เห็นรูปทรงของช่องเดียวชัดขึ้น · เอาเมาส์ชี้เพื่ออ่านตัวเลขรายวัน") +
+        '<div class="panel">' +
+          '<div class="mchips">' + METRICS.map(function (mm) {
+            return '<button type="button" class="mchip' + (state.metric === mm.key ? " on" : "") +
+              '" data-metric="' + mm.key + '">' + esc(mm.label) + "</button>";
+          }).join("") + "</div>" +
+          metricTrend(order, r, state.metric, 196, "sum-" + state.metric) +
+        "</div>" +
       "</div>" +
       '<div class="duo-c">' +
         sec("ผู้ติดตามที่เพิ่มและที่หายไป", null,
           "แท่งแดงยื่นซ้ายคือคนที่เลิกติดตาม แท่งเขียวยื่นขวาคือคนที่เพิ่งติดตาม ทุกช่องใช้มาตราส่วนเดียวกัน " +
           "ยอดสุทธิเท่ากันไม่ได้แปลว่าเหมือนกัน — ได้ 500 เสีย 480 คนละเรื่องกับ ได้ 30 เสีย 10") +
         '<div class="panel">' + (glRows.length ? CH.diverging(glRows) : empty("ไม่มีข้อมูลผู้ติดตามในช่วงนี้")) + "</div>" +
-      "</div>" +
-      "</div>";
-
-    // การมีส่วนร่วม / การมองเห็น — คู่ซ้าย-ขวาแถวที่สอง
-    h += '<div class="duo">' +
-      '<div class="duo-c">' +
-        sec("การมีส่วนร่วมรายวัน", null,
-          "ไลก์ + คอมเมนต์ + แชร์ ตามที่แต่ละช่องนับได้ · YouTube ไม่มีตัวเลขแชร์ให้ ตัวเลขจึงต่ำกว่าช่องอื่นโดยธรรมชาติ") +
-        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return C.engagementOf(pk, x); }, 175, "sum-eng") + "</div>" +
-      "</div>" +
-      '<div class="duo-c">' +
-        sec("การมองเห็นรายวัน", null,
-          "YouTube และ TikTok เป็นยอดวิว · Facebook เป็นการเข้าถึง (จำนวนคนที่เห็นโพสต์) คนละหน่วยกัน วางเส้นไว้ด้วยกันเพื่อดูจังหวะขึ้นลง ไม่ใช่เพื่อเทียบขนาด") +
-        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return x[C.PLATFORMS[pk].reachKey]; }, 175, "sum-reach") + "</div>" +
       "</div>" +
       "</div>";
 
@@ -471,7 +626,11 @@
     h += '<div class="panel"><div class="tblwrap"><table class="tbl cmp"><thead><tr><th>ตัวชี้วัด</th>' +
       order.map(function (pk) {
         var P = C.PLATFORMS[pk];
-        return '<th class="num"><span class="pdot" style="background:' + P.rawColor + '"></span> ' + esc(P.label) + "</th>";
+        /* ⚠️ หัวคอลัมน์กดได้ = ทางลัดไปแท็บของช่องนั้น (drill-down)
+           ต้องเป็น <button> จริง ไม่ใช่ <th> ที่ผูก onclick — คีย์บอร์ดกับ screen reader ต้องใช้ได้ */
+        return '<th class="num"><button type="button" class="drill" data-tab="' + esc(pk) + '" ' +
+          'title="ดูรายละเอียดของ' + esc(P.label) + '"><span class="pdot" style="background:' +
+          P.rawColor + '"></span> ' + esc(P.label) + ' <span class="drill-a">›</span></button></th>';
       }).join("") + "</tr></thead><tbody>";
 
     var ROWS = [
@@ -511,30 +670,50 @@
     });
     h += "</div></div>";
 
-    /* ⑥ คอนเทนต์เด่น — แยกกล่องรายช่อง
-     * 🔴 เดิมเอาทุกช่องมาเรียงรวมกันแล้วตัด 3 อันดับแรก ซึ่งอ่านผิดได้ง่าย:
-     *    ER ของแต่ละช่องคิดคนละสูตร ช่องที่นับแชร์ด้วย (TikTok) จึงกวาดอันดับไปหมด
-     *    ทั้งที่ไม่ได้แปลว่าคอนเทนต์ดีกว่า — แยกกล่องแล้วเทียบกันในช่องเดียวกันเท่านั้น */
-    h += sec("คอนเทนต์ที่คนมีส่วนร่วมมากที่สุด", "แยกตามช่อง",
-      "แยกกล่องเพราะ engagement rate ของแต่ละช่องคิดคนละสูตร (ดูสูตรได้ในแท็บของช่องนั้น) " +
-      "เอามาเรียงรวมกันแล้วช่องที่นับแชร์ด้วยจะกวาดอันดับไปหมด ทั้งที่ไม่ได้แปลว่าคอนเทนต์ดีกว่า · " +
-      "กดที่รายการเพื่อเปิดโพสต์จริง");
+    /* ⑥ คอนเทนต์เด่น — 2 อันดับวางคู่กัน: คนมีส่วนร่วมมากสุด / คนดูมากสุด
+     * ⚠️ หยิบ "ที่ดีที่สุดของแต่ละช่อง" ไม่เอาทุกช่องมาเรียงรวมกัน
+     *    เพราะ ER คิดคนละสูตร ช่องที่นับแชร์ด้วยจะกวาดอันดับไปหมด (เจอจริงตอนรีวิว)
+     *    วิธีนี้ได้ทั้งการเทียบข้ามช่องและหน้าที่ไม่ยาว */
+    function bestList(rank) {
+      var rows = order.map(function (pk) {
+        var P = C.PLATFORMS[pk];
+        var best = postsIn(pk, r)
+          .map(function (p) { return { p: p, v: rank === "er" ? P.er(p) : (p[P.reachKey] || 0) }; })
+          .filter(function (x) { return x.v != null; })
+          .sort(function (x, y) { return y.v - x.v; })[0];
+        return { pk: pk, best: best };
+      });
+      if (!rows.some(function (x) { return x.best; })) {
+        return empty("ไม่มีคอนเทนต์ที่เผยแพร่ในช่วงนี้", "ลองขยายช่วงเวลา");
+      }
+      /* ⚠️ แยกเป็นกล่องต่อช่อง ไม่ใช่ลิสต์รวมที่ติดป้ายช่องไว้ในแต่ละใบ
+         เจ้าของสั่งไว้ตั้งแต่รอบรีวิว: ต้องเห็นเป็น 3 ช่องแยกกันชัดๆ
+         ⚠️ ช่องที่ไม่มีคอนเทนต์ในช่วงนี้ ยังต้องมีกล่องอยู่ (บอกว่าไม่มี)
+            ซ่อนกล่องทิ้ง = ดูเหมือนช่องนั้นไม่มีอยู่ */
+      return '<div class="tcards">' + rows.map(function (x) {
+        var P = C.PLATFORMS[x.pk];
+        return '<div class="tcard"><div class="tcard-h" style="--pc:' + P.rawColor + '">' +
+          '<span class="pdot"></span>' + esc(P.label) + "</div>" +
+          '<div class="tcard-b">' +
+          (x.best
+            ? postRow(x.best.p, x.pk)
+            : '<div class="tcard-none">ไม่มี' + esc(P.contentWord) + "ที่เผยแพร่ในช่วงนี้</div>") +
+          "</div></div>";
+      }).join("") + "</div>";
+    }
 
-    h += '<div class="grid3">';
-    order.forEach(function (pk) {
-      var P = C.PLATFORMS[pk];
-      var top = postsIn(pk, r)
-        .map(function (p) { return { p: p, er: P.er(p) }; })
-        .filter(function (x) { return x.er != null; })
-        .sort(function (a, b) { return b.er - a.er; })
-        .slice(0, 3);
-      h += '<div class="tcard" style="--pc:' + P.rawColor + '">' +
-        '<div class="tcard-h"><span class="pdot"></span>' + esc(P.label) + "</div>" +
-        '<div class="tcard-b">' + (top.length
-          ? '<div class="posts">' + top.map(function (x) { return postRow(x.p, pk); }).join("") + "</div>"
-          : empty("ไม่มี" + P.contentWord + "ในช่วงนี้")) + "</div></div>";
-    });
-    h += "</div>";
+    h += '<div class="duo">' +
+      '<div class="duo-c">' +
+        sec("คนมีส่วนร่วมมากที่สุด", "ที่ดีที่สุดของแต่ละช่อง",
+          "เรียงตาม engagement rate ซึ่งแต่ละช่องคิดคนละสูตร จึงหยิบมาช่องละใบ ไม่เอามาเรียงรวมกัน · กดเพื่อเปิดโพสต์จริง") +
+        '<div class="panel">' + bestList("er") + "</div>" +
+      "</div>" +
+      '<div class="duo-c">' +
+        sec("คนดูมากที่สุด", "ที่ดีที่สุดของแต่ละช่อง",
+          "เรียงตามยอดวิว (Facebook ใช้การเข้าถึง) · เป็นคนละอันดับกับฝั่งซ้าย เพราะใบที่คนดูเยอะไม่ได้แปลว่าคนมีส่วนร่วมเยอะ") +
+        '<div class="panel">' + bestList("reach") + "</div>" +
+      "</div>" +
+      "</div>";
 
     return h;
   }
@@ -553,26 +732,76 @@
    *    ช่องที่ข้อมูลขาดไปบางวันจะถูกดันให้เลื่อนไปตรงกับวันของช่องอื่น = เส้นเพี้ยนทั้งกราฟ
    * ⚠️ วันที่ไม่มีข้อมูลส่ง null ไม่ใช่ 0 — เส้นจะได้ขาด ไม่ใช่ดิ่งลงพื้นเหมือนยอดตก
    */
-  function channelTrend(order, r, valueOf, height, id) {
-    var days = dateList(r);
-    var series = [];
+  /**
+   * กราฟแนวโน้มตัวเดียว สลับ metric ได้
+   * 🔴 เส้นแรกคือ "รวมทุกช่อง" — เจ้าของแจ้งว่าเส้นรายช่องอย่างเดียวดูนิ่งเกินไป
+   *    เส้นรวมขยับชัดกว่าเพราะบวกการเปลี่ยนแปลงของทุกช่องเข้าด้วยกัน
+   * ⚠️ Engagement rate รวม ต้องคิดจาก (การมีส่วนร่วมรวม ÷ การมองเห็นรวม)
+   *    ห้ามเอา ER ของแต่ละช่องมาเฉลี่ยกัน — ช่องเล็กจะถ่วงผลเท่าช่องใหญ่ ซึ่งผิด
+   */
+  function metricTrend(order, r, mk, height, id) {
+    var m = metricOf(mk), days = dateList(r), series = [];
+
+    // ⚠️ ทำตารางค้นหาก่อนวน ไม่งั้นเป็นการค้นซ้อนกัน (วัน × ช่อง × แถว) ช่วง 12 เดือนจะอืดชัดเจน
+    var lut = {};
     order.forEach(function (pk) {
-      var byDate = {};
-      dailyIn(pk, r).forEach(function (x) { byDate[x.date] = x; });
+      var mm = {};
+      (m.source === "followers" ? followersIn(pk, r) : dailyIn(pk, r))
+        .forEach(function (x) { mm[x.date] = x; });
+      lut[pk] = mm;
+    });
+    var dayLut = {};
+    order.forEach(function (pk) {
+      var mm = {};
+      dailyIn(pk, r).forEach(function (x) { mm[x.date] = x; });
+      dayLut[pk] = mm;
+    });
+
+    if (order.length > 1) {
+      var tot = days.map(function (dk) {
+        if (m.key === "er") {
+          var eng = 0, base = 0, seen = false;
+          order.forEach(function (pk) {
+            var row = dayLut[pk][dk];
+            if (!row) return;
+            seen = true;
+            eng += C.engagementOf(pk, row);
+            base += row[C.PLATFORMS[pk].reachKey] || 0;
+          });
+          return { y: !seen || !base ? null : (eng / base) * 100 };
+        }
+        var sum = 0, any = false;
+        order.forEach(function (pk) {
+          var row = lut[pk][dk];
+          if (!row) return;
+          var v = m.at(pk, row);
+          if (v == null) return;
+          any = true; sum += v;
+        });
+        return { y: any ? sum : null };
+      });
+      series.push({ label: "รวมทุกช่อง", color: "#111827", tipFmt: m.tipFmt, points: tot });
+    }
+
+    order.forEach(function (pk) {
+      var byDate = lut[pk];
       if (!Object.keys(byDate).length) return;
       series.push({
-        label: C.PLATFORMS[pk].label, color: C.PLATFORMS[pk].rawColor,
+        label: C.PLATFORMS[pk].label, color: C.PLATFORMS[pk].rawColor, tipFmt: m.tipFmt,
         points: days.map(function (dk) {
           var row = byDate[dk];
-          return { y: row ? valueOf(pk, row) : null };
+          return { y: row ? m.at(pk, row) : null };
         }),
       });
     });
     if (!series.length) return empty("ไม่มีข้อมูลในช่วงนี้");
     return CH.line({
       id: id, hidden: hiddenOf(id),
-      labels: days.map(thaiShort), series: series, height: height || 180,
-      zeroFloor: true, fmtY: function (v) { return num(v); }, aria: "แนวโน้มรายวันแยกช่อง",
+      labels: days.map(thaiShort), series: series, height: height || 200,
+      // ⚠️ ผู้ติดตามห้ามบังคับให้เริ่มที่ 0 — เส้นจะไปกองอยู่บนสุดจนดูไม่ออกว่าขยับ
+      zeroFloor: m.key !== "followers",
+      fmtY: m.unit === "%" ? null : function (v) { return num(v); },
+      unitLeft: m.unit || "", aria: "แนวโน้ม" + m.label,
     }) + legendOf(series, id);
   }
 
@@ -629,6 +858,8 @@
   /* ── แท็บรายช่อง ─────────────────────────────────────────────────── */
 
   function renderPlatform(pk) {
+    if (!isOn(pk)) return notConnected(pk);
+
     var P = C.PLATFORMS[pk], r = range(), cr = compareRange();
     var a = agg(pk, r), b = cr ? agg(pk, cr) : null;
     var g = growth(pk, r), pg = cr ? growth(pk, cr) : null;
@@ -823,7 +1054,14 @@
     // ชิพเลือกช่อง + ปุ่มแยกช่อง — มีผลกับหน้าภาพรวมเท่านั้น
     if (state.tab === "summary") {
       h += '<div class="chips" id="chips">' + C.ORDER.map(function (pk) {
-        var P = C.PLATFORMS[pk], on = state.channels[pk];
+        var P = C.PLATFORMS[pk], on = state.channels[pk] && isOn(pk);
+        /* ⚠️ ช่องที่ยังไม่เชื่อมต้องกดไม่ได้ ไม่ใช่กดติดแล้วไม่มีอะไรเปลี่ยน
+           (กดแล้วหน้าเหมือนเดิม = ดูเหมือนปุ่มเสีย) */
+        if (!isOn(pk)) {
+          return '<button type="button" class="ch off" disabled ' +
+            'title="ยังไม่ได้เชื่อมต่อ — เปิดแท็บของช่องนี้เพื่อดูว่าต้องใส่ค่าอะไร" ' +
+            'style="--pc:' + P.rawColor + '"><span class="pdot"></span>' + esc(P.label) + " (ยังไม่เชื่อม)</button>";
+        }
         return '<button type="button" class="ch' + (on ? " on" : "") + '" data-ch="' + pk + '" ' +
           'aria-pressed="' + (on ? "true" : "false") + '" style="--pc:' + P.rawColor + '">' +
           '<span class="pdot"></span>' + esc(P.label) + "</button>";
@@ -831,12 +1069,14 @@
 
       h += '<button type="button" class="bd-btn' + (state.breakdown ? " on" : "") + '" data-bd="1" ' +
         'aria-pressed="' + (state.breakdown ? "true" : "false") + '">' +
-        (state.breakdown ? "▾" : "▸") + " แยกช่อง</button>";
+        (state.breakdown ? "▾" : "▸") + ' แยก<span class="lbl-long">ช่อง</span></button>';
     }
     h += "</div>";
 
     // ⚠️ ต้องบอกให้ชัดว่ากำลังเทียบกับ "ช่วงไหน" ไม่ใช่แค่บอกว่ามีการเทียบ
-    h += '<div class="ctrl-note">' + esc(rangeText(r.from, r.to)) + " (" + r.days + " วัน)" +
+    /* ⚠️ ช่วงวันที่ซ้ำกับบรรทัดล่างของปุ่มเลือกช่วงเวลา — บนจอแคบซ่อนครึ่งนี้
+       เพื่อไม่ให้แถบติดขอบสูงจนกินจอ (ครึ่งที่เหลือคือ "เทียบกับอะไร" ซึ่งไม่มีที่อื่นบอก) */
+    h += '<div class="ctrl-note"><span class="rg">' + esc(rangeText(r.from, r.to)) + " (" + r.days + " วัน)</span>" +
       (cr ? ' <span class="vs">เทียบกับ' + esc(compareText()) + "</span>"
           : ' <span class="vs">ไม่ได้เทียบกับช่วงไหน</span>') + "</div>";
     return h;
@@ -938,7 +1178,7 @@
     var tip = e.target.closest(".tipi");
     if (tip) { showTip(tip); return; }
 
-    var t = e.target.closest("[data-tab],[data-period],[data-preset],[data-cmp],[data-sort],[data-ch],[data-bd],[data-lg]");
+    var t = e.target.closest("[data-tab],[data-period],[data-preset],[data-cmp],[data-sort],[data-ch],[data-bd],[data-lg],[data-metric]");
 
     // คลิกนอกแผงเลือกช่วงเวลา = ปิดแผง
     if (state.periodOpen && !e.target.closest("#periodbox")) { state.periodOpen = false; render(); if (!t) return; }
@@ -975,6 +1215,8 @@
     if (t.dataset.tab) { state.tab = t.dataset.tab; render(); return; }
 
     if (t.dataset.bd) { state.breakdown = !state.breakdown; render(); return; }
+
+    if (t.dataset.metric) { state.metric = t.dataset.metric; render(); return; }
 
     if (t.dataset.ch) {
       var pk = t.dataset.ch;

@@ -39,8 +39,9 @@
       if (!dup) {
         return (function (d) {
           return function (v) {
-            var t = v.toFixed(d);
-            return unit === "%" ? (v > 0 ? "+" : "") + t + "%" : t + unit;
+            // ⚠️ ห้ามเติม "+" หน้าเลขเปอร์เซ็นต์ — แกนนี้ใช้กับ Engagement rate
+            // ซึ่งเป็น "ระดับ" ไม่ใช่ "การเปลี่ยนแปลง" (เคยขึ้น +8% ทั้งที่แปลว่า 8%)
+            return v.toFixed(d) + unit;
           };
         })(dec);
       }

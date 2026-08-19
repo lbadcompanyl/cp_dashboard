@@ -129,6 +129,10 @@ body {
 .ch .pdot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none; }
 .ch.on { color:var(--ink); border-color:var(--pc); background:var(--surface-2); font-weight:600; }
 .ch.on .pdot { background:var(--pc); }
+/* ช่องที่ยังไม่ได้เชื่อม — จางลงและกดไม่ได้ แต่ยังอยู่ในแถว
+   ⚠️ ห้ามซ่อนทิ้ง ไม่งั้นจะไม่มีใครรู้ว่ามีช่องที่หายไปจากยอดรวม */
+.ch.off { opacity:.55; cursor:not-allowed; border-style:dashed; }
+.ch.off .pdot { background:transparent; border:1px dashed var(--muted); }
 .ch:not(.on) { text-decoration:line-through; text-decoration-color:var(--muted); }
 
 .dates label { font-size:.78rem; color:var(--muted); display:inline-flex; align-items:center; gap:6px; }
@@ -139,13 +143,35 @@ body {
 .ctrl-note { font-size:.75rem; color:var(--muted); padding-top:7px; }
 .ctrl-note .vs { color:var(--ink-2); }
 
+/* จอแคบ: บีบแถบติดขอบให้เตี้ยลง — มันกินพื้นที่อ่านข้อมูลไปตลอดเวลาที่เลื่อน */
+@media (max-width:639px) {
+  .ctrl-note .rg { display:none; }
+  .ctrl-row { padding-top:8px; gap:6px; }
+  .seg button { padding:5px 9px; font-size:.74rem; }
+  .ch { padding:5px 10px; font-size:.74rem; }
+  .bd-btn { padding:5px 10px; font-size:.74rem; }
+  .stickyhead { gap:6px; padding-top:6px; }
+  .tab { padding:9px 13px 8px; font-size:.82rem; }
+  /* ปุ่ม "แยกช่อง" สั้นลงเหลือ "แยก" เพื่อให้อยู่แถวเดียวกับชิพช่อง ประหยัดไป 1 แถว */
+  .lbl-long { display:none; }
+  .ctrl-lb { display:none; }
+}
+
 /* ── แท็บ ─────────────────────────────────────────────────────────
    หน้าตาเป็นแท็บจริง (เส้นใต้) ไม่ใช่เม็ดยา — อยู่บนสุดของเนื้อหา
    ⚠️ เลื่อนแนวนอนได้บนจอแคบ เพิ่มแท็บใหม่ (เช่น โฆษณา) แล้วต้องไม่ดันหน้าพัง */
+/* แถวบนของแถบติดขอบ: แท็บ + ตัวเลือกช่วงเวลา
+   ⚠️ จอแคบวางซ้อนกัน (ช่วงเวลาอยู่บน) เพราะเรียงแถวเดียวแล้วแท็บถูกบีบจนเลื่อนหายาก
+      ส่วนจอกว้างอยู่แถวเดียวกัน แท็บชิดซ้าย ช่วงเวลาชิดขวา */
+.stickyhead { display:flex; flex-direction:column; gap:8px; padding-top:8px; }
+.stickyhead #periodbox { order:-1; }
+
 .tabs {
   display:flex; gap:2px; overflow-x:auto; scrollbar-width:none;
   -webkit-overflow-scrolling:touch; border-bottom:1px solid var(--border);
 }
+/* จอแคบ: แท็บกินเต็มความกว้าง เส้นใต้จึงลากยาวเป็นฐานของแถบทั้งแถว */
+.stickyhead .tabs { flex:1; min-width:0; }
 .tabs::-webkit-scrollbar { display:none; }
 .tab {
   flex:none; border:0; border-bottom:2px solid transparent; background:transparent;
@@ -195,6 +221,20 @@ body {
 .sc.na .sc-v { color:var(--muted); font-size:1.05rem; font-weight:600; }
 .sc-d { margin-top:3px; min-height:17px; }
 
+/* ── กล่องสรุปให้อ่าน (Insights) ───────────────────────────────────
+   ⚠️ เป็นข้อความที่มาจากกฎตายตัว ไม่ใช่คำเตือนของระบบ — จึงใช้พื้นเรียบ
+      ไม่ใช้แดง/เหลืองทั้งกล่อง ไม่งั้นจะดูเหมือนมีอะไรพัง */
+.insight { margin-top:12px; background:var(--surface); border:1px solid var(--border);
+           border-radius:12px; padding:11px 12px; }
+.insight-h { font-size:.73rem; color:var(--muted); font-weight:600; margin-bottom:6px; }
+.insight-l { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.insight-l li { display:grid; grid-template-columns:16px 1fr; gap:6px; align-items:start;
+                font-size:.79rem; line-height:1.45; }
+.ins-i { font-size:.68rem; line-height:1.7; text-align:center; }
+.ins-up .ins-i { color:var(--good); }
+.ins-down .ins-i { color:var(--bad); }
+.ins-flat .ins-i { color:var(--muted); }
+
 /* แถวรายช่องใต้ยอดรวม — โผล่เมื่อกด "แยกช่อง"
    ⚠️ อ่านจากช่องที่เปิดอยู่ชุดเดียวกับยอดรวม ปิดช่องไหนต้องหายทั้งคู่
       ไม่งั้นรายช่องบวกกันแล้วไม่เท่ายอดรวม จะดูเหมือนคำนวณผิด */
@@ -224,6 +264,15 @@ body {
 .tbl.cmp th[scope="row"] { color:var(--ink-2); font-weight:500; font-size:.78rem; white-space:nowrap; }
 .tbl.cmp thead th { white-space:nowrap; }
 .tbl.cmp thead .pdot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+/* หัวคอลัมน์กดได้ = ทางลัดไปแท็บของช่องนั้น
+   ⚠️ ต้องดูออกว่ากดได้ ไม่งั้นไม่มีใครรู้ว่ามีทางลัด (ลูกศร › + เปลี่ยนสีตอนชี้) */
+.tbl.cmp thead .drill {
+  background:none; border:0; padding:0; margin:0; font:inherit; color:inherit;
+  cursor:pointer; display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+}
+.tbl.cmp thead .drill:hover, .tbl.cmp thead .drill:focus-visible { color:var(--ink); }
+.tbl.cmp thead .drill:hover .drill-a { transform:translateX(2px); }
+.drill-a { color:var(--muted); transition:transform .12s ease; }
 .tbl.cmp td.na { color:var(--muted); }
 .tbl.cmp .cv { display:block; font-weight:650; font-size:.92rem; }
 .tbl.cmp .cd { display:block; margin-top:1px; }
@@ -234,6 +283,15 @@ body {
 .duo { display:grid; grid-template-columns:1fr; gap:0 18px; align-items:start; }
 .duo-c { min-width:0; }
 .duo-c .sec { margin-top:24px; }
+
+/* ชิพสลับ metric บนกราฟ — ยุบกราฟหลายอันเหลืออันเดียว */
+.mchips { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px; }
+.mchip {
+  border:1px solid var(--border); background:var(--surface); color:var(--muted);
+  border-radius:999px; padding:5px 11px; font-size:.75rem; font-family:inherit; cursor:pointer;
+}
+.mchip:hover { color:var(--ink); }
+.mchip.on { background:var(--ink); color:#fff; border-color:var(--ink); font-weight:600; }
 
 /* ── กราฟ ────────────────────────────────────────────────────────── */
 .chart { width:100%; height:auto; display:block; overflow:visible; }
@@ -326,6 +384,8 @@ body {
 .tcard-h .pdot { width:9px; height:9px; border-radius:50%; background:var(--pc); flex:none; }
 .tcard-b { padding:10px 11px 12px; }
 .tcard .post { background:var(--surface); }
+.tcards { display:flex; flex-direction:column; gap:9px; }
+.tcard-none { font-size:.79rem; color:var(--muted); padding:4px 2px; }
 
 /* ลูกศรบอกว่ากดแล้วเปิดโพสต์จริง · การ์ดที่ไม่มีลิงก์ต้องไม่ทำท่าว่ากดได้ */
 .post .ext { color:var(--accent); font-size:.8em; }
@@ -346,12 +406,45 @@ body {
 
 /* ── ไม่มีข้อมูล ─────────────────────────────────────────────────── */
 /* ⚠️ ไม่มีข้อมูล ต้องบอกว่าไม่มี — ห้ามลากกราฟเป็น 0 หรือขึ้น "—" ลอยๆ */
+/* ── ช่องที่ยังไม่ได้เชื่อมต่อ ─────────────────────────────────────
+   ⚠️ ต้องดูเหมือน "ขั้นตอนที่ยังไม่ได้ทำ" ไม่ใช่ "ระบบพัง"
+      จึงไม่ใช้สีแดงและไม่มีไอคอนเตือน — แค่บอกว่าต้องทำอะไรต่อ */
+.setups { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
+.setup {
+  display:flex; gap:12px; align-items:flex-start; margin-top:14px;
+  background:var(--surface); border:1px dashed var(--border); border-radius:12px; padding:16px;
+}
+.setup-i {
+  width:34px; height:34px; border-radius:9px; flex:none; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-weight:700; opacity:.85;
+}
+.setup-b { min-width:0; }
+.setup-t { font-weight:650; font-size:.95rem; }
+.setup-p { margin:5px 0 0; font-size:.81rem; color:var(--ink-2); line-height:1.55; }
+.setup-p b { font-weight:650; }
+.setup-p.sm { font-size:.73rem; color:var(--muted); }
+.setup-n { margin-top:9px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.setup-nl { font-size:.73rem; color:var(--muted); }
+.setup-n code {
+  font-size:.72rem; background:var(--surface-2); border:1px solid var(--border);
+  border-radius:6px; padding:2px 7px; color:var(--ink-2);
+}
+
+/* แถบบอกว่ายอดรวมยังไม่ได้นับช่องไหน — วางใต้ตัวเลขรวมบนหน้าภาพรวม */
+.offnote { margin-top:10px; font-size:.76rem; color:var(--muted); }
+.offlink {
+  border:0; background:none; padding:0; font:inherit; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+
 .empty { display:flex; gap:11px; align-items:flex-start; padding:20px 4px; color:var(--muted); font-size:.83rem; }
 .empty-i { font-size:1.3rem; line-height:1; opacity:.6; }
 .empty b { color:var(--ink-2); display:block; font-size:.88rem; }
 
 /* ── จอกว้างขึ้น ─────────────────────────────────────────────────── */
 @media (min-width:640px) {
+  .stickyhead { flex-direction:row; align-items:flex-end; gap:12px; }
+  .stickyhead #periodbox { order:0; padding-bottom:5px; }
   .wrap { padding:0 18px 64px; }
   .grid4 { grid-template-columns:repeat(4,1fr); }
   .legend { width:auto; flex:1; }

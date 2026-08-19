@@ -197,8 +197,36 @@
     return { daily: daily, followers: followers, posts: posts };
   }
 
+  /* ── ช่องที่ "ยังไม่ได้เชื่อมต่อ" ──────────────────────────────────
+   * ของจริง: API จะตอบ ok:false พร้อม need[] ว่าขาด env ตัวไหน
+   * ตอนนี้ยังเป็นข้อมูลจำลอง จึงเปิดดูสถานะนั้นได้ด้วย ?off=facebook
+   * (คั่นหลายช่องด้วยจุลภาค) — ไว้ตรวจว่าหน้าตาตอนยังไม่เชื่อมเป็นยังไง
+   * ⚠️ อ่านที่ชั้นข้อมูล ไม่ใช่ที่หน้าเว็บ เพราะพอต่อของจริงแล้ว
+   *    หน้าเว็บต้องอ่านสถานะจากที่เดียวกันนี้โดยไม่ต้องแก้อะไรเพิ่ม */
+  var NEED = {
+    youtube: ["YT_API_KEY", "SOCIAL_YT_CHANNEL_ID"],
+    tiktok: ["SOCIAL_TT_CLIENT_KEY", "SOCIAL_TT_CLIENT_SECRET", "SOCIAL_TT_REFRESH_TOKEN"],
+    facebook: ["SOCIAL_FB_PAGE_ID", "SOCIAL_FB_TOKEN"],
+  };
+  var off = {};
+  try {
+    (new URLSearchParams(location.search).get("off") || "").split(",").forEach(function (k) {
+      k = k.trim(); if (k) off[k] = 1;
+    });
+  } catch (e) {}
+
   var platforms = {};
-  window.SOCIAL_CONFIG.ORDER.forEach(function (pk) { platforms[pk] = buildPlatform(pk); });
+  window.SOCIAL_CONFIG.ORDER.forEach(function (pk) {
+    if (off[pk]) {
+      platforms[pk] = {
+        daily: [], followers: [], posts: [],
+        status: { connected: false, need: NEED[pk] || [] },
+      };
+      return;
+    }
+    platforms[pk] = buildPlatform(pk);
+    platforms[pk].status = { connected: true, need: [] };
+  });
 
   window.SOCIAL_MOCK = {
     isMock: true,               // ⚠️ หน้าเว็บใช้ธงนี้ตัดสินใจว่าจะขึ้นแถบเตือน

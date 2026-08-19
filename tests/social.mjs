@@ -137,49 +137,69 @@ console.log("\n[5] 🔴 แกน Y กราฟผู้ติดตาม — 
   await pg.close();
 }
 
-console.log("\n[5b] 🔴 แนวโน้มมาก่อน — ผู้ติดตาม แล้วตามด้วย engagement/views คู่ซ้าย-ขวา");
+console.log("\n[5b] 🔴 แนวโน้ม — กราฟเดียวสลับ metric ได้ มีเส้นรวมและเส้นรายช่อง");
 {
   const { pg, errs } = await open();
   const order = await secs(pg);
   const clean = order.map((s) => s.replace(/ⓘ/g, " ").replace(/\s+/g, " ").trim());
-  ok(/แนวโน้มผู้ติดตาม/.test(clean[0]), `หัวข้อแรกคือแนวโน้มผู้ติดตาม (ได้ "${clean[0]}")`);
-  ok(/จำนวนคน/.test(clean[0]), "บอกว่าเป็นจำนวนคน");
+  ok(/แนวโน้มรายวัน/.test(clean[0]), `หัวข้อแรกคือแนวโน้มรายวัน (ได้ "${clean[0]}")`);
   ok(/เพิ่มและที่หายไป/.test(clean[1]), "คู่กับผู้ติดตามที่เพิ่ม/หาย (เรื่องเดียวกัน 2 มุม)");
-  ok(/การมีส่วนร่วมรายวัน/.test(clean[2]), "แถวถัดมาเป็นการมีส่วนร่วมรายวัน");
-  ok(/การมองเห็นรายวัน/.test(clean[3]), "คู่กับการมองเห็นรายวัน");
   const iTable = clean.findIndex((x) => /ผลงานรายช่อง/.test(x));
-  ok(iTable > 3, "ตารางรายช่องอยู่หลังกลุ่มแนวโน้ม");
+  ok(iTable === 2, "ตารางรายช่องอยู่ถัดจากกลุ่มแนวโน้ม");
 
-  ok((await pg.$$("svg.chart")).length === 3, "มีกราฟเส้น 3 อันบนหน้าภาพรวม");
+  /* 🔴 เดิมวางกราฟเส้นใหญ่ 3 อันเรียงกัน หน้ายาวมากและอ่านทีละอันไม่ได้เทียบอะไร
+     ยุบเหลืออันเดียวแล้วสลับด้วยชิพ — เพิ่มกราฟกลับมาเมื่อไหร่เทสต์นี้ตก */
+  ok((await pg.$$("svg.chart")).length === 1, "หน้าภาพรวมมีกราฟเส้นอันเดียว");
+  const chips = await pg.$$eval(".mchip", (n) => n.map((x) => x.textContent.trim()));
+  ok(chips.length >= 4, `มีชิพสลับ metric ครบ (${chips.join(" · ")})`);
+  ok(chips.filter((_, i) => i === 0).length === 1 && (await pg.$$(".mchip.on")).length === 1,
+     "มีชิพที่เลือกอยู่ใบเดียว");
 
-  // ⚠️ กราฟผู้ติดตามเคยสูงเกินจำเป็นจนกินทั้งหน้าจอ — ต้องย่อลงแล้วมีของวางข้างๆ
+  /* ⚠️ "เส้นรวมทุกช่อง" คือของที่แก้ปัญหากราฟนิ่ง — ต้องมีเสมอ ไม่ใช่มีแต่เส้นรายช่อง */
+  const lg = await pg.$$eval(".duo-c .legend .lg-n", (n) => n.map((x) => x.textContent.trim()));
+  ok(/รวมทุกช่อง/.test(lg[0]), `เส้นแรกคือเส้นรวมทุกช่อง (${lg.join(" · ")})`);
+  ok(lg.length === 4, `มีเส้นรวม 1 + รายช่อง 3 = 4 เส้น (ได้ ${lg.length})`);
+
+  // สลับ metric แล้วกราฟต้องเปลี่ยนจริง ไม่ใช่เปลี่ยนแต่ชิพ
+  const dOf = () => pg.$eval("svg.chart path", (e) => e.getAttribute("d"));
+  const d1 = await dOf();
+  await pg.click('[data-metric="engagement"]');
+  await pg.waitForTimeout(200);
+  const d2 = await dOf();
+  ok(d1 !== d2, "สลับ metric แล้วเส้นเปลี่ยนตามจริง");
+  ok(await pg.$eval('[data-metric="engagement"]', (e) => e.classList.contains("on")), "ชิพที่กดติดสถานะ");
+  await pg.click('[data-metric="followers"]');
+  await pg.waitForTimeout(200);
+
+  // ⚠️ กราฟเคยสูงจนกินทั้งหน้าจอ — ต้องย่อลงแล้วมีของวางข้างๆ
   const fh = await pg.$eval("svg.chart", (e) => e.getBoundingClientRect().height);
-  ok(fh < 190, `กราฟผู้ติดตามไม่สูงเกินไป (${Math.round(fh)}px)`);
+  ok(fh < 230, `กราฟไม่สูงเกินไป (${Math.round(fh)}px)`);
 
-  // ซ้าย-ขวาบนจอกว้าง — ทั้ง 2 แถว
+  // ซ้าย-ขวาบนจอกว้าง
   const duos = await pg.$$eval(".duo", (n) => n.map((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length));
-  ok(duos.length === 2, `มีแถวคู่ซ้าย-ขวา 2 แถว (${duos.length})`);
-  ok(duos.every((c) => c === 2), `ทุกแถวเป็น 2 คอลัมน์บนจอกว้าง (${duos})`);
+  ok(duos.every((c) => c === 2), `ทุกแถวคู่เป็น 2 คอลัมน์บนจอกว้าง (${duos})`);
   const side = await pg.$$eval(".duo .duo-c .panel", (n) => n.map((e) => Math.round(e.getBoundingClientRect().top)));
-  ok(Math.abs(side[0] - side[1]) < 8 && Math.abs(side[2] - side[3]) < 8, "กล่องซ้าย-ขวาของแต่ละแถวอยู่ระดับเดียวกัน");
+  ok(Math.abs(side[0] - side[1]) < 8, "กล่องซ้าย-ขวาอยู่ระดับเดียวกัน");
 
   // ⚠️ ทุกช่องต้องวางบนแกนเวลาชุดเดียวกัน — จำนวนจุดต้องเท่ากันทุกเส้น
   const same = await pg.evaluate(() => {
-    const svg = document.querySelectorAll("svg.chart")[1];
+    const svg = document.querySelector("svg.chart");
     const counts = [...svg.querySelectorAll("path")].map((p) => (p.getAttribute("d").match(/[ML]/g) || []).length);
     return new Set(counts).size === 1;
   });
-  ok(same, "ทุกเส้นในกราฟเดียวกันมีจำนวนจุดเท่ากัน (แกนเวลาชุดเดียว)");
+  ok(same, "ทุกเส้นในกราฟมีจำนวนจุดเท่ากัน (แกนเวลาชุดเดียว)");
 
-  // ชิพต้องคุมกราฟใหม่ด้วย
-  const before = await pg.$$eval("svg.chart", (n) => n.map((s) => s.querySelectorAll("path").length));
+  // ชิพเลือกช่องต้องคุมทั้งเส้นรายช่องและเส้นรวม
+  const before = await pg.$eval("svg.chart", (s) => s.querySelectorAll("path").length);
   const dvBefore = (await pg.$$(".dv-row")).length;
+  const sumBefore = await dOf();
   await pg.click('[data-ch="tiktok"]');
-  await pg.waitForTimeout(200);
-  const after = await pg.$$eval("svg.chart", (n) => n.map((s) => s.querySelectorAll("path").length));
-  ok(after.every((v, i) => v === before[i] - 1), `ปิดช่องแล้วทุกกราฟลดเส้น (${before} → ${after})`);
+  await pg.waitForTimeout(220);
+  const after = await pg.$eval("svg.chart", (s) => s.querySelectorAll("path").length);
+  ok(after === before - 1, `ปิดช่องแล้วกราฟลดเส้น (${before} → ${after})`);
+  ok((await dOf()) !== sumBefore, "เส้นรวมคิดใหม่ตามช่องที่เหลือ ไม่ใช่ค้างของเดิม");
   ok((await pg.$$(".dv-row")).length === dvBefore - 1, "แท่งเพิ่ม/หายที่อยู่ข้างกันก็ลดตาม");
-  ok(!/TikTok/.test(await pg.$$eval(".duo", (n) => n.map((e) => e.innerText).join())), "legend ของกราฟคู่ไม่มี TikTok เหลือ");
+  ok(!/TikTok/.test(await pg.$$eval(".duo", (n) => n.map((e) => e.innerText).join())), "legend ไม่มี TikTok เหลือ");
   ok(errs.length === 0, "ไม่มี JS error");
   await pg.close();
 
@@ -291,7 +311,8 @@ console.log("\n[9] 🔴 ชิพเลือกช่อง — ปิดแล
 
   const headsAfter = await pg.$$eval(".tcard-h", (n) => n.map((x) => x.textContent.trim()));
   ok(!headsAfter.some((h) => /YouTube/.test(h)), "กล่องคอนเทนต์ของ YouTube หายไปแล้ว");
-  ok(headsBefore.length === 3 && headsAfter.length === 2, `เหลือกล่องของช่องที่เปิดอยู่ (${headsBefore.length} → ${headsAfter.length})`);
+  // กล่องคอนเทนต์มี 2 ชุด (มีส่วนร่วมมากสุด / คนดูมากสุด) จำนวนจึงเป็น 2 × ช่องที่เปิดอยู่
+  ok(headsBefore.length === 6 && headsAfter.length === 4, `เหลือกล่องของช่องที่เปิดอยู่ (${headsBefore.length} → ${headsAfter.length})`);
 
   // กันปิดหมดจนหน้าว่างเปล่าโดยไม่มีคำอธิบาย
   await pg.click('[data-ch="tiktok"]');
@@ -732,12 +753,15 @@ console.log("\n[21] 🔴 แผงเลือกช่วงเวลา — �
   ok(/30 วันล่าสุด/.test(btnTxt), `ปุ่มบอกช่วงที่เลือกอยู่ (${btnTxt.replace(/\n/g, " · ")})`);
   ok(/–/.test(btnTxt), "ปุ่มบอกวันที่จริงของช่วงด้วย");
 
+  /* 🔴 ย้ายจากแถบหัวเรื่องมาอยู่ในแถบติดขอบแล้ว (รอบ GA4 pattern)
+     เหตุผล: แถบหัวเรื่องเลื่อนหายไปกับหน้า พอเลื่อนลงไปอ่านตารางกลางหน้า
+     จะไม่เหลืออะไรบอกว่ากำลังดูช่วงไหน — รายละเอียดการติดขอบอยู่ที่ [33] */
   const geo = await pg.evaluate(() => {
     const s = document.querySelector(".periodbtn").getBoundingClientRect();
-    const bar = document.querySelector(".appbar").getBoundingClientRect();
-    return { inBar: s.top >= bar.top - 1 && s.bottom <= bar.bottom + 1, rightHalf: s.left > innerWidth / 2 };
+    const st = document.querySelector(".sticky").getBoundingClientRect();
+    return { inSticky: s.top >= st.top - 1 && s.bottom <= st.bottom + 1, rightHalf: s.left > innerWidth / 2 };
   });
-  ok(geo.inBar && geo.rightHalf, "อยู่ขวาบนในแถบหัวเรื่อง");
+  ok(geo.inSticky && geo.rightHalf, "อยู่ขวาบนในแถบติดขอบ");
 
   ok((await pg.$$(".periodpanel")).length === 0, "ยังไม่กด แผงยังไม่กาง");
   await pg.click('[data-period="toggle"]');
@@ -835,7 +859,8 @@ console.log("\n[24] 🔴 เอาเมาส์ชี้กราฟแล้�
 {
   const { pg, errs } = await open();
   const boxes = await pg.$$(".chartbox");
-  ok(boxes.length === 3, `กราฟทุกอันมีกล่องรับ hover (${boxes.length})`);
+  // หน้าภาพรวมยุบเหลือกราฟเส้นอันเดียว (สลับ metric ด้วยชิพ) — ดู [5b]
+  ok(boxes.length === 1, `กราฟบนหน้าภาพรวมมีกล่องรับ hover (${boxes.length})`);
 
   for (let i = 0; i < boxes.length; i++) {
     const bb = await boxes[i].boundingBox();
@@ -873,7 +898,8 @@ console.log("\n[25] 🔴 ป้ายใต้กราฟ กดปิด/เ�
 {
   const { pg, errs } = await open();
   const btns = await pg.$$(".lg-btn");
-  ok(btns.length >= 9, `ป้ายใต้กราฟเป็นปุ่มกดได้ (${btns.length} ปุ่ม)`);
+  // กราฟเดียว = เส้นรวม 1 + รายช่อง 3
+  ok(btns.length === 4, `ป้ายใต้กราฟเป็นปุ่มกดได้ (${btns.length} ปุ่ม)`);
 
   const pathsOf = () => pg.$$eval("svg.chart", (n) => n.map((s) => s.querySelectorAll("path").length));
   const before = await pathsOf();
@@ -949,10 +975,20 @@ console.log("\n[27] รูปย่อของคอนเทนต์");
 console.log("\n[28] 🔴 คอนเทนต์เด่น — แยกกล่องรายช่อง และกดเปิดโพสต์ได้");
 {
   const { pg } = await open();
+  /* 🔴 มี 2 อันดับวางคู่กัน (คนมีส่วนร่วมมากสุด / คนดูมากสุด) แต่ละอันดับแยกกล่องตามช่อง
+     ⚠️ ทั้งสองฝั่งต้องแยกช่องเหมือนกัน ไม่ใช่ฝั่งหนึ่งแยกอีกฝั่งเรียงรวม */
+  const cols = await pg.$$(".duo .duo-c .tcards");
+  ok(cols.length === 2, `มีอันดับ 2 ชุดวางคู่กัน (${cols.length})`);
+  for (let i = 0; i < cols.length; i++) {
+    const h = await cols[i].$$eval(".tcard-h", (n) => n.map((x) => x.textContent.trim()));
+    ok(h.length === 3, `ชุดที่ ${i + 1}: แยกกล่องตามช่อง 3 กล่อง (${h.length})`);
+    ok(/YouTube/.test(h[0]) && /TikTok/.test(h[1]) && /Facebook/.test(h[2]), `ชุดที่ ${i + 1}: หัวกล่องเป็นชื่อช่อง (${h.join(" / ")})`);
+  }
+  // ⚠️ สองฝั่งต้องเป็นคนละอันดับกันจริง ไม่ใช่ก๊อปกันมา
+  const [erTop, vTop] = await pg.$$eval(".duo .duo-c .tcards", (n) =>
+    n.map((c) => [...c.querySelectorAll(".post-t")].map((x) => x.textContent.trim()).join("|")));
+  ok(erTop !== vTop, "อันดับซ้าย (มีส่วนร่วม) กับขวา (คนดู) ไม่ใช่ชุดเดียวกัน");
   const cards = await pg.$$(".tcard");
-  ok(cards.length === 3, `แยกกล่องตามช่อง 3 กล่อง (${cards.length})`);
-  const heads = await pg.$$eval(".tcard-h", (n) => n.map((x) => x.textContent.trim()));
-  ok(/YouTube/.test(heads[0]) && /TikTok/.test(heads[1]) && /Facebook/.test(heads[2]), `หัวกล่องเป็นชื่อช่อง (${heads.join(" / ")})`);
 
   // ⚠️ ห้ามมีกล่องไหนดูดอันดับไปหมด — แต่ละกล่องเรียงเฉพาะของช่องตัวเอง
   for (let i = 0; i < cards.length; i++) {
@@ -970,7 +1006,8 @@ console.log("\n[28] 🔴 คอนเทนต์เด่น — แยกก�
   // ปิดช่อง → กล่องนั้นต้องหายไปด้วย
   await pg.click('[data-ch="tiktok"]');
   await pg.waitForTimeout(200);
-  ok((await pg.$$(".tcard")).length === 2, "ปิดช่องแล้วกล่องของช่องนั้นหายไป");
+  ok((await pg.$$(".tcard")).length === 4, "ปิดช่องแล้วกล่องของช่องนั้นหายไปทั้ง 2 อันดับ");
+  ok(!/TikTok/.test(await pg.$$eval(".tcard-h", (n) => n.map((x) => x.textContent).join())), "ไม่มีหัวกล่อง TikTok เหลือ");
   await pg.close();
 }
 
@@ -1004,6 +1041,155 @@ console.log("\n[30] ถอดทางลัด Social ออกจากหน�
   const r = await fetch(BASE + "/social/");
   ok(r.ok, "หน้า /social/ ยังเปิดได้ตามเดิม");
   await p2.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[31] 🔴 กล่องสรุปให้อ่าน (Insights) — มาจากกฎ ไม่ใช่ข้อความลอยๆ");
+{
+  const { pg, errs } = await open();
+  const items = await pg.$$eval(".insight-l li", (n) => n.map((x) => x.innerText.trim()));
+  ok(items.length >= 1 && items.length <= 3, `มีข้อสรุป 1–3 ข้อ (ได้ ${items.length})`);
+  ok(items.every((t) => t.length > 10), "ทุกข้อเป็นประโยคจริง ไม่ใช่ข้อความว่าง");
+
+  // ทุกข้อต้องมีทิศทางกำกับ (ขึ้น/ลง/กลางๆ) ไม่ใช่ก้อนข้อความเปล่า
+  const tones = await pg.$$eval(".insight-l li", (n) => n.map((x) => x.className));
+  ok(tones.every((c) => /ins-(up|down|flat)/.test(c)), "ทุกข้อมีทิศทางกำกับ (ins-up/down/flat)");
+
+  // ⚠️ ข้อที่เทียบกับช่วงก่อนหน้า ห้ามขึ้นเมื่อผู้ใช้เลือก "ไม่เทียบ"
+  const withCmp = await pg.$$eval(".insight-l li", (n) => n.map((x) => x.innerText));
+  await pg.click('[data-cmp="none"]');
+  await pg.waitForTimeout(180);
+  const noCmp = await pg.$$eval(".insight-l li", (n) => n.map((x) => x.innerText));
+  /* ⚠️ ห้ามจับแค่คำว่า "เทียบกับ" — ข้อที่อธิบาย ER ก็มีคำนี้ ("เทียบกับคนที่เห็น")
+     ต้องจับชื่อช่วงเวลาจริงที่ระบบใช้เรียกช่วงก่อนหน้า */
+  const CMP_RE = /ช่วงก่อนหน้า|เดือนที่แล้ว|ปีก่อน/;
+  ok(!noCmp.some((t) => CMP_RE.test(t)), "เลือก 'ไม่เทียบ' แล้วไม่มีข้อไหนอ้างช่วงก่อนหน้า");
+  ok(withCmp.some((t) => CMP_RE.test(t)), "เปิดการเทียบแล้วมีข้อที่อ้างช่วงก่อนหน้า");
+
+  // ตัวเลขในข้อสรุปต้องเป็นเปอร์เซ็นต์เต็มหน่วย ไม่ใช่ทศนิยมรก
+  ok(!withCmp.some((t) => /\d+\.\d+%\s*เทียบ/.test(t)), "ตัวเลข % ในข้อสรุปปัดเป็นจำนวนเต็ม");
+  ok(errs.length === 0, "ไม่มี error ระหว่างสร้างกล่องสรุป");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[32] 🔴 ยอดรวมต้องบอกว่ารวมกี่ช่อง + หัวคอลัมน์กดไปแท็บช่องได้");
+{
+  const { pg } = await open();
+  const labels = await pg.$$eval(".grid4 .sc-l", (n) => n.map((x) => x.textContent.trim()));
+  ok(labels.every((t) => /\(3 ช่อง\)/.test(t)), `ทุกใบบอกว่ารวม 3 ช่อง (${labels[0]})`);
+
+  // ปิดช่องหนึ่ง → ตัวเลขในป้ายต้องลดตาม ไม่ใช่ค้างที่ 3
+  await pg.click('[data-ch="tiktok"]');
+  await pg.waitForTimeout(180);
+  const l2 = await pg.$$eval(".grid4 .sc-l", (n) => n.map((x) => x.textContent.trim()));
+  ok(l2.every((t) => /\(2 ช่อง\)/.test(t)), "ปิดช่องแล้วป้ายเหลือ 2 ช่อง");
+  await pg.click('[data-ch="tiktok"]');
+  await pg.waitForTimeout(180);
+
+  // drill-down: หัวคอลัมน์เป็นปุ่มจริง กดแล้วไปแท็บนั้น
+  const drills = await pg.$$eval(".tbl.cmp thead .drill", (n) =>
+    n.map((x) => ({ tag: x.tagName, tab: x.dataset.tab })));
+  ok(drills.length === 3, `หัวคอลัมน์เป็นปุ่มครบ 3 ช่อง (ได้ ${drills.length})`);
+  ok(drills.every((d) => d.tag === "BUTTON"), "เป็น <button> จริง (คีย์บอร์ดใช้ได้)");
+  ok(drills.every((d) => ["youtube", "tiktok", "facebook"].includes(d.tab)), "ชี้ไปแท็บของช่องนั้นถูกต้อง");
+
+  await pg.click('.tbl.cmp thead .drill[data-tab="tiktok"]');
+  await pg.waitForTimeout(200);
+  const on = await pg.$eval(".tab.on", (e) => e.innerText);
+  ok(/TikTok/.test(on), `กดหัวคอลัมน์แล้วเด้งไปแท็บนั้นจริง (${on.replace(/\s+/g, " ")})`);
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[33] 🔴 แถบควบคุมติดขอบบน — ช่วงเวลา + แท็บ + ชิพช่อง ต้องอยู่ครบตอนเลื่อน");
+{
+  const { pg } = await open();
+  ok((await pg.$$(".sticky #periodbox")).length === 1, "ตัวเลือกช่วงเวลาอยู่ในแถบติดขอบ");
+  ok((await pg.$$(".sticky .tabs")).length === 1, "แท็บอยู่ในแถบติดขอบ");
+  ok((await pg.$$(".sticky #chips")).length === 1, "ชิพเลือกช่องอยู่ในแถบติดขอบ");
+
+  await pg.evaluate(() => window.scrollTo(0, 1500));
+  await pg.waitForTimeout(160);
+  const vis = await pg.evaluate(() => {
+    const r = document.querySelector(".periodbtn").getBoundingClientRect();
+    const t = document.querySelector(".tab.on").getBoundingClientRect();
+    return { period: r.top >= 0 && r.bottom <= innerHeight, tab: t.top >= 0 && t.bottom <= innerHeight };
+  });
+  ok(vis.period, "เลื่อนลงไปกลางหน้าแล้วยังเห็นตัวเลือกช่วงเวลา");
+  ok(vis.tab, "เลื่อนลงไปกลางหน้าแล้วยังเห็นแท็บที่เปิดอยู่");
+  await pg.close();
+
+  /* ⚠️ แถบติดขอบกินพื้นที่อ่านข้อมูลตลอดเวลา — บนมือถือห้ามเกิน 1 ใน 3 ของจอ */
+  const m = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await m.goto(BASE + "/social/", { waitUntil: "load" });
+  await m.waitForSelector(".sc");
+  const h = await m.$eval(".sticky", (e) => e.getBoundingClientRect().height);
+  ok(h <= 844 / 3, `มือถือ: แถบติดขอบสูง ${Math.round(h)}px ไม่เกิน 1/3 ของจอ (281px)`);
+  ok(await m.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth), "มือถือ: หน้าไม่เลื่อนแนวนอน");
+  await m.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[34] 🔴 ช่องที่ยังไม่ได้เชื่อมต่อ — บอกว่าต้องทำอะไร ไม่ใช่บอกว่าไม่มีข้อมูล");
+{
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  await pg.goto(BASE + "/social/?off=facebook", { waitUntil: "load" });
+  await pg.waitForSelector(".sc");
+
+  // ยอดรวมต้องไม่นับช่องที่ยังไม่เชื่อม และต้องบอกไว้ด้วย
+  const labels = await pg.$$eval(".grid4 .sc-l", (n) => n.map((x) => x.textContent.trim()));
+  ok(labels.every((t) => /\(2 ช่อง\)/.test(t)), `ยอดรวมนับแค่ช่องที่เชื่อมแล้ว (${labels[0]})`);
+  const note = await pg.$eval(".offnote", (e) => e.innerText).catch(() => "");
+  ok(/Facebook/.test(note) && /ยังไม่ได้เชื่อมต่อ/.test(note), `บอกไว้ใต้ยอดรวมว่าช่องไหนไม่ถูกนับ (${note})`);
+
+  // ชิพของช่องนั้นต้องกดไม่ได้ แต่ห้ามหายไป
+  const chips = await pg.$$eval("#chips .ch", (n) =>
+    n.map((x) => ({ t: x.textContent.trim(), off: x.disabled })));
+  ok(chips.length === 3, "ชิพยังครบ 3 ช่อง ไม่ซ่อนช่องที่ยังไม่เชื่อม");
+  ok(chips.filter((c) => c.off).length === 1 && /Facebook/.test(chips.find((c) => c.off).t),
+     "ชิพของช่องที่ยังไม่เชื่อมกดไม่ได้");
+
+  // แท็บของช่องนั้น = การ์ดบอกวิธีเชื่อม ไม่ใช่ข้อความ "ไม่มีข้อมูล"
+  await tabTo(pg, "Facebook");
+  const txt = await view(pg);
+  ok(/ยังไม่ได้เชื่อมต่อ/.test(txt), "แท็บช่องนั้นขึ้นการ์ดบอกว่ายังไม่ได้เชื่อมต่อ");
+  ok(!/ลองขยายช่วงเวลา/.test(txt), "ไม่ใช้ข้อความ 'ลองขยายช่วงเวลา' ซึ่งชี้ทางผิด");
+  const needs = await pg.$$eval(".setup-n code", (n) => n.map((x) => x.textContent));
+  ok(needs.length >= 2, `บอกชื่อค่าที่ต้องใส่ (${needs.join(", ")})`);
+  ok(!/\bCP\b|CPF/i.test(txt), "ไม่มีชื่อบริษัทโผล่ในการ์ดตั้งค่า");
+
+  // ⚠️ ขยายช่วงเวลาแล้วต้องยังเป็นการ์ดตั้งค่าเหมือนเดิม (ไม่ใช่ปัญหาเรื่องช่วงเวลา)
+  await setPeriod(pg, 90);
+  await closePeriod(pg);
+  ok(/ยังไม่ได้เชื่อมต่อ/.test(await view(pg)), "เปลี่ยนช่วงเวลาแล้วยังเป็นการ์ดตั้งค่า");
+
+  // ช่องที่เชื่อมแล้วต้องไม่ได้รับผลกระทบ
+  await tabTo(pg, "YouTube");
+  ok((await pg.$$(".scgrid .sc")).length >= 4, "ช่องที่เชื่อมแล้วยังแสดงตัวเลขตามปกติ");
+  ok(errs.length === 0, "ไม่มี error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[35] 🔴 แกน Engagement rate เป็น 'ระดับ' ห้ามมีเครื่องหมาย +");
+{
+  const { pg } = await open();
+  await pg.click('[data-metric="er"]');
+  await pg.waitForTimeout(200);
+  const ax = await pg.$$eval(".panel .chartbox svg text", (n) =>
+    n.map((x) => x.textContent).filter((t) => /%/.test(t)));
+  ok(ax.length >= 2, `แกน ER มีป้ายอย่างน้อย 2 ใบ (${ax.join(" · ")})`);
+  ok(!ax.some((t) => t.trim().startsWith("+")), "ไม่มีป้ายไหนขึ้นต้นด้วย + (8% ไม่ใช่ +8%)");
+
+  // กราฟรายช่องใช้แกน ER ฝั่งขวาด้วย ต้องไม่มี + เหมือนกัน
+  await tabTo(pg, "YouTube");
+  const ax2 = await pg.$$eval(".panel svg text", (n) =>
+    n.map((x) => x.textContent).filter((t) => /^\s*[+\-\d.]+%$/.test(t)));
+  ok(!ax2.some((t) => t.trim().startsWith("+")), "แกน ER ของหน้ารายช่องก็ไม่มี +");
+  await pg.close();
 }
 
 await browser.close();
