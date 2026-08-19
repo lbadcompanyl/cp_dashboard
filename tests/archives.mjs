@@ -119,6 +119,49 @@ console.log("\n[1] ค้นภาษาไทยกลางคำ");
     shown.includes(shrimp.length.toLocaleString("th-TH")), `${shown} · ในข้อมูล ${shrimp.length}`);
 }
 
+// ── [1b] เว้นวรรค = หรือ ───────────────────────────────────────────────
+console.log("\n[1b] เว้นวรรค = หรือ");
+{
+  const only = async (q) => {
+    await page.fill("#q", q);
+    await page.waitForTimeout(400);
+    // ⚠️ อ่านเฉพาะเลขหลังคำว่า "พบ" — ในบรรทัดเดียวกันมีเลขปีอยู่ด้วย
+    const n = await page.$eval("#count", (e) => {
+      const m = e.textContent.match(/พบ\s*([\d,]+)/);
+      return m ? +m[1].replace(/,/g, "") : -1;
+    });
+    const hits = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent));
+    return { n, hits };
+  };
+  const a = await only("กุ้ง");
+  const b = await only("ปลาหมอคางดำ");
+  const both = await only("กุ้ง ปลาหมอคางดำ");
+  ok("พิมพ์ 2 คำคั่นช่องว่าง = เจอคำใดคำหนึ่งก็นับ (ไม่ใช่ต้องมีทั้งคู่)",
+    both.n >= Math.max(a.n, b.n), `กุ้ง ${a.n} · ปลาหมอคางดำ ${b.n} · รวม ${both.n}`);
+  ok("ผลรวมไม่เกินผลของสองคำบวกกัน (ไม่ได้ปล่อยผ่านมั่ว)", both.n <= a.n + b.n,
+    `${both.n} vs ${a.n}+${b.n}`);
+  ok("ทุกใบต้องมีคำใดคำหนึ่งจริง",
+    both.hits.every((h) => h.includes("กุ้ง") || h.includes("ปลาหมอคางดำ")));
+
+  // เครื่องหมายคำพูด = ทั้งวลี ไม่แตกตามช่องว่าง
+  // ⚠️ ต้องเลือกวลีที่ "คำย่อยของมันไปโผล่ที่อื่นด้วย" ไม่งั้นวัดไม่ออกว่าต่างกัน
+  //    ("ซีพี" ไปโผล่ใน ซีพีเอฟ ด้วย ส่วน "ออลล์" อยู่แค่ใน ซีพี ออลล์)
+  const loose = await only("ซีพี ออลล์");
+  const exact = await only('"ซีพี ออลล์"');
+  ok("ใส่เครื่องหมายคำพูด = หาทั้งวลี ผลต้องแคบกว่าแบบเว้นวรรคเฉยๆ",
+    exact.n < loose.n, `เป็นวลี ${exact.n} · แยกคำ ${loose.n}`);
+
+  // ไฮไลต์หลายคำ ห้ามซ้อนกัน
+  await page.fill("#q", "กุ้ง ผลผลิตกุ้ง");
+  await page.waitForTimeout(400);
+  const nested = await page.$$eval("#list .item a.t", (els) =>
+    els.filter((e) => e.querySelector("mark mark")).length);
+  ok("คำที่คลุมกันเองต้องไม่ทำให้ไฮไลต์ซ้อนกัน", nested === 0, `ซ้อน ${nested} ใบ`);
+  const intact = await page.$$eval("#list .item a.t", (els) =>
+    els.every((e) => e.textContent.includes("กุ้ง")));
+  ok("ไฮไลต์หลายคำแล้วพาดหัวยังไม่เพี้ยน", intact);
+}
+
 // ── [2] ไฮไลต์ ─────────────────────────────────────────────────────────
 console.log("\n[2] ไฮไลต์");
 {
@@ -185,6 +228,15 @@ console.log("\n[4] ตัดหางพาดหัวตอนแสดง แ
     return out;
   });
   ok("ที่แสดงเป็นต้นของพาดหัวจริงทุกใบ (ไม่ได้ตัดกลาง)", bad.length === 0, JSON.stringify(bad.slice(0, 2)));
+
+  // ⚠️ พาดหัวที่มีตัวคั่นอยู่ข้างในเอง — ตัดหางแล้วตัวคั่นข้างในต้องไม่ถูกเขียนใหม่
+  await page.fill("#q", "เกาะติดสถานการณ์");
+  await page.waitForTimeout(400);
+  const mixed = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent.trim()));
+  ok("พาดหัวที่มีตัวคั่นข้างในยังหาเจอ", mixed.length > 0, `เจอ ${mixed.length}`);
+  ok("ตัดหางแล้วตัวคั่นข้างในไม่ถูกเปลี่ยน (| ต้องยังเป็น |)",
+    mixed.every((t) => t.includes("|")) && mixed.every((t) => !/ข่าวสด$/.test(t)),
+    JSON.stringify(mixed.slice(0, 2)));
 }
 
 // ── [5] ตัวกรอง ────────────────────────────────────────────────────────

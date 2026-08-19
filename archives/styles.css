@@ -73,6 +73,11 @@ body {
   font-family:inherit; font-size:1rem; cursor:pointer; padding:8px 10px; line-height:1; border-radius:999px;
 }
 .qclear:hover { color:var(--ink); background:var(--surface-2); }
+.qhint { margin:7px 4px 0; font-size:.71rem; color:var(--muted); }
+.qhint code {
+  background:var(--surface-2); border:1px solid var(--border); border-radius:5px;
+  padding:1px 5px; font-size:.95em;
+}
 
 /* ── กล่องตัวกรอง 3 ตัว ───────────────────────────────────────────
    จอแคบซ้อนแนวตั้ง · จอกว้างเรียงแนวนอน (ดู @media ท้ายไฟล์) */

@@ -34,6 +34,25 @@ let busy = false;
 // ⚠️ ห้ามตัดอักขระไทยหรือวรรณยุกต์ทิ้ง — "กุ้ง" กับ "กุง" คนละคำ
 const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
 
+// ---------- แยกคำค้น ----------
+// **เว้นวรรค = "หรือ"** (เจ้าของสั่ง 19 ส.ค. 2026) — พิมพ์ "ปลาหมอคางดำ ซีพี"
+// แปลว่าเอาข่าวที่มีคำใดคำหนึ่ง ไม่ใช่ต้องมีทั้งคู่และไม่ใช่หาสตริงที่มีช่องว่างตรงกลาง
+//
+// ⚠️ **แต่พาดหัวจริงมีช่องว่างอยู่ข้างในด้วย** ("ฝุ่น PM 2.5") ถ้าแยกทุกช่องว่าง
+//    คนที่พิมพ์ `PM 2.5` จะได้ข่าวที่มีแค่ "pm" หรือแค่ "2.5" ปนมาเต็มไปหมด
+//    จึงรองรับ **เครื่องหมายคำพูด** สำหรับคนที่อยากได้ทั้งวลีเป๊ะๆ: `"PM 2.5"`
+function parseTerms(q) {
+  const s = String(q || "");
+  const out = [];
+  const re = /"([^"]*)"|(\S+)/g;   // ในเครื่องหมายคำพูด = วลีเดียว · นอกนั้นแยกตามช่องว่าง
+  let m;
+  while ((m = re.exec(s))) {
+    const t = norm(m[1] !== undefined ? m[1] : m[2]);
+    if (t) out.push(t);
+  }
+  return [...new Set(out)];
+}
+
 // ---------- ตัดหางพาดหัว ----------
 // ฟีดหลายเจ้าต่อท้ายชื่อคอลัมน์/สำนักไว้ท้ายพาดหัว
 //   "… - เทคโนโลยีชาวบ้าน - ข่าวสด"  ·  "… | RYT9"
@@ -53,18 +72,35 @@ function countTails(title) {
     if (s && s.length <= 28) TAIL_SEEN.set(s, (TAIL_SEEN.get(s) || 0) + 1);
   }
 }
-const isTail = (s, outletNames) =>
-  outletNames.has(s) || EXTRA_TAILS.has(s) || (TAIL_SEEN.get(s) || 0) >= 2;
+// ⚠️ ท่อนท้ายที่เป็น "ชื่อเว็บของข่าวใบนั้นเอง" — เทียบกับสำนักข่าวของแถวนั้นตรงๆ
+//    เว็บเขียนชื่อตัวเองไม่เหมือนกับที่อยู่ในคอลัมน์สำนักข่าว ("Pantip" vs "pantip.com")
+//    จึงตัดอักขระที่ไม่ใช่ตัวอักษรออกให้หมดแล้วดูว่าอันหนึ่งเป็นต้นของอีกอันไหม
+//    ปลอดภัยเพราะจะตัดได้ก็ต่อเมื่อ **พาดหัวลงท้ายด้วยชื่อเว็บของตัวเอง** เท่านั้น
+const slug = (s) => norm(s).replace(/[^a-z0-9฀-๿]+/g, "");
+function isOwnSite(s, ownSlug) {
+  const a = slug(s);
+  if (a.length < 4 || !ownSlug || ownSlug.length < 4) return false;
+  return a.startsWith(ownSlug) || ownSlug.startsWith(a);
+}
 
-function stripTail(title, outletNames) {
+const isTail = (s, outletNames, ownSlug) =>
+  outletNames.has(s) || EXTRA_TAILS.has(s) || (TAIL_SEEN.get(s) || 0) >= 2 || isOwnSite(s, ownSlug);
+
+// ⚠️ **ตัดด้วยการ "เฉือนท้าย" ไม่ใช่ split แล้ว join กลับ**
+//    split/join จะเขียนตัวคั่นในส่วนที่เก็บไว้ใหม่หมด — "A | B - ข่าวสด" จะกลายเป็น "A - B"
+//    พาดหัวที่แสดงเลยไม่ตรงกับของจริงทั้งที่ไม่ได้ตั้งใจแก้ (เจอตอนวัดกับข้อมูลจริง 1 ใบ)
+const TAIL_SEP_G = new RegExp(TAIL_SEP.source, "g");
+function stripTail(title, outletNames, ownSlug) {
   let t = String(title || "").trim();
   for (let i = 0; i < 3; i++) {           // ตัดได้ไม่เกิน 3 ท่อน กันตัดจนพาดหัวหาย
-    const parts = t.split(TAIL_SEP);
-    if (parts.length < 2) break;
-    const last = parts[parts.length - 1].trim();
-    if (!last || last.length > 28) break;  // ท่อนยาว = น่าจะเป็นเนื้อพาดหัวจริง ไม่ใช่ชื่อสำนัก
-    if (!isTail(norm(last), outletNames)) break;
-    const rest = parts.slice(0, -1).join(" - ").trim();
+    TAIL_SEP_G.lastIndex = 0;
+    const hits = [...t.matchAll(TAIL_SEP_G)];
+    if (!hits.length) break;
+    const at = hits[hits.length - 1];
+    const seg = t.slice(at.index + at[0].length).trim();
+    if (!seg || seg.length > 28) break;    // ท่อนยาว = น่าจะเป็นเนื้อพาดหัวจริง ไม่ใช่ชื่อสำนัก
+    if (!isTail(norm(seg), outletNames, ownSlug)) break;
+    const rest = t.slice(0, at.index).trim();
     if (rest.length < 10) break;           // เหลือสั้นเกินไป = ตัดผิดแน่ๆ
     t = rest;
   }
@@ -101,6 +137,7 @@ function expand(pack) {
       u: r[1],
       ts: r[2] * 1000,
       o,
+      os: slug(rawOutlet),           // ไว้เทียบว่าหางพาดหัวเป็นชื่อเว็บของตัวเองไหม
       c: (r[4] || []).map((i) => pack.c[i]).filter(Boolean),
     });
   }
@@ -131,13 +168,14 @@ function yearsNeededByDate() {
 
 // ---------- กรอง ----------
 function applyFilters() {
-  const q = norm(state.q);
+  const terms = parseTerms(state.q);
   const from = state.from ? Date.parse(state.from + "T00:00:00") : null;
   const to = state.to ? Date.parse(state.to + "T23:59:59") : null;
   const cats = state.cats, srcs = state.srcs;
 
   filtered = rows.filter((r) => {
-    if (q && !r.n.includes(q)) return false;          // ← substring ตรงๆ (ดูหมายเหตุบนสุด)
+    // ← substring ตรงๆ (ดูหมายเหตุบนสุด) · หลายคำ = เจอคำใดคำหนึ่งก็นับ
+    if (terms.length && !terms.some((t) => r.n.includes(t))) return false;
     if (from !== null && r.ts < from) return false;
     if (to !== null && r.ts > to) return false;
     if (srcs.size && !srcs.has(r.o)) return false;
@@ -189,16 +227,34 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": 
 // ⚠️ ต้องหาตำแหน่งบนสตริงที่ normalize แล้ว แต่ตัดชิ้นจากสตริงจริง
 //    ความยาวเท่ากันเพราะ norm() แค่ยุบช่องว่างกับ lowercase — จึงใช้ตำแหน่งร่วมกันได้
 //    (ถ้าวันหนึ่งเพิ่มการตัดอักขระใน norm() ต้องเลิกใช้วิธีนี้)
-function highlight(display, q) {
-  if (!q) return esc(display);
+// ⚠️ หลายคำต้องรวมช่วงที่ทับกันก่อนวาด ไม่งั้นจะได้ <mark> ซ้อน <mark>
+//    (พิมพ์ "กุ้ง ผลผลิตกุ้ง" — คำหลังคลุมคำแรกอยู่)
+function highlight(display, terms) {
+  if (!terms || !terms.length) return esc(display);
   const hay = display.toLowerCase();   // ยาวเท่า display เสมอ (ยุบช่องว่างไปตั้งแต่ expand แล้ว)
-  const needle = q;
+  const hits = [];
+  for (const t of terms) {
+    if (!t) continue;
+    let i = 0;
+    for (;;) {
+      const at = hay.indexOf(t, i);
+      if (at === -1) break;
+      hits.push([at, at + t.length]);
+      i = at + 1;                      // +1 ไม่ใช่ +ความยาว — คำที่ซ้อนกันเองต้องเจอครบ
+    }
+  }
+  if (!hits.length) return esc(display);
+  hits.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  const merged = [];
+  for (const h of hits) {
+    const last = merged[merged.length - 1];
+    if (last && h[0] <= last[1]) last[1] = Math.max(last[1], h[1]);
+    else merged.push([h[0], h[1]]);
+  }
   let out = "", i = 0;
-  for (;;) {
-    const at = hay.indexOf(needle, i);
-    if (at === -1) break;
-    out += esc(display.slice(i, at)) + "<mark>" + esc(display.slice(at, at + needle.length)) + "</mark>";
-    i = at + needle.length;
+  for (const [a, b] of merged) {
+    out += esc(display.slice(i, a)) + "<mark>" + esc(display.slice(a, b)) + "</mark>";
+    i = b;
   }
   return out + esc(display.slice(i));
 }
@@ -211,7 +267,7 @@ const fmtDate = (ts) => {
 
 function renderList() {
   const box = $("#list");
-  const q = norm(state.q);
+  const terms = parseTerms(state.q);
 
   if (!filtered.length) {
     // ⚠️ 2 กรณีนี้ต้องพูดคนละแบบ — "ยังไม่ได้กรอง" กับ "กรองแล้วไม่พบ"
@@ -225,10 +281,10 @@ function renderList() {
 
   const slice = filtered.slice(0, state.shown);
   box.innerHTML = slice.map((r) => {
-    const display = stripTail(r.t, OUTLET_NAMES);
+    const display = stripTail(r.t, OUTLET_NAMES, r.os);
     return `<article class="item">
       <div class="top">
-        <a class="t" href="${esc(r.u)}" target="_blank" rel="noopener">${highlight(display, q)}</a>
+        <a class="t" href="${esc(r.u)}" target="_blank" rel="noopener">${highlight(display, terms)}</a>
         <button class="copy" type="button" data-u="${esc(r.u)}" title="คัดลอกลิงก์">คัดลอก</button>
       </div>
       <div class="meta">
