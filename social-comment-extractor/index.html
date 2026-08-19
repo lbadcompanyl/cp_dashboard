@@ -193,8 +193,7 @@
     </div>
     <div class="checkrow">
       <span id="platformBadge" class="platform-badge">แพลตฟอร์ม: —</span>
-      <label><input type="checkbox" id="anonymize" checked /> ปกปิดชื่อ (anonymize)</label>
-      <label><input type="checkbox" id="samplesChk" checked /> แสดงตัวอย่าง (ถอดความ)</label>
+      <span class="platform-badge on" title="ตัดชื่อผู้คอมเมนต์ออกเสมอ เพื่อความสอดคล้อง PDPA">🔒 ปกปิดชื่ออัตโนมัติ</span>
       <span id="modePill" class="mode-pill demo">โหมด: Demo</span>
     </div>
 
@@ -296,7 +295,6 @@ function loadCfg(){
     const c = JSON.parse(localStorage.getItem(STORE) || "{}");
     if (c.worker) el("worker").value = c.worker;
     if (c.limit) el("limit").value = c.limit;
-    if (typeof c.anon === "boolean") el("anonymize").checked = c.anon;
     if (c.theme === "light" || c.theme === "dark") setTheme(c.theme);
   } catch(e){}
 }
@@ -305,7 +303,6 @@ function saveCfg(){
     localStorage.setItem(STORE, JSON.stringify({
       worker: el("worker").value.trim(),
       limit: el("limit").value,
-      anon: el("anonymize").checked,
       theme: document.documentElement.getAttribute("data-theme") || "",
     }));
   } catch(e){}
@@ -334,7 +331,7 @@ function refreshMode(){
 }
 el("url").addEventListener("input", refreshPlatform);
 el("worker").addEventListener("input", () => { refreshMode(); saveCfg(); });
-["limit","anonymize"].forEach(id => el(id).addEventListener("change", saveCfg));
+el("limit").addEventListener("change", saveCfg);
 
 /* ---------------- ScrapeCreators credits ---------------- */
 function showCredits(n){
@@ -374,8 +371,8 @@ async function analyze(){
   const opts = {
     url, platform,
     limit: Math.max(10, Math.min(2000, +el("limit").value || 200)),
-    anonymize: el("anonymize").checked,
-    samples: el("samplesChk").checked,
+    anonymize: true,   // บังคับปกปิดชื่อเสมอ (PDPA)
+    samples: true,     // แสดงตัวอย่างเสมอ
   };
 
   try {
