@@ -822,24 +822,69 @@
     });
     h += "</tbody></table></div></div>";
 
-    // ③ สัดส่วนการมองเห็น — แท่งเดียว 100% (เดิมเป็นโดนัท กินที่เกินไป)
-    var totalV = 0, pTot = 0;
-    order.forEach(function (pk) { if (cur[pk]) totalV += cur[pk].reach; if (prev[pk]) pTot += prev[pk].reach; });
-    var segs = order.filter(function (pk) { return cur[pk]; }).map(function (pk) {
-      return { label: C.PLATFORMS[pk].label, value: cur[pk].reach, color: C.PLATFORMS[pk].rawColor, pk: pk };
-    });
+    /* ④ สัดส่วนแยกช่อง — แท่ง 100% หลายเส้น เส้นละตัวชี้วัด
+     * 🔴 เดิมมีแท่งเดียว (Views / Reach) เจ้าของบอกว่า "ไม่มีประโยชน์" (19 ส.ค. 2026)
+     *    ถูกแล้ว — แท่งเดียวบอกได้แค่ "ช่องไหนใหญ่" ซึ่งดูจากตารางก็รู้
+     *    ประโยชน์อยู่ที่ "เทียบสัดส่วนข้ามตัวชี้วัด" เช่น ช่องที่กินยอดวิว 64%
+     *    อาจได้คอมเมนต์แค่ 20% = คนดูเยอะแต่ไม่คุยด้วย
+     * ⚠️ แชร์ไม่รวม YouTube เพราะไม่เปิดเผยตัวเลข — ต้องเขียนบอกไว้
+     *    ไม่งั้นจะอ่านว่า "YouTube ไม่มีใครแชร์เลย" ซึ่งไม่จริง */
+    var SHARE_ROWS = [
+      { key: "reach", label: "Views / Reach" },
+      { key: "engagement", label: "Engagement" },
+      { key: "likes", label: "ไลก์" },
+      { key: "comments", label: "คอมเมนต์" },
+      { key: "shares", label: "แชร์", part: true },
+    ];
 
-    h += sec("สัดส่วน Views / Reach แยกช่อง", null,
-      "หน่วย pt คือส่วนต่างของสัดส่วน เช่น จาก 40% เป็น 43% = +3 pt ไม่ใช่ +7.5%");
-    h += '<div class="panel compact">' + CH.share100(segs) + '<div class="legend row">';
-    segs.forEach(function (s) {
-      var share = totalV ? s.value / totalV : null;
-      var pShare = cr && pTot && prev[s.pk] ? prev[s.pk].reach / pTot : null;
-      h += '<div class="lg"><span class="lg-d" style="background:' + s.color + '"></span>' +
-        '<span class="lg-n">' + esc(s.label) + '</span><span class="lg-v">' + esc(pct(share)) + "</span>" +
-        (cr ? delta(share, pShare, { pp: true }) : "") + "</div>";
+    h += sec("สัดส่วนแยกช่อง", null,
+      "แต่ละแถวคือตัวชี้วัดหนึ่งตัว แบ่ง 100% ตามช่อง · ประโยชน์อยู่ที่การเทียบข้ามแถว — " +
+      "ช่องที่กินยอดวิวเยอะแต่ได้คอมเมนต์น้อย แปลว่าคนดูผ่านตาแต่ไม่ได้คุยด้วย " +
+      "· หน่วย pt คือส่วนต่างของสัดส่วน เช่น จาก 40% เป็น 43% = +3 pt ไม่ใช่ +7.5%");
+
+    h += '<div class="panel compact"><div class="sbars">';
+    SHARE_ROWS.forEach(function (row) {
+      // ช่องที่ไม่นับตัวนี้ (YouTube ไม่มีแชร์) ต้องไม่ถูกนับเป็น 0 ในฐาน
+      var pks = order.filter(function (pk) {
+        if (!cur[pk]) return false;
+        if (!row.part) return true;
+        return C.PLATFORMS[pk].parts.some(function (x) { return x.key === row.key; });
+      });
+      var tot = 0, pTot = 0;
+      pks.forEach(function (pk) {
+        tot += cur[pk][row.key] || 0;
+        if (prev[pk]) pTot += prev[pk][row.key] || 0;
+      });
+      if (!tot) return;
+
+      var segs = pks.map(function (pk) {
+        return { label: C.PLATFORMS[pk].label, value: cur[pk][row.key] || 0, color: C.PLATFORMS[pk].rawColor, pk: pk };
+      });
+      var missing = order.filter(function (pk) { return pks.indexOf(pk) < 0; });
+
+      h += '<div class="sbar-r"><div class="sbar-l">' + esc(row.label) +
+        (missing.length
+          ? ' <span class="sbar-x" title="' + esc(missing.map(function (pk) { return C.PLATFORMS[pk].label; }).join(" · ")) +
+            ' ไม่เปิดเผยตัวเลขนี้ จึงไม่ได้นับในฐาน 100%">ไม่รวม ' +
+            esc(missing.map(function (pk) { return C.PLATFORMS[pk].short; }).join("/")) + "</span>"
+          : "") +
+        "</div>" + CH.share100(segs) + '<div class="sbar-v">';
+      segs.forEach(function (sg) {
+        var sh = sg.value / tot;
+        var pSh = cr && pTot && prev[sg.pk] ? (prev[sg.pk][row.key] || 0) / pTot : null;
+        h += '<span class="sbar-i"><span class="lg-d" style="background:' + sg.color + '"></span>' +
+          esc(pct(sh)) + (cr ? delta(sh, pSh, { pp: true }) : "") + "</span>";
+      });
+      h += "</div></div>";
     });
-    h += "</div></div>";
+    h += "</div>";
+
+    // ป้ายสีบอกว่าแท่งไหนคือช่องไหน — ประกาศครั้งเดียวใช้ได้ทุกแถว
+    h += '<div class="legend row">' + order.map(function (pk) {
+      var P = C.PLATFORMS[pk];
+      return '<div class="lg"><span class="lg-d" style="background:' + P.rawColor + '"></span>' +
+        '<span class="lg-n">' + esc(P.label) + "</span></div>";
+    }).join("") + "</div></div>";
 
     /* ⑥ คอนเทนต์เด่น — 2 อันดับวางคู่กัน: คนมีส่วนร่วมมากสุด / คนดูมากสุด
      * ⚠️ หยิบ "ที่ดีที่สุดของแต่ละช่อง" ไม่เอาทุกช่องมาเรียงรวมกัน
@@ -1366,10 +1411,16 @@
     var p = presetOf(state.preset);
     var btnText = state.preset === "custom" ? rangeText(r.from, r.to) : presetLabel(p, t);
 
+    /* 🔴 ปุ่มต้องบอกด้วยว่ากำลังเทียบกับช่วงไหน (เจ้าของสั่ง 19 ส.ค. 2026)
+       ตัวเลือกโหมดเทียบซ่อนอยู่ในแผงที่ต้องกดเปิด ถ้าปุ่มไม่บอก จะไม่มีอะไรบนหน้า
+       บอกเลยว่าตัวเลข ▲▼ ทั้งหน้ากำลังเทียบกับอะไรอยู่ */
+    var cmpLine = compareRange() ? "เทียบกับ" + compareText() : "ไม่ได้เทียบกับช่วงไหน";
+
     var h = '<button type="button" class="periodbtn' + (state.periodOpen ? " on" : "") + '" data-period="toggle" ' +
       'aria-expanded="' + (state.periodOpen ? "true" : "false") + '">' +
       '<span class="pb-ic">🗓</span><span class="pb-t">' + esc(btnText) + "</span>" +
-      '<span class="pb-sub">' + esc(rangeText(r.from, r.to)) + "</span>" +
+      '<span class="pb-sub">' + esc(rangeText(r.from, r.to)) + " (" + r.days + " วัน)</span>" +
+      '<span class="pb-cmp">' + esc(cmpLine) + "</span>" +
       '<span class="pb-caret">▾</span></button>';
 
     if (!state.periodOpen) return h;
@@ -1459,12 +1510,8 @@
     }
     h += "</div>";
 
-    // ⚠️ ต้องบอกให้ชัดว่ากำลังเทียบกับ "ช่วงไหน" ไม่ใช่แค่บอกว่ามีการเทียบ
-    /* ⚠️ ช่วงวันที่ซ้ำกับบรรทัดล่างของปุ่มเลือกช่วงเวลา — บนจอแคบซ่อนครึ่งนี้
-       เพื่อไม่ให้แถบติดขอบสูงจนกินจอ (ครึ่งที่เหลือคือ "เทียบกับอะไร" ซึ่งไม่มีที่อื่นบอก) */
-    h += '<div class="ctrl-note"><span class="rg">' + esc(rangeText(r.from, r.to)) + " (" + r.days + " วัน)</span>" +
-      (cr ? ' <span class="vs">เทียบกับ' + esc(compareText()) + "</span>"
-          : ' <span class="vs">ไม่ได้เทียบกับช่วงไหน</span>') + "</div>";
+    /* 🔴 บรรทัดสรุป "ช่วงไหน · เทียบกับอะไร" ย้ายไปอยู่บนปุ่มเลือกช่วงเวลาแล้ว
+       เดิมอยู่ตรงนี้ซึ่งซ้ำกับปุ่ม และกินความสูงของแถบติดขอบตลอดเวลา */
     return h;
   }
 

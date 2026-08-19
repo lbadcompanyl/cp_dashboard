@@ -55,19 +55,22 @@ body {
 .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
 #periodbox { position:relative; }
 .periodbtn {
-  display:grid; grid-template-columns:auto 1fr auto; grid-template-rows:auto auto;
+  display:grid; grid-template-columns:auto 1fr auto; grid-template-rows:auto auto auto;
   align-items:center; gap:0 8px; cursor:pointer; font-family:inherit; text-align:left;
   background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:6px 11px;
 }
 .periodbtn:hover, .periodbtn.on { border-color:var(--accent); }
-.pb-ic { grid-row:1 / span 2; font-size:1rem; opacity:.7; }
+.pb-ic { grid-row:1 / span 3; font-size:1rem; opacity:.7; }
 .pb-t { font-size:.82rem; font-weight:650; color:var(--ink); white-space:nowrap; }
 .pb-sub { grid-column:2; font-size:.68rem; color:var(--muted); white-space:nowrap; }
-.pb-caret { grid-row:1 / span 2; color:var(--muted); font-size:.7rem; }
+.pb-caret { grid-row:1 / span 3; color:var(--muted); font-size:.7rem; }
+/* 🔴 ตัวเลข ▲▼ ทั้งหน้าเทียบกับช่วงนี้ — ตัวเลือกซ่อนอยู่ในแผงที่ต้องกดเปิด
+   ถ้าปุ่มไม่บอก จะไม่มีอะไรบนหน้าบอกเลยว่ากำลังเทียบกับอะไร */
+.pb-cmp { grid-column:2; font-size:.66rem; color:var(--accent); white-space:nowrap; }
 
 .periodpanel {
   position:absolute; right:0; top:calc(100% + 6px); z-index:70;
-  width:min(620px, calc(100vw - 24px));
+  width:min(560px, calc(100vw - 24px));
   background:var(--surface); border:1px solid var(--border); border-radius:12px;
   box-shadow:0 10px 30px rgba(16,24,40,.16); overflow:hidden;
   /* ⚠️ ต้องเตี้ยกว่าจอเสมอ — หัวกับท้ายตรึงไว้ ส่วนกลางเลื่อนเอา
@@ -83,7 +86,7 @@ body {
 /* ⚠️ ต้องพิมพ์วันที่เองได้ด้วย — ช่วงที่ย้อนไปหลายปี กดปฏิทินทีละเดือนไม่ไหว */
 .pp-dt {
   background:var(--surface); border:1px solid var(--border); color:var(--ink);
-  border-radius:8px; padding:5px 8px; font-family:inherit; font-size:.79rem; min-width:0;
+  border-radius:8px; padding:4px 7px; font-family:inherit; font-size:.74rem; min-width:0;
 }
 .pp-dt:focus { outline:2px solid var(--accent); outline-offset:1px; }
 .pp-dash { color:var(--muted); }
@@ -93,13 +96,13 @@ body {
 .pp-body { display:flex; flex-direction:column; }
 .pp-list { display:flex; flex-direction:column; max-height:min(38vh, 260px); overflow-y:auto; padding:5px; }
 .pp-i {
-  display:flex; flex-direction:column; gap:1px; align-items:flex-start; text-align:left;
-  border:0; background:transparent; font-family:inherit; cursor:pointer; border-radius:8px; padding:7px 10px;
+  display:flex; flex-direction:column; gap:0; align-items:flex-start; text-align:left;
+  border:0; background:transparent; font-family:inherit; cursor:pointer; border-radius:7px; padding:5px 9px;
 }
 .pp-i:hover { background:var(--surface-2); }
 .pp-i.on { background:var(--accent); }
-.pp-n { font-size:.82rem; color:var(--ink); }
-.pp-r { font-size:.68rem; color:var(--muted); }
+.pp-n { font-size:.76rem; color:var(--ink); }
+.pp-r { font-size:.64rem; color:var(--muted); }
 .pp-i.on .pp-n, .pp-i.on .pp-r { color:#fff; }
 .pp-i.on .pp-r { opacity:.85; }
 
@@ -107,7 +110,7 @@ body {
    ⚠️ วันในอนาคตต้อง disabled จริง ไม่ใช่แค่ทำให้จาง — เราไม่มีข้อมูลของวันพรุ่งนี้ */
 .pp-cal2 { border-top:1px solid var(--border); padding:9px 11px 11px; }
 .cal-nav { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
-.cal-t { font-size:.78rem; font-weight:600; color:var(--ink-2); }
+.cal-t { font-size:.74rem; font-weight:600; color:var(--ink-2); }
 .cal-b {
   border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
   width:26px; height:26px; border-radius:8px; cursor:pointer; font-family:inherit; line-height:1;
@@ -118,12 +121,12 @@ body {
 .cal-ms { display:grid; grid-template-columns:1fr; gap:12px; }
 /* จอแคบโชว์เดือนเดียว (เดือนขวา = เดือนที่ช่วงจบอยู่) ไม่งั้นช่องวันเล็กจนกดไม่โดน */
 .cal-ms > .cal-m:first-child { display:none; }
-.cal-mh { font-size:.74rem; color:var(--muted); font-weight:600; text-align:center; margin-bottom:4px; }
+.cal-mh { font-size:.7rem; color:var(--muted); font-weight:600; text-align:center; margin-bottom:3px; }
 .cal-g { display:grid; grid-template-columns:repeat(7,1fr); gap:1px 0; }
-.cal-w { font-size:.64rem; color:var(--muted); text-align:center; padding:2px 0; }
-.cal-x { height:30px; }
+.cal-w { font-size:.6rem; color:var(--muted); text-align:center; padding:1px 0; }
+.cal-x { height:27px; }
 .cal-d {
-  height:30px; border:0; background:transparent; font-family:inherit; font-size:.76rem;
+  height:27px; border:0; background:transparent; font-family:inherit; font-size:.71rem;
   color:var(--ink); cursor:pointer; border-radius:0;
   font-variant-numeric:tabular-nums;
 }
@@ -141,7 +144,7 @@ body {
 .pp-cmp { border-top:1px solid var(--border); padding:9px 11px; }
 .pp-sw {
   display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent;
-  font-family:inherit; font-size:.82rem; color:var(--ink); cursor:pointer; padding:3px 2px;
+  font-family:inherit; font-size:.77rem; color:var(--ink); cursor:pointer; padding:3px 2px;
 }
 .pp-sw-t {
   width:32px; height:18px; border-radius:999px; background:var(--border); flex:none; position:relative;
@@ -155,8 +158,8 @@ body {
 .pp-sw.on .pp-sw-t::after { transform:translateX(14px); }
 .pp-cmp-l { display:flex; flex-direction:column; gap:2px; margin-top:5px; }
 .pp-c {
-  display:flex; flex-direction:column; gap:1px; align-items:flex-start; text-align:left;
-  border:0; background:transparent; font-family:inherit; cursor:pointer; border-radius:8px; padding:5px 10px;
+  display:flex; flex-direction:column; gap:0; align-items:flex-start; text-align:left;
+  border:0; background:transparent; font-family:inherit; cursor:pointer; border-radius:7px; padding:4px 9px;
 }
 .pp-c:hover { background:var(--surface-2); }
 .pp-c.on { background:var(--surface-2); }
@@ -213,16 +216,16 @@ body {
   background:var(--surface); border:1px solid var(--border); color:var(--ink);
   border-radius:8px; padding:6px 9px; font-family:inherit; font-size:.8rem;
 }
-.ctrl-note { font-size:.75rem; color:var(--muted); padding-top:7px; }
-.ctrl-note .vs { color:var(--ink-2); }
 
 /* จอแคบ: บีบแถบติดขอบให้เตี้ยลง — มันกินพื้นที่อ่านข้อมูลไปตลอดเวลาที่เลื่อน */
 @media (max-width:639px) {
-  .ctrl-note .rg { display:none; }
   .ctrl-row { padding-top:8px; gap:6px; }
   .seg button { padding:5px 9px; font-size:.74rem; }
   .ch { padding:5px 10px; font-size:.74rem; }
   .stickyhead { gap:6px; padding-top:6px; }
+  /* ⚠️ ย่อตัวอักษรได้ แต่ช่องวันบนมือถือต้องไม่เล็กลง ไม่งั้นนิ้วกดพลาด */
+  .cal-d, .cal-x { height:32px; }
+  .cal-d { font-size:.76rem; }
   .tab { padding:9px 13px 8px; font-size:.82rem; }
   .ctrl-lb { display:none; }
 }
@@ -443,6 +446,26 @@ body {
 .chart .ax { fill:var(--muted); font-size:10px; font-family:system-ui,sans-serif; }
 .chart .ax-r { fill:var(--ink-2); }
 
+/* ── สัดส่วนแยกช่อง: แท่ง 100% หลายแถว เส้นละตัวชี้วัด ──────────────
+   🔴 เดิมมีแท่งเดียว บอกได้แค่ "ช่องไหนใหญ่" ซึ่งดูจากตารางก็รู้
+      ประโยชน์อยู่ที่เทียบข้ามแถว — ช่องที่กินยอดวิวเยอะแต่ได้คอมเมนต์น้อย
+      แปลว่าคนดูผ่านตาแต่ไม่ได้คุยด้วย */
+.sbars { display:flex; flex-direction:column; gap:11px; }
+.sbar-r { display:grid; grid-template-columns:1fr; gap:4px; }
+.sbar-l { font-size:.75rem; color:var(--ink-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+/* ป้ายบอกว่าแถวนี้ไม่ได้นับช่องไหน — ไม่บอกจะอ่านว่า "ช่องนั้นได้ 0" ซึ่งไม่จริง */
+.sbar-x { font-size:.64rem; font-weight:400; color:var(--muted); border:1px dashed var(--border);
+          border-radius:5px; padding:1px 6px; cursor:help; }
+.sbar-v { display:flex; flex-wrap:wrap; gap:3px 14px; font-size:.7rem; color:var(--ink-2); }
+.sbar-i { display:inline-flex; align-items:center; gap:4px; font-variant-numeric:tabular-nums; }
+.sbar-i .lg-d { width:8px; height:8px; border-radius:2px; flex:none; }
+.sbar-r .share { height:22px; }
+
+@media (min-width:640px) {
+  .sbar-r { grid-template-columns:132px 1fr; align-items:center; gap:3px 12px; }
+  .sbar-v { grid-column:2; }
+}
+
 .legend { display:flex; flex-direction:column; gap:7px; width:100%; }
 .legend.row { flex-direction:row; flex-wrap:wrap; gap:12px; margin-top:10px; }
 .lg { display:flex; align-items:center; gap:7px; font-size:.78rem; }
@@ -589,7 +612,7 @@ body {
   .stickyhead { flex-direction:row; align-items:flex-end; gap:12px; }
   /* จอกว้าง: รายการสำเร็จรูปซ้าย ปฏิทิน 2 เดือนขวา แบบ GA4 */
   .pp-body { flex-direction:row; }
-  .pp-list { width:196px; flex:none; max-height:none; border-right:1px solid var(--border); }
+  .pp-list { width:176px; flex:none; max-height:none; border-right:1px solid var(--border); }
   /* ให้ 2 ฝั่งสูงเท่ากัน แล้วเลื่อนทั้งก้อนพร้อมกัน — ไม่มีกล่องซ้อนกล่องที่เลื่อนคนละที */
   .pp-body { align-items:stretch; }
   .pp-cal2 { border-top:0; flex:1; min-width:0; }

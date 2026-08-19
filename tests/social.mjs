@@ -70,11 +70,11 @@ console.log("\n[2] ช่วงเวลา + โหมดเทียบ ใช
   const { pg } = await open();
   await setPeriod(pg, 90);
   await setCompare(pg, "yoy");
-  const before = await pg.$eval(".ctrl-note", (e) => e.innerText);
+  const before = await pg.$eval(".periodbtn", (e) => e.innerText);
   ok(/90 วัน/.test(before) && /เทียบกับ/.test(before), "ตั้งค่า 90 วัน + เทียบปีก่อนแล้ว");
   for (const t of ["YouTube", "TikTok", "Facebook", "ภาพรวม"]) {
     await tabTo(pg, t);
-    ok((await pg.$eval(".ctrl-note", (e) => e.innerText)) === before, `แท็บ ${t}: ช่วงเวลายังเป็นชุดเดิม`);
+    ok((await pg.$eval(".periodbtn", (e) => e.innerText)) === before, `แท็บ ${t}: ช่วงเวลายังเป็นชุดเดิม`);
   }
   await pg.close();
 }
@@ -339,24 +339,61 @@ console.log("\n[6] 🔴 ผลงานรายช่อง — หนึ่ง
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[7] 🔴 สัดส่วนการมองเห็น — แท่ง 100% แทนโดนัท");
+console.log("\n[7] 🔴 สัดส่วนแยกช่อง — แท่ง 100% หนึ่งแถวต่อหนึ่งตัวชี้วัด");
 {
   const { pg } = await open();
   ok((await pg.$$("svg.donut")).length === 0, "ไม่มีโดนัทเหลืออยู่");
-  ok((await pg.$$(".share")).length === 1, "มีแท่ง 100% แท่งเดียว");
-  const segs = await pg.$$eval(".share-s", (n) => n.map((x) => ({ w: x.style.width, t: x.textContent.trim() })));
-  ok(segs.length === 3, "แบ่ง 3 ช่อง");
-  ok(segs.every((s) => /%$/.test(s.w)), "ความกว้างเป็นสัดส่วน %");
-  ok(segs.filter((s) => /%/.test(s.t)).length >= 2, "มีป้าย % บนแท่ง");
-  const legend = await pg.evaluate(() => {
-    const sh = document.querySelector(".share");
-    return sh.parentElement.querySelector(".legend").innerText;
-  });
-  ok(/pt/.test(legend), "legend มี delta หน่วย pt");
 
-  // ต้องเตี้ยกว่าโดนัทเดิมอย่างน้อยครึ่งหนึ่ง (โดนัทเดิม 180px + legend)
-  const hh = await pg.$eval(".share", (e) => e.closest(".panel").getBoundingClientRect().height);
-  ok(hh < 130, `section เตี้ยลงจริง (${Math.round(hh)}px)`);
+  /* 🔴 เดิมมีแท่งเดียว (Views / Reach) เจ้าของบอกว่า "ไม่มีประโยชน์" (19 ส.ค. 2026)
+     ถูกแล้ว — แท่งเดียวบอกได้แค่ "ช่องไหนใหญ่" ซึ่งดูจากตารางก็รู้
+     ประโยชน์อยู่ที่เทียบข้ามแถว: ช่องที่กินยอดวิว 64% อาจได้คอมเมนต์แค่ 20% */
+  const rows = await pg.$$eval(".sbar-r .sbar-l", (n) => n.map((x) => x.textContent.trim()));
+  ok(rows.length >= 4, `มีหลายแถว ไม่ใช่แท่งเดียว (${rows.length} แถว)`);
+  for (const want of ["Views / Reach", "Engagement", "ไลก์", "คอมเมนต์", "แชร์"]) {
+    ok(rows.some((x) => x.includes(want)), `มีแถว "${want}"`);
+  }
+  ok((await pg.$$(".sbars .share")).length === rows.length, "ทุกแถวมีแท่งของตัวเอง");
+
+  // แต่ละแถวต้องรวมกันได้ 100% ของตัวเอง
+  const per = await pg.$$eval(".sbar-r", (n) => n.map((r) =>
+    [...r.querySelectorAll(".sbar-i")].map((x) => parseFloat(x.textContent))));
+  per.forEach((vals, i) => {
+    const tot = vals.reduce((a, b) => a + b, 0);
+    ok(Math.abs(tot - 100) < 0.5, `แถวที่ ${i + 1}: รวมกันได้ 100% (${tot.toFixed(2)}%)`);
+  });
+
+  /* ⚠️ YouTube ไม่เปิดเผยจำนวนแชร์ — แถวแชร์ต้องไม่นับเป็น 0 ในฐาน
+     ไม่งั้นสัดส่วนของอีก 2 ช่องจะถูกกดให้เล็กลงด้วยตัวเลขที่ไม่มีอยู่จริง
+     และต้องมีป้ายบอก ไม่งั้นอ่านว่า "YouTube ไม่มีใครแชร์เลย" ซึ่งไม่จริง */
+  const shareRow = await pg.evaluate(() => {
+    const r = [...document.querySelectorAll(".sbar-r")].find((x) => /แชร์/.test(x.querySelector(".sbar-l").textContent));
+    return {
+      segs: r.querySelectorAll(".share-s").length,
+      note: (r.querySelector(".sbar-x") || {}).textContent || "",
+      tip: (r.querySelector(".sbar-x") || {}).title || "",
+    };
+  });
+  ok(shareRow.segs === 2, `แถวแชร์แบ่งแค่ 2 ช่อง (${shareRow.segs})`);
+  ok(/YT/.test(shareRow.note), `มีป้ายบอกว่าไม่รวมช่องไหน (${shareRow.note.trim()})`);
+  ok(/ไม่เปิดเผย/.test(shareRow.tip), "ป้ายอธิบายเหตุผลเมื่อเอาเมาส์ชี้");
+
+  // มี delta หน่วย pt (ส่วนต่างของสัดส่วน ไม่ใช่ % ของ %)
+  ok((await pg.$$eval(".sbar-i .dlt", (n) => n.length)) > 0, "มี delta ของสัดส่วน");
+  ok(/pt/.test(await pg.$eval(".sbar-i .dlt", (e) => e.textContent)), "ใช้หน่วย pt");
+
+  // ป้ายสีประกาศครั้งเดียว ไม่ซ้ำทุกแถว
+  const legends = await pg.$$eval(".sbars ~ .legend .lg-n", (n) => n.map((x) => x.textContent.trim()));
+  ok(legends.length === 3, `ป้ายสีประกาศครั้งเดียวใช้ได้ทุกแถว (${legends.join(" / ")})`);
+
+  // ปิดช่อง → ทุกแถวต้องคิดใหม่
+  await pg.click('[data-ch="youtube"]');
+  await pg.waitForTimeout(220);
+  const per2 = await pg.$$eval(".sbar-r", (n) => n.map((r) =>
+    [...r.querySelectorAll(".sbar-i")].map((x) => parseFloat(x.textContent))));
+  per2.forEach((vals, i) => {
+    const tot = vals.reduce((a, b) => a + b, 0);
+    ok(Math.abs(tot - 100) < 0.5, `ปิดช่องแล้วแถวที่ ${i + 1} ยังรวมได้ 100% (${tot.toFixed(2)}%)`);
+  });
   await pg.close();
 }
 
@@ -407,7 +444,13 @@ console.log("\n[9] 🔴 ชิพเลือกช่อง — ปิดแล
   ok(await pg.$eval('[data-ch="youtube"]', (e) => e.getAttribute("aria-pressed") === "false"), "ชิพเปลี่ยนเป็นสถานะปิด");
   // ตารางสลับแกนแล้ว — ช่องเป็นแถว ปิดช่องจึงลด "แถว" ไม่ใช่ "คอลัมน์"
   ok((await pg.$$eval('.tbl.perf tbody th[scope="row"]', (n) => n.length)) === rowsBefore - 1, "ตารางลดแถว YouTube ออก");
-  ok((await pg.$$eval(".share-s", (n) => n.length)) === segsBefore - 1, "แท่งสัดส่วนเหลือ 2 ช่อง");
+  /* ⚠️ ตอนนี้มีแท่งสัดส่วนหลายแถว (เส้นละตัวชี้วัด) และแถว "แชร์" ไม่นับ YouTube อยู่แล้ว
+     จำนวนช่องที่หายไปจึงไม่เท่ากับ 1 ต่อ 1 แถว — เช็คว่า "ไม่มีสีของ YouTube เหลือ" แทน */
+  const ytColor = await pg.evaluate(() => window.SOCIAL_CONFIG.PLATFORMS.youtube.rawColor);
+  const stillYt = await pg.$$eval(".sbars .share-s", (n, c) =>
+    n.filter((x) => x.style.background === c || x.style.backgroundColor === c).length, ytColor);
+  ok(stillYt === 0, `ไม่มีส่วนของ YouTube เหลือในแท่งสัดส่วนสักแถว (${stillYt})`);
+  ok((await pg.$$eval(".share-s", (n) => n.length)) < segsBefore, "จำนวนส่วนย่อยรวมลดลง");
   ok((await pg.$$eval(".dv-row", (n) => n.length)) === dvBefore - 1, "diverging bar เหลือ 2 แถว");
   ok(!/YouTube/.test(await pg.$eval(".tbl.perf", (e) => e.innerText)), "ไม่มีคำว่า YouTube ในตารางแล้ว");
 
@@ -732,10 +775,10 @@ console.log("\n[17] custom range + ตารางเรียงได้");
   await pg.fill("#d1", k(new Date(end.getTime() - 20 * 864e5)));
   await pg.fill("#d2", k(end));
   await pg.waitForTimeout(200);
-  const note = await pg.$eval(".ctrl-note", (e) => e.innerText);
+  const note = await pg.$eval(".periodbtn", (e) => e.innerText);
   ok(/21 วัน/.test(note), "นับจำนวนวันถูก");
   await tabTo(pg, "Facebook");
-  ok((await pg.$eval(".ctrl-note", (e) => e.innerText)) === note, "ช่วงกำหนดเองคงอยู่ข้ามแท็บ");
+  ok((await pg.$eval(".periodbtn", (e) => e.innerText)) === note, "ช่วงกำหนดเองคงอยู่ข้ามแท็บ");
 
   const col = () => pg.$$eval(".tbl:not(.cmp) tbody tr", (rows) => rows.map((r) => parseFloat(r.children[3].textContent)));
   await pg.click('[data-sort="er"]');
@@ -930,7 +973,7 @@ console.log("\n[21] 🔴 แผงเลือกช่วงเวลา — �
   await pg.click('[data-preset="lastmonth"]');
   await pg.waitForTimeout(220);
   ok((await pg.$$(".periodpanel")).length === 0, "เลือกของสำเร็จรูปแล้วแผงปิดเอง");
-  const note = await pg.$eval(".ctrl-note", (e) => e.innerText);
+  const note = await pg.$eval(".periodbtn", (e) => e.innerText);
   ok(/1 ก\.ค\.|1 [ก-๙.]+/.test(note), `ช่วงเปลี่ยนตามที่เลือก (${note.split("\n")[0]})`);
 
   // เดือนที่แล้วต้องเป็นทั้งเดือนปฏิทิน
@@ -991,7 +1034,7 @@ console.log("\n[23] 🔴 เทียบกับช่วงไหน — ต�
   for (const [k, name] of [["prev", "ช่วงก่อนหน้า"], ["lastmonth", "เดือนที่แล้ว"], ["yoy", "ปีก่อน"]]) {
     await setCompare(pg, k);
     await pg.waitForTimeout(160);
-    const note = await pg.$eval(".ctrl-note", (e) => e.innerText);
+    const note = await pg.$eval(".periodbtn", (e) => e.innerText);
     ok(note.includes(name), `${k}: แถบบอกชื่อช่วงที่เทียบ ("${name}")`);
     ok(/\d+\s*[ก-๙.]+\s*–/.test(note), `${k}: บอกวันที่ของช่วงเทียบด้วย`);
     const t = await pg.$eval(".sc .dlt", (e) => e.getAttribute("title") || "");
@@ -1003,7 +1046,7 @@ console.log("\n[23] 🔴 เทียบกับช่วงไหน — ต�
   await setCompare(pg, "lastmonth");
   await pg.waitForTimeout(160);
   const okMonth = await pg.evaluate(() => {
-    const m = document.querySelector(".ctrl-note").innerText.match(/เดือนที่แล้ว \((.+?) – (.+?)\)/);
+    const m = document.querySelector(".periodbtn").innerText.match(/เดือนที่แล้ว \((.+?) – (.+?)\)/);
     return !!m;
   });
   ok(okMonth, "ช่วงของ 'เดือนที่แล้ว' แสดงเป็นวันที่จริง");
@@ -1593,6 +1636,37 @@ console.log("\n[40] 🔴 คอนเทนต์เด่น — ช่อง�
   // ทั้ง 2 ใบต้องเป็นคนละโพสต์
   const titles = await pg.$$eval(".tcards .tcard", (n) => [...n[0].querySelectorAll(".post-t")].map((x) => x.textContent.trim()));
   ok(titles[0] !== titles[1], "2 ใบในกล่องเดียวกันไม่ใช่ใบเดียวกัน");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[41] 🔴 ปุ่มช่วงเวลาต้องบอกด้วยว่ากำลังเทียบกับช่วงไหน");
+{
+  const { pg } = await open();
+  /* 🔴 เจ้าของสั่ง 19 ส.ค. 2026 — ตัวเลือกโหมดเทียบซ่อนอยู่ในแผงที่ต้องกดเปิด
+     ถ้าปุ่มไม่บอก จะไม่มีอะไรบนหน้าบอกเลยว่าตัวเลข ▲▼ ทั้งหน้าเทียบกับอะไร */
+  const cmp = () => pg.$eval(".pb-cmp", (e) => e.textContent.trim());
+  ok(/เทียบกับช่วงก่อนหน้า/.test(await cmp()), `ปุ่มบอกชื่อช่วงที่เทียบ (${await cmp()})`);
+  ok(/\d/.test(await cmp()), "บอกวันที่จริงของช่วงที่เทียบด้วย ไม่ใช่บอกแค่ชื่อ");
+
+  // ปุ่มต้องบอกครบ 3 อย่าง: ชื่อช่วง · วันที่จริง · เทียบกับอะไร
+  const all = await pg.$eval(".periodbtn", (e) => e.innerText.replace(/\n/g, " | "));
+  ok(/30 วันล่าสุด/.test(all) && /30 วัน\)/.test(all), `ปุ่มบอกช่วงที่เลือกและจำนวนวัน (${all})`);
+
+  await setCompare(pg, "yoy");
+  ok(/ปีก่อน/.test(await cmp()), `เปลี่ยนโหมดแล้วปุ่มเปลี่ยนตาม (${await cmp()})`);
+
+  await setCompare(pg, "none");
+  ok(/ไม่ได้เทียบ/.test(await cmp()), `ปิดการเทียบแล้วบอกตรงๆ ว่าไม่ได้เทียบ (${await cmp()})`);
+
+  /* ⚠️ บรรทัดสรุปเดิมที่อยู่ใต้แถบควบคุมถูกยกมาไว้บนปุ่มแล้ว ห้ามมี 2 ที่
+     (ซ้ำกันแล้วกินความสูงของแถบติดขอบเปล่าๆ) */
+  ok((await pg.$$(".ctrl-note")).length === 0, "ไม่มีบรรทัดสรุปซ้ำใต้แถบควบคุม");
+
+  // แท็บรายช่องก็ต้องเห็นเหมือนกัน — ปุ่มอยู่ในแถบติดขอบร่วม
+  await setCompare(pg, "prev");
+  await tabTo(pg, "TikTok");
+  ok(/เทียบกับ/.test(await cmp()), "แท็บรายช่องก็เห็นบรรทัดนี้");
   await pg.close();
 }
 
