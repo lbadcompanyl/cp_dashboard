@@ -146,5 +146,41 @@ for (const [tag, file] of [["trend", "../functions/api/trend/feeds.js"],
     why("อ้อม พิยดา คว้ารางวัลใหญ่ งาน นาคราช อวอร์ด", "https://www.thairath.co.th/x") === null);
 }
 
+console.log("\n════════ หน้างานอีเวนต์/นิทรรศการ — เจ้าของแจ้ง 14 ส.ค. 2026 ════════");
+{
+  const { noiseReason } = await load("../functions/api/trend/feeds.js");
+  const w = (link, title, src = "alert2") => noiseReason({ link, title, snippet: "" }, title.toLowerCase(), src);
+  ok("เคสจริง: นิทรรศการบน greener.bangkok.go.th",
+     w("https://greener.bangkok.go.th/en/event/shared-sensibilities/", "Shared Sensibilities: ผัสสะ - สัมผัส - Greener Bangkok") === "event-page");
+  ok("/events/ ก็ตัด", w("https://x.go.th/events/expo-2026/", "งานเอ็กซ์โป") === "event-page");
+  ok("/exhibition/ ก็ตัด", w("https://x.com/en/exhibition/abc/", "นิทรรศการ ABC") === "event-page");
+  ok("ตัดทุกคอลัมน์ (alert1 ด้วย)", w("https://x.go.th/event/a/", "ซีพี ร่วมงาน", "alert1") === "event-page");
+  // ⚠️ ห้ามจับที่พาดหัว — "นิทรรศการ" โผล่ในข่าวจริงบ่อย
+  ok("ข่าวจริงที่พาดหัวมีคำว่านิทรรศการ → ไม่ตัด",
+     w("https://www.thairath.co.th/news/local/2891234", "ซีพี ออกบูทในนิทรรศการอาหารโลก") === null,
+     String(w("https://www.thairath.co.th/news/local/2891234", "ซีพี ออกบูทในนิทรรศการอาหารโลก")));
+  ok("ข่าวศิลปะบนเว็บข่าว → ไม่ตัด",
+     w("https://www.bangkokpost.com/life/arts-and-entertainment/29", "งานศิลปะที่หอศิลป์") === null);
+}
+
+console.log("\n════════ หน้ารวมบทความ (Archives) — เจ้าของสั่งตัดทั้งหมด 14 ส.ค. 2026 ════════");
+{
+  const { noiseReason } = await load("../functions/api/trend/feeds.js");
+  const w = (title, link = "https://www.example.com/tag/pm25/", src = "alert2") =>
+    noiseReason({ link, title, snippet: "Recent Posts." }, title.toLowerCase(), src);
+  ok("เคสจริง: สู้ฝุ่น PM 2.5 Archives", w("สู้ฝุ่น PM 2.5 Archives - ข่าวท้องถิ่น") === "archive-page",
+     String(w("สู้ฝุ่น PM 2.5 Archives - ข่าวท้องถิ่น")));
+  ok("เอกพจน์ Archive ก็ตัด", w("PM 2.5 Archive - เชียงใหม่นิวส์") === "archive-page");
+  ok("Category Archives ก็ตัด", w("Category Archives: สิ่งแวดล้อม") === "archive-page");
+  ok("ตัดทุกคอลัมน์ (alert1 ด้วย)", w("ซีพี Archives - ข่าวธุรกิจ", "https://x/t/", "alert1") === "archive-page");
+  // ⚠️ ห้ามจับที่ URL — /archives/12345 เป็น permalink ของข่าวจริงบนเว็บ WordPress
+  ok("ลิงก์ /archives/12345 แต่พาดหัวปกติ → ไม่ตัด",
+     w("ฝุ่น PM2.5 พุ่งสูงในกรุงเทพ", "https://www.thairath.co.th/archives/12345") === null,
+     String(w("ฝุ่น PM2.5 พุ่งสูงในกรุงเทพ", "https://www.thairath.co.th/archives/12345")));
+  ok("ข่าวจริงที่ไม่มีคำนี้ ไม่โดน", w("ฝุ่น PM2.5 พุ่งสูงในกรุงเทพ") === null);
+  ok("คำที่มี archive ซ่อนอยู่ในคำอื่นไม่นับ (archived ก็ยังนับ แต่ archiver ไม่)",
+     w("archiverX ทดสอบ") === null, String(w("archiverX ทดสอบ")));
+}
+
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);

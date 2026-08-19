@@ -8,13 +8,20 @@ const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++
 const FEEDS = { generatedAt: new Date().toISOString(), sources: {} };
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 
-// ⚠️ เลขพวกนี้ต้องขยับตามทุกครั้งที่ bump `app.js?v=` ของหน้านั้น
-//    เทสต์นี้ไม่ได้เช็คว่า "เลขเป็นเท่าไหร่" แต่เช็คว่า APP_VER อ่านจาก DOM จริง
-//    ไม่ใช่เลขที่พิมพ์ค้างไว้ในโค้ด — เลขซ้ำ 2 ที่แล้วลืม bump คู่กัน คือต้นเหตุที่
-//    แถบ "มีเวอร์ชันใหม่" เคยเด้งไม่หยุดทั้งวัน (ดู CLAUDE.md)
+// ⚠️ อ่านเลขเวอร์ชันจาก index.html เอง — ห้ามพิมพ์เลขค้างไว้ในเทสต์
+// สิ่งที่เทสต์นี้คุมจริงคือ **APP_VER ต้องอ่านจากหน้าเว็บ ไม่ใช่เลขที่ฮาร์ดโค้ดไว้ในโค้ด**
+// (เลขซ้ำ 2 ที่แล้วลืม bump คู่กัน = ต้นเหตุที่แถบ "มีเวอร์ชันใหม่" เคยเด้งไม่หยุด — ดู CLAUDE.md)
+// การพิมพ์เลขไว้ที่นี่ไม่ได้บังคับให้ใคร bump จริง แค่ทำให้เทสต์ตกทุกครั้งที่ bump ถูกต้อง
+import fs from "node:fs";
+const verOf = (page) => {
+  const html = fs.readFileSync(new URL(`../${page}/index.html`, import.meta.url), "utf8");
+  const m = html.match(/app\.js\?v=(\d+)/);
+  if (!m) throw new Error(`หาเลขเวอร์ชันใน ${page}/index.html ไม่เจอ`);
+  return +m[1];
+};
 const DASH = [
-  { name: "trend", url: "http://127.0.0.1:8899/trend/", ver: 111 },
-  { name: "issue", url: "http://127.0.0.1:8899/issue/", ver: 60 },
+  { name: "trend", url: "http://127.0.0.1:8899/trend/", ver: verOf("trend") },
+  { name: "issue", url: "http://127.0.0.1:8899/issue/", ver: verOf("issue") },
 ];
 
 for (const D of DASH) {
@@ -86,9 +93,13 @@ for (const D of DASH) {
 }
 
 console.log("\n════════ landing + sd ════════");
-// ⚠️ ตัวเลขนี้ต้องขยับตามทุกครั้งที่ bump page-ver ของหน้านั้น — เทสต์นี้คือตัวบังคับให้ bump จริง
-// (landing 16 = รอบที่เพิ่มการ์ด Social Dashboard)
-for (const [name, url, expect] of [["landing", "http://127.0.0.1:8899/", 16], ["sd", "http://127.0.0.1:8899/sd.html", 13]]) {
+const metaVer = (file) => {
+  const html = fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+  const m = html.match(/<meta name="page-ver" content="(\d+)"\s*\/?>/); // landing เขียนแบบ <... />
+  if (!m) throw new Error(`หา page-ver ใน ${file} ไม่เจอ`);
+  return +m[1];
+};
+for (const [name, url, expect] of [["landing", "http://127.0.0.1:8899/", metaVer("index.html")], ["sd", "http://127.0.0.1:8899/sd.html", metaVer("sd.html")]]) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 950 } });
   const page = await ctx.newPage();
   await page.route("**://ssl.gstatic.com/**", (r) => r.abort());
