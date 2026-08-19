@@ -57,6 +57,12 @@ async function analyze(opts, env) {
   if (!url || !platform) throw new Error("ลิงก์ไม่ถูกต้อง หรือไม่รองรับแพลตฟอร์มนี้");
   if (!env.ANTHROPIC_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY");
 
+  // log การทำงาน (เปิดดูได้ในหน้าเว็บ)
+  const t0 = Date.now();
+  const log = [];
+  const logLine = m => log.push(`[+${((Date.now() - t0) / 1000).toFixed(1)}s] ${m}`);
+  logLine(`เริ่ม · แพลตฟอร์ม = ${platform} · ขอสูงสุด ${limit} คอมเมนต์`);
+
   // 1) ดึงคอมเมนต์ตามแพลตฟอร์ม
   let collected;
   if (platform === "youtube") collected = await fetchYouTube(url, limit, env);
@@ -66,6 +72,8 @@ async function analyze(opts, env) {
 
   const comments = collected.comments;
   if (!comments.length) throw new Error("ไม่พบคอมเมนต์ (โพสอาจปิดคอมเมนต์ หรือดึงไม่ได้)");
+  logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ`);
+  if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
   const texts = comments.map(c => c.text).filter(Boolean);
 
@@ -73,16 +81,21 @@ async function analyze(opts, env) {
   const tokens = { input: 0, output: 0, rate_remaining: null };
 
   // 2) ตี sentiment ทีละ chunk ด้วย Claude
-  const labels = await classifySentiment(texts, env, tokens);
+  logLine(`ตี sentiment ด้วย ${env.CLAUDE_MODEL || DEFAULT_MODEL} · ${Math.ceil(texts.length / CHUNK)} batch (batch ละ ${CHUNK})`);
+  const labels = await classifySentiment(texts, env, tokens, logLine);
   const sentiment = { positive: 0, neutral: 0, negative: 0 };
   for (const l of labels) if (sentiment[l] != null) sentiment[l]++;
+  logLine(`รวมผล → บวก ${sentiment.positive} · กลาง ${sentiment.neutral} · ลบ ${sentiment.negative}`);
 
   // 3) สรุป + keyword + ตัวอย่าง (ถอดความ)
   const synth = await synthesize(texts.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens);
+  logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
+  logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
 
   // 4) รวมเป็น aggregate (ไม่คืน raw รายบุคคล / ชื่อถูกตัดออก)
   const engagement = aggregateEngagement(comments);
   const time_range = aggregateTime(comments);
+  logLine(`เสร็จสิ้น (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 
   return {
     platform,
@@ -98,6 +111,7 @@ async function analyze(opts, env) {
     credits_remaining: collected.credits_remaining ?? null,
     claude_usage: { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output },
     claude_rate_remaining: tokens.rate_remaining,
+    log,
     model: env.CLAUDE_MODEL || DEFAULT_MODEL,
   };
 }
@@ -289,8 +303,9 @@ function extractJson(s) {
   return JSON.parse(s);
 }
 
-async function classifySentiment(texts, env, acc) {
+async function classifySentiment(texts, env, acc, logLine) {
   const labels = [];
+  const nBatch = Math.ceil(texts.length / CHUNK);
   for (let i = 0; i < texts.length; i += CHUNK) {
     const batch = texts.slice(i, i + CHUNK);
     const numbered = batch.map((t, j) => `${j + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`).join("\n");
@@ -302,10 +317,13 @@ async function classifySentiment(texts, env, acc) {
     const out = await callClaude(env, system, "คอมเมนต์:\n" + numbered, 1500, acc);
     let arr;
     try { arr = extractJson(out); } catch (e) { arr = []; }
+    const b = { positive: 0, neutral: 0, negative: 0 };
     for (let j = 0; j < batch.length; j++) {
       const v = String(arr[j] || "neutral").toLowerCase();
-      labels.push(v.startsWith("pos") ? "positive" : v.startsWith("neg") ? "negative" : "neutral");
+      const label = v.startsWith("pos") ? "positive" : v.startsWith("neg") ? "negative" : "neutral";
+      labels.push(label); b[label]++;
     }
+    if (logLine) logLine(`  batch ${i / CHUNK + 1}/${nBatch}: บวก ${b.positive} · กลาง ${b.neutral} · ลบ ${b.negative} (${batch.length} คอมเมนต์)`);
   }
   return labels;
 }

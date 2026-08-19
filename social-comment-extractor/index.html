@@ -140,6 +140,10 @@
 
   .summary-box { background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:15px; font-size:0.9rem; color:var(--ink-2); }
 
+  .log-summary { cursor:pointer; font-weight:600; font-size:0.95rem; color:var(--ink); user-select:none; list-style:none; }
+  .log-summary::-webkit-details-marker { display:none; }
+  .log-box { margin:14px 0 0; background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:14px; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:0.78rem; line-height:1.7; color:var(--ink-2); white-space:pre-wrap; word-break:break-word; max-height:340px; overflow:auto; }
+
   .kw-list { display:flex; flex-direction:column; gap:9px; }
   .kw { display:grid; grid-template-columns:130px 1fr 40px; gap:11px; align-items:center; font-size:0.85rem; }
   .kw .term { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -268,6 +272,11 @@
         <button class="btn" id="xlsxBtn" type="button">📊 Excel (.xlsx)</button>
       </div>
     </div>
+
+    <details class="card" id="logCard">
+      <summary class="log-summary">📋 Log การวิเคราะห์ (กดเพื่อเปิด/ปิด)</summary>
+      <pre class="log-box" id="logBox"></pre>
+    </details>
   </div>
 
   <footer class="foot">
@@ -443,6 +452,23 @@ async function demoResult(opts){
     summary: "คอมเมนต์ส่วนใหญ่เป็นเชิงบวก ชื่นชมรสชาติและความคุ้มค่า มีบางส่วนบ่นเรื่องการจัดส่งช้าและการรอคิว โดยรวมกระแสตอบรับดี",
     claude_usage: { input: total * 12, output: 240, total: total * 12 + 240 },
     claude_rate_remaining: 380000,
+    log: (() => {
+      const nB = Math.ceil(total/40);
+      const L = [
+        `[+0.0s] เริ่ม · แพลตฟอร์ม = ${opts.platform} · ขอสูงสุด ${opts.limit} คอมเมนต์`,
+        `[+0.6s] ดึงคอมเมนต์สำเร็จ ${total} รายการ`,
+        `[+0.6s] ตี sentiment ด้วย claude-haiku-4-5 · ${nB} batch (batch ละ 40)`,
+      ];
+      let done=0, t=0.6;
+      for (let i=0;i<nB;i++){ const n=Math.min(40,total-done); const p=Math.round(n*0.58),g=Math.round(n*0.16),nu=n-p-g; t+=0.5; done+=n;
+        L.push(`[+${t.toFixed(1)}s]   batch ${i+1}/${nB}: บวก ${p} · กลาง ${nu} · ลบ ${g} (${n} คอมเมนต์)`); }
+      t+=0.4;
+      L.push(`[+${t.toFixed(1)}s] รวมผล → บวก ${pos} · กลาง ${neu} · ลบ ${neg}`);
+      L.push(`[+${(t+0.5).toFixed(1)}s] สรุป+keyword: 8 คำ · ตัวอย่าง 4 รายการ`);
+      L.push(`[+${(t+0.5).toFixed(1)}s] Claude tokens: input ${(total*12).toLocaleString()} + output 240 = ${(total*12+240).toLocaleString()}`);
+      L.push(`[+${(t+0.6).toFixed(1)}s] เสร็จสิ้น (ข้อมูลตัวอย่าง Demo)`);
+      return L;
+    })(),
     samples: opts.samples ? [
       { sentiment:"positive", text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน" },
       { sentiment:"positive", text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย" },
@@ -518,6 +544,10 @@ function renderResult(d){
     return `<div class="sample-group"><div class="sg-head" style="color:var(${color})">${label} · ${gp}% <span class="sg-cnt">(${gc} คอมเมนต์)</span></div>` +
       items.map(x => `<div class="sample ${cls}">${escapeHtml(x.text)}</div>`).join("") + `</div>`;
   }).join("");
+
+  const logArr = d.log || [];
+  el("logCard").style.display = logArr.length ? "" : "none";
+  el("logBox").textContent = logArr.join("\n");
 
   el("results").classList.add("show");
   el("results").scrollIntoView({ behavior:"smooth", block:"start" });
