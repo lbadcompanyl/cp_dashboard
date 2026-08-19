@@ -144,7 +144,8 @@
   .log-summary::-webkit-details-marker { display:none; }
   .log-box { margin:14px 0 0; background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:14px; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:0.78rem; line-height:1.7; color:var(--ink-2); white-space:pre-wrap; word-break:break-word; max-height:340px; overflow:auto; }
 
-  .audit-filter { display:flex; gap:8px; flex-wrap:wrap; margin:13px 0; }
+  .audit-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:13px 0; }
+  .audit-filter { display:flex; gap:8px; flex-wrap:wrap; }
   .audit-fbtn { border:1px solid var(--border); background:var(--surface); color:var(--ink-2); border-radius:999px; padding:5px 13px; font-size:0.78rem; cursor:pointer; font-family:inherit; }
   .audit-fbtn.on { background:var(--accent); color:#fff; border-color:transparent; }
   .audit-list { display:flex; flex-direction:column; gap:6px; max-height:440px; overflow:auto; }
@@ -277,16 +278,20 @@
       <div class="toolbar">
         <button class="btn primary" id="pdfBtn" type="button">📄 PDF</button>
         <button class="btn" id="jpegBtn" type="button">🖼️ JPEG</button>
-        <button class="btn" id="xlsxBtn" type="button">📊 Excel (.xlsx)</button>
-        <button class="btn" id="csvBtn" type="button">📑 CSV</button>
       </div>
-      <p class="sub" style="margin:12px 0 0">Excel / CSV มีชีตสรุป + <b>รายคอมเมนต์ (ข้อความ + ผล sentiment)</b> สำหรับตรวจ/แชร์ · PDF / JPEG เป็นรายงานภาพรวม (ไม่มีข้อความรายคน)</p>
+      <p class="sub" style="margin:12px 0 0">รายงานภาพรวมเป็นรูป (ไม่มีข้อความรายคน) · ต้องการข้อมูลตาราง (สรุป + รายคอมเมนต์) ดาวน์โหลด <b>Excel / CSV</b> ได้ในส่วน “ตรวจ sentiment รายคอมเมนต์” ด้านล่าง</p>
     </div>
 
     <details class="card" id="auditCard">
       <summary class="log-summary">🔍 ตรวจ sentiment รายคอมเมนต์ (audit)</summary>
-      <p class="sub" style="margin:8px 0 0">ข้อความ + ผลที่ Claude ตี ไว้ตรวจว่าถูกต้องไหม · แสดงบนจอเท่านั้น ไม่รวมในไฟล์ export และไม่จัดเก็บ (ตัดชื่อผู้คอมเมนต์ออกแล้ว)</p>
-      <div class="audit-filter" id="auditFilter"></div>
+      <p class="sub" style="margin:8px 0 0">ข้อความ + ผลที่ Claude ตี ไว้ตรวจว่าถูกต้องไหม (ตัดชื่อผู้คอมเมนต์ออกแล้ว)</p>
+      <div class="audit-bar">
+        <div class="audit-filter" id="auditFilter"></div>
+        <div class="toolbar">
+          <button class="btn" id="auditXlsxBtn" type="button">📊 Excel</button>
+          <button class="btn" id="auditCsvBtn" type="button">📑 CSV</button>
+        </div>
+      </div>
       <div class="audit-list" id="auditList"></div>
     </details>
   </div>
@@ -303,6 +308,7 @@
 const el = id => document.getElementById(id);
 const STORE = "commentSentimentV1";
 let lastResult = null;
+let auditRows = [];   // แถว audit ที่กำลังแสดง (ตามตัวกรอง) สำหรับ export
 
 /* ---------------- theme (system-aware + toggle) ---------------- */
 function currentTheme(){
@@ -570,6 +576,7 @@ function renderAudit(d){
   const tagC = { positive:"--pos", neutral:"--neu", negative:"--neg" };
   function draw(f){
     const rows = audit.filter(a => f==="all" || a.sentiment===f);
+    auditRows = rows;
     el("auditList").innerHTML = rows.map(a =>
       `<div class="audit-row"><span class="audit-tag" style="color:var(${tagC[a.sentiment]||'--neu'});border-color:var(${tagC[a.sentiment]||'--neu'})">${tagL[a.sentiment]||"?"}</span><span class="audit-text">${escapeHtml(a.text)}</span></div>`).join("");
   }
@@ -580,9 +587,23 @@ function renderAudit(d){
   draw("all");
 }
 
-/* ---------------- export ---------------- */
-el("xlsxBtn").onclick = async () => { if (lastResult && await writeXlsx(buildSheets(lastResult), "comment-sentiment.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
-el("csvBtn").onclick = exportCsv;
+/* export ข้อมูล sentiment รายคอมเมนต์ (ตามตัวกรองที่เลือก) + ชีตสรุป */
+function auditSheets(){
+  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  const sheets = lastResult ? buildSheets(lastResult) : {};
+  sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.text])];
+  return sheets;
+}
+el("auditXlsxBtn").onclick = async () => {
+  if (!auditRows.length) return;
+  if (await writeXlsx(auditSheets(), "sentiment-audit.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓");
+};
+el("auditCsvBtn").onclick = async () => {
+  if (!auditRows.length) return;
+  if (await saveFile("sentiment-audit.csv", "﻿" + sheetsToCsv(auditSheets()), "text/csv")) toast("ดาวน์โหลด CSV แล้ว ✓");
+};
+
+/* ---------------- export (รายงานภาพรวม) ---------------- */
 el("jpegBtn").onclick = async () => {
   if (!lastResult) return;
   const r = await renderReport(lastResult);
@@ -624,22 +645,17 @@ function buildSheets(d){
   const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term, k.count||0])];
   const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
   const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
-  if ((d.audit||[]).length){
-    sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...(d.audit).map(a=>[sentTh[a.sentiment]||a.sentiment, a.text])];
-  }
   if ((d.samples||[]).length){
     sheets["ตัวอย่าง"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[sentTh[x.sentiment]||x.sentiment, x.text])];
   }
   return sheets;
 }
-async function exportCsv(){
-  if (!lastResult) return;
-  const sheets = buildSheets(lastResult);
+function sheetsToCsv(sheets){
   let out = "";
   for (const [name, rows] of Object.entries(sheets)){
     out += "# " + name + "\n" + rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n\n";
   }
-  if (await saveFile("comment-sentiment.csv", "﻿"+out, "text/csv")) toast("ดาวน์โหลด CSV แล้ว ✓");
+  return out;
 }
 function csvCell(v){ v = v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
 /* ---------------- report image (canvas) → JPEG / PDF ---------------- */
