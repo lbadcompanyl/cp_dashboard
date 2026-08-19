@@ -5,116 +5,150 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Comment Sentiment — วิเคราะห์ความเห็นโพส FB / TikTok / YouTube</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" />
 <style>
+  /* ---- light palette (default, bare :root) ---- */
   :root {
-    color-scheme: dark;
-    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232322;
-    --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
-    --border:rgba(255,255,255,0.10); --accent:#3987e5; --accent-soft:#1a2436;
-    --pos:#3ea672; --pos-soft:#132b20; --neu:#8a8a86; --neu-soft:#26262410;
-    --neg:#e26a6a; --neg-soft:#2e1717; --radius:12px;
+    --plane:#f6f7f9; --surface:#ffffff; --surface-2:#eef1f5;
+    --ink:#141619; --ink-2:#4a4e57; --muted:#878b95;
+    --border:rgba(20,22,25,0.10); --accent:#3d6ee0; --accent-soft:#eaf0fd;
+    --pos:#2e9160; --pos-soft:#e6f4ee; --neu:#8a8f99; --neu-soft:#eceef2;
+    --neg:#d94b4b; --neg-soft:#fbeaea; --radius:12px;
+    color-scheme:light;
+  }
+  /* ---- dark palette: system dark (unless explicitly light) ---- */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --plane:#0d0e10; --surface:#191b1e; --surface-2:#232529;
+      --ink:#f3f4f6; --ink-2:#c2c5cc; --muted:#868a92;
+      --border:rgba(255,255,255,0.11); --accent:#5b8dee; --accent-soft:#182234;
+      --pos:#3ea672; --pos-soft:#132b20; --neu:#8a8f99; --neu-soft:#22242810;
+      --neg:#e26a6a; --neg-soft:#2c1717;
+      color-scheme:dark;
+    }
+  }
+  /* ---- explicit toggles win in both directions ---- */
+  :root[data-theme="dark"] {
+    --plane:#0d0e10; --surface:#191b1e; --surface-2:#232529;
+    --ink:#f3f4f6; --ink-2:#c2c5cc; --muted:#868a92;
+    --border:rgba(255,255,255,0.11); --accent:#5b8dee; --accent-soft:#182234;
+    --pos:#3ea672; --pos-soft:#132b20; --neu:#8a8f99; --neu-soft:#22242810;
+    --neg:#e26a6a; --neg-soft:#2c1717;
+    color-scheme:dark;
   }
   :root[data-theme="light"] {
-    color-scheme: light;
-    --plane:#f9f9f7; --surface:#fcfcfb; --surface-2:#f3f3ef;
-    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
-    --border:rgba(11,11,11,0.10); --accent:#2a78d6; --accent-soft:#eaf1fe;
-    --pos:#2e9160; --pos-soft:#e7f5ee; --neu:#8a8a86; --neu-soft:#eeeeea;
-    --neg:#d24b4b; --neg-soft:#fbeaea;
+    --plane:#f6f7f9; --surface:#ffffff; --surface-2:#eef1f5;
+    --ink:#141619; --ink-2:#4a4e57; --muted:#878b95;
+    --border:rgba(20,22,25,0.10); --accent:#3d6ee0; --accent-soft:#eaf0fd;
+    --pos:#2e9160; --pos-soft:#e6f4ee; --neu:#8a8f99; --neu-soft:#eceef2;
+    --neg:#d94b4b; --neg-soft:#fbeaea;
+    color-scheme:light;
   }
+
   * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI","Sarabun","Noto Sans Thai",Roboto,sans-serif; background:var(--plane); color:var(--ink); line-height:1.55; -webkit-font-smoothing:antialiased; }
-  .wrap { max-width:1080px; margin:0 auto; padding:0 20px; }
+  body {
+    margin:0; background:var(--plane); color:var(--ink); line-height:1.55; -webkit-font-smoothing:antialiased;
+    font-family:"IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  }
+  .wrap { max-width:1040px; margin:0 auto; padding:0 20px; }
   a { color:var(--accent); }
 
-  .appbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
-  .logo { display:flex; align-items:center; gap:10px; font-weight:650; font-size:1.05rem; }
-  .logo-mark { width:28px; height:28px; border-radius:8px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:16px; }
-  .logo small { display:block; font-weight:400; font-size:0.72rem; color:var(--muted); }
-  .appbar-actions { display:flex; gap:8px; }
+  .appbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .logo { display:flex; align-items:center; gap:11px; font-weight:600; font-size:1.05rem; }
+  .logo-mark { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:16px; }
+  .logo small { display:block; font-weight:400; font-size:0.72rem; color:var(--muted); letter-spacing:.01em; }
   .btn { border:1px solid var(--border); background:var(--surface); color:var(--ink-2); border-radius:999px; padding:8px 15px; font-size:0.82rem; cursor:pointer; display:inline-flex; align-items:center; gap:7px; font-family:inherit; }
   .btn:hover { background:var(--surface-2); }
-  .btn.primary { background:var(--accent); color:#fff; border-color:transparent; }
+  .btn.primary { background:var(--accent); color:#fff; border-color:transparent; font-weight:500; }
   .btn.primary:disabled { opacity:.55; cursor:not-allowed; }
   .btn.ghost { background:transparent; }
+  .btn:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
-  .banner { display:flex; gap:10px; align-items:flex-start; background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:0.78rem; color:var(--ink-2); margin-top:16px; }
+  .banner { display:flex; gap:10px; align-items:flex-start; background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:11px 15px; font-size:0.78rem; color:var(--ink-2); margin-top:18px; }
   .banner b { color:var(--ink); }
+  .banner code { font-size:0.92em; }
 
-  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-top:16px; }
-  .card h2 { margin:0 0 4px; font-size:1.02rem; }
-  .card .sub { margin:0 0 14px; font-size:0.78rem; color:var(--muted); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-top:16px; }
+  .card h2 { margin:0 0 4px; font-size:1.02rem; font-weight:600; text-wrap:balance; }
+  .card .sub { margin:0 0 15px; font-size:0.78rem; color:var(--muted); }
 
-  .inrow { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
-  .field { display:flex; flex-direction:column; gap:5px; }
-  .field.grow { flex:1 1 340px; }
-  .field label { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; }
+  .inrow { display:flex; gap:11px; flex-wrap:wrap; align-items:flex-end; }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .field.grow { flex:1 1 330px; }
+  .field label { font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; }
   input[type=text], input[type=url], input[type=number], select {
     font-family:inherit; font-size:0.92rem; color:var(--ink); background:var(--plane);
     border:1px solid var(--border); border-radius:9px; padding:10px 12px; width:100%;
   }
-  input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  .checkrow { display:flex; align-items:center; gap:8px; font-size:0.85rem; color:var(--ink-2); margin-top:12px; flex-wrap:wrap; }
+  .checkrow { display:flex; align-items:center; gap:14px; font-size:0.84rem; color:var(--ink-2); margin-top:14px; flex-wrap:wrap; }
   .checkrow label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
-  .platform-badge { font-size:0.72rem; padding:3px 9px; border-radius:999px; border:1px solid var(--border); background:var(--surface-2); color:var(--muted); }
+  .checkrow input { accent-color:var(--accent); }
+  .platform-badge { font-size:0.72rem; padding:4px 11px; border-radius:999px; border:1px solid var(--border); background:var(--surface-2); color:var(--muted); font-variant-numeric:tabular-nums; }
   .platform-badge.on { color:var(--ink); border-color:var(--accent); }
-
-  details.settings { margin-top:12px; font-size:0.85rem; }
-  details.settings summary { cursor:pointer; color:var(--muted); user-select:none; }
-  details.settings .body { margin-top:12px; display:flex; flex-direction:column; gap:12px; }
-  .mode-pill { font-size:0.72rem; padding:2px 8px; border-radius:999px; }
+  .mode-pill { font-size:0.7rem; padding:3px 9px; border-radius:999px; margin-left:auto; }
   .mode-pill.demo { background:var(--neu-soft); color:var(--muted); border:1px solid var(--border); }
   .mode-pill.live { background:var(--pos-soft); color:var(--pos); border:1px solid var(--border); }
 
+  details.settings { margin-top:14px; font-size:0.85rem; border-top:1px solid var(--border); padding-top:13px; }
+  details.settings summary { cursor:pointer; color:var(--muted); user-select:none; list-style:none; }
+  details.settings summary::-webkit-details-marker { display:none; }
+  details.settings summary::before { content:"⚙️ "; }
+  details.settings .body { margin-top:13px; display:flex; flex-direction:column; gap:12px; }
+  .hint { font-size:0.8rem; color:var(--muted); }
+
+  .loading { display:none; align-items:center; gap:10px; color:var(--muted); font-size:0.9rem; margin-top:15px; }
+  .loading.show { display:flex; }
+  .spinner { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .err { display:none; background:var(--neg-soft); border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:0.85rem; color:var(--neg); margin-top:15px; }
+  .err.show { display:block; }
+
   #results { display:none; }
   #results.show { display:block; }
-  .grid { display:grid; gap:16px; }
-  .stat-row { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
-  .stat { background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:14px; }
-  .stat .k { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-  .stat .v { font-size:1.5rem; font-weight:650; margin-top:4px; }
+  .grid { display:grid; gap:14px; }
+  .stat-row { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); margin-top:14px; }
+  .stat { background:var(--surface); border:1px solid var(--border); border-radius:11px; padding:15px 16px; }
+  .stat .k { font-size:0.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .stat .v { font-size:1.5rem; font-weight:600; margin-top:5px; font-variant-numeric:tabular-nums; }
 
-  .senti-wrap { display:grid; grid-template-columns:180px 1fr; gap:22px; align-items:center; }
-  @media (max-width:640px){ .senti-wrap{ grid-template-columns:1fr; justify-items:center; text-align:center; } }
+  .senti-wrap { display:grid; grid-template-columns:180px 1fr; gap:26px; align-items:center; }
+  @media (max-width:600px){ .senti-wrap{ grid-template-columns:1fr; justify-items:center; } }
   .donut { width:180px; height:180px; border-radius:50%; position:relative; display:grid; place-items:center; }
-  .donut::after { content:""; position:absolute; inset:26px; border-radius:50%; background:var(--surface); }
+  .donut::after { content:""; position:absolute; inset:27px; border-radius:50%; background:var(--surface); }
   .donut .mid { position:relative; z-index:1; text-align:center; }
-  .donut .mid .big { font-size:1.8rem; font-weight:700; color:var(--pos); }
-  .donut .mid .lab { font-size:0.7rem; color:var(--muted); }
-  .legend { display:flex; flex-direction:column; gap:10px; width:100%; }
-  .legend .li { display:flex; align-items:center; gap:10px; font-size:0.9rem; }
-  .legend .sw { width:12px; height:12px; border-radius:3px; flex:none; }
+  .donut .mid .big { font-size:1.9rem; font-weight:700; color:var(--pos); font-variant-numeric:tabular-nums; line-height:1; }
+  .donut .mid .lab { font-size:0.7rem; color:var(--muted); margin-top:3px; }
+  .legend { display:flex; flex-direction:column; gap:12px; width:100%; }
+  .legend .li { display:flex; align-items:center; gap:11px; font-size:0.9rem; }
+  .legend .sw { width:11px; height:11px; border-radius:3px; flex:none; }
+  .legend .nm { width:82px; }
   .legend .bar { flex:1; height:8px; border-radius:999px; background:var(--surface-2); overflow:hidden; }
   .legend .bar span { display:block; height:100%; border-radius:999px; }
-  .legend .pct { width:52px; text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+  .legend .pct { width:46px; text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
+  .legend .cnt { width:48px; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
 
-  .kw-list { display:flex; flex-direction:column; gap:8px; }
-  .kw { display:grid; grid-template-columns:130px 1fr 44px; gap:10px; align-items:center; font-size:0.85rem; }
+  .summary-box { background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:15px; font-size:0.9rem; color:var(--ink-2); }
+
+  .kw-list { display:flex; flex-direction:column; gap:9px; }
+  .kw { display:grid; grid-template-columns:130px 1fr 40px; gap:11px; align-items:center; font-size:0.85rem; }
   .kw .term { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .kw .track { height:10px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
   .kw .track span { display:block; height:100%; background:var(--accent); border-radius:999px; }
   .kw .n { text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
 
-  .samples { display:flex; flex-direction:column; gap:8px; }
-  .sample { border:1px solid var(--border); border-left-width:3px; border-radius:8px; padding:9px 12px; font-size:0.86rem; color:var(--ink-2); background:var(--plane); }
+  .samples { display:flex; flex-direction:column; gap:9px; }
+  .sample { border:1px solid var(--border); border-left-width:3px; border-radius:8px; padding:10px 13px; font-size:0.86rem; color:var(--ink-2); background:var(--plane); }
   .sample.pos { border-left-color:var(--pos); }
   .sample.neu { border-left-color:var(--neu); }
   .sample.neg { border-left-color:var(--neg); }
-  .sample .tag { font-size:0.68rem; text-transform:uppercase; letter-spacing:.04em; margin-right:8px; }
+  .sample .tag { font-size:0.66rem; text-transform:uppercase; letter-spacing:.05em; margin-right:9px; font-weight:600; }
 
-  .summary-box { background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:14px; font-size:0.9rem; color:var(--ink-2); }
-
-  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
-  .loading { display:none; align-items:center; gap:10px; color:var(--muted); font-size:0.9rem; margin-top:14px; }
-  .loading.show { display:flex; }
-  .spinner { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  .err { display:none; background:var(--neg-soft); border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:0.85rem; color:var(--neg); margin-top:14px; }
-  .err.show { display:block; }
-
-  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--plane); padding:10px 18px; border-radius:999px; font-size:0.85rem; opacity:0; transition:all .2s; pointer-events:none; z-index:99; }
+  .toolbar { display:flex; gap:9px; flex-wrap:wrap; }
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--plane); padding:11px 19px; border-radius:999px; font-size:0.85rem; opacity:0; transition:all .2s; pointer-events:none; z-index:99; }
   .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
-  footer.foot { padding:22px 0 40px; color:var(--muted); font-size:0.76rem; border-top:1px solid var(--border); margin-top:24px; }
+  footer.foot { padding:24px 0 44px; color:var(--muted); font-size:0.76rem; border-top:1px solid var(--border); margin-top:26px; }
   @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
 </style>
 </head>
@@ -122,49 +156,47 @@
 <div class="wrap">
   <div class="appbar">
     <div class="logo"><span class="logo-mark">💬</span><span>Comment Sentiment<small>วิเคราะห์ความเห็นโพส FB · TikTok · YouTube → Excel</small></span></div>
-    <div class="appbar-actions">
-      <button class="btn ghost" id="themeBtn" type="button"><span id="themeIcon">🌙</span><span id="themeLabel">โหมดมืด</span></button>
-    </div>
+    <button class="btn ghost" id="themeBtn" type="button"><span id="themeIcon">🌙</span><span id="themeLabel">โหมดมืด</span></button>
   </div>
 
   <div class="banner">
     <span>🔒</span>
-    <span><b>ใช้ภายใน · aggregate เท่านั้น · ไม่เก็บ raw data</b> — เครื่องมือนี้สรุปความเห็นเป็นภาพรวม (%) ไม่จัดเก็บชื่อผู้คอมเมนต์รายบุคคล เพื่อลดความเสี่ยง PDPA อ่านรายละเอียดใน <code>PRIVACY_NOTE.md</code></span>
+    <span><b>ใช้ภายใน · aggregate เท่านั้น · ไม่เก็บ raw data</b> — สรุปความเห็นเป็นภาพรวม (%) ไม่จัดเก็บชื่อผู้คอมเมนต์รายบุคคล เพื่อลดความเสี่ยง PDPA (รายละเอียดใน <code>PRIVACY_NOTE.md</code>)</span>
   </div>
 
   <!-- INPUT -->
   <div class="card">
     <h2>วิเคราะห์โพส</h2>
-    <p class="sub">วางลิงก์โพส แล้วกด “วิเคราะห์” — ระบบดึงคอมเมนต์ → ตี sentiment ด้วย Claude → สรุป %</p>
+    <p class="sub">วางลิงก์โพส แล้วกด “วิเคราะห์” — ระบบดึงคอมเมนต์ → ตี sentiment ด้วย Claude → สรุปเป็น %</p>
     <div class="inrow">
       <div class="field grow">
         <label for="url">ลิงก์โพส (Facebook / TikTok / YouTube)</label>
         <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
       </div>
-      <div class="field" style="width:140px">
+      <div class="field" style="width:132px">
         <label for="limit">ดึงกี่คอมเมนต์</label>
         <input type="number" id="limit" value="200" min="10" max="2000" step="10" />
       </div>
       <div class="field">
-        <label>&nbsp;</label>
+        <label aria-hidden="true">&nbsp;</label>
         <button class="btn primary" id="analyzeBtn" type="button">🔎 วิเคราะห์</button>
       </div>
     </div>
     <div class="checkrow">
       <span id="platformBadge" class="platform-badge">แพลตฟอร์ม: —</span>
-      <label><input type="checkbox" id="anonymize" checked /> ปกปิดชื่อผู้คอมเมนต์ (anonymize)</label>
-      <label><input type="checkbox" id="samplesChk" checked /> แสดงตัวอย่างคอมเมนต์ (ถอดความ)</label>
+      <label><input type="checkbox" id="anonymize" checked /> ปกปิดชื่อ (anonymize)</label>
+      <label><input type="checkbox" id="samplesChk" checked /> แสดงตัวอย่าง (ถอดความ)</label>
       <span id="modePill" class="mode-pill demo">โหมด: Demo</span>
     </div>
 
     <details class="settings">
-      <summary>⚙️ ตั้งค่า / เชื่อมต่อ backend</summary>
+      <summary>ตั้งค่า / เชื่อมต่อ backend</summary>
       <div class="body">
         <div class="field grow">
           <label for="worker">Cloudflare Worker endpoint (เว้นว่าง = โหมด Demo ข้อมูลตัวอย่าง)</label>
           <input type="url" id="worker" placeholder="https://your-worker.workers.dev" autocomplete="off" />
         </div>
-        <div style="font-size:0.8rem; color:var(--muted)">
+        <div class="hint">
           โหมด <b>Demo</b> ใช้ข้อมูลตัวอย่างเพื่อดู flow การทำงาน (ไม่เรียก API จริง ไม่มีค่าใช้จ่าย).
           ใส่ URL ของ Worker ที่ deploy แล้วเพื่อดึงคอมเมนต์จริง + ตี sentiment ด้วย Claude — ดูวิธี deploy ใน <code>README.md</code>
         </div>
@@ -202,7 +234,7 @@
 
     <div class="card" id="sampleCard">
       <h2>ตัวอย่างคอมเมนต์ (ถอดความ · ไม่ระบุตัวตน)</h2>
-      <p class="sub">คัดมาเป็นตัวแทนแต่ละอารมณ์ — ข้อความถูกถอดความ/ตัดข้อมูลระบุตัวตนออก</p>
+      <p class="sub">คัดเป็นตัวแทนแต่ละอารมณ์ — ข้อความถูกถอดความและตัดข้อมูลระบุตัวตนออก</p>
       <div class="samples" id="sampleList"></div>
     </div>
 
@@ -211,8 +243,8 @@
       <p class="sub">ดาวน์โหลดผลวิเคราะห์แบบ aggregate (ไม่มี raw รายบุคคล)</p>
       <div class="toolbar">
         <button class="btn primary" id="xlsxBtn" type="button">📊 ดาวน์โหลด Excel (.xlsx)</button>
-        <button class="btn" id="csvBtn" type="button">📄 ดาวน์โหลด CSV</button>
-        <button class="btn" id="jsonBtn" type="button">{ } ดาวน์โหลด JSON</button>
+        <button class="btn" id="csvBtn" type="button">📄 CSV</button>
+        <button class="btn" id="jsonBtn" type="button">{ } JSON</button>
       </div>
     </div>
   </div>
@@ -225,21 +257,32 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- SheetJS for Excel export (CDN). ถ้า offline จะ fallback เป็น CSV -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 const el = id => document.getElementById(id);
 const STORE = "commentSentimentV1";
 let lastResult = null;
 
-// ---------- persistence ----------
+/* ---------------- theme (system-aware + toggle) ---------------- */
+function currentTheme(){
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t) return t;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function setTheme(m){
+  document.documentElement.setAttribute("data-theme", m);
+  el("themeIcon").textContent = m === "light" ? "☀️" : "🌙";
+  el("themeLabel").textContent = m === "light" ? "โหมดสว่าง" : "โหมดมืด";
+}
+el("themeBtn").onclick = () => { setTheme(currentTheme() === "light" ? "dark" : "light"); saveCfg(); };
+
+/* ---------------- persistence ---------------- */
 function loadCfg(){
   try {
     const c = JSON.parse(localStorage.getItem(STORE) || "{}");
     if (c.worker) el("worker").value = c.worker;
     if (c.limit) el("limit").value = c.limit;
     if (typeof c.anon === "boolean") el("anonymize").checked = c.anon;
-    if (c.theme === "light") setTheme("light");
+    if (c.theme === "light" || c.theme === "dark") setTheme(c.theme);
   } catch(e){}
 }
 function saveCfg(){
@@ -248,12 +291,12 @@ function saveCfg(){
       worker: el("worker").value.trim(),
       limit: el("limit").value,
       anon: el("anonymize").checked,
-      theme: document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark",
+      theme: document.documentElement.getAttribute("data-theme") || "",
     }));
   } catch(e){}
 }
 
-// ---------- platform detection ----------
+/* ---------------- platform detection ---------------- */
 function detectPlatform(url){
   const u = (url||"").toLowerCase();
   if (/youtube\.com|youtu\.be/.test(u)) return "youtube";
@@ -278,7 +321,7 @@ el("url").addEventListener("input", refreshPlatform);
 el("worker").addEventListener("input", () => { refreshMode(); saveCfg(); });
 ["limit","anonymize"].forEach(id => el(id).addEventListener("change", saveCfg));
 
-// ---------- analyze ----------
+/* ---------------- analyze ---------------- */
 el("analyzeBtn").onclick = analyze;
 el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
 
@@ -314,9 +357,7 @@ async function analyze(){
 async function callWorker(worker, opts){
   const base = worker.replace(/\/+$/,"");
   const resp = await fetch(base + "/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(opts),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts),
   });
   if (!resp.ok){
     let msg = "HTTP " + resp.status;
@@ -326,17 +367,14 @@ async function callWorker(worker, opts){
   return await resp.json();
 }
 
-// ---------- demo data (ตัวอย่าง ไม่เรียก API จริง) ----------
+/* ---------------- demo data (ไม่เรียก API จริง) ---------------- */
 async function demoResult(opts){
-  await new Promise(r => setTimeout(r, 900)); // จำลองเวลาประมวลผล
+  await new Promise(r => setTimeout(r, 850));
   const total = Math.min(opts.limit, 214);
   const pos = Math.round(total * 0.58), neg = Math.round(total * 0.16), neu = total - pos - neg;
   return {
-    platform: opts.platform,
-    source_url: opts.url,
-    demo: true,
-    fetched_count: total,
-    analyzed_count: total,
+    platform: opts.platform, source_url: opts.url, demo: true,
+    fetched_count: total, analyzed_count: total,
     sentiment: { positive: pos, neutral: neu, negative: neg },
     engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
     time_range: { earliest: "2026-08-10", latest: "2026-08-19" },
@@ -355,7 +393,7 @@ async function demoResult(opts){
   };
 }
 
-// ---------- render ----------
+/* ---------------- render ---------------- */
 function pct(n, total){ return total ? Math.round(n/total*100) : 0; }
 function renderResult(d){
   const s = d.sentiment || {positive:0,neutral:0,negative:0};
@@ -366,9 +404,10 @@ function renderResult(d){
     `${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์` +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : "");
 
-  // donut via conic-gradient
+  const css = getComputedStyle(document.documentElement);
+  const cPos = css.getPropertyValue("--pos"), cNeu = css.getPropertyValue("--neu"), cNeg = css.getPropertyValue("--neg");
   el("donut").style.background =
-    `conic-gradient(var(--pos) 0 ${pp}%, var(--neu) ${pp}% ${pp+pnu}%, var(--neg) ${pp+pnu}% 100%)`;
+    `conic-gradient(${cPos} 0 ${pp}%, ${cNeu} ${pp}% ${pp+pnu}%, ${cNeg} ${pp+pnu}% 100%)`;
   el("donutBig").textContent = pp + "%";
 
   el("legend").innerHTML = [
@@ -378,26 +417,24 @@ function renderResult(d){
   ].map(([lab,c,p,n]) => `
     <div class="li">
       <span class="sw" style="background:var(${c})"></span>
-      <span style="width:78px">${lab}</span>
+      <span class="nm">${lab}</span>
       <span class="bar"><span style="width:${p}%;background:var(${c})"></span></span>
       <span class="pct">${p}%</span>
-      <span style="width:52px;text-align:right;color:var(--muted)">${n}</span>
+      <span class="cnt">${n}</span>
     </div>`).join("");
 
-  // stat tiles
   const eng = d.engagement || {};
   const stats = [
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
-    ["ยอด Like รวม", (eng.total_likes!=null? eng.total_likes.toLocaleString() : "—")],
-    ["จำนวน Reply", (eng.total_replies!=null? eng.total_replies.toLocaleString() : "—")],
-    ["ผู้คอมเมนต์ (ไม่ซ้ำ)", (eng.unique_commenters!=null? eng.unique_commenters.toLocaleString() : "—")],
+    ["ยอด Like รวม", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
+    ["จำนวน Reply", (eng.total_replies!=null? Number(eng.total_replies).toLocaleString() : "—")],
+    ["ผู้คอมเมนต์ (ไม่ซ้ำ)", (eng.unique_commenters!=null? Number(eng.unique_commenters).toLocaleString() : "—")],
   ];
   el("statRow").innerHTML = stats.map(([k,v]) =>
     `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
 
   el("summaryBox").textContent = d.summary || "—";
 
-  // keywords
   const kws = d.keywords || [];
   const maxN = kws.reduce((m,k)=>Math.max(m,k.count||0),0) || 1;
   el("kwList").innerHTML = kws.length ? kws.map(k => `
@@ -407,7 +444,6 @@ function renderResult(d){
       <span class="n">${k.count||0}</span>
     </div>`).join("") : `<div style="color:var(--muted);font-size:0.85rem">— ไม่มีข้อมูลคำ —</div>`;
 
-  // samples
   const samples = d.samples || [];
   el("sampleCard").style.display = samples.length ? "" : "none";
   const tagLabel = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
@@ -421,13 +457,10 @@ function renderResult(d){
   el("results").scrollIntoView({ behavior:"smooth", block:"start" });
 }
 
-// ---------- export ----------
-el("xlsxBtn").onclick = exportXlsx;
+/* ---------------- export ---------------- */
+el("xlsxBtn").onclick = async () => { if (lastResult && await writeXlsx(buildSheets(lastResult), "comment-sentiment.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
 el("csvBtn").onclick = exportCsv;
-el("jsonBtn").onclick = () => {
-  if (!lastResult) return;
-  download("comment-sentiment.json", JSON.stringify(lastResult, null, 2), "application/json");
-};
+el("jsonBtn").onclick = async () => { if (lastResult && await saveFile("comment-sentiment.json", JSON.stringify(lastResult, null, 2), "application/json")) toast("ดาวน์โหลด JSON แล้ว ✓"); };
 
 function buildSheets(d){
   const s = d.sentiment||{}; const eng = d.engagement||{};
@@ -438,9 +471,9 @@ function buildSheets(d){
     ["ลิงก์", d.source_url||""],
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
     ["คอมเมนต์ที่ดึงมา", d.fetched_count||""],
-    ["ยอด Like รวม", eng.total_likes||""],
-    ["จำนวน Reply", eng.total_replies||""],
-    ["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||""],
+    ["ยอด Like รวม", eng.total_likes||0],
+    ["จำนวน Reply", eng.total_replies||0],
+    ["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
     ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],
     ["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
     ["โหมด", d.demo ? "Demo (ตัวอย่าง)" : "Live"],
@@ -453,64 +486,129 @@ function buildSheets(d){
     ["เชิงลบ", s.negative||0, pct(s.negative,total)+"%"],
     ["รวม", total, "100%"],
   ];
-  const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term,k.count])];
+  const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term, k.count||0])];
   const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
   if ((d.samples||[]).length){
     sheets["Samples"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[x.sentiment,x.text])];
   }
   return sheets;
 }
-
-function exportXlsx(){
-  if (!lastResult) return;
-  if (typeof XLSX === "undefined"){ toast("โหลด Excel library ไม่ได้ — ใช้ CSV แทน"); exportCsv(); return; }
-  const sheets = buildSheets(lastResult);
-  const wb = XLSX.utils.book_new();
-  for (const [name, rows] of Object.entries(sheets)){
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
-  }
-  XLSX.writeFile(wb, "comment-sentiment.xlsx");
-  toast("ดาวน์โหลด Excel แล้ว ✓");
-}
-function exportCsv(){
+async function exportCsv(){
   if (!lastResult) return;
   const sheets = buildSheets(lastResult);
   let out = "";
   for (const [name, rows] of Object.entries(sheets)){
-    out += "# " + name + "\n";
-    out += rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n\n";
+    out += "# " + name + "\n" + rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n\n";
   }
-  download("comment-sentiment.csv", "﻿"+out, "text/csv");
-  toast("ดาวน์โหลด CSV แล้ว ✓");
+  if (await saveFile("comment-sentiment.csv", "﻿"+out, "text/csv")) toast("ดาวน์โหลด CSV แล้ว ✓");
 }
 function csvCell(v){ v = v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
-function download(name, content, type){
+
+/* ดาวน์โหลด: ใช้ downloads capability เมื่ออยู่ในพรีวิว claude.ai,
+   ไม่งั้นดาวน์โหลดผ่านเบราว์เซอร์ตามปกติ (เว็บที่ deploy จริง) */
+async function saveFile(name, content, type){
+  const cap = (window.claude && typeof window.claude.use === "function")
+    ? await window.claude.use("downloads").catch(()=>null) : null;
+  if (cap){
+    try { await cap.save({ filename: name, data: content }); return true; }
+    catch(e){
+      const code = e && e.code;
+      if (code === "declined") return false;
+      if (code === "rejected_extension" || code === "extension_not_enabled")
+        toast("ไฟล์ชนิดนี้ดาวน์โหลดในพรีวิวไม่ได้ — ใช้ได้เมื่อ deploy จริง (ลองปุ่ม JSON)");
+      else toast("บันทึกไฟล์ไม่สำเร็จ" + (code ? " ("+code+")" : ""));
+      return false;
+    }
+  }
   const blob = new Blob([content], { type });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  return true;
 }
 
-// ---------- helpers ----------
+/* ---------------- self-contained .xlsx writer (no CDN) ---------------- */
+const CRC_TABLE = (() => { const t=[]; for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320 ^ (c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(bytes){ let c=0xFFFFFFFF; for(let i=0;i<bytes.length;i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c>>>8); return (c ^ 0xFFFFFFFF)>>>0; }
+const enc = s => new TextEncoder().encode(s);
+const u16 = n => [n&0xFF,(n>>>8)&0xFF];
+const u32 = n => [n&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF];
+function zip(files){
+  const chunks=[], central=[]; let offset=0;
+  for (const f of files){
+    const nameB=enc(f.name), crc=crc32(f.data), sz=f.data.length;
+    const head=new Uint8Array([].concat(u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(sz),u32(sz),u16(nameB.length),u16(0)));
+    chunks.push(head,nameB,f.data);
+    central.push({nameB,crc,sz,offset});
+    offset += head.length+nameB.length+f.data.length;
+  }
+  const cen=[]; let cenSize=0;
+  for (const c of central){
+    const head=new Uint8Array([].concat(u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(c.crc),u32(c.sz),u32(c.sz),u16(c.nameB.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(c.offset)));
+    cen.push(head,c.nameB); cenSize += head.length+c.nameB.length;
+  }
+  const end=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),u16(central.length),u16(central.length),u32(cenSize),u32(offset),u16(0)));
+  const all=[...chunks,...cen,end];
+  let total=0; for (const a of all) total+=a.length;
+  const out=new Uint8Array(total); let p=0; for (const a of all){ out.set(a,p); p+=a.length; }
+  return out;
+}
+function xmlEsc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function colRef(n){ let s=""; n+=1; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+function sheetXml(rows){
+  let x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  x+='<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+  rows.forEach((row,r) => {
+    x+=`<row r="${r+1}">`;
+    row.forEach((cell,c) => {
+      if (cell==null || cell==="") return;
+      const ref=colRef(c)+(r+1);
+      if (typeof cell==="number" && isFinite(cell)) x+=`<c r="${ref}"><v>${cell}</v></c>`;
+      else x+=`<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(cell)}</t></is></c>`;
+    });
+    x+="</row>";
+  });
+  return x+"</sheetData></worksheet>";
+}
+async function writeXlsx(sheets, filename){
+  const names = Object.keys(sheets);
+  const files = [];
+  files.push({ name:"[Content_Types].xml", data: enc(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    names.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("") +
+    '</Types>') });
+  files.push({ name:"_rels/.rels", data: enc(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>') });
+  files.push({ name:"xl/workbook.xml", data: enc(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+    names.map((nm,i)=>`<sheet name="${xmlEsc(nm).slice(0,31)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("") +
+    '</sheets></workbook>') });
+  files.push({ name:"xl/_rels/workbook.xml.rels", data: enc(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    names.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("") +
+    '</Relationships>') });
+  names.forEach((nm,i) => files.push({ name:`xl/worksheets/sheet${i+1}.xml`, data: enc(sheetXml(sheets[nm])) }));
+  return await saveFile(filename, zip(files), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+/* ---------------- helpers ---------------- */
 const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function setLoading(on, text){ el("loading").classList.toggle("show", on); if (text) el("loadingText").textContent = text; }
 function showErr(m){ const e = el("err"); e.textContent = "⚠️ " + m; e.classList.add("show"); }
 function hideErr(){ el("err").classList.remove("show"); }
 function toast(msg){ const t = el("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); }
 
-function setTheme(m){
-  if (m === "light") document.documentElement.setAttribute("data-theme","light");
-  else document.documentElement.removeAttribute("data-theme");
-  el("themeIcon").textContent = m==="light" ? "☀️" : "🌙";
-  el("themeLabel").textContent = m==="light" ? "โหมดสว่าง" : "โหมดมืด";
-}
-el("themeBtn").onclick = () => {
-  const light = document.documentElement.getAttribute("data-theme") === "light";
-  setTheme(light ? "dark" : "light"); saveCfg();
-};
-
-// ---------- boot ----------
+/* ---------------- boot ---------------- */
 loadCfg();
 refreshPlatform();
 refreshMode();
