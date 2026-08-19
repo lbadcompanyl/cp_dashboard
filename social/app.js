@@ -271,17 +271,40 @@
 
   /** กล่องบอกว่าช่องนี้ยังไม่ได้เชื่อม — เป็นสถานะที่ตั้งใจ ไม่ใช่ข้อผิดพลาด */
   function notConnected(pk) {
-    var P = C.PLATFORMS[pk], need = statusOf(pk).need || [];
-    return '<div class="setup"><div class="setup-i" style="background:' + P.rawColor + '">' +
-      esc(P.label.charAt(0)) + "</div>" +
-      '<div class="setup-b"><div class="setup-t">ยังไม่ได้เชื่อมต่อ ' + esc(P.label) + "</div>" +
-      '<p class="setup-p">ตัวเลขของช่องนี้จะขึ้นเองทันทีที่เชื่อมต่อเสร็จ ระหว่างนี้ยอดรวมบนหน้าภาพรวม' +
-      "<b>ไม่ได้นับช่องนี้</b> จึงไม่ใช่ว่าตัวเลขหาย</p>" +
-      (need.length
+    var P = C.PLATFORMS[pk], st = statusOf(pk), need = st.need || [];
+
+    /* 🔴 3 สาเหตุนี้ต้องบอกคนละอย่าง — บอกผิดคือส่งเจ้าของไปแก้ผิดจุด
+       ยังไม่ได้ใส่ค่า      → บอกว่าต้องใส่อะไร
+       ใส่แล้วแต่สิทธิ์หมด  → บอกให้กดขอสิทธิ์ใหม่ (ค่าใน Cloudflare ยังถูกอยู่ ไม่ต้องแตะ)
+       ยิงไม่ถึงเซิร์ฟเวอร์ → ไม่ใช่เรื่องการตั้งค่าเลย ให้ลองใหม่
+       ⚠️ เคสสิทธิ์หมดอายุเกิดจริงแน่ๆ กับบัญชี Gmail ธรรมดา — Google ให้ refresh token
+          ที่หมดอายุทุก 7 วันถ้าแอปยังไม่ได้ publish */
+    var kind = st.authFailed
+      ? { t: "สิทธิ์หมดอายุ — " + P.label,
+          p: "ค่าที่ตั้งไว้ใน Cloudflare ยังถูกอยู่ <b>ไม่ต้องแก้</b> แค่ต้องกดขออนุญาตใหม่อีกครั้ง " +
+             "แล้วเอา token ตัวใหม่มาใส่แทนตัวเดิม",
+          how: "ตั้ง SETUP_KEY ชั่วคราว → เปิด /social/api/connect → กดอนุญาตใหม่ → ใส่ token ใหม่ → ลบ SETUP_KEY ทิ้ง",
+          showNeed: false }
+      : st.fetchFailed
+      ? { t: "ดึงข้อมูล " + P.label + " ไม่สำเร็จ",
+          p: "ไม่ใช่เรื่องการตั้งค่า — ต้นทางหรือเส้นทางเน็ตมีปัญหาชั่วคราว ลองรีเฟรชหน้าอีกครั้ง",
+          how: "", showNeed: false }
+      : { t: "ยังไม่ได้เชื่อมต่อ " + P.label,
+          p: "ตัวเลขของช่องนี้จะขึ้นเองทันทีที่เชื่อมต่อเสร็จ ระหว่างนี้ยอดรวมบนหน้าภาพรวม" +
+             "<b>ไม่ได้นับช่องนี้</b> จึงไม่ใช่ว่าตัวเลขหาย",
+          how: "ใส่เป็น Secret ทั้ง Production และ Preview แล้วสั่ง Retry deployment",
+          showNeed: true };
+
+    return '<div class="setup' + (st.authFailed ? " warn" : "") + '"><div class="setup-i" style="background:' +
+      P.rawColor + '">' + esc(P.label.charAt(0)) + "</div>" +
+      '<div class="setup-b"><div class="setup-t">' + esc(kind.t) + "</div>" +
+      '<p class="setup-p">' + kind.p + "</p>" +
+      (st.message ? '<p class="setup-p sm">ต้นทางแจ้งว่า: ' + esc(st.message) + "</p>" : "") +
+      (kind.showNeed && need.length
         ? '<div class="setup-n"><span class="setup-nl">ต้องใส่ค่าใน Cloudflare ก่อน</span>' +
           need.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join("") + "</div>"
         : "") +
-      '<p class="setup-p sm">ใส่เป็น Secret ทั้ง Production และ Preview แล้วสั่ง Retry deployment</p>' +
+      (kind.how ? '<p class="setup-p sm">' + esc(kind.how) + "</p>" : "") +
       "</div></div>";
   }
 

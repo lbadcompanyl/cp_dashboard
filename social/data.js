@@ -27,11 +27,24 @@
     facebook: "/social/api/facebook",
   };
 
-  /** ช่องเปล่าที่ยังไม่ได้เชื่อม — โครงต้องครบเสมอ ตัววาดจะได้ไม่ต้องเช็ค null */
-  function emptyChannel(need, message) {
+  /** ช่องที่ยังใช้ไม่ได้ — โครงต้องครบเสมอ ตัววาดจะได้ไม่ต้องเช็ค null
+   * 🔴 แยก "ยังไม่ได้ใส่ค่า" ออกจาก "ใส่แล้วแต่สิทธิ์หมดอายุ" (เจ้าของ 19 ส.ค. 2026)
+   *    บัญชี Gmail ธรรมดาที่ยังไม่ได้ publish แอป Google จะให้ refresh token
+   *    ที่ **หมดอายุทุก 7 วัน** — วันที่มันหมด แดชบอร์ดต้องบอกว่า "สิทธิ์หมดอายุ
+   *    ต้องกดขอใหม่" ไม่ใช่ "ยังไม่ได้เชื่อมต่อ" ซึ่งจะทำให้ไปไล่ตั้งค่าใหม่ทั้งชุดเปล่าๆ
+   */
+  function emptyChannel(res) {
+    var st = (res && res.status) || "not-configured";
     return {
       daily: [], followers: [], posts: [],
-      status: { connected: false, partial: false, need: need || [], message: message || "" },
+      status: {
+        connected: false,
+        partial: false,
+        authFailed: st === "auth-failed",
+        fetchFailed: st === "error",
+        need: (res && res.need) || [],
+        message: (res && res.message) || "",
+      },
     };
   }
 
@@ -50,7 +63,7 @@
    */
   function fromYouTube(res) {
     if (!res || !res.ok || !res.data) {
-      return emptyChannel(res && res.need, res && res.message);
+      return emptyChannel(res);
     }
     var ch = res.data.channel || {};
     var vids = res.data.videos || [];
@@ -101,7 +114,7 @@
    */
   function fromGeneric(res) {
     if (!res || !res.ok || !res.data) {
-      return emptyChannel(res && res.need, res && res.message);
+      return emptyChannel(res);
     }
     var d = res.data;
     return {

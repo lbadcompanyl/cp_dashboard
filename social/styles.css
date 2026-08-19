@@ -611,6 +611,8 @@ body {
   width:34px; height:34px; border-radius:9px; flex:none; color:#fff;
   display:flex; align-items:center; justify-content:center; font-weight:700; opacity:.85;
 }
+/* สิทธิ์หมดอายุ = ของที่เคยใช้ได้แล้วพัง ต้องเด่นกว่า "ยังไม่ได้ตั้งค่า" ซึ่งเป็นเรื่องปกติ */
+.setup.warn { border-style:solid; border-left:3px solid var(--warn); }
 .setup-b { min-width:0; }
 .setup-t { font-weight:650; font-size:.95rem; }
 .setup-p { margin:5px 0 0; font-size:.81rem; color:var(--ink-2); line-height:1.55; }

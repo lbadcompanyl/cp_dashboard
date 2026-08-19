@@ -1756,6 +1756,44 @@ console.log("\n[42] 🔴 ต่อข้อมูลจริง — แปล�
 }
 
 /* ────────────────────────────────────────────────────────────────── */
+console.log("\n[42b] 🔴 สิทธิ์หมดอายุ ≠ ยังไม่ได้ตั้งค่า");
+{
+  /* 🔴 บัญชี Gmail ธรรมดาที่ยังไม่ได้ publish แอป Google จะได้ refresh token
+     ที่ **หมดอายุทุก 7 วัน** — เคสนี้จะเกิดจริงแน่ๆ ไม่ใช่เคสสมมติ
+     ⚠️ บอกว่า "ยังไม่ได้เชื่อมต่อ" จะทำให้เจ้าของไปไล่ตั้งค่าใหม่ทั้งชุดเปล่าๆ
+        ทั้งที่ค่าใน Cloudflare ยังถูกอยู่ ต้องแค่กดขอสิทธิ์ใหม่ */
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  const body = (b) => ({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+  await pg.route("**/social/api/youtube", (r) => r.fulfill(body({
+    ok: false, status: "auth-failed", need: [],
+    message: "token ของ YouTube หมดอายุหรือถูกถอนสิทธิ์" })));
+  await pg.route("**/social/api/tiktok", (r) => r.fulfill(body({
+    ok: false, status: "not-configured", need: ["TIKTOK_CLIENT_KEY"], message: "" })));
+  await pg.route("**/social/api/facebook", (r) => r.fulfill(body({
+    ok: false, status: "not-configured", need: ["FB_PAGE_ID"], message: "" })));
+
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".setup", { timeout: 5000 });
+  await tabTo(pg, "YouTube");
+  const v = await pg.$eval("#view", (e) => e.innerText);
+  ok(/สิทธิ์หมดอายุ/.test(v), "บอกว่าสิทธิ์หมดอายุ");
+  ok(!/ยังไม่ได้เชื่อมต่อ/.test(v), "ไม่บอกว่ายังไม่ได้เชื่อมต่อ (จะไปแก้ผิดจุด)");
+  ok(/ไม่ต้องแก้/.test(v), "บอกว่าค่าใน Cloudflare ยังถูก ไม่ต้องแตะ");
+  ok(/connect/.test(v), "บอกวิธีขอสิทธิ์ใหม่");
+  ok(/หมดอายุหรือถูกถอนสิทธิ์/.test(v), "ยกข้อความจากต้นทางมาแสดงด้วย");
+
+  // ช่องที่ยังไม่ได้ตั้งค่าจริงๆ ยังต้องบอกแบบเดิม
+  await tabTo(pg, "TikTok");
+  const t = await pg.$eval("#view", (e) => e.innerText);
+  ok(/ยังไม่ได้เชื่อมต่อ/.test(t) && !/สิทธิ์หมดอายุ/.test(t), "ช่องที่ยังไม่ตั้งค่ายังบอกแบบเดิม");
+  ok(/TIKTOK_CLIENT_KEY/.test(t), "และยังบอกชื่อค่าที่ต้องใส่");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
 console.log("\n[43] ต่อ API ไม่ติด ≠ ยังไม่ได้ตั้งค่า");
 {
   const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
