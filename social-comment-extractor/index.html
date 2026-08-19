@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Comment Sentiment — วิเคราะห์ความเห็นโพส FB / TikTok / YouTube</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+<style>
+  :root {
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232322;
+    --ink:#fff; --ink-2:#c3c2b7; --muted:#898781;
+    --border:rgba(255,255,255,0.10); --accent:#3987e5; --accent-soft:#1a2436;
+    --pos:#3ea672; --pos-soft:#132b20; --neu:#8a8a86; --neu-soft:#26262410;
+    --neg:#e26a6a; --neg-soft:#2e1717; --radius:12px;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --plane:#f9f9f7; --surface:#fcfcfb; --surface-2:#f3f3ef;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --border:rgba(11,11,11,0.10); --accent:#2a78d6; --accent-soft:#eaf1fe;
+    --pos:#2e9160; --pos-soft:#e7f5ee; --neu:#8a8a86; --neu-soft:#eeeeea;
+    --neg:#d24b4b; --neg-soft:#fbeaea;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI","Sarabun","Noto Sans Thai",Roboto,sans-serif; background:var(--plane); color:var(--ink); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1080px; margin:0 auto; padding:0 20px; }
+  a { color:var(--accent); }
+
+  .appbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .logo { display:flex; align-items:center; gap:10px; font-weight:650; font-size:1.05rem; }
+  .logo-mark { width:28px; height:28px; border-radius:8px; display:grid; place-items:center; background:var(--accent); color:#fff; font-size:16px; }
+  .logo small { display:block; font-weight:400; font-size:0.72rem; color:var(--muted); }
+  .appbar-actions { display:flex; gap:8px; }
+  .btn { border:1px solid var(--border); background:var(--surface); color:var(--ink-2); border-radius:999px; padding:8px 15px; font-size:0.82rem; cursor:pointer; display:inline-flex; align-items:center; gap:7px; font-family:inherit; }
+  .btn:hover { background:var(--surface-2); }
+  .btn.primary { background:var(--accent); color:#fff; border-color:transparent; }
+  .btn.primary:disabled { opacity:.55; cursor:not-allowed; }
+  .btn.ghost { background:transparent; }
+
+  .banner { display:flex; gap:10px; align-items:flex-start; background:var(--accent-soft); border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-size:0.78rem; color:var(--ink-2); margin-top:16px; }
+  .banner b { color:var(--ink); }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-top:16px; }
+  .card h2 { margin:0 0 4px; font-size:1.02rem; }
+  .card .sub { margin:0 0 14px; font-size:0.78rem; color:var(--muted); }
+
+  .inrow { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field.grow { flex:1 1 340px; }
+  .field label { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; }
+  input[type=text], input[type=url], input[type=number], select {
+    font-family:inherit; font-size:0.92rem; color:var(--ink); background:var(--plane);
+    border:1px solid var(--border); border-radius:9px; padding:10px 12px; width:100%;
+  }
+  input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .checkrow { display:flex; align-items:center; gap:8px; font-size:0.85rem; color:var(--ink-2); margin-top:12px; flex-wrap:wrap; }
+  .checkrow label { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  .platform-badge { font-size:0.72rem; padding:3px 9px; border-radius:999px; border:1px solid var(--border); background:var(--surface-2); color:var(--muted); }
+  .platform-badge.on { color:var(--ink); border-color:var(--accent); }
+
+  details.settings { margin-top:12px; font-size:0.85rem; }
+  details.settings summary { cursor:pointer; color:var(--muted); user-select:none; }
+  details.settings .body { margin-top:12px; display:flex; flex-direction:column; gap:12px; }
+  .mode-pill { font-size:0.72rem; padding:2px 8px; border-radius:999px; }
+  .mode-pill.demo { background:var(--neu-soft); color:var(--muted); border:1px solid var(--border); }
+  .mode-pill.live { background:var(--pos-soft); color:var(--pos); border:1px solid var(--border); }
+
+  #results { display:none; }
+  #results.show { display:block; }
+  .grid { display:grid; gap:16px; }
+  .stat-row { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+  .stat { background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:14px; }
+  .stat .k { font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .stat .v { font-size:1.5rem; font-weight:650; margin-top:4px; }
+
+  .senti-wrap { display:grid; grid-template-columns:180px 1fr; gap:22px; align-items:center; }
+  @media (max-width:640px){ .senti-wrap{ grid-template-columns:1fr; justify-items:center; text-align:center; } }
+  .donut { width:180px; height:180px; border-radius:50%; position:relative; display:grid; place-items:center; }
+  .donut::after { content:""; position:absolute; inset:26px; border-radius:50%; background:var(--surface); }
+  .donut .mid { position:relative; z-index:1; text-align:center; }
+  .donut .mid .big { font-size:1.8rem; font-weight:700; color:var(--pos); }
+  .donut .mid .lab { font-size:0.7rem; color:var(--muted); }
+  .legend { display:flex; flex-direction:column; gap:10px; width:100%; }
+  .legend .li { display:flex; align-items:center; gap:10px; font-size:0.9rem; }
+  .legend .sw { width:12px; height:12px; border-radius:3px; flex:none; }
+  .legend .bar { flex:1; height:8px; border-radius:999px; background:var(--surface-2); overflow:hidden; }
+  .legend .bar span { display:block; height:100%; border-radius:999px; }
+  .legend .pct { width:52px; text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+
+  .kw-list { display:flex; flex-direction:column; gap:8px; }
+  .kw { display:grid; grid-template-columns:130px 1fr 44px; gap:10px; align-items:center; font-size:0.85rem; }
+  .kw .term { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kw .track { height:10px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+  .kw .track span { display:block; height:100%; background:var(--accent); border-radius:999px; }
+  .kw .n { text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  .samples { display:flex; flex-direction:column; gap:8px; }
+  .sample { border:1px solid var(--border); border-left-width:3px; border-radius:8px; padding:9px 12px; font-size:0.86rem; color:var(--ink-2); background:var(--plane); }
+  .sample.pos { border-left-color:var(--pos); }
+  .sample.neu { border-left-color:var(--neu); }
+  .sample.neg { border-left-color:var(--neg); }
+  .sample .tag { font-size:0.68rem; text-transform:uppercase; letter-spacing:.04em; margin-right:8px; }
+
+  .summary-box { background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:14px; font-size:0.9rem; color:var(--ink-2); }
+
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+  .loading { display:none; align-items:center; gap:10px; color:var(--muted); font-size:0.9rem; margin-top:14px; }
+  .loading.show { display:flex; }
+  .spinner { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .err { display:none; background:var(--neg-soft); border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:0.85rem; color:var(--neg); margin-top:14px; }
+  .err.show { display:block; }
+
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--plane); padding:10px 18px; border-radius:999px; font-size:0.85rem; opacity:0; transition:all .2s; pointer-events:none; z-index:99; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  footer.foot { padding:22px 0 40px; color:var(--muted); font-size:0.76rem; border-top:1px solid var(--border); margin-top:24px; }
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; animation:none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="appbar">
+    <div class="logo"><span class="logo-mark">💬</span><span>Comment Sentiment<small>วิเคราะห์ความเห็นโพส FB · TikTok · YouTube → Excel</small></span></div>
+    <div class="appbar-actions">
+      <button class="btn ghost" id="themeBtn" type="button"><span id="themeIcon">🌙</span><span id="themeLabel">โหมดมืด</span></button>
+    </div>
+  </div>
+
+  <div class="banner">
+    <span>🔒</span>
+    <span><b>ใช้ภายใน · aggregate เท่านั้น · ไม่เก็บ raw data</b> — เครื่องมือนี้สรุปความเห็นเป็นภาพรวม (%) ไม่จัดเก็บชื่อผู้คอมเมนต์รายบุคคล เพื่อลดความเสี่ยง PDPA อ่านรายละเอียดใน <code>PRIVACY_NOTE.md</code></span>
+  </div>
+
+  <!-- INPUT -->
+  <div class="card">
+    <h2>วิเคราะห์โพส</h2>
+    <p class="sub">วางลิงก์โพส แล้วกด “วิเคราะห์” — ระบบดึงคอมเมนต์ → ตี sentiment ด้วย Claude → สรุป %</p>
+    <div class="inrow">
+      <div class="field grow">
+        <label for="url">ลิงก์โพส (Facebook / TikTok / YouTube)</label>
+        <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+      </div>
+      <div class="field" style="width:140px">
+        <label for="limit">ดึงกี่คอมเมนต์</label>
+        <input type="number" id="limit" value="200" min="10" max="2000" step="10" />
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn primary" id="analyzeBtn" type="button">🔎 วิเคราะห์</button>
+      </div>
+    </div>
+    <div class="checkrow">
+      <span id="platformBadge" class="platform-badge">แพลตฟอร์ม: —</span>
+      <label><input type="checkbox" id="anonymize" checked /> ปกปิดชื่อผู้คอมเมนต์ (anonymize)</label>
+      <label><input type="checkbox" id="samplesChk" checked /> แสดงตัวอย่างคอมเมนต์ (ถอดความ)</label>
+      <span id="modePill" class="mode-pill demo">โหมด: Demo</span>
+    </div>
+
+    <details class="settings">
+      <summary>⚙️ ตั้งค่า / เชื่อมต่อ backend</summary>
+      <div class="body">
+        <div class="field grow">
+          <label for="worker">Cloudflare Worker endpoint (เว้นว่าง = โหมด Demo ข้อมูลตัวอย่าง)</label>
+          <input type="url" id="worker" placeholder="https://your-worker.workers.dev" autocomplete="off" />
+        </div>
+        <div style="font-size:0.8rem; color:var(--muted)">
+          โหมด <b>Demo</b> ใช้ข้อมูลตัวอย่างเพื่อดู flow การทำงาน (ไม่เรียก API จริง ไม่มีค่าใช้จ่าย).
+          ใส่ URL ของ Worker ที่ deploy แล้วเพื่อดึงคอมเมนต์จริง + ตี sentiment ด้วย Claude — ดูวิธี deploy ใน <code>README.md</code>
+        </div>
+      </div>
+    </details>
+
+    <div class="loading" id="loading"><span class="spinner"></span><span id="loadingText">กำลังดึงคอมเมนต์และวิเคราะห์…</span></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results">
+    <div class="card">
+      <h2>ผลวิเคราะห์ Sentiment</h2>
+      <p class="sub" id="resSub"></p>
+      <div class="senti-wrap">
+        <div class="donut" id="donut"><div class="mid"><div class="big" id="donutBig">–</div><div class="lab">เชิงบวก</div></div></div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+
+    <div class="grid stat-row" id="statRow"></div>
+
+    <div class="card">
+      <h2>สรุปภาพรวม</h2>
+      <p class="sub">สรุปโดย Claude จากคอมเมนต์ทั้งหมด</p>
+      <div class="summary-box" id="summaryBox">—</div>
+    </div>
+
+    <div class="card">
+      <h2>คำที่พูดถึงบ่อย</h2>
+      <p class="sub">Top keywords / หัวข้อที่ถูกพูดถึง</p>
+      <div class="kw-list" id="kwList"></div>
+    </div>
+
+    <div class="card" id="sampleCard">
+      <h2>ตัวอย่างคอมเมนต์ (ถอดความ · ไม่ระบุตัวตน)</h2>
+      <p class="sub">คัดมาเป็นตัวแทนแต่ละอารมณ์ — ข้อความถูกถอดความ/ตัดข้อมูลระบุตัวตนออก</p>
+      <div class="samples" id="sampleList"></div>
+    </div>
+
+    <div class="card">
+      <h2>ส่งออก</h2>
+      <p class="sub">ดาวน์โหลดผลวิเคราะห์แบบ aggregate (ไม่มี raw รายบุคคล)</p>
+      <div class="toolbar">
+        <button class="btn primary" id="xlsxBtn" type="button">📊 ดาวน์โหลด Excel (.xlsx)</button>
+        <button class="btn" id="csvBtn" type="button">📄 ดาวน์โหลด CSV</button>
+        <button class="btn" id="jsonBtn" type="button">{ } ดาวน์โหลด JSON</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    Comment Sentiment · sentiment โดย Claude API · ดึงคอมเมนต์: YouTube Data API (ฟรี) + ScrapeCreators (FB/TikTok) ·
+    ออกแบบ aggregate-first เพื่อความสอดคล้อง PDPA · โหมด Demo ไม่เรียก API จริง
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- SheetJS for Excel export (CDN). ถ้า offline จะ fallback เป็น CSV -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+const el = id => document.getElementById(id);
+const STORE = "commentSentimentV1";
+let lastResult = null;
+
+// ---------- persistence ----------
+function loadCfg(){
+  try {
+    const c = JSON.parse(localStorage.getItem(STORE) || "{}");
+    if (c.worker) el("worker").value = c.worker;
+    if (c.limit) el("limit").value = c.limit;
+    if (typeof c.anon === "boolean") el("anonymize").checked = c.anon;
+    if (c.theme === "light") setTheme("light");
+  } catch(e){}
+}
+function saveCfg(){
+  try {
+    localStorage.setItem(STORE, JSON.stringify({
+      worker: el("worker").value.trim(),
+      limit: el("limit").value,
+      anon: el("anonymize").checked,
+      theme: document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark",
+    }));
+  } catch(e){}
+}
+
+// ---------- platform detection ----------
+function detectPlatform(url){
+  const u = (url||"").toLowerCase();
+  if (/youtube\.com|youtu\.be/.test(u)) return "youtube";
+  if (/tiktok\.com/.test(u)) return "tiktok";
+  if (/facebook\.com|fb\.watch|fb\.com/.test(u)) return "facebook";
+  return null;
+}
+const PLAT_LABEL = { youtube:"YouTube 🔴 (ฟรี)", tiktok:"TikTok ⚫ (ScrapeCreators)", facebook:"Facebook 🔵 (ScrapeCreators)" };
+function refreshPlatform(){
+  const p = detectPlatform(el("url").value);
+  const b = el("platformBadge");
+  b.textContent = "แพลตฟอร์ม: " + (p ? PLAT_LABEL[p] : "—");
+  b.classList.toggle("on", !!p);
+}
+function refreshMode(){
+  const live = !!el("worker").value.trim();
+  const pill = el("modePill");
+  pill.textContent = "โหมด: " + (live ? "Live" : "Demo");
+  pill.className = "mode-pill " + (live ? "live" : "demo");
+}
+el("url").addEventListener("input", refreshPlatform);
+el("worker").addEventListener("input", () => { refreshMode(); saveCfg(); });
+["limit","anonymize"].forEach(id => el(id).addEventListener("change", saveCfg));
+
+// ---------- analyze ----------
+el("analyzeBtn").onclick = analyze;
+el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
+
+async function analyze(){
+  const url = el("url").value.trim();
+  const platform = detectPlatform(url);
+  if (!url || !platform){ showErr("กรุณาวางลิงก์ Facebook / TikTok / YouTube ที่ถูกต้อง"); return; }
+  hideErr();
+  el("results").classList.remove("show");
+  setLoading(true, "กำลังดึงคอมเมนต์และวิเคราะห์…");
+  el("analyzeBtn").disabled = true;
+
+  const worker = el("worker").value.trim();
+  const opts = {
+    url, platform,
+    limit: Math.max(10, Math.min(2000, +el("limit").value || 200)),
+    anonymize: el("anonymize").checked,
+    samples: el("samplesChk").checked,
+  };
+
+  try {
+    const data = worker ? await callWorker(worker, opts) : await demoResult(opts);
+    lastResult = data;
+    renderResult(data);
+  } catch (e){
+    showErr("วิเคราะห์ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+  } finally {
+    setLoading(false);
+    el("analyzeBtn").disabled = false;
+  }
+}
+
+async function callWorker(worker, opts){
+  const base = worker.replace(/\/+$/,"");
+  const resp = await fetch(base + "/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  if (!resp.ok){
+    let msg = "HTTP " + resp.status;
+    try { const j = await resp.json(); if (j.error) msg = j.error; } catch(e){}
+    throw new Error(msg);
+  }
+  return await resp.json();
+}
+
+// ---------- demo data (ตัวอย่าง ไม่เรียก API จริง) ----------
+async function demoResult(opts){
+  await new Promise(r => setTimeout(r, 900)); // จำลองเวลาประมวลผล
+  const total = Math.min(opts.limit, 214);
+  const pos = Math.round(total * 0.58), neg = Math.round(total * 0.16), neu = total - pos - neg;
+  return {
+    platform: opts.platform,
+    source_url: opts.url,
+    demo: true,
+    fetched_count: total,
+    analyzed_count: total,
+    sentiment: { positive: pos, neutral: neu, negative: neg },
+    engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
+    time_range: { earliest: "2026-08-10", latest: "2026-08-19" },
+    keywords: [
+      { term:"อร่อย", count:41 }, { term:"ราคา", count:33 }, { term:"บริการ", count:27 },
+      { term:"ส่งช้า", count:19 }, { term:"คุ้ม", count:17 }, { term:"แพ็คเกจ", count:14 },
+      { term:"รอนาน", count:12 }, { term:"ประทับใจ", count:11 },
+    ],
+    summary: "คอมเมนต์ส่วนใหญ่เป็นเชิงบวก ชื่นชมรสชาติและความคุ้มค่า มีบางส่วนบ่นเรื่องการจัดส่งช้าและการรอคิว โดยรวมกระแสตอบรับดี",
+    samples: opts.samples ? [
+      { sentiment:"positive", text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน" },
+      { sentiment:"positive", text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย" },
+      { sentiment:"neutral", text:"รสชาติโอเค ตามราคา ไม่ได้หวือหวาอะไร" },
+      { sentiment:"negative", text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย" },
+    ] : [],
+  };
+}
+
+// ---------- render ----------
+function pct(n, total){ return total ? Math.round(n/total*100) : 0; }
+function renderResult(d){
+  const s = d.sentiment || {positive:0,neutral:0,negative:0};
+  const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
+  const pp = pct(s.positive,total), pnu = pct(s.neutral,total), pn = 100-pp-pnu;
+
+  el("resSub").textContent =
+    `${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์` +
+    (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : "");
+
+  // donut via conic-gradient
+  el("donut").style.background =
+    `conic-gradient(var(--pos) 0 ${pp}%, var(--neu) ${pp}% ${pp+pnu}%, var(--neg) ${pp+pnu}% 100%)`;
+  el("donutBig").textContent = pp + "%";
+
+  el("legend").innerHTML = [
+    ["เชิงบวก 😊","--pos",pp,s.positive],
+    ["กลาง 😐","--neu",pnu,s.neutral],
+    ["เชิงลบ 😞","--neg",pn,s.negative],
+  ].map(([lab,c,p,n]) => `
+    <div class="li">
+      <span class="sw" style="background:var(${c})"></span>
+      <span style="width:78px">${lab}</span>
+      <span class="bar"><span style="width:${p}%;background:var(${c})"></span></span>
+      <span class="pct">${p}%</span>
+      <span style="width:52px;text-align:right;color:var(--muted)">${n}</span>
+    </div>`).join("");
+
+  // stat tiles
+  const eng = d.engagement || {};
+  const stats = [
+    ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
+    ["ยอด Like รวม", (eng.total_likes!=null? eng.total_likes.toLocaleString() : "—")],
+    ["จำนวน Reply", (eng.total_replies!=null? eng.total_replies.toLocaleString() : "—")],
+    ["ผู้คอมเมนต์ (ไม่ซ้ำ)", (eng.unique_commenters!=null? eng.unique_commenters.toLocaleString() : "—")],
+  ];
+  el("statRow").innerHTML = stats.map(([k,v]) =>
+    `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+
+  el("summaryBox").textContent = d.summary || "—";
+
+  // keywords
+  const kws = d.keywords || [];
+  const maxN = kws.reduce((m,k)=>Math.max(m,k.count||0),0) || 1;
+  el("kwList").innerHTML = kws.length ? kws.map(k => `
+    <div class="kw">
+      <span class="term">${escapeHtml(k.term)}</span>
+      <span class="track"><span style="width:${Math.round((k.count||0)/maxN*100)}%"></span></span>
+      <span class="n">${k.count||0}</span>
+    </div>`).join("") : `<div style="color:var(--muted);font-size:0.85rem">— ไม่มีข้อมูลคำ —</div>`;
+
+  // samples
+  const samples = d.samples || [];
+  el("sampleCard").style.display = samples.length ? "" : "none";
+  const tagLabel = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  const tagColor = { positive:"--pos", neutral:"--neu", negative:"--neg" };
+  el("sampleList").innerHTML = samples.map(x => {
+    const cls = x.sentiment==="positive"?"pos":x.sentiment==="negative"?"neg":"neu";
+    return `<div class="sample ${cls}"><span class="tag" style="color:var(${tagColor[x.sentiment]||'--neu'})">${tagLabel[x.sentiment]||"?"}</span>${escapeHtml(x.text)}</div>`;
+  }).join("");
+
+  el("results").classList.add("show");
+  el("results").scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+// ---------- export ----------
+el("xlsxBtn").onclick = exportXlsx;
+el("csvBtn").onclick = exportCsv;
+el("jsonBtn").onclick = () => {
+  if (!lastResult) return;
+  download("comment-sentiment.json", JSON.stringify(lastResult, null, 2), "application/json");
+};
+
+function buildSheets(d){
+  const s = d.sentiment||{}; const eng = d.engagement||{};
+  const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
+  const summary = [
+    ["รายการ","ค่า"],
+    ["แพลตฟอร์ม", d.platform||""],
+    ["ลิงก์", d.source_url||""],
+    ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
+    ["คอมเมนต์ที่ดึงมา", d.fetched_count||""],
+    ["ยอด Like รวม", eng.total_likes||""],
+    ["จำนวน Reply", eng.total_replies||""],
+    ["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||""],
+    ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],
+    ["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
+    ["โหมด", d.demo ? "Demo (ตัวอย่าง)" : "Live"],
+    ["สรุปภาพรวม", d.summary||""],
+  ];
+  const senti = [
+    ["Sentiment","จำนวน","เปอร์เซ็นต์"],
+    ["เชิงบวก", s.positive||0, pct(s.positive,total)+"%"],
+    ["กลาง", s.neutral||0, pct(s.neutral,total)+"%"],
+    ["เชิงลบ", s.negative||0, pct(s.negative,total)+"%"],
+    ["รวม", total, "100%"],
+  ];
+  const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term,k.count])];
+  const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
+  if ((d.samples||[]).length){
+    sheets["Samples"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[x.sentiment,x.text])];
+  }
+  return sheets;
+}
+
+function exportXlsx(){
+  if (!lastResult) return;
+  if (typeof XLSX === "undefined"){ toast("โหลด Excel library ไม่ได้ — ใช้ CSV แทน"); exportCsv(); return; }
+  const sheets = buildSheets(lastResult);
+  const wb = XLSX.utils.book_new();
+  for (const [name, rows] of Object.entries(sheets)){
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+  }
+  XLSX.writeFile(wb, "comment-sentiment.xlsx");
+  toast("ดาวน์โหลด Excel แล้ว ✓");
+}
+function exportCsv(){
+  if (!lastResult) return;
+  const sheets = buildSheets(lastResult);
+  let out = "";
+  for (const [name, rows] of Object.entries(sheets)){
+    out += "# " + name + "\n";
+    out += rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n\n";
+  }
+  download("comment-sentiment.csv", "﻿"+out, "text/csv");
+  toast("ดาวน์โหลด CSV แล้ว ✓");
+}
+function csvCell(v){ v = v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+function download(name, content, type){
+  const blob = new Blob([content], { type });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- helpers ----------
+const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function setLoading(on, text){ el("loading").classList.toggle("show", on); if (text) el("loadingText").textContent = text; }
+function showErr(m){ const e = el("err"); e.textContent = "⚠️ " + m; e.classList.add("show"); }
+function hideErr(){ el("err").classList.remove("show"); }
+function toast(msg){ const t = el("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); }
+
+function setTheme(m){
+  if (m === "light") document.documentElement.setAttribute("data-theme","light");
+  else document.documentElement.removeAttribute("data-theme");
+  el("themeIcon").textContent = m==="light" ? "☀️" : "🌙";
+  el("themeLabel").textContent = m==="light" ? "โหมดสว่าง" : "โหมดมืด";
+}
+el("themeBtn").onclick = () => {
+  const light = document.documentElement.getAttribute("data-theme") === "light";
+  setTheme(light ? "dark" : "light"); saveCfg();
+};
+
+// ---------- boot ----------
+loadCfg();
+refreshPlatform();
+refreshMode();
+</script>
+</body>
+</html>
