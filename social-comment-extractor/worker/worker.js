@@ -87,6 +87,9 @@ async function analyze(opts, env) {
   for (const l of labels) if (sentiment[l] != null) sentiment[l]++;
   logLine(`รวมผล → บวก ${sentiment.positive} · กลาง ${sentiment.neutral} · ลบ ${sentiment.negative}`);
 
+  // audit รายคอมเมนต์ (ข้อความ + ผล) สำหรับตรวจความถูกต้องบนจอ — ไม่รวมชื่อผู้คอมเมนต์
+  const audit = texts.map((t, i) => ({ text: String(t).replace(/\s+/g, " ").slice(0, 220), sentiment: labels[i] }));
+
   // 3) สรุป + keyword + ตัวอย่าง (ถอดความ)
   const synth = await synthesize(texts.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens);
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
@@ -112,6 +115,7 @@ async function analyze(opts, env) {
     claude_usage: { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output },
     claude_rate_remaining: tokens.rate_remaining,
     log,
+    audit,
     model: env.CLAUDE_MODEL || DEFAULT_MODEL,
   };
 }

@@ -144,6 +144,14 @@
   .log-summary::-webkit-details-marker { display:none; }
   .log-box { margin:14px 0 0; background:var(--plane); border:1px solid var(--border); border-radius:10px; padding:14px; font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:0.78rem; line-height:1.7; color:var(--ink-2); white-space:pre-wrap; word-break:break-word; max-height:340px; overflow:auto; }
 
+  .audit-filter { display:flex; gap:8px; flex-wrap:wrap; margin:13px 0; }
+  .audit-fbtn { border:1px solid var(--border); background:var(--surface); color:var(--ink-2); border-radius:999px; padding:5px 13px; font-size:0.78rem; cursor:pointer; font-family:inherit; }
+  .audit-fbtn.on { background:var(--accent); color:#fff; border-color:transparent; }
+  .audit-list { display:flex; flex-direction:column; gap:6px; max-height:440px; overflow:auto; }
+  .audit-row { display:flex; gap:10px; align-items:flex-start; font-size:0.85rem; padding:8px 11px; border:1px solid var(--border); border-radius:8px; background:var(--plane); }
+  .audit-tag { flex:none; font-size:0.66rem; font-weight:600; border:1px solid; border-radius:999px; padding:2px 9px; margin-top:1px; }
+  .audit-text { color:var(--ink-2); word-break:break-word; }
+
   .kw-list { display:flex; flex-direction:column; gap:9px; }
   .kw { display:grid; grid-template-columns:130px 1fr 40px; gap:11px; align-items:center; font-size:0.85rem; }
   .kw .term { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -276,6 +284,13 @@
     <details class="card" id="logCard">
       <summary class="log-summary">📋 Log การวิเคราะห์ (กดเพื่อเปิด/ปิด)</summary>
       <pre class="log-box" id="logBox"></pre>
+    </details>
+
+    <details class="card" id="auditCard">
+      <summary class="log-summary">🔍 ตรวจ sentiment รายคอมเมนต์ (audit)</summary>
+      <p class="sub" style="margin:8px 0 0">ข้อความ + ผลที่ Claude ตี ไว้ตรวจว่าถูกต้องไหม · แสดงบนจอเท่านั้น ไม่รวมในไฟล์ export และไม่จัดเก็บ (ตัดชื่อผู้คอมเมนต์ออกแล้ว)</p>
+      <div class="audit-filter" id="auditFilter"></div>
+      <div class="audit-list" id="auditList"></div>
     </details>
   </div>
 
@@ -452,6 +467,16 @@ async function demoResult(opts){
     summary: "คอมเมนต์ส่วนใหญ่เป็นเชิงบวก ชื่นชมรสชาติและความคุ้มค่า มีบางส่วนบ่นเรื่องการจัดส่งช้าและการรอคิว โดยรวมกระแสตอบรับดี",
     claude_usage: { input: total * 12, output: 240, total: total * 12 + 240 },
     claude_rate_remaining: 380000,
+    audit: [
+      { text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน", sentiment:"positive" },
+      { text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย", sentiment:"positive" },
+      { text:"ร้านนี้เด็ด ต้องมาลองสักครั้ง", sentiment:"positive" },
+      { text:"อร่อยใช้ได้ แต่แพงไปนิดนึง", sentiment:"neutral" },
+      { text:"รสชาติโอเค ตามราคา ไม่ได้หวือหวาอะไร", sentiment:"neutral" },
+      { text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย", sentiment:"negative" },
+      { text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก", sentiment:"negative" },
+      { text:"รอคิวนานมาก ไม่ค่อยประทับใจ", sentiment:"negative" },
+    ],
     log: (() => {
       const nB = Math.ceil(total/40);
       const L = [
@@ -548,9 +573,34 @@ function renderResult(d){
   const logArr = d.log || [];
   el("logCard").style.display = logArr.length ? "" : "none";
   el("logBox").textContent = logArr.join("\n");
+  renderAudit(d);
 
   el("results").classList.add("show");
   el("results").scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+/* ---------------- audit (ตรวจ sentiment รายคอมเมนต์) ---------------- */
+function renderAudit(d){
+  const audit = d.audit || [];
+  el("auditCard").style.display = audit.length ? "" : "none";
+  if (!audit.length) return;
+  const counts = { all: audit.length, positive:0, neutral:0, negative:0 };
+  audit.forEach(a => { if (counts[a.sentiment] != null) counts[a.sentiment]++; });
+  const filters = [["all","ทั้งหมด"],["positive","บวก"],["neutral","กลาง"],["negative","ลบ"]];
+  el("auditFilter").innerHTML = filters.map(([k,l]) =>
+    `<button class="audit-fbtn${k==="all"?" on":""}" data-f="${k}" type="button">${l} (${counts[k]||0})</button>`).join("");
+  const tagL = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  const tagC = { positive:"--pos", neutral:"--neu", negative:"--neg" };
+  function draw(f){
+    const rows = audit.filter(a => f==="all" || a.sentiment===f);
+    el("auditList").innerHTML = rows.map(a =>
+      `<div class="audit-row"><span class="audit-tag" style="color:var(${tagC[a.sentiment]||'--neu'});border-color:var(${tagC[a.sentiment]||'--neu'})">${tagL[a.sentiment]||"?"}</span><span class="audit-text">${escapeHtml(a.text)}</span></div>`).join("");
+  }
+  el("auditFilter").querySelectorAll(".audit-fbtn").forEach(b => b.onclick = () => {
+    el("auditFilter").querySelectorAll(".audit-fbtn").forEach(x => x.classList.remove("on"));
+    b.classList.add("on"); draw(b.dataset.f);
+  });
+  draw("all");
 }
 
 /* ---------------- export ---------------- */
