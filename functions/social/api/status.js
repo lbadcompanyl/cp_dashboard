@@ -15,6 +15,17 @@ const GROUPS = [
     altOk: (env) => !!(env.YT_API_KEY && (env.YT_CHANNEL_HANDLE || env.YT_CHANNEL_ID)),
   },
   {
+    /* ชั้นที่ 2 ของ YouTube — ตัวเลขรายวันย้อนหลัง ต้องขอสิทธิ์ผ่าน Google OAuth
+       ⚠️ แยกกลุ่มจากชั้นแรกโดยตั้งใจ: ไม่มีชั้นนี้ก็ยังได้ยอดปัจจุบันกับคลิปล่าสุด
+          แค่กราฟรายวันจะไม่มีข้อมูล — ไม่ใช่ "ยังไม่ได้ตั้งค่าเลย" */
+    key: "youtube_analytics", label: "YouTube Analytics (ตัวเลขรายวัน)",
+    vars: [
+      { name: "GOOGLE_CLIENT_ID", secret: true, note: "OAuth client ชนิด Web application" },
+      { name: "GOOGLE_CLIENT_SECRET", secret: true, note: "คู่กับ client id ตัวข้างบน" },
+      { name: "YT_REFRESH_TOKEN", secret: true, note: "ได้จาก /social/api/connect?p=google" },
+    ],
+  },
+  {
     key: "facebook", label: "Facebook Page",
     vars: [
       { name: "FB_PAGE_ID", secret: false, note: "เลข ID ของเพจ" },
