@@ -30,6 +30,9 @@ export default {
     if (request.method === "GET" && url.pathname === "/") {
       return cors(json({ ok: true, service: "comment-sentiment", model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
     }
+    if (request.method === "GET" && url.pathname === "/credits") {
+      return cors(json(await creditBalance(env)), origin);
+    }
     if (request.method !== "POST" || url.pathname !== "/analyze") {
       return cors(json({ error: "ไม่พบ endpoint (ใช้ POST /analyze)" }, 404), origin);
     }
@@ -55,12 +58,13 @@ async function analyze(opts, env) {
   if (!env.ANTHROPIC_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY");
 
   // 1) ดึงคอมเมนต์ตามแพลตฟอร์ม
-  let comments;
-  if (platform === "youtube") comments = await fetchYouTube(url, limit, env);
-  else if (platform === "facebook") comments = await fetchScrapeCreators("facebook", url, limit, env);
-  else if (platform === "tiktok") comments = await fetchScrapeCreators("tiktok", url, limit, env);
+  let collected;
+  if (platform === "youtube") collected = await fetchYouTube(url, limit, env);
+  else if (platform === "facebook") collected = await fetchScrapeCreators("facebook", url, limit, env);
+  else if (platform === "tiktok") collected = await fetchScrapeCreators("tiktok", url, limit, env);
   else throw new Error("ไม่รองรับแพลตฟอร์ม: " + platform);
 
+  const comments = collected.comments;
   if (!comments.length) throw new Error("ไม่พบคอมเมนต์ (โพสอาจปิดคอมเมนต์ หรือดึงไม่ได้)");
 
   const texts = comments.map(c => c.text).filter(Boolean);
@@ -88,8 +92,20 @@ async function analyze(opts, env) {
     keywords: synth.keywords || [],
     summary: synth.summary || "",
     samples: wantSamples ? (synth.samples || []) : [],
+    credits_remaining: collected.credits_remaining ?? null,
     model: env.CLAUDE_MODEL || DEFAULT_MODEL,
   };
+}
+
+/** ดึงเครดิตคงเหลือของ ScrapeCreators */
+async function creditBalance(env) {
+  if (!env.SCRAPECREATORS_API_KEY) return { error: "ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY" };
+  const r = await fetch("https://api.scrapecreators.com/v1/account/credit-balance", {
+    headers: { "x-api-key": env.SCRAPECREATORS_API_KEY },
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) return { error: "ScrapeCreators: " + (data?.error || data?.message || ("HTTP " + r.status)) };
+  return { credits_remaining: data.credits_remaining ?? data.credits ?? data.balance ?? null };
 }
 
 /* ---------------- collectors ---------------- */
@@ -151,7 +167,7 @@ async function fetchYouTube(url, limit, env) {
     pageToken = data.nextPageToken || "";
     if (!pageToken) break;
   }
-  return out;
+  return { comments: out };
 }
 
 /**
@@ -169,6 +185,7 @@ async function fetchScrapeCreators(kind, url, limit, env) {
   const out = [];
   let cursor = "";
   let guard = 0;
+  let credits_remaining = null;
   while (out.length < limit && guard < 60) {
     guard++;
     const api = new URL(endpoint);
@@ -178,6 +195,7 @@ async function fetchScrapeCreators(kind, url, limit, env) {
     const r = await fetch(api.toString(), { headers: { "x-api-key": env.SCRAPECREATORS_API_KEY } });
     const data = await r.json();
     if (!r.ok) throw new Error("ScrapeCreators: " + (data?.error || data?.message || ("HTTP " + r.status)));
+    if (data.credits_remaining != null) credits_remaining = data.credits_remaining;
 
     const list = data.comments || data.data || data.results || [];
     if (!Array.isArray(list) || !list.length) break;
@@ -195,7 +213,7 @@ async function fetchScrapeCreators(kind, url, limit, env) {
     cursor = data.cursor || data.next_cursor || data.nextCursor || data.next_page_id || "";
     if (!cursor) break;
   }
-  return out;
+  return { comments: out, credits_remaining };
 }
 
 function pickField(obj, keys) {
@@ -290,8 +308,8 @@ async function synthesize(sampleTexts, wantSamples, env) {
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
     '"keywords": [{"term":"คำ/หัวข้อ","count":จำนวนโดยประมาณ}], (8-12 รายการ เรียงจากมากไปน้อย) ' +
     (wantSamples
-      ? '"samples": [{"sentiment":"positive|neutral|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] ' +
-        '(4-6 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 เสมอถ้ามีในข้อมูล และเพิ่ม neutral ได้)'
+      ? '"samples": [{"sentiment":"positive|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] ' +
+        '(2-4 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 ถ้ามีในข้อมูล ไม่ต้องมี neutral)'
       : '"samples": []') +
     "} ห้ามมีข้อความนอก JSON และห้ามคัดลอกข้อความต้นฉบับตรงๆ ในตัวอย่าง (ให้ถอดความ)";
   const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined, 1500);

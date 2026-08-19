@@ -90,6 +90,13 @@
   .mode-pill { font-size:0.7rem; padding:3px 9px; border-radius:999px; margin-left:auto; }
   .mode-pill.demo { background:var(--neu-soft); color:var(--muted); border:1px solid var(--border); }
   .mode-pill.live { background:var(--pos-soft); color:var(--pos); border:1px solid var(--border); }
+  .demo-tag { font-size:0.72rem; padding:2px 9px; border-radius:999px; background:var(--neg-soft); color:var(--neg); border:1px solid var(--border); white-space:nowrap; }
+
+  .credits-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:0.82rem; color:var(--ink-2); }
+  .credits-val { font-weight:600; font-variant-numeric:tabular-nums; }
+  .credits-val.low { color:var(--neg); }
+  .link-btn { color:var(--accent); text-decoration:none; border:1px solid var(--border); border-radius:999px; padding:5px 12px; font-size:0.8rem; display:inline-flex; align-items:center; gap:5px; }
+  .link-btn:hover { background:var(--surface-2); }
 
   details.settings { margin-top:14px; font-size:0.85rem; border-top:1px solid var(--border); padding-top:13px; }
   details.settings summary { cursor:pointer; color:var(--muted); user-select:none; list-style:none; }
@@ -201,6 +208,12 @@
         <div class="hint">
           โหมด <b>Demo</b> ใช้ข้อมูลตัวอย่างเพื่อดู flow การทำงาน (ไม่เรียก API จริง ไม่มีค่าใช้จ่าย).
           ใส่ URL ของ Worker ที่ deploy แล้วเพื่อดึงคอมเมนต์จริง + ตี sentiment ด้วย Claude — ดูวิธี deploy ใน <code>README.md</code>
+        </div>
+        <div class="credits-row">
+          <span>เครดิต ScrapeCreators (FB/TikTok) คงเหลือ:</span>
+          <span class="credits-val" id="creditsVal">—</span>
+          <button class="btn" id="checkCreditsBtn" type="button" style="padding:5px 12px;font-size:0.8rem">↻ ตรวจสอบ</button>
+          <a class="link-btn" href="https://app.scrapecreators.com" target="_blank" rel="noopener noreferrer">เปิด Dashboard ↗</a>
         </div>
       </div>
     </details>
@@ -323,6 +336,27 @@ el("url").addEventListener("input", refreshPlatform);
 el("worker").addEventListener("input", () => { refreshMode(); saveCfg(); });
 ["limit","anonymize"].forEach(id => el(id).addEventListener("change", saveCfg));
 
+/* ---------------- ScrapeCreators credits ---------------- */
+function showCredits(n){
+  const v = el("creditsVal");
+  if (n == null || n === ""){ v.textContent = "—"; v.classList.remove("low"); return; }
+  v.textContent = Number(n).toLocaleString() + " credits";
+  v.classList.toggle("low", Number(n) <= 100);
+}
+el("checkCreditsBtn").onclick = async () => {
+  const worker = el("worker").value.trim();
+  if (!worker){ toast("ใส่ URL ของ Worker ก่อน (ต้องอยู่โหมด Live)"); return; }
+  const btn = el("checkCreditsBtn"); btn.disabled = true;
+  try {
+    const r = await fetch(worker.replace(/\/+$/,"") + "/credits");
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    showCredits(j.credits_remaining);
+    toast("อัปเดตเครดิตแล้ว ✓");
+  } catch(e){ showCredits(null); toast("ดึงเครดิตไม่ได้: " + (e.message||e)); }
+  finally { btn.disabled = false; }
+};
+
 /* ---------------- analyze ---------------- */
 el("analyzeBtn").onclick = analyze;
 el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
@@ -389,7 +423,6 @@ async function demoResult(opts){
     samples: opts.samples ? [
       { sentiment:"positive", text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน" },
       { sentiment:"positive", text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย" },
-      { sentiment:"neutral", text:"รสชาติโอเค ตามราคา ไม่ได้หวือหวาอะไร" },
       { sentiment:"negative", text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย" },
       { sentiment:"negative", text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก"  },
     ] : [],
@@ -403,9 +436,11 @@ function renderResult(d){
   const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
   const pp = pct(s.positive,total), pnu = pct(s.neutral,total), pn = 100-pp-pnu;
 
-  el("resSub").textContent =
-    `${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์` +
-    (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : "");
+  el("resSub").innerHTML =
+    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์`) +
+    (d.demo ? ` <span class="demo-tag">● ข้อมูลตัวอย่าง (Demo)</span>` : "") +
+    (!d.demo && d.credits_remaining!=null ? ` · เครดิต ScrapeCreators คงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : "");
+  if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
 
   const css = getComputedStyle(document.documentElement);
   const cPos = css.getPropertyValue("--pos"), cNeu = css.getPropertyValue("--neu"), cNeg = css.getPropertyValue("--neg");
@@ -451,7 +486,6 @@ function renderResult(d){
   el("sampleCard").style.display = samples.length ? "" : "none";
   const groups = [
     ["positive","บวก 😊","--pos","pos"],
-    ["neutral","กลาง 😐","--neu","neu"],
     ["negative","ลบ 😞","--neg","neg"],
   ];
   el("sampleList").innerHTML = groups.map(([key,label,color,cls]) => {
