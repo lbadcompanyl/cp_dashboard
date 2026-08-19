@@ -40,6 +40,9 @@
     breakdown: false,
     // ชิพเลือกช่องของหน้าภาพรวม — ไม่ต้องข้ามไปมีผลกับแท็บรายช่อง
     channels: { youtube: true, tiktok: true, facebook: true },
+    // เส้นที่ผู้ใช้กดปิดจาก legend — แยกตามกราฟ { chartId: [index,...] }
+    // ⚠️ ต้องอยู่ใน state ไม่ใช่ใน DOM เพราะ render() สร้าง HTML ใหม่ทั้งก้อน
+    hidden: {},
   };
 
   /* ── วันที่ ──────────────────────────────────────────────────────── */
@@ -66,16 +69,43 @@
     return { from: key(addDays(end, -(state.preset - 1))), to: key(end), days: state.preset };
   }
 
+  /* ตัวเลือกช่วงเทียบ — ชื่อกับวิธีคิดอยู่ที่เดียวกัน เพิ่มตัวใหม่เติมที่นี่ */
+  var COMPARE = [
+    { key: "prev", label: "ช่วงก่อนหน้า" },
+    { key: "lastmonth", label: "เดือนที่แล้ว" },
+    { key: "yoy", label: "ปีก่อน" },
+    { key: "none", label: "ไม่เทียบ" },
+  ];
+
   function compareRange() {
     if (state.compare === "none") return null;
     var r = range(), a = parseKey(r.from), b = parseKey(r.to);
-    if (state.compare === "yoy") {
-      var a2 = new Date(a.getTime()); a2.setFullYear(a2.getFullYear() - 1);
-      var b2 = new Date(b.getTime()); b2.setFullYear(b2.getFullYear() - 1);
-      return { from: key(a2), to: key(b2), days: r.days };
+
+    // ⚠️ ถอยด้วยเดือน/ปีปฏิทิน ไม่ใช่ลบจำนวนวัน — เดือนยาวไม่เท่ากัน
+    //    ถ้าลบ 30 วันตายตัว "เดือนที่แล้ว" ของเดือน ก.พ. จะเลื่อนไปคนละช่วงกับที่คนเข้าใจ
+    if (state.compare === "yoy" || state.compare === "lastmonth") {
+      var back = function (d) {
+        var x = new Date(d.getTime());
+        if (state.compare === "yoy") x.setFullYear(x.getFullYear() - 1);
+        else x.setMonth(x.getMonth() - 1);
+        return x;
+      };
+      return { from: key(back(a)), to: key(back(b)), days: r.days };
     }
+
     var pb = addDays(a, -1), pa = addDays(pb, -(r.days - 1));
     return { from: key(pa), to: key(pb), days: r.days };
+  }
+
+  /** ชื่อของช่วงเทียบ — ใช้ทั้งบนแถบควบคุมและใน tooltip ของทุก delta */
+  function compareName() {
+    var c = COMPARE.filter(function (x) { return x.key === state.compare; })[0];
+    return c ? c.label : "";
+  }
+  function compareText() {
+    var cr = compareRange();
+    if (!cr) return "";
+    return compareName() + " (" + thaiShort(cr.from) + " – " + thaiShort(cr.to) + ")";
   }
 
   /** ช่องที่เปิดอยู่ — หน้าภาพรวมทุกส่วนต้องอ่านจากตัวนี้ ห้ามใช้ C.ORDER ตรงๆ */
@@ -189,12 +219,15 @@
       return Number(shown) === 0 ? "flat" : signed > 0 ? "up" : "down";
     };
 
+    // ⚠️ ทุกป้ายต้องบอกได้ว่าเทียบกับช่วงไหน ไม่งั้นเห็น ▲12% แล้วไม่รู้ว่าเทียบกับอะไร
+    var vs = ' title="เทียบกับ' + esc(compareText()) + '"';
+
     // อัตราส่วน (ER, completion rate) → เทียบเป็น percentage point เสมอ
     if (opt.pp) {
       var d = (cur - prev) * 100;
       var dTxt = Math.abs(d).toFixed(1);
       var dir0 = dirOf(dTxt, d);
-      return '<span class="dlt ' + dir0 + '">' + arrow(dir0) + " " + dTxt + " pt</span>";
+      return '<span class="dlt ' + dir0 + '"' + vs + ">" + arrow(dir0) + " " + dTxt + " pt</span>";
     }
 
     var diff = cur - prev;
@@ -204,8 +237,9 @@
       var mag = Math.abs(diff);
       var txt = mag < 1 ? mag.toFixed(1) : String(Math.round(mag));
       var dirA = dirOf(txt, diff);
-      return '<span class="dlt ' + dirA + '" title="เทียบเป็นจำนวนจริงเพราะฐานน้อยกว่า ' +
-        DELTA_BASE_LABEL + '">' + arrow(dirA) + " " + (dirA === "down" ? "−" : dirA === "up" ? "+" : "") +
+      return '<span class="dlt ' + dirA + '" title="เทียบกับ' + esc(compareText()) +
+        " · บอกเป็นจำนวนจริงเพราะฐานน้อยกว่า " + DELTA_BASE_LABEL + '">' +
+        arrow(dirA) + " " + (dirA === "down" ? "−" : dirA === "up" ? "+" : "") +
         Number(txt).toLocaleString("th-TH") + "</span>";
     }
 
@@ -213,7 +247,7 @@
     var rr = (diff / Math.abs(prev)) * 100;
     var rTxt = Math.abs(rr).toFixed(1);
     var dir = dirOf(rTxt, rr);
-    return '<span class="dlt ' + dir + '">' + arrow(dir) + " " + rTxt + "%</span>";
+    return '<span class="dlt ' + dir + '"' + vs + ">" + arrow(dir) + " " + rTxt + "%</span>";
   }
   var DELTA_BASE_LABEL = DELTA_MIN_BASE.toLocaleString("th-TH");
 
@@ -348,10 +382,11 @@
 
     h += '<div class="duo">' +
       '<div class="duo-c">' +
-        sec("แนวโน้มผู้ติดตาม", "% สะสมจากวันแรก",
-          "ทุกเส้นเริ่มที่ 0% ในวันแรกของช่วงที่เลือก แล้ววัดว่าขยับขึ้นลงกี่เปอร์เซ็นต์จากจุดนั้น " +
-          "จำนวนผู้ติดตามของแต่ละช่องต่างกันหลักสิบเท่า ถ้าวาดด้วยตัวเลขดิบ เส้นของช่องที่เล็กกว่าจะแบนติดพื้นจนดูไม่ออก") +
-        '<div class="panel">' + followerTrend(order, r, 168) + "</div>" +
+        sec("แนวโน้มผู้ติดตาม", "จำนวนคน",
+          "จำนวนผู้ติดตามของแต่ละช่องต่างกันหลายเท่า เส้นจึงอยู่คนละระดับและดูแบน " +
+          "ถ้าอยากเห็นรูปทรงของช่องไหนชัดๆ ให้กดปิดช่องอื่นที่ป้ายใต้กราฟ แกนจะขยายตามช่องที่เหลือเอง · " +
+          "เอาเมาส์ชี้บนกราฟเพื่อดูตัวเลขรายวัน") +
+        '<div class="panel">' + followerTrend(order, r, 168, "sum-fol") + "</div>" +
       "</div>" +
       '<div class="duo-c">' +
         sec("ผู้ติดตามที่เพิ่มและที่หายไป", null,
@@ -366,12 +401,12 @@
       '<div class="duo-c">' +
         sec("การมีส่วนร่วมรายวัน", null,
           "ไลก์ + คอมเมนต์ + แชร์ ตามที่แต่ละช่องนับได้ · YouTube ไม่มีตัวเลขแชร์ให้ ตัวเลขจึงต่ำกว่าช่องอื่นโดยธรรมชาติ") +
-        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return C.engagementOf(pk, x); }, 175) + "</div>" +
+        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return C.engagementOf(pk, x); }, 175, "sum-eng") + "</div>" +
       "</div>" +
       '<div class="duo-c">' +
         sec("การมองเห็นรายวัน", null,
           "YouTube และ TikTok เป็นยอดวิว · Facebook เป็นการเข้าถึง (จำนวนคนที่เห็นโพสต์) คนละหน่วยกัน วางเส้นไว้ด้วยกันเพื่อดูจังหวะขึ้นลง ไม่ใช่เพื่อเทียบขนาด") +
-        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return x[C.PLATFORMS[pk].reachKey]; }, 175) + "</div>" +
+        '<div class="panel">' + channelTrend(order, r, function (pk, x) { return x[C.PLATFORMS[pk].reachKey]; }, 175, "sum-reach") + "</div>" +
       "</div>" +
       "</div>";
 
@@ -455,7 +490,7 @@
    *    ช่องที่ข้อมูลขาดไปบางวันจะถูกดันให้เลื่อนไปตรงกับวันของช่องอื่น = เส้นเพี้ยนทั้งกราฟ
    * ⚠️ วันที่ไม่มีข้อมูลส่ง null ไม่ใช่ 0 — เส้นจะได้ขาด ไม่ใช่ดิ่งลงพื้นเหมือนยอดตก
    */
-  function channelTrend(order, r, valueOf, height) {
+  function channelTrend(order, r, valueOf, height, id) {
     var days = dateList(r);
     var series = [];
     order.forEach(function (pk) {
@@ -472,13 +507,21 @@
     });
     if (!series.length) return empty("ไม่มีข้อมูลในช่วงนี้");
     return CH.line({
+      id: id, hidden: hiddenOf(id),
       labels: days.map(thaiShort), series: series, height: height || 180,
       zeroFloor: true, fmtY: function (v) { return num(v); }, aria: "แนวโน้มรายวันแยกช่อง",
-    }) + legendOf(series);
+    }) + legendOf(series, id);
   }
 
-  /** แนวโน้มผู้ติดตามเป็น % เปลี่ยนแปลงสะสมจากวันแรกของช่วง */
-  function followerTrend(order, r, height) {
+  /**
+   * แนวโน้มผู้ติดตาม — จำนวนคนจริง
+   * 🔴 เคยแสดงเป็น % เปลี่ยนแปลง แต่เจ้าของขอเป็นจำนวนผู้ติดตามตรงๆ (17 ส.ค. 2026)
+   * ⚠️ ข้อแลก: ฐานของแต่ละช่องต่างกันหลักเท่า พอวาดรวมกันเส้นจะดูแบนเพราะ
+   *    การขยับรายวันเล็กมากเทียบกับตัวเลขหลักหมื่น-แสน
+   *    → แก้ด้วยการกดปิดเส้นอื่นจาก legend แล้วแกนจะขยายตามช่องที่เหลือเอง
+   *    (ขอบเขตแกนคิดจากเส้นที่ยังเปิดอยู่เท่านั้น — ดู charts.js)
+   */
+  function followerTrend(order, r, height, id) {
     var days = dateList(r);
     var series = [];
     order.forEach(function (pk) {
@@ -486,26 +529,37 @@
       if (!f.length) return;
       var byDate = {};
       f.forEach(function (x) { byDate[x.date] = x.value; });
-      var base = f[0].value || 1;
       series.push({
         label: C.PLATFORMS[pk].label, color: C.PLATFORMS[pk].rawColor,
         points: days.map(function (dk) {
           var v = byDate[dk];
-          return { y: v == null ? null : ((v - base) / base) * 100 };
+          return { y: v == null ? null : v };
         }),
       });
     });
     if (!series.length) return empty("ไม่มีข้อมูลผู้ติดตามในช่วงนี้");
     return CH.line({
+      id: id, hidden: hiddenOf(id),
       labels: days.map(thaiShort), series: series, height: height || 210,
-      unitLeft: "%", aria: "แนวโน้มผู้ติดตาม",
-    }) + legendOf(series);
+      fmtY: function (v) { return num(v); }, aria: "แนวโน้มผู้ติดตาม",
+    }) + legendOf(series, id);
   }
 
-  function legendOf(series) {
-    return '<div class="legend row">' + series.map(function (s) {
-      return '<div class="lg"><span class="lg-d" style="background:' + s.color + '"></span><span class="lg-n">' +
-        esc(s.label) + (s.axisNote ? ' <em>' + esc(s.axisNote) + "</em>" : "") + "</span></div>";
+  /** เส้นที่ถูกกดปิดของกราฟนั้น */
+  function hiddenOf(id) { return state.hidden[id] || []; }
+
+  /**
+   * legend ที่กดเปิด/ปิดเส้นได้
+   * ⚠️ ปิดแล้วต้องยังเห็นปุ่มอยู่ (แค่จางลง) ไม่ใช่หายไป — ไม่งั้นกดกลับไม่ได้
+   */
+  function legendOf(series, id) {
+    var hid = hiddenOf(id);
+    return '<div class="legend row">' + series.map(function (s, i) {
+      var off = hid.indexOf(i) >= 0;
+      return '<button type="button" class="lg lg-btn' + (off ? " off" : "") + '" data-lg="' + esc(id) + ":" + i + '" ' +
+        'aria-pressed="' + (off ? "false" : "true") + '" title="กดเพื่อ' + (off ? "แสดง" : "ซ่อน") + "เส้นนี้\">" +
+        '<span class="lg-d" style="background:' + s.color + '"></span><span class="lg-n">' +
+        esc(s.label) + (s.axisNote ? ' <em>' + esc(s.axisNote) + "</em>" : "") + "</span></button>";
     }).join("") + "</div>";
   }
 
@@ -546,19 +600,21 @@
       "สองอย่างนี้หน่วยต่างกันหลักร้อยเท่า ถ้าใช้แกนเดียวกันเส้นหนึ่งจะแบนติดพื้นจนดูไม่ออก");
     h += '<div class="panel">';
     if (rows.length) {
-      var s1 = { label: P.reachLabel, color: P.rawColor, axis: "left", axisNote: "แกนซ้าย",
+      var s1 = { label: P.reachLabel, color: P.rawColor, axis: "left", axisNote: "แกนซ้าย", tipFmt: "num",
                  points: rows.map(function (x) { return { y: x[P.reachKey] }; }) };
-      var s2 = { label: "Engagement rate", color: "#6b7280", axis: "right", dash: true, axisNote: "แกนขวา",
+      var s2 = { label: "Engagement rate", color: "#6b7280", axis: "right", dash: true, axisNote: "แกนขวา", tipFmt: "pctnum",
                  points: rows.map(function (x) {
                    var base = x[P.reachKey] || 0;
                    // ไม่มีฐาน = ไม่รู้ ไม่ใช่ 0 → ส่ง null ให้เส้นขาด
                    return { y: base ? (C.engagementOf(pk, x) / base) * 100 : null };
                  }) };
+      var cid = "p-" + pk;
       h += CH.line({
+        id: cid, hidden: hiddenOf(cid),
         labels: rows.map(function (x) { return thaiShort(x.date); }),
         series: [s1, s2], height: 220, zeroFloor: true, zeroFloorRight: true,
         fmtY: function (v) { return num(v); }, unitRight: "%", aria: "รายวัน",
-      }) + legendOf([s1, s2]);
+      }) + legendOf([s1, s2], cid);
     } else {
       h += empty("ไม่มีข้อมูลรายวันในช่วงนี้");
     }
@@ -642,20 +698,40 @@
 
   /* ── แถบควบคุม + แท็บ ────────────────────────────────────────────── */
 
+  /**
+   * ตัวเลือกช่วงเวลา — อยู่ขวาบนของแถบหัวเรื่อง โชว์แค่ช่วงเวลาอย่างเดียว
+   * ⚠️ ใช้ <select> ของเบราว์เซอร์ ไม่ทำ dropdown เอง — บนมือถือได้ตัวเลือกแบบเนทีฟ
+   *    ที่กดง่ายกว่า และไม่ต้องเพิ่มไลบรารีหรือโค้ดจัดการโฟกัส/ปิดนอกกล่องเอง
+   */
+  function renderPeriod() {
+    var opts = PRESETS.map(function (p) {
+      return '<option value="' + p.days + '"' + (state.preset === p.days ? " selected" : "") + ">" + esc(p.label) + "</option>";
+    }).join("");
+    opts += '<option value="custom"' + (state.preset === "custom" ? " selected" : "") + ">กำหนดเอง…</option>";
+    return '<label class="periodsel"><span class="sr">ช่วงเวลา</span>' +
+      '<select id="period" aria-label="ช่วงเวลา">' + opts + "</select></label>";
+  }
+
   function renderControls() {
     var r = range(), cr = compareRange();
-    var h = '<div class="ctrl-row"><div class="seg" id="presets">';
-    PRESETS.forEach(function (p) {
-      h += '<button type="button" class="' + (state.preset === p.days ? "on" : "") + '" data-days="' + p.days + '">' + esc(p.label) + "</button>";
-    });
-    h += '<button type="button" class="' + (state.preset === "custom" ? "on" : "") + '" data-days="custom">กำหนดเอง</button></div>';
+    // 🔴 วันสุดท้ายที่เลือกได้คือวันนี้ — ข้อมูลของอนาคตไม่มีอยู่จริง
+    //    เลือกไปข้างหน้าได้ = ได้ช่วงว่างเปล่าแล้วผู้ใช้นึกว่าระบบพัง
+    var today = key(midnight(new Date()));
 
-    h += '<div class="seg" id="cmp">' + ["prev|ช่วงก่อนหน้า", "yoy|ปีก่อน", "none|ไม่เทียบ"].map(function (x) {
-      var p = x.split("|");
-      return '<button type="button" class="' + (state.compare === p[0] ? "on" : "") + '" data-cmp="' + p[0] + '">' + esc(p[1]) + "</button>";
-    }).join("") + "</div>";
+    var h = "";
+    if (state.preset === "custom") {
+      h += '<div class="ctrl-row dates"><label>ตั้งแต่ <input type="date" id="d1" max="' + today +
+        '" value="' + esc(state.start || r.from) + '"></label>' +
+        '<label>ถึง <input type="date" id="d2" max="' + today + '" value="' + esc(state.end || r.to) + '"></label></div>';
+    }
 
-    // ชิพเลือกช่อง — มีผลกับหน้าภาพรวมเท่านั้น จึงโชว์เฉพาะตอนอยู่แท็บนั้น
+    h += '<div class="ctrl-row"><span class="ctrl-lb">เทียบกับ</span><div class="seg" id="cmp">' +
+      COMPARE.map(function (x) {
+        return '<button type="button" class="' + (state.compare === x.key ? "on" : "") + '" data-cmp="' + x.key + '">' +
+          esc(x.label) + "</button>";
+      }).join("") + "</div>";
+
+    // ชิพเลือกช่อง + ปุ่มแยกช่อง — มีผลกับหน้าภาพรวมเท่านั้น
     if (state.tab === "summary") {
       h += '<div class="chips" id="chips">' + C.ORDER.map(function (pk) {
         var P = C.PLATFORMS[pk], on = state.channels[pk];
@@ -664,22 +740,15 @@
           '<span class="pdot"></span>' + esc(P.label) + "</button>";
       }).join("") + "</div>";
 
-      // กางตัวเลขรายช่องใต้ยอดรวม — ของหน้าภาพรวมเหมือนกัน
-      // ⚠️ ไม่ใช้ class .ch — นั่นสงวนไว้ให้ "ชิพเลือกช่อง" เท่านั้น
-      //    ปนกันเมื่อไหร่ ตัวนับช่องจะนับปุ่มนี้เป็นช่องที่ 4
       h += '<button type="button" class="bd-btn' + (state.breakdown ? " on" : "") + '" data-bd="1" ' +
         'aria-pressed="' + (state.breakdown ? "true" : "false") + '">' +
         (state.breakdown ? "▾" : "▸") + " แยกช่อง</button>";
     }
     h += "</div>";
 
-    if (state.preset === "custom") {
-      h += '<div class="ctrl-row dates"><label>ตั้งแต่ <input type="date" id="d1" value="' + esc(state.start || r.from) + '"></label>' +
-        '<label>ถึง <input type="date" id="d2" value="' + esc(state.end || r.to) + '"></label></div>';
-    }
-
+    // ⚠️ ต้องบอกให้ชัดว่ากำลังเทียบกับ "ช่วงไหน" ไม่ใช่แค่บอกว่ามีการเทียบ
     h += '<div class="ctrl-note">' + esc(thaiShort(r.from)) + " – " + esc(thaiShort(r.to)) + " (" + r.days + " วัน)" +
-      (cr ? ' <span class="vs">เทียบกับ ' + esc(thaiShort(cr.from)) + " – " + esc(thaiShort(cr.to)) + "</span>"
+      (cr ? ' <span class="vs">เทียบกับ' + esc(compareText()) + "</span>"
           : ' <span class="vs">ไม่ได้เทียบกับช่วงไหน</span>') + "</div>";
     return h;
   }
@@ -692,10 +761,86 @@
   }
 
   function render() {
+    document.getElementById("periodbox").innerHTML = renderPeriod();
     document.getElementById("controls").innerHTML = renderControls();
     document.getElementById("tabs").innerHTML = renderTabs();
     var tab = C.TABS.filter(function (t) { return t.key === state.tab; })[0] || C.TABS[0];
     document.getElementById("view").innerHTML = tab.platform ? renderPlatform(tab.platform) : renderSummary();
+    bindHovers();
+  }
+
+
+  /* ── เอาเมาส์ชี้บนกราฟแล้วอ่านตัวเลขได้ ──────────────────────────
+   * ข้อมูลอยู่ใน data-pts ของ .chartbox (charts.js เป็นคนใส่ให้)
+   * ⚠️ ผูกใหม่ทุกครั้งหลัง render() เพราะ innerHTML สร้าง element ชุดใหม่หมด
+   * ⚠️ ใช้ pointer event ตัวเดียว ครอบทั้งเมาส์และนิ้ว — แตะบนมือถือก็อ่านค่าได้
+   */
+  function tipVal(kind, v) {
+    if (v == null) return "ไม่มีข้อมูล";
+    if (kind === "pctnum") return v.toFixed(2).replace(/\.?0+$/, "") + "%";
+    return Math.round(v).toLocaleString("th-TH");
+  }
+
+  function bindHovers() {
+    var boxes = document.querySelectorAll(".chartbox");
+    for (var i = 0; i < boxes.length; i++) bindOne(boxes[i]);
+  }
+
+  function bindOne(box) {
+    var data;
+    try { data = JSON.parse(box.dataset.pts); } catch (e) { return; }
+    var svg = box.querySelector("svg");
+    var tip = box.querySelector(".ctip");
+    var cross = box.querySelector(".crosshair");
+    if (!svg || !tip || !data.geo.count) return;
+
+    var g = data.geo;
+    var iw = g.w - g.padL - g.padR;
+    var xAt = function (i) { return g.count === 1 ? g.padL + iw / 2 : g.padL + (i / (g.count - 1)) * iw; };
+
+    function show(ev) {
+      var rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      // แปลงพิกัดจอ → พิกัดใน viewBox (SVG ยืดตามความกว้างกล่อง)
+      var vx = ((ev.clientX - rect.left) / rect.width) * g.w;
+      var idx = Math.round(((vx - g.padL) / iw) * (g.count - 1));
+      idx = Math.max(0, Math.min(g.count - 1, idx));
+
+      var vis = data.series.filter(function (s) { return !s.hidden; });
+      if (!vis.length) { hide(); return; }
+
+      var html = '<b>' + esc(data.labels[idx]) + "</b>";
+      vis.forEach(function (s) {
+        html += '<span class="ct-r"><i style="background:' + esc(s.color) + '"></i>' +
+          esc(s.label) + "<b>" + esc(tipVal(s.fmt, s.y[idx])) + "</b></span>";
+      });
+      tip.innerHTML = html;
+      tip.hidden = false;
+
+      if (cross) {
+        var cx = xAt(idx);
+        cross.setAttribute("x1", cx);
+        cross.setAttribute("x2", cx);
+        cross.style.display = "";
+      }
+
+      // วางกล่องให้ไม่ล้นขอบ — ชิดซ้ายเมื่อใกล้ขอบขวา
+      var px = (xAt(idx) / g.w) * rect.width;
+      var tw = tip.offsetWidth || 150;
+      var left = px + 12;
+      if (left + tw > rect.width) left = px - tw - 12;
+      tip.style.left = Math.max(2, left) + "px";
+      tip.style.top = "6px";
+    }
+
+    function hide() {
+      tip.hidden = true;
+      if (cross) cross.style.display = "none";
+    }
+
+    box.addEventListener("pointermove", show);
+    box.addEventListener("pointerdown", show);
+    box.addEventListener("pointerleave", hide);
   }
 
   /* ── รับคำสั่งจากผู้ใช้ ──────────────────────────────────────────── */
@@ -704,8 +849,19 @@
     var tip = e.target.closest(".tipi");
     if (tip) { showTip(tip); return; }
 
-    var t = e.target.closest("[data-tab],[data-days],[data-cmp],[data-sort],[data-ch],[data-bd]");
+    var t = e.target.closest("[data-tab],[data-days],[data-cmp],[data-sort],[data-ch],[data-bd],[data-lg]");
     if (!t) return;
+
+    // กดป้ายใต้กราฟ = ซ่อน/แสดงเส้นนั้น (แกนจะขยายตามเส้นที่เหลือเอง)
+    if (t.dataset.lg) {
+      var pair = t.dataset.lg.split(":");
+      var cid = pair[0], si = +pair[1];
+      var list = (state.hidden[cid] || []).slice();
+      var at = list.indexOf(si);
+      if (at >= 0) list.splice(at, 1); else list.push(si);
+      state.hidden[cid] = list;
+      render(); return;
+    }
 
     if (t.dataset.tab) { state.tab = t.dataset.tab; render(); return; }
 
@@ -756,9 +912,24 @@
   }
 
   function onChange(e) {
+    if (e.target.id === "period") {
+      var v = e.target.value;
+      if (v === "custom") {
+        var r = range();
+        state.start = state.start || r.from;
+        state.end = state.end || r.to;
+        state.preset = "custom";
+      } else state.preset = +v;
+      render(); return;
+    }
     if (e.target.id !== "d1" && e.target.id !== "d2") return;
-    state.start = document.getElementById("d1").value;
-    state.end = document.getElementById("d2").value;
+    var d1 = document.getElementById("d1"), d2 = document.getElementById("d2");
+    // ⚠️ กันเลือกวันในอนาคตอีกชั้น — บาง browser ไม่บังคับตาม max ให้
+    var today = key(midnight(new Date()));
+    if (d1.value > today) d1.value = today;
+    if (d2.value > today) d2.value = today;
+    state.start = d1.value;
+    state.end = d2.value;
     if (state.start && state.end) render();
   }
 

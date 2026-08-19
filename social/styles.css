@@ -50,6 +50,18 @@ body {
 .btn:hover { background:var(--surface-2); color:var(--ink); }
 #vtag { color:var(--muted); font-size:.72rem; }
 
+/* ตัวเลือกช่วงเวลา — ขวาบน โชว์แค่ช่วงเวลา */
+.sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.periodsel select {
+  appearance:none; -webkit-appearance:none; font-family:inherit; font-size:.82rem; font-weight:600;
+  color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:999px;
+  padding:7px 30px 7px 14px; cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat; background-position:right 11px center; background-size:11px;
+}
+.periodsel select:hover { border-color:var(--accent); }
+.ctrl-lb { font-size:.76rem; color:var(--muted); }
+
 /* ── แถบควบคุมกลาง ────────────────────────────────────────────────
    ⚠️ ติดบนสุดไว้ตลอด เพราะทุกตัวเลขบนหน้าอ่านค่าจากตรงนี้ */
 .sticky {
@@ -88,17 +100,22 @@ body {
 .ctrl-note .vs { color:var(--ink-2); }
 
 /* ── แท็บ ─────────────────────────────────────────────────────────
-   ⚠️ เลื่อนแนวนอนได้บนจอแคบ — เพิ่มแท็บใหม่ (เช่น โฆษณา) แล้วต้องไม่ดันหน้าพัง */
-.tabs { display:flex; gap:6px; overflow-x:auto; padding:9px 0 2px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+   หน้าตาเป็นแท็บจริง (เส้นใต้) ไม่ใช่เม็ดยา — อยู่บนสุดของเนื้อหา
+   ⚠️ เลื่อนแนวนอนได้บนจอแคบ เพิ่มแท็บใหม่ (เช่น โฆษณา) แล้วต้องไม่ดันหน้าพัง */
+.tabs {
+  display:flex; gap:2px; overflow-x:auto; scrollbar-width:none;
+  -webkit-overflow-scrolling:touch; border-bottom:1px solid var(--border);
+}
 .tabs::-webkit-scrollbar { display:none; }
 .tab {
-  flex:none; border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
-  border-radius:999px; padding:8px 15px; font-size:.83rem; font-family:inherit; cursor:pointer;
-  display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+  flex:none; border:0; border-bottom:2px solid transparent; background:transparent;
+  color:var(--muted); padding:11px 15px 9px; font-size:.86rem; font-family:inherit;
+  cursor:pointer; display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+  margin-bottom:-1px;
 }
-.tab:hover { color:var(--ink); }
-.tab.on { background:var(--ink); color:#fff; border-color:var(--ink); font-weight:650; }
-.tab .ti { font-size:.9em; opacity:.85; }
+.tab:hover { color:var(--ink); background:rgba(37,99,235,.05); }
+.tab.on { color:var(--accent); border-bottom-color:var(--accent); font-weight:650; }
+.tab .ti { font-size:.9em; opacity:.8; }
 
 /* ── หัวข้อ / กล่อง ──────────────────────────────────────────────── */
 .sec { font-size:.95rem; font-weight:650; margin:24px 0 10px; display:flex; flex-wrap:wrap; gap:7px; align-items:baseline; }
@@ -188,6 +205,25 @@ body {
 .legend { display:flex; flex-direction:column; gap:7px; width:100%; }
 .legend.row { flex-direction:row; flex-wrap:wrap; gap:12px; margin-top:10px; }
 .lg { display:flex; align-items:center; gap:7px; font-size:.78rem; }
+/* ป้ายใต้กราฟกดเพื่อซ่อน/แสดงเส้นได้ — ปิดแล้วต้องยังเห็นปุ่ม (แค่จาง) ไม่งั้นกดกลับไม่ได้ */
+.lg-btn { border:1px solid transparent; background:transparent; font-family:inherit; cursor:pointer;
+          border-radius:999px; padding:3px 9px 3px 6px; color:inherit; }
+.lg-btn:hover { border-color:var(--border); background:var(--surface-2); }
+.lg-btn.off { opacity:.45; }
+.lg-btn.off .lg-n { text-decoration:line-through; }
+
+/* กล่องอ่านค่าตอนเอาเมาส์ชี้ */
+.chartbox { position:relative; }
+.chart .crosshair { stroke:var(--muted); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke; }
+.ctip {
+  position:absolute; z-index:5; pointer-events:none; min-width:120px;
+  background:var(--surface); border:1px solid var(--border); border-radius:9px;
+  box-shadow:0 4px 14px rgba(16,24,40,.12); padding:7px 9px; font-size:.74rem; line-height:1.5;
+}
+.ctip b { display:block; color:var(--ink); }
+.ctip .ct-r { display:flex; align-items:center; gap:6px; color:var(--ink-2); margin-top:2px; }
+.ctip .ct-r i { width:8px; height:8px; border-radius:2px; flex:none; }
+.ctip .ct-r b { margin-left:auto; display:inline; font-variant-numeric:tabular-nums; }
 .lg-d { width:9px; height:9px; border-radius:2px; flex:none; }
 .lg-n { color:var(--ink-2); }
 .lg-n em { color:var(--muted); font-style:normal; font-size:.9em; }

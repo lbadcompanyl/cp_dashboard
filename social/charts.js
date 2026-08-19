@@ -5,9 +5,15 @@
  *
  * ทุกตัวคืน "ข้อความ HTML" ไม่ได้ยุ่งกับ DOM เอง
  * ⚠️ ทุกกราฟใช้ viewBox + width:100% ห้ามกำหนดความกว้างเป็น px ตายตัว
+ *
+ * 📌 กราฟเส้นแนบข้อมูลไว้ใน data-attribute ของกล่องครอบ (`.chartbox`)
+ *    ตัวจับ hover ใน app.js อ่านจากตรงนั้น — ทำแบบนี้เพราะ render() สร้าง HTML ใหม่ทั้งก้อน
+ *    ถ้าเก็บข้อมูลไว้ในตัวแปร JS จะต้องคอยผูก/ปลดทุกครั้ง ซึ่งพลาดง่ายกว่า
  */
 (function () {
   "use strict";
+
+  var W = 640, PAD_T = 12, PAD_B = 26;
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -18,10 +24,8 @@
 
   /**
    * ตัวจัดรูปแบบป้ายแกน Y ที่เลือกจำนวนทศนิยมเอง
-   *
-   * 🔴 เหตุที่ต้องมี: ตอนช่วงข้อมูลแคบมาก (เช่น 0% ถึง 0.6%) การปัดเป็นจำนวนเต็ม
-   *    ทำให้ป้ายออกมาเป็น 0/1/1/1 ซ้ำกันจนอ่านไม่ได้ความ — เป็นบั๊กที่เจอในรอบรีวิว
-   *    จึงไล่เพิ่มทศนิยมขึ้นไปจนกว่าป้ายทุกใบจะไม่ซ้ำกัน
+   * 🔴 เหตุที่ต้องมี: ตอนช่วงข้อมูลแคบมาก การปัดเป็นจำนวนเต็มทำให้ป้ายซ้ำกัน
+   *    (เคยได้ 101/100/100/100) จึงไล่เพิ่มทศนิยมจนกว่าป้ายทุกใบจะไม่ซ้ำ
    */
   function axisFmt(values, unit) {
     unit = unit || "";
@@ -36,8 +40,7 @@
         return (function (d) {
           return function (v) {
             var t = v.toFixed(d);
-            if (unit === "%") return (v > 0 ? "+" : "") + t + "%";
-            return t + unit;
+            return unit === "%" ? (v > 0 ? "+" : "") + t + "%" : t + unit;
           };
         })(dec);
       }
@@ -45,7 +48,6 @@
     return function (v) { return v.toFixed(3) + unit; };
   }
 
-  /** หาช่วง lo/hi ของชุดข้อมูล เผื่อขอบบน-ล่างไว้เล็กน้อย */
   function extent(series, pick) {
     var lo = Infinity, hi = -Infinity;
     series.forEach(function (s) {
@@ -62,63 +64,67 @@
     return { lo: lo - pad, hi: hi + pad };
   }
 
-  /* ── กราฟเส้น (รองรับแกน Y 2 ข้าง) ─────────────────────────────────
-   * series: [{ label, color, axis:"left"|"right", points:[{y}] }]
+  /* ── กราฟเส้น ─────────────────────────────────────────────────────
+   * o.id       ชื่อกราฟ — ใช้จำว่าเส้นไหนถูกปิดไว้ (ต้องไม่ซ้ำในหน้าเดียว)
+   * o.series   [{ label, color, axis:"left"|"right", points:[{y}], tipFmt }]
+   * o.hidden   [index ของเส้นที่ผู้ใช้กดปิด] — ยังนับอยู่ในลำดับเดิม ไม่ได้ถูกลบ
    *
    * ⚠️ ค่า y เป็น null ได้ = วันนั้นไม่มีข้อมูล ต้องทำให้เส้นขาด
    *    ห้ามลากผ่านเหมือนเป็น 0 — เส้นที่ลากถึง 0 อ่านว่า "ยอดตก" ซึ่งไม่จริง
-   *
-   * ⚠️ เส้นที่หน่วยต่างกันหลักร้อยเท่า ห้ามใช้แกนเดียวกัน
-   *    (ยอดวิวหลักหมื่น กับ ER 4% วาดแกนเดียวกัน = เส้น ER แบนติดพื้น อ่านไม่ได้เลย)
+   * ⚠️ เส้นที่หน่วยต่างกันหลักร้อยเท่า ห้ามใช้แกนเดียวกัน (ER 4% กับยอดวิวหลักหมื่น)
+   * ⚠️ ขอบเขตแกนคิดจาก "เส้นที่ยังเปิดอยู่" เท่านั้น — ปิดเส้นที่ค่าสูงมากแล้ว
+   *    เส้นที่เหลือต้องขยายเต็มกรอบ ไม่ใช่ยังแบนติดพื้นเพราะแกนค้างอยู่ที่ของเดิม
    */
   function line(o) {
-    var series = (o.series || []).filter(function (s) { return s.points && s.points.length; });
+    var all = (o.series || []).filter(function (s) { return s.points && s.points.length; });
     var labels = o.labels || [];
     var count = labels.length;
-    if (!count || !series.length) return "";
+    if (!count || !all.length) return "";
 
-    var hasRight = series.some(function (s) { return s.axis === "right"; });
-    var W = 640, H = o.height || 200;
-    var PAD_L = 46, PAD_R = hasRight ? 46 : 12, PAD_T = 12, PAD_B = 26;
+    var hidden = o.hidden || [];
+    var vis = all.filter(function (s, i) { return hidden.indexOf(i) < 0; });
+    if (!vis.length) vis = [];   // ปิดหมด → วาดแต่กรอบ ไม่ใช่พัง
 
-    var L = extent(series, function (s) { return s.axis !== "right"; });
-    var R = hasRight ? extent(series, function (s) { return s.axis === "right"; }) : null;
-    if (!L) return "";
-    if (o.zeroFloor && L.lo < 0) L.lo = 0;
+    var hasRight = vis.some(function (s) { return s.axis === "right"; });
+    var PAD_L = 46, PAD_R = hasRight ? 46 : 12;
+    var H = o.height || 200;
+
+    var L = extent(vis, function (s) { return s.axis !== "right"; });
+    var R = hasRight ? extent(vis, function (s) { return s.axis === "right"; }) : null;
+    if (o.zeroFloor && L && L.lo < 0) L.lo = 0;
     if (R && o.zeroFloorRight && R.lo < 0) R.lo = 0;
 
     var iw = W - PAD_L - PAD_R, ih = H - PAD_T - PAD_B;
     var X = function (i) { return PAD_L + (count === 1 ? iw / 2 : (i / (count - 1)) * iw); };
-    var scale = function (ax) {
-      return function (v) { return PAD_T + ih - ((v - ax.lo) / (ax.hi - ax.lo)) * ih; };
-    };
-    var YL = scale(L), YR = R ? scale(R) : null;
+    var mk = function (ax) { return function (v) { return PAD_T + ih - ((v - ax.lo) / (ax.hi - ax.lo)) * ih; }; };
+    var YL = L ? mk(L) : null, YR = R ? mk(R) : null;
 
-    // ค่าที่จะเขียนบนแกน — คำนวณล่วงหน้าเพื่อเลือกทศนิยมให้ไม่ซ้ำกัน
     var ticks = [0, 1, 2, 3];
-    var lVals = ticks.map(function (g) { return L.lo + ((L.hi - L.lo) * g) / 3; });
-    var fmtL = o.fmtY || axisFmt(lVals, o.unitLeft || "");
+    var lVals = L ? ticks.map(function (g) { return L.lo + ((L.hi - L.lo) * g) / 3; }) : [];
+    var fmtL = L ? (o.fmtY || axisFmt(lVals, o.unitLeft || "")) : null;
     var rVals = R ? ticks.map(function (g) { return R.lo + ((R.hi - R.lo) * g) / 3; }) : [];
     var fmtR = R ? (o.fmtYRight || axisFmt(rVals, o.unitRight || "")) : null;
 
     var out = '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" role="img" aria-label="' + esc(o.aria || "กราฟเส้น") + '">';
 
-    ticks.forEach(function (g, k) {
-      var y = n(YL(lVals[k]));
-      out += '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" class="grid"/>';
-      out += '<text x="' + (PAD_L - 6) + '" y="' + (y + 3.5) + '" class="ax" text-anchor="end">' + esc(fmtL(lVals[k])) + "</text>";
-      if (R) {
-        out += '<text x="' + (W - PAD_R + 6) + '" y="' + (n(YR(rVals[k])) + 3.5) + '" class="ax ax-r" text-anchor="start">' + esc(fmtR(rVals[k])) + "</text>";
+    if (L) {
+      ticks.forEach(function (g, k) {
+        var y = n(YL(lVals[k]));
+        out += '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" class="grid"/>';
+        out += '<text x="' + (PAD_L - 6) + '" y="' + (y + 3.5) + '" class="ax" text-anchor="end">' + esc(fmtL(lVals[k])) + "</text>";
+        if (R) out += '<text x="' + (W - PAD_R + 6) + '" y="' + (n(YR(rVals[k])) + 3.5) + '" class="ax ax-r" text-anchor="start">' + esc(fmtR(rVals[k])) + "</text>";
+      });
+      if (L.lo < 0 && L.hi > 0) {
+        out += '<line x1="' + PAD_L + '" y1="' + n(YL(0)) + '" x2="' + (W - PAD_R) + '" y2="' + n(YL(0)) + '" class="zero"/>';
       }
-    });
-
-    // เส้นศูนย์ — มีความหมายเฉพาะกราฟที่มีค่าลบได้ (เช่น % เปลี่ยนแปลง)
-    if (L.lo < 0 && L.hi > 0) {
-      out += '<line x1="' + PAD_L + '" y1="' + n(YL(0)) + '" x2="' + (W - PAD_R) + '" y2="' + n(YL(0)) + '" class="zero"/>';
     }
 
-    series.forEach(function (s) {
+    // เส้นชี้ตำแหน่งตอนเอาเมาส์ชี้ (app.js เป็นคนขยับ)
+    out += '<line class="crosshair" x1="0" y1="' + PAD_T + '" x2="0" y2="' + (PAD_T + ih) + '" style="display:none"/>';
+
+    vis.forEach(function (s) {
       var Y = s.axis === "right" ? YR : YL;
+      if (!Y) return;
       var d = "", pen = false;
       s.points.forEach(function (p, i) {
         if (p.y == null) { pen = false; return; }
@@ -132,20 +138,36 @@
       }
     });
 
-    // ป้ายแกนล่าง — โชว์แค่หัว/กลาง/ท้าย ไม่งั้นบนมือถือทับกันอ่านไม่ออก
     [0, Math.floor((count - 1) / 2), count - 1].forEach(function (i, k) {
       if (i < 0 || !labels[i]) return;
       out += '<text x="' + n(X(i)) + '" y="' + (H - 8) + '" class="ax" text-anchor="' +
         (k === 0 ? "start" : k === 2 ? "end" : "middle") + '">' + esc(labels[i]) + "</text>";
     });
+    out += "</svg>";
 
-    return out + "</svg>";
+    /* ข้อมูลสำหรับ hover — เก็บทุกเส้น (รวมที่ถูกซ่อน) แล้วให้ app.js กรองเอง
+       จะได้ไม่ต้องวาดใหม่ตอนเปิด/ปิดเส้นเพื่ออ่านค่า */
+    var payload = {
+      labels: labels,
+      geo: { w: W, h: H, padL: PAD_L, padR: PAD_R, padT: PAD_T, ih: ih, count: count },
+      series: all.map(function (s, i) {
+        return {
+          label: s.label, color: s.color, fmt: s.tipFmt || "num",
+          hidden: hidden.indexOf(i) >= 0,
+          y: s.points.map(function (p) { return p.y == null ? null : Math.round(p.y * 1000) / 1000; }),
+          py: s.points.map(function (p) {
+            var Y = s.axis === "right" ? YR : YL;
+            return p.y == null || !Y ? null : Math.round(Y(p.y) * 10) / 10;
+          }),
+        };
+      }),
+    };
+
+    return '<div class="chartbox" data-chart="' + esc(o.id || "c") + '" data-pts="' + esc(JSON.stringify(payload)) + '">' +
+      out + '<div class="ctip" hidden></div></div>';
   }
 
-  /* ── แท่งเดียว 100% แนวนอน ─────────────────────────────────────────
-   * ใช้แทนโดนัท — กินพื้นที่น้อยกว่าครึ่ง และเทียบสัดส่วนด้วยตาง่ายกว่า
-   * segs: [{ label, value, color }]
-   */
+  /* ── แท่งเดียว 100% แนวนอน ───────────────────────────────────────── */
   function share100(segs) {
     var list = (segs || []).filter(function (s) { return s.value > 0; });
     var total = list.reduce(function (a, s) { return a + s.value; }, 0);
@@ -153,47 +175,40 @@
     var out = '<div class="share" role="img" aria-label="สัดส่วนแยกช่อง">';
     list.forEach(function (s) {
       var p = (s.value / total) * 100;
-      // ป้าย % วางในแท่งเฉพาะช่องที่กว้างพอ ที่แคบเกินไปจะทับกันจนอ่านไม่ออก
       out += '<span class="share-s" style="width:' + n(p) + "%;background:" + esc(s.color) + '" title="' +
         esc(s.label + " " + p.toFixed(1) + "%") + '">' +
-        (p >= 9 ? '<b>' + p.toFixed(p < 10 ? 1 : 0) + "%</b>" : "") + "</span>";
+        (p >= 9 ? "<b>" + p.toFixed(p < 10 ? 1 : 0) + "%</b>" : "") + "</span>";
     });
     return out + "</div>";
   }
 
-  /* ── แท่งซ้อน (ใช้ในหน้ารายช่อง) ─────────────────────────────────── */
+  /* ── แท่งซ้อน ─────────────────────────────────────────────────────── */
   function stack(parts) {
     var list = (parts || []).filter(function (p) { return p.value > 0; });
     var total = list.reduce(function (a, p) { return a + p.value; }, 0);
     if (!total) return "";
     var out = '<div class="stackbar" role="img" aria-label="สัดส่วนการมีส่วนร่วม">';
     list.forEach(function (p) {
-      out += '<span style="width:' + n((p.value / total) * 100) + "%;background:" + esc(p.color) + '" title="' + esc(p.label) + '"></span>';
+      out += '<span style="width:' + n((p.value / total) * 100) + "%;background:" + esc(p.color) +
+        '" title="' + esc(p.label + " " + p.value.toLocaleString("th-TH")) + '"></span>';
     });
     return out + "</div>";
   }
 
-  /* ── diverging bar: เสียซ้าย ได้ขวา ───────────────────────────────
-   * rows: [{ label, gained, lost, net, gainedText, lostText, netText }]
-   *
-   * ⚠️ ทุกแถวใช้ scale เดียวกัน (หาค่าสูงสุดจากทุกช่องก่อน) —
-   *    ถ้าให้แต่ละแถว scale ของตัวเอง ช่องเล็กจะดูแท่งยาวเท่าช่องใหญ่ ซึ่งหลอกตา
-   * ⚠️ ต้องเห็นทั้ง 2 ฝั่ง ไม่ใช่เห็นแต่ยอดสุทธิ —
-   *    ได้ 500 เสีย 480 กับ ได้ 30 เสีย 10 สุทธิเท่ากันแต่คนละเรื่องกันคนละโลก
-   */
+  /* ── diverging bar: หายไปทางซ้าย เพิ่มมาทางขวา ───────────────────── */
   function diverging(rows) {
     var max = 0;
     rows.forEach(function (r) { max = Math.max(max, r.gained, r.lost); });
     if (!max) return "";
     var out = '<div class="dv">';
     rows.forEach(function (r) {
-      var lw = (r.lost / max) * 50, gw = (r.gained / max) * 50;   // ครึ่งละ 50% ของความกว้าง
+      var lw = (r.lost / max) * 50, gw = (r.gained / max) * 50;
       out += '<div class="dv-row">' +
         '<div class="dv-name">' + esc(r.label) + "</div>" +
-        '<div class="dv-track">' +
+        '<div class="dv-track" title="' + esc("เพิ่มมา " + r.gainedText + " · หายไป " + r.lostText) + '">' +
         '<span class="dv-axis"></span>' +
-        '<span class="dv-neg" style="width:' + n(lw) + '%" title="หายไป ' + esc(r.lostText) + '"></span>' +
-        '<span class="dv-pos" style="width:' + n(gw) + '%" title="เพิ่มมา ' + esc(r.gainedText) + '"></span>' +
+        '<span class="dv-neg" style="width:' + n(lw) + '%"></span>' +
+        '<span class="dv-pos" style="width:' + n(gw) + '%"></span>' +
         '<i class="dv-lbl neg">−' + esc(r.lostText) + "</i>" +
         '<i class="dv-lbl pos">+' + esc(r.gainedText) + "</i>" +
         "</div>" +

@@ -27,6 +27,8 @@ async function open(viewport = { width: 1400, height: 1000 }) {
 const tabTo = async (pg, label) => { await pg.click(`.tab:has-text("${label}")`); await pg.waitForTimeout(140); };
 const view = (pg) => pg.$eval("#view", (e) => e.innerText);
 const secs = (pg) => pg.$$eval(".sec", (n) => n.map((x) => x.textContent.trim()));
+// ช่วงเวลาเป็น dropdown แล้ว (เดิมเป็นปุ่ม) — ตัวช่วยตัวเดียวใช้ทั้งไฟล์
+const setPeriod = async (pg, v) => { await pg.selectOption("#period", String(v)); await pg.waitForTimeout(180); };
 
 /* ────────────────────────────────────────────────────────────────── */
 console.log("\n[1] โครงหน้า — แท็บอ่านจาก config ไม่ได้เขียนค้างใน HTML");
@@ -44,7 +46,7 @@ console.log("\n[1] โครงหน้า — แท็บอ่านจา�
 console.log("\n[2] ช่วงเวลา + โหมดเทียบ ใช้ร่วมกันทุกแท็บ");
 {
   const { pg } = await open();
-  await pg.click('[data-days="90"]');
+  await setPeriod(pg, 90);
   await pg.click('[data-cmp="yoy"]');
   const before = await pg.$eval(".ctrl-note", (e) => e.innerText);
   ok(/90 วัน/.test(before) && /เทียบกับ/.test(before), "ตั้งค่า 90 วัน + เทียบปีก่อนแล้ว");
@@ -78,8 +80,7 @@ console.log("\n[4] 🔴 กติกา delta ใหม่ — ฐานน้�
 {
   const { pg } = await open();
   await tabTo(pg, "Facebook");
-  await pg.click('[data-days="30"]');
-  await pg.waitForTimeout(150);
+  await setPeriod(pg, 30);
 
   // "เพิ่มสุทธิในช่วงนี้" ของ Facebook อยู่หลักสิบ — ห้ามขึ้นเป็น %
   const netCard = await pg.evaluate(() => {
@@ -107,33 +108,34 @@ console.log("\n[4] 🔴 กติกา delta ใหม่ — ฐานน้�
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[5] 🔴 แกน Y กราฟผู้ติดตาม — % สะสม เริ่ม 0% และห้ามมีป้ายซ้ำ");
+console.log("\n[5] 🔴 แกน Y กราฟผู้ติดตาม — เป็นจำนวนคน ไม่ใช่ % และห้ามมีป้ายซ้ำ");
 {
   const { pg } = await open();
+  const axOf = () => pg.evaluate(() => {
+    const svg = document.querySelectorAll("svg.chart")[0];
+    return [...svg.querySelectorAll(".ax")].map((x) => x.textContent.trim());
+  });
   for (const days of [7, 30, 90]) {
-    await pg.click(`[data-days="${days}"]`);
-    await pg.waitForTimeout(180);
-    const ax = await pg.$$eval("svg.chart .ax", (n) => n.map((x) => x.textContent.trim()).filter((t) => /%/.test(t)));
+    await setPeriod(pg, days);
+    const ax = (await axOf()).filter((t) => /[\d]/.test(t) && !/ก\.ค\.|ส\.ค\.|มิ\.ย\.|พ\.ค\.|เม\.ย\.|มี\.ค\./.test(t));
     ok(ax.length >= 4, `${days} วัน: มีป้ายแกน Y (${ax.join(" / ")})`);
     ok(new Set(ax).size === ax.length, `${days} วัน: ป้ายแกน Y ไม่ซ้ำกันเลย`);
-    ok(ax.every((t) => /%$/.test(t)), `${days} วัน: ทุกป้ายเป็นหน่วย %`);
-    // ต้องไม่ใช่ index 100 ของเดิม
-    ok(!ax.some((t) => /^1?0[01]%?$/.test(t.replace(/[+%]/g, ""))) || ax.some((t) => /\./.test(t)),
-       `${days} วัน: ไม่ใช่ค่าที่ปัดจนเหลือ 100/101 แบบเดิม`);
+    ok(!ax.some((t) => /%/.test(t)), `${days} วัน: ไม่ใช่ % แล้ว`);
+    ok(ax.some((t) => /K|,|\d{3}/.test(t)), `${days} วัน: เป็นจำนวนคนจริง`);
   }
   const v = await view(pg);
-  ok(/% สะสมจากวันแรก/.test(v), "คำบรรยายตรงกับวิธีคิดใหม่");
-  ok(!/เริ่มที่ 100/.test(v), "ไม่มีคำอธิบายของวิธีเดิม (index 100) ค้างอยู่");
+  ok(!/% สะสมจากวันแรก/.test(v), "ไม่มีคำบรรยายแบบ % ค้างอยู่");
+  ok(!/เริ่มที่ 100/.test(v), "ไม่มีคำอธิบายของวิธี index 100 ค้างอยู่");
   await pg.close();
 }
 
-/* ────────────────────────────────────────────────────────────────── */
 console.log("\n[5b] 🔴 แนวโน้มมาก่อน — ผู้ติดตาม แล้วตามด้วย engagement/views คู่ซ้าย-ขวา");
 {
   const { pg, errs } = await open();
   const order = await secs(pg);
-  const clean = order.map((s) => s.replace(/ⓘ.*/, "").trim());
+  const clean = order.map((s) => s.replace(/ⓘ/g, " ").replace(/\s+/g, " ").trim());
   ok(/แนวโน้มผู้ติดตาม/.test(clean[0]), `หัวข้อแรกคือแนวโน้มผู้ติดตาม (ได้ "${clean[0]}")`);
+  ok(/จำนวนคน/.test(clean[0]), "บอกว่าเป็นจำนวนคน");
   ok(/เพิ่มและที่หายไป/.test(clean[1]), "คู่กับผู้ติดตามที่เพิ่ม/หาย (เรื่องเดียวกัน 2 มุม)");
   ok(/การมีส่วนร่วมรายวัน/.test(clean[2]), "แถวถัดมาเป็นการมีส่วนร่วมรายวัน");
   ok(/การมองเห็นรายวัน/.test(clean[3]), "คู่กับการมองเห็นรายวัน");
@@ -504,16 +506,13 @@ console.log("\n[15] กรองตามช่วง + ป้ายยังใ
 {
   const { pg } = await open();
   await tabTo(pg, "TikTok");
-  await pg.click('[data-days="90"]');
-  await pg.waitForTimeout(160);
+  await setPeriod(pg, 90);
   const n90 = await pg.$$eval(".tbl:not(.cmp) tbody tr", (n) => n.length);
-  await pg.click('[data-days="7"]');
-  await pg.waitForTimeout(160);
+  await setPeriod(pg, 7);
   const n7 = await pg.$$eval(".tbl:not(.cmp) tbody tr", (n) => n.length);
   ok(n7 < n90, `ช่วงแคบลงรายการน้อยลง (7 วัน ${n7} < 90 วัน ${n90})`);
 
-  await pg.click('[data-days="90"]');
-  await pg.waitForTimeout(160);
+  await setPeriod(pg, 90);
   const newestSec = await pg.evaluate(() => {
     const h = [...document.querySelectorAll(".sec")].find((x) => /ล่าสุด/.test(x.textContent));
     return h ? h.nextElementSibling.innerText : "";
@@ -531,7 +530,7 @@ console.log("\n[15] กรองตามช่วง + ป้ายยังใ
 console.log("\n[16] ไม่มีข้อมูล → บอกชัด ห้ามลากกราฟเป็น 0");
 {
   const { pg, errs } = await open();
-  await pg.click('[data-days="custom"]');
+  await setPeriod(pg, "custom");
   await pg.waitForSelector("#d1");
   await pg.fill("#d1", "2009-01-01");
   await pg.fill("#d2", "2009-01-31");
@@ -551,7 +550,7 @@ console.log("\n[16] ไม่มีข้อมูล → บอกชัด ห
 console.log("\n[17] custom range + ตารางเรียงได้");
 {
   const { pg } = await open();
-  await pg.click('[data-days="custom"]');
+  await setPeriod(pg, "custom");
   await pg.waitForSelector("#d1");
   ok((await pg.$eval("#d1", (e) => e.type)) === "date", "ใช้ตัวเลือกวันที่ของเบราว์เซอร์ ไม่เพิ่มไลบรารี");
   const end = new Date(); end.setHours(0, 0, 0, 0);
@@ -712,6 +711,200 @@ console.log("\n[20] 🔴 โหมดสว่าง — ต้องใช้�
     ok(mine[k].toLowerCase() === ref[k].toLowerCase(), `สี ${k} ตรงกับหน้าอื่น (${mine[k]} = ${ref[k]})`);
   });
   await p3.close();
+}
+
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[21] 🔴 ตัวเลือกช่วงเวลา — dropdown ขวาบน โชว์แค่ช่วงเวลา");
+{
+  const { pg } = await open();
+  const sel = await pg.$("#period");
+  ok(!!sel, "เป็น dropdown ไม่ใช่ปุ่มเรียงกัน");
+  const opts = await pg.$$eval("#period option", (n) => n.map((o) => o.textContent.trim()));
+  ok(opts.length === 4, `มี 4 ตัวเลือก (${opts.join(" / ")})`);
+  ok(opts.every((o) => /วัน|กำหนดเอง/.test(o)), "ทุกตัวเลือกเป็นเรื่องช่วงเวลาล้วน");
+  ok(!opts.some((o) => /เทียบ|ปีก่อน|เดือนที่แล้ว/.test(o)), "ไม่มีตัวเลือกเรื่องการเทียบปนมา");
+
+  // อยู่ขวาบน — ในแถบหัวเรื่อง และอยู่ครึ่งขวาของหน้า
+  const geo = await pg.evaluate(() => {
+    const s = document.querySelector("#period").getBoundingClientRect();
+    const bar = document.querySelector(".appbar").getBoundingClientRect();
+    return { inBar: s.top >= bar.top - 1 && s.bottom <= bar.bottom + 1, rightHalf: s.left > innerWidth / 2 };
+  });
+  ok(geo.inBar, "อยู่ในแถบหัวเรื่องด้านบน");
+  ok(geo.rightHalf, "อยู่ครึ่งขวาของหน้า");
+
+  await setPeriod(pg, 7);
+  ok(/7 วัน/.test(await pg.$eval(".ctrl-note", (e) => e.innerText)), "เลือกแล้วช่วงเปลี่ยนตาม");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[22] 🔴 ช่องเลือกวันที่ ห้ามเลือกอนาคต");
+{
+  const { pg } = await open();
+  await setPeriod(pg, "custom");
+  await pg.waitForSelector("#d1");
+  const today = await pg.evaluate(() => {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  });
+  const maxes = await pg.$$eval("#d1,#d2", (n) => n.map((e) => e.max));
+  ok(maxes.every((m) => m === today), `ทั้ง 2 ช่องตั้งเพดานไว้ที่วันนี้ (${maxes.join(", ")})`);
+
+  // ⚠️ บาง browser ไม่บังคับตาม max ให้ — ต้องมีด่านฝั่งโค้ดด้วย
+  await pg.evaluate(() => {
+    const d = document.getElementById("d2");
+    d.value = "2099-12-31";
+    d.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await pg.waitForTimeout(220);
+  ok((await pg.$eval("#d2", (e) => e.value)) <= today, "ยัดวันอนาคตเข้าไป ระบบดึงกลับมาเป็นวันนี้");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[23] 🔴 เทียบกับช่วงไหน — ต้องบอกชื่อ ไม่ใช่บอกแค่วันที่");
+{
+  const { pg } = await open();
+  const cmps = await pg.$$eval("#cmp button", (n) => n.map((x) => x.textContent.trim()));
+  ok(cmps.includes("เดือนที่แล้ว"), `มีตัวเลือก 'เดือนที่แล้ว' (${cmps.join(" / ")})`);
+
+  for (const [k, name] of [["prev", "ช่วงก่อนหน้า"], ["lastmonth", "เดือนที่แล้ว"], ["yoy", "ปีก่อน"]]) {
+    await pg.click(`[data-cmp="${k}"]`);
+    await pg.waitForTimeout(160);
+    const note = await pg.$eval(".ctrl-note", (e) => e.innerText);
+    ok(note.includes(name), `${k}: แถบบอกชื่อช่วงที่เทียบ ("${name}")`);
+    ok(/\d+\s*[ก-๙.]+\s*–/.test(note), `${k}: บอกวันที่ของช่วงเทียบด้วย`);
+    const t = await pg.$eval(".sc .dlt", (e) => e.getAttribute("title") || "");
+    ok(t.includes(name), `${k}: ป้าย delta ก็บอกว่าเทียบกับอะไร`);
+  }
+
+  // เดือนที่แล้วต้องถอยด้วยเดือนปฏิทิน ไม่ใช่ลบ 30 วันตายตัว
+  await setPeriod(pg, 30);
+  await pg.click('[data-cmp="lastmonth"]');
+  await pg.waitForTimeout(160);
+  const okMonth = await pg.evaluate(() => {
+    const m = document.querySelector(".ctrl-note").innerText.match(/เดือนที่แล้ว \((.+?) – (.+?)\)/);
+    return !!m;
+  });
+  ok(okMonth, "ช่วงของ 'เดือนที่แล้ว' แสดงเป็นวันที่จริง");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[24] 🔴 เอาเมาส์ชี้กราฟแล้วอ่านตัวเลขได้ — ทุกกราฟ");
+{
+  const { pg, errs } = await open();
+  const boxes = await pg.$$(".chartbox");
+  ok(boxes.length === 3, `กราฟทุกอันมีกล่องรับ hover (${boxes.length})`);
+
+  for (let i = 0; i < boxes.length; i++) {
+    const bb = await boxes[i].boundingBox();
+    await pg.mouse.move(bb.x + bb.width * 0.45, bb.y + bb.height * 0.5);
+    await pg.waitForTimeout(160);
+    const tip = await boxes[i].$(".ctip:not([hidden])");
+    ok(!!tip, `กราฟที่ ${i + 1}: มีกล่องบอกค่าโผล่ขึ้นมา`);
+    if (tip) {
+      const txt = await tip.innerText();
+      ok(/\d/.test(txt), `กราฟที่ ${i + 1}: มีตัวเลขในกล่อง`);
+      ok(/YouTube|TikTok|Facebook|Engagement/.test(txt), `กราฟที่ ${i + 1}: บอกว่าเป็นเส้นไหน`);
+    }
+    const cross = await boxes[i].$eval(".crosshair", (e) => e.style.display);
+    ok(cross !== "none", `กราฟที่ ${i + 1}: มีเส้นชี้ตำแหน่ง`);
+  }
+
+  // ออกจากกราฟแล้วต้องหาย ไม่ค้าง
+  await pg.mouse.move(5, 5);
+  await pg.waitForTimeout(160);
+  ok((await pg.$$(".ctip:not([hidden])")).length === 0, "เอาเมาส์ออกแล้วกล่องหาย ไม่ค้าง");
+
+  // แท็บรายช่องก็ต้องมี
+  await tabTo(pg, "YouTube");
+  const b2 = await pg.$(".chartbox");
+  const bb2 = await b2.boundingBox();
+  await pg.mouse.move(bb2.x + bb2.width * 0.5, bb2.y + bb2.height * 0.5);
+  await pg.waitForTimeout(160);
+  ok(!!(await b2.$(".ctip:not([hidden])")), "กราฟในแท็บรายช่องก็ hover ได้");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[25] 🔴 ป้ายใต้กราฟ กดปิด/เปิดเส้นได้");
+{
+  const { pg, errs } = await open();
+  const btns = await pg.$$(".lg-btn");
+  ok(btns.length >= 9, `ป้ายใต้กราฟเป็นปุ่มกดได้ (${btns.length} ปุ่ม)`);
+
+  const pathsOf = () => pg.$$eval("svg.chart", (n) => n.map((s) => s.querySelectorAll("path").length));
+  const before = await pathsOf();
+  await pg.click(".lg-btn");
+  await pg.waitForTimeout(220);
+  const after = await pathsOf();
+  ok(after[0] === before[0] - 1, `กดแล้วเส้นนั้นหายจากกราฟ (${before[0]} → ${after[0]})`);
+  ok(after[1] === before[1] && after[2] === before[2], "กราฟอื่นไม่ถูกกระทบ (จำแยกรายกราฟ)");
+
+  const first = await pg.$(".lg-btn");
+  ok((await first.getAttribute("aria-pressed")) === "false", "ปุ่มบอกสถานะปิดให้ screen reader");
+  ok((await first.evaluate((e) => e.className)).includes("off"), "ปุ่มยังอยู่ให้กดกลับ แค่จางลง");
+
+  // ⚠️ ปิดเส้นที่ค่าสูงแล้ว แกนต้องขยายตามเส้นที่เหลือ ไม่ใช่ค้างที่ของเดิม
+  const axAfter = await pg.$$eval("svg.chart .ax", (n) => n.map((x) => x.textContent.trim()));
+  ok(axAfter.length > 0, "แกนยังวาดอยู่หลังปิดเส้น");
+
+  await first.click();
+  await pg.waitForTimeout(220);
+  ok((await pathsOf())[0] === before[0], "กดกลับแล้วเส้นกลับมา");
+
+  // ต้องรอด render ใหม่ (สลับแท็บไปกลับ)
+  await pg.click(".lg-btn");
+  await pg.waitForTimeout(200);
+  await tabTo(pg, "TikTok");
+  await tabTo(pg, "ภาพรวม");
+  ok((await pg.$eval(".lg-btn", (e) => e.className)).includes("off"), "สลับแท็บกลับมา เส้นที่ปิดไว้ยังปิดอยู่");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[26] แท็บอยู่บนสุดและเป็นหน้าตาแท็บ ไม่ใช่เม็ดยา");
+{
+  const { pg } = await open();
+  const geo = await pg.evaluate(() => {
+    const tabs = document.querySelector(".tabs");
+    const ctrl = document.querySelector("#controls");
+    const view = document.querySelector("#view");
+    const on = document.querySelector(".tab.on");
+    const cs = getComputedStyle(on);
+    return {
+      aboveControls: tabs.getBoundingClientRect().top < ctrl.getBoundingClientRect().top,
+      aboveView: tabs.getBoundingClientRect().top < view.getBoundingClientRect().top,
+      underline: parseFloat(cs.borderBottomWidth) > 0,
+      radius: parseFloat(cs.borderTopLeftRadius),
+      barBorder: parseFloat(getComputedStyle(tabs).borderBottomWidth) > 0,
+    };
+  });
+  ok(geo.aboveControls && geo.aboveView, "แท็บอยู่บนสุดของเนื้อหา");
+  ok(geo.underline, "แท็บที่เลือกมีเส้นใต้");
+  ok(geo.radius < 6, `ไม่ใช่เม็ดยาแล้ว (มุมโค้ง ${geo.radius}px)`);
+  ok(geo.barBorder, "แถบแท็บมีเส้นคั่นด้านล่าง");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[27] รูปย่อของคอนเทนต์");
+{
+  const { pg } = await open();
+  const imgs = await pg.$$eval(".post img", (n) => n.map((e) => ({ src: e.getAttribute("src") || "", w: e.naturalWidth })));
+  ok(imgs.length > 0, `มีรูปย่อในรายการคอนเทนต์ (${imgs.length} รูป)`);
+  ok(imgs.every((i) => i.w > 0), "ทุกรูปโหลดขึ้นจริง ไม่มีรูปแตก");
+  // ⚠️ โหมดจำลองต้องไม่ยิงเน็ต — ของจริงค่อยได้ URL จากแพลตฟอร์ม
+  ok(imgs.every((i) => !/^https?:/.test(i.src)), "โหมดจำลองไม่ดึงรูปจากภายนอก");
+  // ฝั่งหน้าเว็บต้องวาง URL จาก data ตรงๆ เพื่อให้ของจริงไหลเข้ามาได้เลย
+  const js = await (await fetch(BASE + "/social/app.js")).text();
+  ok(/<img src="' \+ esc\(p\.thumb\)/.test(js), "โค้ดวาง p.thumb ลง img ตรงๆ (ของจริงใช้ URL จากแพลตฟอร์มได้ทันที)");
+  await pg.close();
 }
 
 await browser.close();

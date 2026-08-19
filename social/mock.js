@@ -44,16 +44,27 @@
     return x;
   }
 
-  /* รูปย่อแบบวาดเอง — ห้ามใช้รูปจากอินเทอร์เน็ต หน้านี้ต้องเปิดได้โดยไม่ต้องยิงเน็ต */
-  function thumb(color, n) {
+  /* รูปย่อของข้อมูลจำลอง — วาดเป็น SVG เอง ไม่ยิงเน็ต
+   *
+   * 🔴 ของจริงจะใช้รูปจากแพลตฟอร์มโดยตรง: API ทุกช่องส่ง URL รูปปกมาให้อยู่แล้ว
+   *    (YouTube = snippet.thumbnails · TikTok = cover_image_url · Facebook = full_picture)
+   *    ฝั่งหน้าเว็บวาง `post.thumb` ลง <img src> ตรงๆ อยู่แล้ว จึงไม่ต้องแก้อะไรตอนต่อของจริง
+   * ⚠️ ที่นี่ใช้ภาพวาดเพราะโหมดจำลองต้องเปิดได้โดยไม่ต้องมีเน็ต และไม่ควรไปดึงรูป
+   *    ของช่องคนอื่นมาแปะให้เข้าใจผิดว่าเป็นคอนเทนต์ของเรา
+   */
+  function thumb(color, n, rnd) {
+    var hue = Math.floor(rnd() * 360);
+    var sky = "hsl(" + hue + ",45%,72%)", land = "hsl(" + ((hue + 40) % 360) + ",35%,38%)";
     var svg =
       "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 100'>" +
-      "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>" +
-      "<stop offset='0' stop-color='" + color + "' stop-opacity='.85'/>" +
-      "<stop offset='1' stop-color='#0b0b0b' stop-opacity='.55'/></linearGradient></defs>" +
-      "<rect width='160' height='100' fill='url(#g)'/>" +
-      "<text x='80' y='58' font-family='system-ui' font-size='26' font-weight='700' " +
-      "fill='rgba(255,255,255,.85)' text-anchor='middle'>" + n + "</text></svg>";
+      "<defs><linearGradient id='s' x1='0' y1='0' x2='0' y2='1'>" +
+      "<stop offset='0' stop-color='" + sky + "'/><stop offset='1' stop-color='#fff' stop-opacity='.65'/>" +
+      "</linearGradient></defs>" +
+      "<rect width='160' height='100' fill='url(#s)'/>" +
+      "<circle cx='" + (30 + Math.floor(rnd() * 100)) + "' cy='26' r='11' fill='#fff' opacity='.75'/>" +
+      "<path d='M0 78 L38 " + (46 + Math.floor(rnd() * 18)) + " L74 74 L108 " + (52 + Math.floor(rnd() * 16)) +
+      " L160 80 L160 100 L0 100 Z' fill='" + land + "' opacity='.85'/>" +
+      "<rect x='0' y='0' width='4' height='100' fill='" + color + "'/></svg>";
     return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
   }
 
@@ -155,7 +166,7 @@
       var post = {
         id: pk + "-" + pid,
         title: TITLES[pid % TITLES.length],
-        thumb: thumb(C.rawColor, pid),
+        thumb: thumb(C.rawColor, pid, rnd),
         url: "#",
         publishedAt: dayKey(pd),
       };
