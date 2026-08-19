@@ -144,15 +144,20 @@
         row.shares = 0;                        // YouTube ไม่ให้ตัวเลขแชร์
         row.watchTime = Math.round(reach * (2.4 + rnd() * 2.6) / 60);      // ชั่วโมง
         row.avgViewDuration = Math.round(150 + rnd() * 190);               // วินาที
+        row.completionRate = 0.28 + rnd() * 0.3;                           // averageViewPercentage
       } else if (pk === "tiktok") {
         row.likes = Math.round(eng * 0.80);
         row.comments = Math.round(eng * 0.07);
         row.shares = eng - row.likes - row.comments;
         row.completionRate = 0.32 + rnd() * 0.28;
+        row.avgViewDuration = Math.round(9 + rnd() * 22);   // คลิปสั้น หน่วยเป็นวินาที
       } else {
         row.likes = Math.round(eng * 0.74);
         row.comments = Math.round(eng * 0.14);
         row.shares = eng - row.likes - row.comments;
+        /* ⚠️ Facebook เล่นวิดีโอเองตอนเลื่อนผ่าน ยอดวิวดิบจึงพองกว่าคนที่หยุดดูจริงมาก
+           ตัวเลข "ดูเกิน 3 วินาที" จึงต้องน้อยกว่า reach เสมอ (ราว 1 ใน 3) */
+        row.views3s = Math.round(reach * (0.24 + rnd() * 0.16));
       }
       daily.push(row);
 
@@ -186,10 +191,19 @@
         post.likes = Math.round(pe * 0.88);
         post.comments = pe - post.likes;
         post.shares = 0;
+        post.watchTime = Math.round(pv * (2.4 + rnd() * 2.6) / 60);
+        post.avgViewDuration = Math.round(150 + rnd() * 190);
+        post.completionRate = 0.28 + rnd() * 0.3;
       } else {
         post.likes = Math.round(pe * (pk === "tiktok" ? 0.80 : 0.74));
         post.comments = Math.round(pe * (pk === "tiktok" ? 0.07 : 0.14));
         post.shares = Math.max(0, pe - post.likes - post.comments);
+        if (pk === "tiktok") {
+          post.avgViewDuration = Math.round(9 + rnd() * 22);
+          post.completionRate = 0.32 + rnd() * 0.28;
+        } else {
+          post.views3s = Math.round(pv * (0.24 + rnd() * 0.16));
+        }
       }
       posts.push(post);
     }

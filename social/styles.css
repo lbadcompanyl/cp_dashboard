@@ -222,11 +222,8 @@ body {
   .ctrl-row { padding-top:8px; gap:6px; }
   .seg button { padding:5px 9px; font-size:.74rem; }
   .ch { padding:5px 10px; font-size:.74rem; }
-  .bd-btn { padding:5px 10px; font-size:.74rem; }
   .stickyhead { gap:6px; padding-top:6px; }
   .tab { padding:9px 13px 8px; font-size:.82rem; }
-  /* ปุ่ม "แยกช่อง" สั้นลงเหลือ "แยก" เพื่อให้อยู่แถวเดียวกับชิพช่อง ประหยัดไป 1 แถว */
-  .lbl-long { display:none; }
   .ctrl-lb { display:none; }
 }
 
@@ -323,14 +320,6 @@ body {
 .bd-n { color:var(--muted); }
 .bd-v { font-weight:650; text-align:right; font-variant-numeric:tabular-nums; }
 .bd .dlt { font-size:.66rem; }
-/* ปุ่มกางรายช่อง — หน้าตาเหมือนชิพ แต่คนละ class โดยตั้งใจ (.ch สงวนให้ชิพเลือกช่อง) */
-.bd-btn {
-  display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-family:inherit;
-  border:1px solid var(--border); background:var(--surface); color:var(--muted);
-  border-radius:999px; padding:6px 12px; font-size:.78rem; font-variant-numeric:tabular-nums;
-}
-.bd-btn:hover { color:var(--ink); }
-.bd-btn.on { color:var(--ink); background:var(--surface-2); border-color:var(--accent); font-weight:600; }
 
 /* ป้ายเทียบกับช่วงก่อน */
 .dlt { font-size:.72rem; font-weight:650; display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
@@ -363,6 +352,35 @@ body {
 .tbl.perf td.strong .cv { font-weight:700; font-size:.95rem; }
 .tbl.perf .cd { display:block; margin-top:1px; }
 .tbl.perf thead th .tipi { vertical-align:baseline; }
+
+/* แถวช่องกางดูคอนเทนต์ที่ทำยอดนั้นได้
+   ⚠️ ปุ่มกาง กับ ปุ่มไปแท็บของช่อง เป็นคนละปุ่ม — ปุ่มเดียวทำ 2 อย่างแล้วเดาไม่ถูกว่าจะเกิดอะไร */
+.tbl.perf th[scope="row"] { display:flex; align-items:center; gap:2px; }
+.rowtog {
+  background:none; border:0; padding:2px 0; margin:0; font:inherit; color:var(--ink);
+  cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; font-weight:600;
+}
+.rowtog:hover { color:var(--accent); }
+.caret { color:var(--muted); font-size:.7rem; width:10px; }
+.tbl.perf .drill { padding:2px 6px; color:var(--muted); font-size:1rem; line-height:1; }
+.tbl.perf .drill:hover { color:var(--accent); }
+.perf-r.open { background:var(--surface-2); }
+
+.perf-sub td { background:var(--surface-2); font-size:.75rem; padding-top:6px; padding-bottom:6px; }
+.perf-sub .sub-t { max-width:280px; }
+.perf-sub .sub-t a { color:var(--ink-2); text-decoration:none; }
+.perf-sub .sub-t a:hover { color:var(--accent); text-decoration:underline; }
+.sub-d { display:block; color:var(--muted); font-size:.68rem; margin-top:1px; }
+.sub-none { color:var(--muted); font-size:.78rem; }
+.sub-note { color:var(--muted); font-size:.72rem; font-style:normal; }
+
+/* ป้ายอันดับบนการ์ดคอนเทนต์ — มีมากกว่า 1 ใบต่อกล่องแล้ว ต้องรู้ว่าใบไหนมาก่อน */
+.post { position:relative; }
+.rk {
+  position:absolute; top:6px; left:6px; z-index:1;
+  min-width:17px; height:17px; border-radius:5px; background:var(--ink); color:#fff;
+  font-size:.66rem; font-weight:700; display:flex; align-items:center; justify-content:center;
+}
 
 .tbl.cmp th[scope="row"] { color:var(--ink-2); font-weight:500; font-size:.78rem; white-space:nowrap; }
 .tbl.cmp thead th { white-space:nowrap; }

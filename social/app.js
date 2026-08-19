@@ -78,9 +78,9 @@
     end: null,
     compare: "prev",     // prev | yoy | none
     sort: { key: "date", dir: -1 },
-    /* กางการ์ดสรุปให้เห็นตัวเลขรายช่อง — ของหน้าภาพรวมเท่านั้น
-       🔴 เปิดไว้ตั้งแต่แรก (เจ้าของสั่ง 19 ส.ค. 2026) ยอดรวมอย่างเดียวไม่พอ
-          ต้องเห็นด้วยว่าช่องไหนดันขึ้นหรือฉุดลง — ยังกดพับเก็บได้ */
+    /* 🔴 แถวรายช่องใต้ยอดรวม — กางไว้ตลอด ไม่มีปุ่มพับแล้ว (เจ้าของสั่ง 19 ส.ค. 2026)
+       ยอดรวมอย่างเดียวตอบไม่ได้ว่าช่องไหนดันขึ้นหรือฉุดลง จึงไม่มีเหตุผลให้ซ่อน
+       ⚠️ ตัวแปรนี้ยังอยู่เพื่อให้ bd() อ่านที่เดียว — ถ้าจะเอาปุ่มกลับมา ต่อสายที่นี่ */
     breakdown: true,
     // ชิพเลือกช่องของหน้าภาพรวม — ไม่ต้องข้ามไปมีผลกับแท็บรายช่อง
     channels: { youtube: true, tiktok: true, facebook: true },
@@ -104,6 +104,8 @@
     grain: "day",
     // ตาราง "ผลงานรายช่อง" กำลังดูชุดคอลัมน์ไหน — engagement | reach
     perfTab: "engagement",
+    // แถวไหนของตารางกางดูคอนเทนต์อยู่ { youtube:true, ... }
+    perfOpen: {},
   };
 
   /* ── วันที่ ──────────────────────────────────────────────────────── */
@@ -243,11 +245,13 @@
     var a = { likes: 0, comments: 0, shares: 0, days: rows.length };
     a[rk] = 0;
     var wt = 0, avd = 0, cr = 0;
+    a.views3s = 0;
     rows.forEach(function (x) {
       a[rk] += x[rk] || 0;
       a.likes += x.likes || 0;
       a.comments += x.comments || 0;
       a.shares += x.shares || 0;
+      a.views3s += x.views3s || 0;
       wt += x.watchTime || 0;
       avd += x.avgViewDuration || 0;
       cr += x.completionRate || 0;
@@ -408,13 +412,15 @@
     var reach = p[P.reachKey] || 0;
     var age = Math.round((midnight(new Date()) - parseKey(p.publishedAt)) / 864e5);
     var badge = opts.newBadge && age < 7 ? '<span class="badge new">ยังใหม่</span>' : "";
+    // เลขอันดับ — โชว์เมื่อมีมากกว่า 1 ใบในกล่องเดียวกัน ไม่งั้นไม่รู้ว่าใบไหนมาก่อน
+    var rank = opts.rank ? '<span class="rk">' + opts.rank + "</span>" : "";
     /* ⚠️ ลิงก์มาจาก post.url ของข้อมูลตรงๆ — ของจริงคือ URL โพสต์บนแพลตฟอร์ม
        ถ้าไม่มีลิงก์ ให้เป็นการ์ดเฉยๆ ไม่ใช่ <a> ที่กดแล้วไม่ไปไหน (หลอกว่ากดได้) */
     var live = p.url && p.url !== "#";
     var tag = live ? "a" : "div";
     var attr = live ? ' href="' + esc(p.url) + '" target="_blank" rel="noopener"' : "";
     return "<" + tag + ' class="post' + (live ? "" : " nolink") + '"' + attr + '>' +
-      '<img src="' + esc(p.thumb) + '" alt="" loading="lazy">' +
+      rank + '<img src="' + esc(p.thumb) + '" alt="" loading="lazy">' +
       '<div class="post-b"><div class="post-t">' + esc(p.title) + badge +
       (live ? ' <span class="ext">↗</span>' : "") + "</div>" +
       '<div class="post-m">' +
@@ -672,55 +678,54 @@
     /* ③ ตารางผลงานรายช่อง — ช่องเป็น "แถว" ตัวชี้วัดเป็น "คอลัมน์"
      * 🔴 เดิมสลับกัน (ตัวชี้วัดเป็นแถว ช่องเป็นคอลัมน์) เจ้าของสั่งเปลี่ยน 19 ส.ค. 2026
      *    เพราะคนอ่านตารางแบบ "หนึ่งแถว = หนึ่งช่อง" แล้วกวาดตาไปตามคอลัมน์
-     * 🔴 แยกไลก์ / คอมเมนต์ / แชร์ ออกมาเป็นคอลัมน์ด้วย — เดิมมีแต่ยอดรวม
-     *    ตัวเลขแยกอยู่ในแท็บรายช่องอย่างเดียว เทียบข้ามช่องไม่ได้เลย
-     * ⚠️ 2 แท็บนี้มีคอลัมน์ไม่เท่ากันโดยตั้งใจ — ยัดรวมกันเป็นตารางเดียวจะกว้างจนต้องเลื่อน
-     * ⚠️ ช่องไหนไม่มีตัวเลขนั้นจริงๆ (YouTube ไม่เปิดเผยจำนวนแชร์) ต้องขึ้น "—"
-     *    ห้ามใส่ 0 — 0 แปลว่า "ไม่มีใครแชร์" ซึ่งคนละเรื่องกับ "ไม่รู้" */
+     * 🔴 กดแถวแล้วกางดูได้ว่ายอดนั้นมาจากคอนเทนต์ใบไหนบ้าง (เจ้าของสั่ง 19 ส.ค. 2026)
+     *    ตัวเลขรวมอย่างเดียวตอบไม่ได้ว่า "โตเพราะคลิปเดียวดัง หรือดีขึ้นทั้งกระดาน"
+     * ⚠️ 2 แท็บมีคอลัมน์ไม่เท่ากันโดยตั้งใจ — ยัดรวมกันเป็นตารางเดียวจะกว้างจนต้องเลื่อน
+     * ⚠️ ช่องไหนไม่มีตัวเลขนั้นจริงๆ ต้องขึ้น "—" พร้อมเหตุผล
+     *    ห้ามใส่ 0 — 0 แปลว่า "วัดได้แล้วได้ศูนย์" คนละเรื่องกับ "วัดไม่ได้" */
     var PERF_TABS = [
       { key: "engagement", label: "Engagement" },
       { key: "reach", label: "Views / Reach" },
     ];
     var ptab = state.perfTab === "reach" ? "reach" : "engagement";
 
-    /** ช่องนั้นนับ metric นี้ไหม — ดูจาก parts ของช่อง ไม่ได้เดาจากชื่อ */
+    /** ช่องนั้นนับ engagement ส่วนนี้ไหม — ดูจาก parts ของช่อง ไม่ได้เดาจากชื่อ */
     function hasPart(pk, k) {
       return C.PLATFORMS[pk].parts.some(function (x) { return x.key === k; });
     }
 
-    var COLS = ptab === "engagement"
-      ? [
-          { label: "ไลก์", get: function (a, pk) { return hasPart(pk, "likes") ? a.likes : null; },
-            na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
-          { label: "คอมเมนต์", get: function (a, pk) { return hasPart(pk, "comments") ? a.comments : null; },
-            na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
-          { label: "แชร์", get: function (a, pk) { return hasPart(pk, "shares") ? a.shares : null; },
-            na: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API" },
-          { label: "Engagement รวม", get: function (a) { return a.engagement; }, strong: true },
-          { label: "ER", get: function (a) { return a.er; }, fmt: "pct", pp: true,
-            tip: "แต่ละช่องคิด ER คนละสูตร เทียบข้ามช่องตรงๆ ไม่ได้" },
-        ]
-      : [
-          { label: "Views / Reach", get: function (a) { return a.reach; }, strong: true },
-          { label: "สัดส่วน", get: function (a) { return a.reach; }, fmt: "share", noDelta: true },
-          { label: "โพสต์", get: function (a) { return a.posts; } },
-          { label: "เฉลี่ยต่อโพสต์", get: function (a) { return a.avgPerPost; } },
-        ];
-
     var shareTot = 0;
     order.forEach(function (pk) { if (cur[pk]) shareTot += cur[pk].reach; });
 
-    function cellText(v, fmt) {
-      if (v == null) return null;
-      if (fmt === "pct") return pct(v);
-      if (fmt === "share") return shareTot ? pct(v / shareTot) : null;
-      return num(v);
+    var ENG_COLS = [
+      { key: "likes", label: "ไลก์", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
+      { key: "comments", label: "คอมเมนต์", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
+      { key: "shares", label: "แชร์", na: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API" },
+      { key: "engagement", label: "Engagement รวม", strong: true, always: true },
+      { key: "er", label: "ER", fmt: "pct", pp: true, always: true,
+        tip: "แต่ละช่องคิด ER คนละสูตร เทียบข้ามช่องตรงๆ ไม่ได้" },
+    ];
+    var COLS = ptab === "engagement" ? ENG_COLS : C.VIEW_COLS;
+
+    /** ค่าของคอลัมน์นั้นสำหรับช่องนี้ — คืน null เมื่อช่องนี้ไม่มีตัวเลขนั้น */
+    function colVal(c2, a, pk) {
+      if (!a) return null;
+      if (c2.key === "share") return a.reach;
+      if (c2.always) return a[c2.key];
+      if (ptab === "engagement") return hasPart(pk, c2.key) ? a[c2.key] : null;
+      return C.hasStat(pk, c2.key) ? a[c2.key] : null;
+    }
+
+    function cellText(v, f) {
+      if (v == null || isNaN(v)) return null;
+      if (f === "share") return shareTot ? pct(v / shareTot) : null;
+      return fmt(f || "num", v);
     }
 
     h += sec("ผลงานรายช่อง", null,
-      "หนึ่งแถวคือหนึ่งช่อง · แต่ละช่องวัดคนละหน่วย (YouTube/TikTok เป็น Views · Facebook เป็น Reach) " +
-      "และคิด ER คนละสูตร ตัวเลขในคอลัมน์เดียวกันจึงใช้ดูทิศทางของแต่ละช่อง ไม่ใช่เอามาเทียบขนาดกันตรงๆ " +
-      "· กดชื่อช่องเพื่อดูรายละเอียดของช่องนั้น");
+      "หนึ่งแถวคือหนึ่งช่อง · กดแถวเพื่อดูว่ายอดนั้นมาจากคอนเทนต์ใบไหนบ้าง " +
+      "· แต่ละช่องวัดคนละหน่วย (YouTube/TikTok เป็น Views · Facebook เป็น Reach) และคิด ER คนละสูตร " +
+      "ตัวเลขในคอลัมน์เดียวกันจึงใช้ดูทิศทางของแต่ละช่อง ไม่ใช่เอามาเทียบขนาดกันตรงๆ");
 
     h += '<div class="panel">' +
       '<div class="perftabs">' + PERF_TABS.map(function (x) {
@@ -736,25 +741,84 @@
 
     order.forEach(function (pk) {
       var P = C.PLATFORMS[pk], a = cur[pk], b = prev[pk];
-      /* ⚠️ ชื่อช่องกดได้ = ทางลัดไปแท็บของช่องนั้น (drill-down)
-         ต้องเป็น <button> จริง ไม่ใช่ <th> ที่ผูก onclick — คีย์บอร์ดกับ screen reader ต้องใช้ได้ */
-      h += '<tr><th scope="row"><button type="button" class="drill" data-tab="' + esc(pk) + '" ' +
-        'title="ดูรายละเอียดของ' + esc(P.label) + '"><span class="pdot" style="background:' +
-        P.rawColor + '"></span> ' + esc(P.label) + ' <span class="drill-a">›</span></button></th>';
+      var open = !!state.perfOpen[pk];
+
+      /* ⚠️ ชื่อช่องเป็นปุ่มกาง/พับ ส่วนทางลัดไปแท็บของช่องเป็นปุ่มแยกอีกอัน
+         ปุ่มเดียวทำ 2 อย่างไม่ได้ — กดแล้วเดาไม่ถูกว่าจะกางหรือจะเปลี่ยนหน้า */
+      h += '<tr class="perf-r' + (open ? " open" : "") + '"><th scope="row">' +
+        '<button type="button" class="rowtog" data-perf="' + esc(pk) + '" aria-expanded="' +
+          (open ? "true" : "false") + '" title="กางดูคอนเทนต์ที่ทำยอดนี้">' +
+          '<span class="caret">' + (open ? "▾" : "▸") + "</span>" +
+          '<span class="pdot" style="background:' + P.rawColor + '"></span>' + esc(P.label) + "</button>" +
+        '<button type="button" class="drill" data-tab="' + esc(pk) + '" ' +
+          'title="ไปที่แท็บของ' + esc(P.label) + '">›</button></th>';
 
       COLS.forEach(function (c2) {
         if (!a) { h += '<td class="num na">—</td>'; return; }
-        var v = c2.get(a, pk);
-        var pv = b ? c2.get(b, pk) : null;
+        var v = colVal(c2, a, pk);
         var txt = cellText(v, c2.fmt);
         if (txt == null) {
           h += '<td class="num na"' + (c2.na ? ' title="' + esc(c2.na) + '"' : "") + ">—</td>";
           return;
         }
+        var pv = b ? colVal(c2, b, pk) : null;
         h += '<td class="num' + (c2.strong ? " strong" : "") + '"><span class="cv">' + esc(txt) + "</span>" +
           (c2.noDelta ? "" : '<span class="cd">' + delta(v, pv, { pp: c2.pp }) + "</span>") + "</td>";
       });
       h += "</tr>";
+
+      if (!open) return;
+
+      /* แถวย่อย: คอนเทนต์ที่ทำยอดนั้น เรียงจากมากไปน้อยตามคอลัมน์หลักของแท็บ
+         ⚠️ ค่าต่อโพสต์ที่ช่องไม่ได้ให้มา ต้องขึ้น "—" เหมือนแถวบน ไม่ใช่ 0 */
+      var mainKey = ptab === "engagement" ? "engagement" : "reach";
+      var list = postsIn(pk, r).map(function (po) {
+        var one = { likes: po.likes || 0, comments: po.comments || 0, shares: po.shares || 0 };
+        one[P.reachKey] = po[P.reachKey] || 0;
+        one.reach = C.reachOf(pk, one);
+        one.engagement = C.engagementOf(pk, one);
+        one.er = P.er(one);
+        ["views3s", "avgViewDuration", "completionRate", "watchTime"].forEach(function (k) {
+          if (po[k] != null) one[k] = po[k];
+        });
+        one.posts = 1;
+        one.avgPerPost = one.reach;
+        return { po: po, a: one };
+      }).sort(function (x, y) { return (y.a[mainKey] || 0) - (x.a[mainKey] || 0); });
+
+      if (!list.length) {
+        h += '<tr class="perf-sub"><td colspan="' + (COLS.length + 1) + '" class="sub-none">' +
+          "ไม่มี" + esc(P.contentWord) + "ที่เผยแพร่ในช่วงนี้ — ตัวเลขข้างบนมาจากโพสต์เก่า</td></tr>";
+        return;
+      }
+
+      /* ⚠️ ยอดของช่องไม่ได้มาจากโพสต์ในช่วงนี้ทั้งหมด — โพสต์เก่ายังมีคนดูอยู่
+         ไม่บอกไว้ เจ้าของจะบวกแถวย่อยแล้วงงว่าทำไมไม่เท่ายอดข้างบน */
+      var covered = list.reduce(function (t2, x) { return t2 + (x.a[mainKey] || 0); }, 0);
+      var whole = a ? a[mainKey] || 0 : 0;
+      h += '<tr class="perf-sub"><td colspan="' + (COLS.length + 1) + '" class="sub-note">' +
+        esc(P.contentWord) + "ที่เผยแพร่ในช่วงนี้ " + list.length + " ใบ คิดเป็น " +
+        esc(whole ? pct(covered / whole) : "—") + " ของยอดช่อง — ที่เหลือมาจากโพสต์ที่ลงไว้ก่อนหน้า</td></tr>";
+
+      list.forEach(function (x) {
+        var live = x.po.url && x.po.url !== "#";
+        h += '<tr class="perf-sub"><td class="sub-t">' +
+          (live ? '<a href="' + esc(x.po.url) + '" target="_blank" rel="noopener">' : "<span>") +
+          esc(x.po.title) + (live ? ' <span class="ext">↗</span></a>' : "</span>") +
+          '<span class="sub-d">' + esc(thaiShort(x.po.publishedAt)) + "</span></td>";
+        COLS.forEach(function (c2) {
+          var v = colVal(c2, x.a, pk);
+          // ⚠️ "% ของยอดรวม" ของโพสต์ = ส่วนแบ่งในช่องตัวเอง ไม่ใช่ในยอดรวมทุกช่อง
+          if (c2.key === "share") {
+            var own = a && a.reach ? x.a.reach / a.reach : null;
+            h += '<td class="num">' + esc(own == null ? "—" : pct(own)) + "</td>";
+            return;
+          }
+          var txt = cellText(v, c2.fmt);
+          h += '<td class="num' + (txt == null ? " na" : "") + '">' + esc(txt == null ? "—" : txt) + "</td>";
+        });
+        h += "</tr>";
+      });
     });
     h += "</tbody></table></div></div>";
 
@@ -781,14 +845,19 @@
      * ⚠️ หยิบ "ที่ดีที่สุดของแต่ละช่อง" ไม่เอาทุกช่องมาเรียงรวมกัน
      *    เพราะ ER คิดคนละสูตร ช่องที่นับแชร์ด้วยจะกวาดอันดับไปหมด (เจอจริงตอนรีวิว)
      *    วิธีนี้ได้ทั้งการเทียบข้ามช่องและหน้าที่ไม่ยาว */
+    /* 🔴 ช่องละ 2 อันดับ (เจ้าของสั่ง 19 ส.ค. 2026) — ใบเดียวต่อช่องบอกไม่ได้ว่า
+       ใบที่ชนะมันโดดออกมาใบเดียว หรือทั้งช่องทำได้ดีพอๆ กัน */
+    var TOP_PER_CHANNEL = 2;
+
     function bestList(rank) {
       var rows = order.map(function (pk) {
         var P = C.PLATFORMS[pk];
-        var best = postsIn(pk, r)
+        var top = postsIn(pk, r)
           .map(function (p) { return { p: p, v: rank === "er" ? P.er(p) : (p[P.reachKey] || 0) }; })
           .filter(function (x) { return x.v != null; })
-          .sort(function (x, y) { return y.v - x.v; })[0];
-        return { pk: pk, best: best };
+          .sort(function (x, y) { return y.v - x.v; })
+          .slice(0, TOP_PER_CHANNEL);
+        return { pk: pk, top: top, best: top[0] };
       });
       if (!rows.some(function (x) { return x.best; })) {
         return empty("ไม่มีคอนเทนต์ที่เผยแพร่ในช่วงนี้", "ลองขยายช่วงเวลา");
@@ -802,8 +871,8 @@
         return '<div class="tcard"><div class="tcard-h" style="--pc:' + P.rawColor + '">' +
           '<span class="pdot"></span>' + esc(P.label) + "</div>" +
           '<div class="tcard-b">' +
-          (x.best
-            ? postRow(x.best.p, x.pk)
+          (x.top.length
+            ? x.top.map(function (t2, i) { return postRow(t2.p, x.pk, { rank: i + 1 }); }).join("")
             : '<div class="tcard-none">ไม่มี' + esc(P.contentWord) + "ที่เผยแพร่ในช่วงนี้</div>") +
           "</div></div>";
       }).join("") + "</div>";
@@ -811,12 +880,12 @@
 
     h += '<div class="duo">' +
       '<div class="duo-c">' +
-        sec("Engagement สูงสุด", "ที่ดีที่สุดของแต่ละช่อง",
+        sec("Engagement สูงสุด", "2 อันดับแรกของแต่ละช่อง",
           "เรียงตาม Engagement rate ซึ่งแต่ละช่องคิดคนละสูตร จึงหยิบมาช่องละใบ ไม่เอามาเรียงรวมกัน · กดเพื่อเปิดโพสต์จริง") +
         '<div class="panel">' + bestList("er") + "</div>" +
       "</div>" +
       '<div class="duo-c">' +
-        sec("Views / Reach สูงสุด", "ที่ดีที่สุดของแต่ละช่อง",
+        sec("Views / Reach สูงสุด", "2 อันดับแรกของแต่ละช่อง",
           "เรียงตาม Views (Facebook ใช้ Reach) · เป็นคนละอันดับกับฝั่งซ้าย เพราะใบที่คนดูเยอะไม่ได้แปลว่า Engagement เยอะ") +
         '<div class="panel">' + bestList("reach") + "</div>" +
       "</div>" +
@@ -1387,9 +1456,6 @@
           '<span class="pdot"></span>' + esc(P.label) + "</button>";
       }).join("") + "</div>";
 
-      h += '<button type="button" class="bd-btn' + (state.breakdown ? " on" : "") + '" data-bd="1" ' +
-        'aria-pressed="' + (state.breakdown ? "true" : "false") + '">' +
-        (state.breakdown ? "▾" : "▸") + ' แยก<span class="lbl-long">ช่อง</span></button>';
     }
     h += "</div>";
 
@@ -1498,7 +1564,7 @@
     var tip = e.target.closest(".tipi");
     if (tip) { showTip(tip); return; }
 
-    var t = e.target.closest("[data-tab],[data-period],[data-preset],[data-cmp],[data-sort],[data-ch],[data-bd],[data-lg],[data-metric],[data-cal],[data-day],[data-tch],[data-grain],[data-ptab]");
+    var t = e.target.closest("[data-tab],[data-period],[data-preset],[data-cmp],[data-sort],[data-ch],[data-lg],[data-metric],[data-cal],[data-day],[data-tch],[data-grain],[data-ptab],[data-perf]");
 
     // คลิกนอกแผงเลือกช่วงเวลา = ปิดแผง
     if (state.periodOpen && !e.target.closest("#periodbox")) { state.periodOpen = false; render(); if (!t) return; }
@@ -1534,13 +1600,17 @@
 
     if (t.dataset.tab) { state.tab = t.dataset.tab; render(); return; }
 
-    if (t.dataset.bd) { state.breakdown = !state.breakdown; render(); return; }
 
     if (t.dataset.metric) { state.metric = t.dataset.metric; render(); return; }
 
     if (t.dataset.tch) { state.trendCh = t.dataset.tch; render(); return; }
     if (t.dataset.grain) { state.grain = t.dataset.grain; render(); return; }
     if (t.dataset.ptab) { state.perfTab = t.dataset.ptab; render(); return; }
+    if (t.dataset.perf) {
+      var rk = t.dataset.perf;
+      state.perfOpen[rk] = !state.perfOpen[rk];
+      render(); return;
+    }
 
     if (t.dataset.ch) {
       var pk = t.dataset.ch;

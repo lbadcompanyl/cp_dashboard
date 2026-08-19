@@ -1,22 +1,54 @@
-// ตัวช่วยขอสิทธิ์ TikTok ครั้งเดียว — เอา refresh token ออกมาใส่ Cloudflare
+// ตัวช่วยขอสิทธิ์ครั้งเดียว — เอา refresh token ออกมาใส่ Cloudflare
+// รองรับ 2 เจ้า: TikTok · Google (สำหรับ YouTube Analytics)
 //
 // ใช้ยังไง (ทำครั้งเดียวตอนติดตั้ง):
 //   1. ใส่ SETUP_KEY ใน Cloudflare (ตั้งเป็นข้อความยาวๆ เดาไม่ได้)
-//   2. เปิด  /social/api/connect?key=<SETUP_KEY>
+//   2. เปิด  /social/api/connect?key=<SETUP_KEY>   แล้วเลือกว่าจะเชื่อมเจ้าไหน
 //   3. กดอนุญาตด้วย "บัญชีของช่องที่ต้องการ" ← ไม่ใช่บัญชีส่วนตัว
-//   4. หน้าจะโชว์ refresh token → ก๊อปไปใส่ TIKTOK_REFRESH_TOKEN แบบ Secret
+//   4. หน้าจะโชว์ refresh token → ก๊อปไปใส่เป็น Secret ตามชื่อที่บอก
 //   5. 🔴 ลบ SETUP_KEY ทิ้งทันที — ปิดประตูนี้ไว้ ไม่ใช้แล้วไม่ต้องเปิดค้าง
 //
 // 🔒 ทำไมต้องมี SETUP_KEY: หน้านี้แสดง refresh token ซึ่งเป็นความลับ
 //    ถ้าเปิดโล่ง ใครกดตามลิงก์ก็เริ่มขั้นตอนขอสิทธิ์ในนามแอปเราได้
 //    ⚠️ ไม่มี SETUP_KEY = ปิดสนิท ไม่ใช่เปิดให้ทุกคน (ค่าปริยายต้องปลอดภัยเสมอ)
+//
+// ⚠️ ทั้ง 2 เจ้าใช้ redirect URI เดียวกัน (/social/api/connect) จึงต้องรู้ว่ากำลังทำเจ้าไหนอยู่
+//    ตอนกลับมา — พกไว้ใน state (ทั้งคู่ส่ง state กลับมาให้เหมือนที่ส่งไป)
 
-const AUTHORIZE = "https://www.tiktok.com/v2/auth/authorize/";
-const TOKEN = "https://open.tiktokapis.com/v2/oauth/token/";
-
-// อ่านอย่างเดียวทั้งหมด — ไม่ขอสิทธิ์โพสต์/แก้/ลบ
-// ⚠️ ห้ามเติม scope ที่เขียนข้อมูลได้ ต่อให้ token หลุดก็ต้องทำอะไรกับช่องไม่ได้
-const SCOPES = "user.info.basic,user.info.profile,user.info.stats,video.list";
+/* ⚠️ ทุก scope ต้องเป็น "อ่านอย่างเดียว" — ต่อให้ token หลุด ก็ต้องทำอะไรกับช่องไม่ได้
+   ห้ามเติม scope ที่เขียน/ลบข้อมูลได้เด็ดขาด */
+const PROVIDERS = {
+  tiktok: {
+    label: "TikTok",
+    authorize: "https://www.tiktok.com/v2/auth/authorize/",
+    token: "https://open.tiktokapis.com/v2/oauth/token/",
+    scope: "user.info.basic,user.info.profile,user.info.stats,video.list",
+    idEnv: "TIKTOK_CLIENT_KEY",
+    secretEnv: "TIKTOK_CLIENT_SECRET",
+    out: "TIKTOK_REFRESH_TOKEN",
+    // TikTok เรียกพารามิเตอร์ตัวนี้ว่า client_key ไม่ใช่ client_id
+    idParam: "client_key",
+    where: "หน้า App details ใน TikTok for Developers · ถ้าใช้ sandbox ต้องใช้ค่าของ sandbox",
+    revoke: "เข้า TikTok แล้วถอนสิทธิ์แอปนี้ทิ้ง",
+  },
+  google: {
+    label: "YouTube Analytics",
+    authorize: "https://accounts.google.com/o/oauth2/v2/auth",
+    token: "https://oauth2.googleapis.com/token",
+    /* ตัวเดียวพอ: อ่านรายงานสถิติของช่องตัวเอง
+       ข้อมูลสาธารณะ (ชื่อคลิป ยอดวิว ไลก์) ใช้ API key เดิมอยู่แล้ว ไม่ต้องขอเพิ่ม */
+    scope: "https://www.googleapis.com/auth/yt-analytics.readonly",
+    idEnv: "GOOGLE_CLIENT_ID",
+    secretEnv: "GOOGLE_CLIENT_SECRET",
+    out: "YT_REFRESH_TOKEN",
+    idParam: "client_id",
+    where: "Google Cloud Console → APIs & Services → Credentials → OAuth client ID (ชนิด Web application)",
+    revoke: "เข้า myaccount.google.com/permissions แล้วถอนสิทธิ์แอปนี้ทิ้ง",
+    /* ⚠️ ไม่ใส่ 2 ตัวนี้ Google จะไม่ให้ refresh token เลย — ให้แต่ access token อายุ 1 ชม.
+       prompt=consent จำเป็นแม้แต่ตอนกดอนุญาตซ้ำ ไม่งั้นครั้งที่สองจะไม่มี refresh_token ติดมา */
+    extra: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
+  },
+};
 
 /** เทียบความลับแบบไม่แพ้เวลา — กันการเดาทีละตัวอักษรจากเวลาที่ตอบกลับ */
 function sameSecret(a, b) {
@@ -50,6 +82,17 @@ function page(title, bodyHtml, status = 200) {
   );
 }
 
+/* state พาทั้ง "กุญแจ" และ "กำลังทำเจ้าไหน" ข้ามขั้นตอนกดอนุญาต
+   ⚠️ ของเดิมส่งแต่กุญแจล้วน — ยังอ่านได้อยู่ ถือว่าเป็น TikTok (ของเก่าที่ค้างอยู่จะได้ไม่พัง) */
+function packState(provider, key) { return provider + "|" + key; }
+function unpackState(raw) {
+  const t = String(raw || "");
+  const i = t.indexOf("|");
+  if (i < 0) return { provider: "tiktok", key: t };
+  const p = t.slice(0, i);
+  return { provider: PROVIDERS[p] ? p : "tiktok", key: t.slice(i + 1) };
+}
+
 export async function onRequest(context) {
   const env = context.env || {};
   const url = new URL(context.request.url);
@@ -65,94 +108,124 @@ export async function onRequest(context) {
 
   const err = url.searchParams.get("error");
   const code = url.searchParams.get("code");
-  // TikTok ส่ง state กลับมาให้เหมือนที่เราส่งไป — ใช้พา key ข้ามขั้นตอนกดอนุญาต
-  const given = url.searchParams.get("key") || url.searchParams.get("state") || "";
+  const st = unpackState(url.searchParams.get("state"));
+  const given = url.searchParams.get("key") || st.key || "";
 
   if (!sameSecret(given, setupKey)) {
     return page("กุญแจไม่ถูก", `<h1 class="bad">🔒 กุญแจไม่ถูกต้อง</h1>
       <p>เปิดด้วย <code>/social/api/connect?key=&lt;SETUP_KEY&gt;</code></p>`, 403);
   }
 
-  const need = ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"].filter((n) => !String(env[n] || "").trim());
+  // ── เลือกว่าจะเชื่อมเจ้าไหน ─────────────────────────────────────────
+  const pKey = url.searchParams.get("p") || (code || err ? st.provider : "");
+  const P = PROVIDERS[pKey];
+  if (!P) {
+    const link = (k) => `/social/api/connect?key=${encodeURIComponent(given)}&p=${k}`;
+    return page("เลือกที่จะเชื่อม", `<h1>เชื่อมต่อช่อง</h1>
+      <p>เลือกว่าจะขอสิทธิ์ของเจ้าไหน (ทำทีละเจ้า)</p>
+      <div class="box">
+        <p><a class="btn" href="${esc(link("google"))}">YouTube Analytics →</a></p>
+        <p style="font-size:.86rem">สถิติรายวันของช่องเรา — ยอดวิว เวลาที่คนดู ผู้ติดตามเข้า/ออก
+          <br>⚠️ ตัวเลขสาธารณะ (ชื่อคลิป ยอดวิว ไลก์) ใช้ <code>YT_API_KEY</code> เดิมอยู่แล้ว อันนี้คนละตัว</p>
+      </div>
+      <div class="box">
+        <p><a class="btn" href="${esc(link("tiktok"))}">TikTok →</a></p>
+      </div>
+      <div class="box">
+        <p style="margin:0 0 6px"><b>Redirect URI ที่ต้องใส่ให้ตรงกันเป๊ะทั้ง 2 เจ้า:</b></p>
+        <div class="tok">${esc(redirectUri)}</div>
+      </div>`);
+  }
+
+  const need = [P.idEnv, P.secretEnv].filter((n) => !String(env[n] || "").trim());
   if (need.length) {
     return page("ยังไม่ครบ", `<h1 class="warn">⚠️ ยังตั้งค่าไม่ครบ</h1>
       <p>ต้องใส่ค่าพวกนี้ใน Cloudflare ก่อน (แบบ Secret):</p>
       <div class="box">${need.map((n) => "<code>" + esc(n) + "</code>").join("<br>")}</div>
-      <p>เอามาจากหน้า <b>App details</b> ใน TikTok for Developers · ถ้าใช้ sandbox ต้องใช้ค่าของ sandbox</p>`, 400);
+      <p>เอามาจาก ${esc(P.where)}</p>`, 400);
   }
 
   if (err) {
     return page("ไม่ได้รับอนุญาต", `<h1 class="bad">❌ ยังไม่ได้รับสิทธิ์</h1>
-      <p>TikTok แจ้งกลับมาว่า: <code>${esc(err)}</code></p>
+      <p>${esc(P.label)} แจ้งกลับมาว่า: <code>${esc(err)}</code></p>
       <p>${esc(url.searchParams.get("error_description") || "")}</p>
-      <p><a class="btn" href="/social/api/connect?key=${encodeURIComponent(given)}">ลองใหม่</a></p>`, 400);
+      <p><a class="btn" href="/social/api/connect?key=${encodeURIComponent(given)}&p=${esc(pKey)}">ลองใหม่</a></p>`, 400);
   }
 
-  // ── ขั้นที่ 1: ส่งไปหน้ากดอนุญาตของ TikTok ──────────────────────────
+  // ── ขั้นที่ 1: ส่งไปหน้ากดอนุญาต ────────────────────────────────────
   if (!code) {
-    const auth = new URL(AUTHORIZE);
-    auth.searchParams.set("client_key", env.TIKTOK_CLIENT_KEY);
-    auth.searchParams.set("scope", SCOPES);
+    const auth = new URL(P.authorize);
+    auth.searchParams.set(P.idParam, env[P.idEnv]);
+    auth.searchParams.set("scope", P.scope);
     auth.searchParams.set("response_type", "code");
     auth.searchParams.set("redirect_uri", redirectUri);
-    auth.searchParams.set("state", setupKey);
+    auth.searchParams.set("state", packState(pKey, setupKey));
+    Object.keys(P.extra || {}).forEach((k) => auth.searchParams.set(k, P.extra[k]));
 
-    return page("เชื่อมต่อ TikTok", `<h1>เชื่อมต่อ TikTok</h1>
-      <p>กดปุ่มข้างล่างเพื่อไปหน้าอนุญาตของ TikTok</p>
+    const googleNote = pKey === "google" ? `
+      <div class="box warn">⚠️ <b>ช่องที่เป็น Brand Account</b> — บัญชี Google ที่กดอนุญาตต้องมีสิทธิ์
+        เจ้าของหรือผู้จัดการของช่องนั้น ไม่งั้นจะได้รายงานของช่องส่วนตัวแทนโดยไม่มีอะไรเตือน</div>` : "";
+
+    return page("เชื่อมต่อ " + P.label, `<h1>เชื่อมต่อ ${esc(P.label)}</h1>
+      <p>กดปุ่มข้างล่างเพื่อไปหน้าอนุญาต</p>
       <div class="box warn">⚠️ <b>ต้องล็อกอินด้วยบัญชีของช่องที่ต้องการดูสถิติ</b> ไม่ใช่บัญชีส่วนตัว<br>
-        ถ้าตอนนี้เบราว์เซอร์ค้างบัญชีอื่นอยู่ ให้ออกจากระบบ TikTok ก่อน</div>
-      <p><a class="btn" href="${esc(auth.toString())}">ไปหน้าอนุญาตของ TikTok →</a></p>
+        ถ้าตอนนี้เบราว์เซอร์ค้างบัญชีอื่นอยู่ ให้ออกจากระบบก่อน</div>
+      ${googleNote}
+      <p><a class="btn" href="${esc(auth.toString())}">ไปหน้าอนุญาต →</a></p>
       <div class="box">
-        <p style="margin:0 0 6px"><b>Redirect URI ที่ต้องใส่ในหน้า App details ให้ตรงกันเป๊ะ:</b></p>
+        <p style="margin:0 0 6px"><b>Redirect URI ที่ต้องใส่ให้ตรงกันเป๊ะ:</b></p>
         <div class="tok">${esc(redirectUri)}</div>
-        <p style="margin:8px 0 0;font-size:.86rem">ไม่ตรงแม้แต่ตัวเดียว TikTok จะไม่ยอมส่งกลับมา</p>
+        <p style="margin:8px 0 0;font-size:.86rem">ไม่ตรงแม้แต่ตัวเดียวจะไม่ยอมส่งกลับมา</p>
       </div>`);
   }
 
   // ── ขั้นที่ 2: แลก code เป็น token ───────────────────────────────────
   let j = null, httpStatus = 0;
   try {
-    const r = await fetch(TOKEN, {
+    const body = { code, grant_type: "authorization_code", redirect_uri: redirectUri, client_secret: env[P.secretEnv] };
+    body[P.idParam] = env[P.idEnv];
+    const r = await fetch(P.token, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_key: env.TIKTOK_CLIENT_KEY,
-        client_secret: env.TIKTOK_CLIENT_SECRET,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: redirectUri,
-      }).toString(),
+      body: new URLSearchParams(body).toString(),
     });
     httpStatus = r.status;
     j = await r.json().catch(() => null);
   } catch (e) {
-    return page("ต่อไม่ติด", `<h1 class="bad">❌ ต่อกับ TikTok ไม่ได้</h1><p>${esc(e.message || String(e))}</p>`, 502);
+    return page("ต่อไม่ติด", `<h1 class="bad">❌ ต่อกับ ${esc(P.label)} ไม่ได้</h1><p>${esc(e.message || String(e))}</p>`, 502);
   }
 
   if (!j || !j.refresh_token) {
     const msg = (j && (j.error_description || j.error)) || `HTTP ${httpStatus}`;
+    /* ⚠️ Google ให้ refresh token เฉพาะครั้งแรกที่กดอนุญาต ถ้าเคยอนุญาตไปแล้ว
+       จะได้แต่ access token — เราส่ง prompt=consent ไปแล้วจึงไม่ควรเจอ
+       แต่ถ้าเจอ ทางแก้คือถอนสิทธิ์แอปทิ้งแล้วทำใหม่ */
+    const hint = pKey === "google"
+      ? `<div class="box">ถ้าได้ token มาแต่ไม่มี <b>refresh token</b> แปลว่าบัญชีนี้เคยอนุญาตไว้แล้ว —
+           เข้า <code>myaccount.google.com/permissions</code> ถอนสิทธิ์แอปนี้ทิ้ง แล้วทำใหม่</div>`
+      : `<div class="box">เช็ค 3 อย่าง: <b>Redirect URI</b> ตรงกับที่ตั้งไว้ไหม ·
+           ใช้ Client key/secret <b>ชุดเดียวกัน</b> กับที่กดอนุญาตหรือเปล่า (sandbox กับ production คนละชุด) ·
+           code ใช้ได้ครั้งเดียวและหมดอายุเร็ว ลองเริ่มใหม่</div>`;
     return page("แลกไม่สำเร็จ", `<h1 class="bad">❌ แลกสิทธิ์ไม่สำเร็จ</h1>
-      <p>TikTok ตอบว่า: <code>${esc(msg)}</code></p>
-      <div class="box">เช็ค 3 อย่าง: <b>Redirect URI</b> ตรงกับที่ตั้งใน App details ไหม ·
-        ใช้ Client key/secret ของ <b>ชุดเดียวกัน</b> กับที่กดอนุญาตหรือเปล่า (sandbox กับ production คนละชุด) ·
-        code ใช้ได้ครั้งเดียวและหมดอายุเร็ว ลองเริ่มใหม่</div>
-      <p><a class="btn" href="/social/api/connect?key=${encodeURIComponent(given)}">เริ่มใหม่</a></p>`, 400);
+      <p>${esc(P.label)} ตอบว่า: <code>${esc(msg)}</code></p>
+      ${hint}
+      <p><a class="btn" href="/social/api/connect?key=${encodeURIComponent(given)}&p=${esc(pKey)}">เริ่มใหม่</a></p>`, 400);
   }
 
   // ⚠️ โชว์ครั้งเดียวตรงนี้เท่านั้น — ไม่เก็บลง KV ไม่เขียน log
   //    เก็บไว้ที่ไหนก็เป็นความลับเพิ่มอีกที่ที่ต้องคอยระวัง
-  return page("สำเร็จ", `<h1 class="ok">✅ ได้สิทธิ์แล้ว</h1>
+  return page("สำเร็จ", `<h1 class="ok">✅ ได้สิทธิ์ ${esc(P.label)} แล้ว</h1>
     <p>ก๊อปค่าข้างล่างไปใส่ Cloudflare → Settings → Variables and Secrets</p>
     <div class="box">
-      <p style="margin:0 0 8px"><b>TIKTOK_REFRESH_TOKEN</b> — ใส่แบบ <b>Secret</b> เท่านั้น</p>
+      <p style="margin:0 0 8px"><b>${esc(P.out)}</b> — ใส่แบบ <b>Secret</b> เท่านั้น</p>
       <div class="tok">${esc(j.refresh_token)}</div>
     </div>
     <ol>
-      <li>ใส่เป็น <code>TIKTOK_REFRESH_TOKEN</code> <b>ทั้ง Production และ Preview</b></li>
+      <li>ใส่เป็น <code>${esc(P.out)}</code> <b>ทั้ง Production และ Preview</b></li>
       <li>กด <b>Retry deployment</b> ไม่งั้นค่าใหม่ยังไม่มีผล</li>
       <li>🔴 <b>ลบ <code>SETUP_KEY</code> ทิ้ง</b> เพื่อปิดหน้านี้</li>
       <li>เปิด <code>/social/api/status</code> ดูว่าครบทุกช่องแล้ว</li>
     </ol>
     <div class="box warn">⚠️ อย่าส่งค่านี้ทางแชท อีเมล หรือ commit ลง repo — repo เป็น public<br>
-      ถ้าเผลอหลุดไปแล้ว ให้เข้า TikTok แล้วถอนสิทธิ์แอปนี้ทิ้ง แล้วทำขั้นตอนนี้ใหม่</div>`);
+      ถ้าเผลอหลุดไปแล้ว ให้${esc(P.revoke)} แล้วทำขั้นตอนนี้ใหม่</div>`);
 }

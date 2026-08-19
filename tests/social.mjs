@@ -298,14 +298,32 @@ console.log("\n[6] 🔴 ผลงานรายช่อง — หนึ่ง
   await pg.click('[data-ptab="reach"]');
   await pg.waitForTimeout(180);
   const hR = await pg.$$eval(".tbl.perf thead th", (n) => n.map((x) => x.textContent.trim()));
-  for (const want of ["Views / Reach", "สัดส่วน", "โพสต์", "เฉลี่ยต่อโพสต์"]) {
+  /* 🔴 เจ้าของถามว่า "สัดส่วน" คืออะไร retention หรือเปล่า — เปลี่ยนชื่อเป็น "% ของยอดรวม"
+     และแยก retention ออกมาเป็นคอลัมน์ "ดูจนจบ" ของมันเอง (19 ส.ค. 2026)
+     ⚠️ ชื่อคอลัมน์ที่ตีความได้ 2 แบบ = เจ้าของอ่านตัวเลขผิดโดยไม่มีอะไรเตือน */
+  for (const want of ["Views / Reach", "% ของยอดรวม", "โพสต์", "เฉลี่ยต่อโพสต์",
+                      "ดูเกิน 3 วิ", "ดูเฉลี่ย/ครั้ง", "ดูจนจบ", "เวลาดูรวม"]) {
     ok(hR.some((x) => x.includes(want)), `แท็บ Views / Reach มีคอลัมน์ "${want}"`);
   }
+  ok(!hR.some((x) => /^สัดส่วน/.test(x.trim())), "ไม่มีคอลัมน์ชื่อ 'สัดส่วน' ลอยๆ ที่ตีความได้หลายแบบ");
+
+  /* ⚠️ แต่ละเจ้าให้ตัวเลขไม่เท่ากัน ช่องที่ไม่มีต้องขึ้น "—" พร้อมเหตุผล ห้ามใส่ 0
+     (0 แปลว่า "วัดได้แล้วได้ศูนย์" คนละเรื่องกับ "วัดไม่ได้") */
+  const cells = await pg.$$eval(".tbl.perf tbody tr", (n) => n.map((r) =>
+    [...r.querySelectorAll("td")].map((c) => ({ t: c.innerText.trim().split("\n")[0], na: c.classList.contains("na"), tip: c.title }))));
+  const [yt, tt, fb] = cells;
+  ok(fb[1].t !== "—" && !fb[1].na, `Facebook มี "ดูเกิน 3 วิ" จริง (${fb[1].t})`);
+  ok(yt[1].na && tt[1].na, "YouTube กับ TikTok ไม่มีตัวเลข 3 วินาที → ขึ้น —");
+  ok(/ระยะเวลา/.test(yt[1].tip || ""), "บอกเหตุผลที่ไม่มีตัวเลข");
+  ok(fb[4].na, "Facebook ไม่มีเวลาดูรวม → ขึ้น —");
+  ok(!yt[4].na && yt[4].t !== "—", `YouTube มีเวลาดูรวม (${yt[4].t})`);
+  ok(!yt[3].na && parseFloat(yt[3].t) > 0, `ดูจนจบของ YouTube มีค่าจริง ไม่ใช่ 0% (${yt[3].t})`);
+  ok(!tt[2].na && tt[2].t !== "0:00", `ดูเฉลี่ยของ TikTok มีค่าจริง (${tt[2].t})`);
   ok(!hR.some((x) => /ไลก์/.test(x)), "สลับแท็บแล้วคอลัมน์ของอีกแท็บหายไปจริง");
   ok(await pg.$eval('[data-ptab="reach"]', (e) => e.classList.contains("on")), "แท็บที่กดติดสถานะ");
 
-  // สัดส่วนต้องรวมกันได้ราว 100%
-  const shares = await pg.$$eval(".tbl.perf tbody tr td:nth-child(3) .cv", (n) => n.map((x) => parseFloat(x.textContent)));
+  // % ของยอดรวม ต้องรวมกันได้ราว 100%
+  const shares = await pg.$$eval(".tbl.perf tbody tr td:last-child .cv", (n) => n.map((x) => parseFloat(x.textContent)));
   const tot = shares.reduce((a, b) => a + b, 0);
   ok(Math.abs(tot - 100) < 0.5, `สัดส่วนรวมกันได้ 100% (${tot.toFixed(2)}%)`);
 
@@ -422,20 +440,14 @@ console.log("\n[9] 🔴 ชิพเลือกช่อง — ปิดแล
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[9b] 🔴 ปุ่มแยกช่อง — กางตัวเลขรายช่องใต้ยอดรวม");
+console.log("\n[9b] 🔴 แถวรายช่องใต้ยอดรวม — กางไว้ตลอด ไม่มีปุ่มพับ");
 {
   const { pg, errs } = await open();
-  /* 🔴 เปิดไว้ตั้งแต่แรก (เจ้าของสั่ง 19 ส.ค. 2026) — ยอดรวมอย่างเดียวไม่พอ
-     ต้องเห็นด้วยว่าช่องไหนดันขึ้นหรือฉุดลง */
+  /* 🔴 กางไว้ตลอดและ "ถอดปุ่มพับออกแล้ว" (เจ้าของสั่ง 19 ส.ค. 2026)
+     ยอดรวมอย่างเดียวตอบไม่ได้ว่าช่องไหนดันขึ้นหรือฉุดลง จึงไม่มีเหตุผลให้ซ่อน */
   ok((await pg.$$(".bd-r")).length === 12, "เปิดหน้ามาเห็นแถวรายช่องเลย 12 แถว (4 การ์ด × 3 ช่อง)");
-  ok(await pg.$eval("[data-bd]", (e) => e.getAttribute("aria-pressed") === "true"), "ปุ่มเป็นสถานะกางอยู่");
-
-  // ยังพับเก็บได้อยู่
-  await pg.click("[data-bd]");
-  await pg.waitForTimeout(180);
-  ok((await pg.$$(".bd-r")).length === 0, "กดแล้วพับเก็บได้");
-  await pg.click("[data-bd]");
-  await pg.waitForTimeout(180);
+  ok((await pg.$$("[data-bd]")).length === 0, "ไม่มีปุ่มแยกช่องเหลืออยู่");
+  ok((await pg.$$(".bd-btn")).length === 0, "ไม่มีปุ่มเดิมค้างในหน้า");
 
   const first = await pg.$eval(".sc", (e) => e.innerText);
   ok(/YT/.test(first) && /TT/.test(first) && /FB/.test(first), "การ์ดแรกแจกแจงครบ 3 ช่อง");
@@ -468,13 +480,9 @@ console.log("\n[9b] 🔴 ปุ่มแยกช่อง — กางตั�
   ok((await pg.$$(".bd-r")).length === 8, "ปิด YouTube → เหลือ 8 แถว");
   ok(!/YT/.test(await pg.$eval(".grid4", (e) => e.innerText)), "ไม่มี YT ค้างในการ์ดสรุป");
 
-  await pg.click("[data-bd]");
-  await pg.waitForTimeout(150);
-  ok((await pg.$$(".bd-r")).length === 0, "กดซ้ำแล้วยุบกลับ");
-
   // ไม่โผล่ในแท็บรายช่อง (ช่องเดียวอยู่แล้ว ไม่มีอะไรให้แยก)
   await tabTo(pg, "TikTok");
-  ok((await pg.$$("[data-bd]")).length === 0, "แท็บรายช่องไม่มีปุ่มแยกช่อง");
+  ok((await pg.$$(".bd-r")).length === 0, "แท็บรายช่องไม่มีแถวแยกช่อง");
   ok(errs.length === 0, "ไม่มี JS error");
   await pg.close();
 }
@@ -483,8 +491,7 @@ console.log("\n[9b] 🔴 ปุ่มแยกช่อง — กางตั�
 console.log("\n[9c] ลูกศรกับตัวเลขของ delta ต้องเล่าเรื่องเดียวกัน");
 {
   const { pg } = await open();
-  await pg.click("[data-bd]");
-  await pg.waitForTimeout(180);
+  // แถวรายช่องกางอยู่แล้วตั้งแต่เปิดหน้า จึงตรวจ delta ของทั้งยอดรวมและรายช่องได้เลย
   // เคยเจอ "▬ 0.1%" อยู่ข้าง "▲ 0.1%" — ลูกศรราบต้องคู่กับเลข 0 เท่านั้น
   const bad = await pg.$$eval(".dlt", (n) => n.map((e) => e.textContent.trim()).filter((t) => {
     const flat = t.startsWith("▬");
@@ -579,9 +586,23 @@ console.log("\n[11] 🔴 กราฟรายช่อง — แยก ยอ�
 /* ────────────────────────────────────────────────────────────────── */
 console.log("\n[12] 🔴 กริดการ์ด TikTok — ห้ามมีใบเดียวลอยท้ายแถว");
 {
+  /* ⚠️ จำนวนใบมาจาก config ไม่ได้เขียนตายตัวไว้ในเทสต์ — เพิ่ม metric ให้ช่องไหน
+     จำนวนใบก็เปลี่ยน เทสต์นี้ต้องคุม "ไม่มีใบลอยท้ายแถว" ไม่ใช่คุมตัวเลข */
+  const cardCount = (pg2) => pg2.evaluate(() => {
+    const P = window.SOCIAL_CONFIG.PLATFORMS;
+    const out = {};
+    // 4 ใบพื้นฐาน (ผู้ติดตาม · เพิ่มสุทธิ · Views/Reach · ER) + extras ที่ไม่ซ้ำกับ reachKey
+    ["youtube", "tiktok", "facebook"].forEach((k) => {
+      out[P[k].label] = 4 + P[k].extras.filter((e) => e.key !== P[k].reachKey).length;
+    });
+    return out;
+  });
+
   // จอกว้าง: ทุกใบต้องอยู่แถวเดียวกัน
   const { pg } = await open({ width: 1400, height: 1000 });
-  for (const [t, n] of [["YouTube", 6], ["TikTok", 5], ["Facebook", 4]]) {
+  const want = await cardCount(pg);
+  for (const t of ["YouTube", "TikTok", "Facebook"]) {
+    const n = want[t];
     await tabTo(pg, t);
     const g = await pg.evaluate(() => {
       const grid = document.querySelector(".scgrid");
@@ -597,7 +618,9 @@ console.log("\n[12] 🔴 กริดการ์ด TikTok — ห้ามม�
 
   // มือถือ: 2 คอลัมน์ และใบสุดท้ายของจำนวนคี่ต้องกินเต็มแถว ไม่ลอยเดี่ยว
   const { pg: m } = await open({ width: 390, height: 900 });
-  for (const [t, n] of [["TikTok", 5], ["YouTube", 6], ["Facebook", 4]]) {
+  const wantM = await cardCount(m);
+  for (const t of ["TikTok", "YouTube", "Facebook"]) {
+    const n = wantM[t];
     await tabTo(m, t);
     const g = await m.evaluate(() => {
       const grid = document.querySelector(".scgrid");
@@ -1472,6 +1495,104 @@ console.log("\n[38] 🔴 สัดส่วนของยอดรวมใน�
   ok(after.length === 2, "ปิดช่องแล้วเหลือ 2 แถว");
   ok(Math.abs(after.reduce((a, x) => a + parseFloat(x), 0) - 100) <= 2,
      `สัดส่วนคิดใหม่จากช่องที่เหลือ (${after.join(" + ")})`);
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[39] 🔴 กดแถวช่องแล้วกางดูได้ว่ายอดมาจากคอนเทนต์ใบไหน");
+{
+  const { pg, errs } = await open();
+  /* 🔴 เจ้าของสั่ง 19 ส.ค. 2026 — ตัวเลขรวมอย่างเดียวตอบไม่ได้ว่า
+     "โตเพราะคลิปเดียวดัง หรือดีขึ้นทั้งกระดาน" */
+  ok((await pg.$$(".perf-sub")).length === 0, "ยังไม่กด ยังไม่มีแถวย่อย");
+
+  const cols = await pg.$$eval(".tbl.perf thead th", (n) => n.length);
+  await pg.click('[data-perf="tiktok"]');
+  await pg.waitForTimeout(220);
+  const subs = await pg.$$(".perf-sub .sub-t");
+  ok(subs.length > 1, `กางแล้วเห็นคอนเทนต์รายใบ (${subs.length} ใบ)`);
+
+  /* ⚠️ ยอดของช่องไม่ได้มาจากโพสต์ในช่วงนี้ทั้งหมด — โพสต์เก่ายังมีคนดูอยู่
+     ไม่บอกไว้ เจ้าของจะบวกแถวย่อยแล้วงงว่าทำไมไม่เท่ายอดข้างบน */
+  const note = await pg.$eval(".sub-note", (e) => e.innerText);
+  ok(/ของยอดช่อง/.test(note) && /โพสต์ที่ลงไว้ก่อนหน้า/.test(note), `บอกว่าแถวย่อยครอบคลุมเท่าไหร่ (${note})`);
+  ok(await pg.$eval('[data-perf="tiktok"]', (e) => e.getAttribute("aria-expanded") === "true"), "ปุ่มบอกสถานะกางให้ screen reader");
+
+  // ⚠️ แถวย่อยต้องมีคอลัมน์เท่าหัวตาราง ไม่งั้นตัวเลขจะเลื่อนไปคนละคอลัมน์
+  const subCols = await pg.$$eval(".perf-sub .sub-t", (n) => n[0].parentElement.querySelectorAll("td").length);
+  ok(subCols === cols, `แถวย่อยมีคอลัมน์เท่าหัวตาราง (${subCols} vs ${cols})`);
+
+  // เรียงจากมากไปน้อยตามคอลัมน์หลักของแท็บ
+  const vals = await pg.$$eval(".perf-sub .sub-t", (n) => n.map((c) => {
+    const cell = c.parentElement.querySelectorAll("td")[4].innerText;
+    return parseFloat(cell.replace(/[,K]/g, "")) * (/K/.test(cell) ? 1000 : 1);
+  }));
+  ok(vals.every((v, i) => i === 0 || vals[i - 1] >= v), "เรียงจากมากไปน้อย");
+
+  // กดเปิดโพสต์จริงได้
+  const links = await pg.$$eval(".perf-sub .sub-t a", (n) =>
+    n.map((e) => ({ href: e.getAttribute("href"), t: e.target, rel: e.rel })));
+  ok(links.length > 0 && links.every((l) => /^https?:/.test(l.href)), "ชื่อคอนเทนต์กดเปิดโพสต์จริงได้");
+  ok(links.every((l) => l.t === "_blank" && /noopener/.test(l.rel)), "เปิดแท็บใหม่อย่างปลอดภัย");
+
+  // เฉพาะช่องที่กด ช่องอื่นต้องไม่กางตาม
+  const owner = await pg.$$eval(".tbl.perf tbody tr", (n) => {
+    let cur = "", map = {};
+    n.forEach((r) => {
+      if (r.classList.contains("perf-r")) cur = r.querySelector("[data-perf]").dataset.perf;
+      else (map[cur] = map[cur] || 0, map[cur]++);
+    });
+    return map;
+  });
+  ok(Object.keys(owner).join() === "tiktok", `กางเฉพาะช่องที่กด (${Object.keys(owner).join(",") || "ไม่มี"})`);
+
+  // สลับแท็บคอลัมน์แล้วยังกางอยู่ และคอลัมน์เปลี่ยนตาม
+  await pg.click('[data-ptab="reach"]');
+  await pg.waitForTimeout(220);
+  ok((await pg.$$(".perf-sub .sub-t")).length === subs.length, "สลับแท็บคอลัมน์แล้วยังกางอยู่");
+  ok((await pg.$$eval(".perf-sub .sub-t", (n) => n[0].parentElement.querySelectorAll("td").length)) ===
+     (await pg.$$eval(".tbl.perf thead th", (n) => n.length)), "แถวย่อยเปลี่ยนคอลัมน์ตามแท็บ");
+
+  // ต้องรอด render ใหม่ — state ไม่ได้อยู่ใน DOM
+  await tabTo(pg, "YouTube");
+  await tabTo(pg, "ภาพรวม");
+  ok((await pg.$$(".perf-sub")).length > 0, "สลับแท็บไปกลับแล้วยังกางอยู่");
+
+  await pg.click('[data-perf="tiktok"]');
+  await pg.waitForTimeout(200);
+  ok((await pg.$$(".perf-sub")).length === 0, "กดซ้ำแล้วพับกลับ");
+
+  /* ⚠️ ปุ่มกาง กับ ปุ่มไปแท็บของช่อง ต้องเป็นคนละปุ่ม
+     ปุ่มเดียวทำ 2 อย่าง = กดแล้วเดาไม่ถูกว่าจะกางหรือจะเปลี่ยนหน้า */
+  await pg.click('.tbl.perf tbody .drill[data-tab="facebook"]');
+  await pg.waitForTimeout(200);
+  ok(/Facebook/.test(await pg.$eval(".tab.on", (e) => e.innerText)), "ปุ่ม › ยังเป็นทางลัดไปแท็บช่องเหมือนเดิม");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[40] 🔴 คอนเทนต์เด่น — ช่องละ 2 อันดับ");
+{
+  const { pg } = await open();
+  /* 🔴 เจ้าของสั่ง 19 ส.ค. 2026 — ใบเดียวต่อช่องบอกไม่ได้ว่าใบที่ชนะโดดออกมาใบเดียว
+     หรือทั้งช่องทำได้ดีพอๆ กัน */
+  const perCard = await pg.$$eval(".tcard", (n) => n.map((c) => c.querySelectorAll(".post").length));
+  ok(perCard.length === 6, `มี 2 อันดับ × 3 ช่อง = 6 กล่อง (${perCard.length})`);
+  ok(perCard.every((x) => x === 2), `ทุกกล่องมี 2 ใบ (${perCard.join(",")})`);
+
+  // มีเลขอันดับกำกับ ไม่งั้นไม่รู้ว่าใบไหนมาก่อน
+  const ranks = await pg.$$eval(".tcards .tcard", (n) => [...n[0].querySelectorAll(".rk")].map((x) => x.textContent.trim()));
+  ok(ranks.join() === "1,2", `มีเลขอันดับกำกับ (${ranks.join(",")})`);
+
+  // ⚠️ ในกล่องเดียวกันต้องเรียงถูก — อันดับ 1 ต้องดีกว่าอันดับ 2 จริง
+  const erPair = await pg.$$eval(".duo .duo-c:first-child .tcards .tcard", (n) =>
+    [...n[0].querySelectorAll(".post-m")].map((m) => parseFloat((m.innerText.match(/ER\s+([\d.]+)%/) || [])[1])));
+  ok(erPair.length === 2 && erPair[0] >= erPair[1], `กล่อง Engagement: อันดับ 1 ER สูงกว่า (${erPair.join(" > ")})`);
+
+  // ทั้ง 2 ใบต้องเป็นคนละโพสต์
+  const titles = await pg.$$eval(".tcards .tcard", (n) => [...n[0].querySelectorAll(".post-t")].map((x) => x.textContent.trim()));
+  ok(titles[0] !== titles[1], "2 ใบในกล่องเดียวกันไม่ใช่ใบเดียวกัน");
   await pg.close();
 }
 

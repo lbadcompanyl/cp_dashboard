@@ -42,6 +42,8 @@
         { key: "watchTime", label: "เวลาที่คนดูรวม", fmt: "hours" },
         { key: "avgViewDuration", label: "ดูเฉลี่ยต่อคลิป", fmt: "duration" },
       ],
+      // ตัวชี้วัดคุณภาพการดู ที่ช่องนี้ให้ตัวเลขได้จริง (ดู VIEW_COLS)
+      stats: { watchTime: true, avgViewDuration: true, completionRate: true },
     },
 
     tiktok: {
@@ -67,6 +69,9 @@
         { key: "views", label: "Views ของวิดีโอ", fmt: "num" },
         { key: "completionRate", label: "ดูจนจบ", fmt: "pct" },
       ],
+      /* ⚠️ TikTok นับ 1 view ตั้งแต่วินาทีแรกที่คลิปเริ่มเล่น ไม่มีเกณฑ์ 3 วินาที
+         และ API พื้นฐานไม่ให้เวลาดูรวม — ใส่ไปก็เป็นตัวเลขที่ไม่มีอยู่จริง */
+      stats: { avgViewDuration: true, completionRate: true },
     },
 
     facebook: {
@@ -91,9 +96,40 @@
       ],
       extras: [
         { key: "reach", label: "Reach", fmt: "num" },
+        { key: "views3s", label: "ดูเกิน 3 วินาที", fmt: "num" },
       ],
+      /* 🔴 Facebook เป็นเจ้าเดียวที่มี "ดูเกิน 3 วินาที" (post_video_views_3s)
+         เพราะ Facebook เล่นวิดีโออัตโนมัติตอนเลื่อนผ่าน ยอดวิวดิบจึงพองมาก
+         ตัวเลข 3 วินาทีคือตัวที่บอกว่า "มีคนหยุดดูจริงกี่ครั้ง" */
+      stats: { views3s: true },
     },
   };
+
+  /* คอลัมน์ฝั่ง "การมองเห็น" ของตารางผลงานรายช่อง
+   * ⚠️ แต่ละเจ้าให้ตัวเลขไม่เท่ากันโดยธรรมชาติ ช่องที่ไม่มีต้องขึ้น "—" พร้อมเหตุผล
+   *    ห้ามใส่ 0 หรือเดาค่าให้ — 0 แปลว่า "วัดได้แล้วได้ศูนย์" คนละเรื่องกับ "วัดไม่ได้"
+   * ⚠️ เพิ่มคอลัมน์ใหม่ที่นี่ที่เดียว แล้วเติม stats ของช่องที่มีตัวเลขนั้นให้ครบ */
+  var VIEW_COLS = [
+    { key: "reach", label: "Views / Reach", fmt: "num", strong: true, always: true },
+    { key: "views3s", label: "ดูเกิน 3 วิ", fmt: "num",
+      tip: "จำนวนครั้งที่มีคนดูนานเกิน 3 วินาที · Facebook เล่นวิดีโอเองตอนเลื่อนผ่าน ยอดวิวดิบจึงพอง " +
+           "ตัวเลขนี้บอกว่ามีคนหยุดดูจริงกี่ครั้ง",
+      na: "ช่องนี้ไม่ได้แยกยอดวิวตามระยะเวลาที่ดู" },
+    { key: "avgViewDuration", label: "ดูเฉลี่ย/ครั้ง", fmt: "duration",
+      tip: "ดูนานเฉลี่ยกี่นาที:วินาทีต่อการดู 1 ครั้ง",
+      na: "ช่องนี้ไม่เปิดเผยเวลาที่ดูเฉลี่ย" },
+    { key: "completionRate", label: "ดูจนจบ", fmt: "pct",
+      tip: "สัดส่วนของการดูที่ดูไปจนจบคลิป — ตัวนี้แหละคือ retention",
+      na: "ช่องนี้ไม่เปิดเผยสัดส่วนการดูจนจบ" },
+    { key: "watchTime", label: "เวลาดูรวม", fmt: "hours",
+      tip: "เวลาที่คนใช้ดูรวมกันทั้งหมดในช่วงนี้",
+      na: "ช่องนี้ไม่เปิดเผยเวลาดูรวม" },
+    { key: "posts", label: "โพสต์", fmt: "num", always: true },
+    { key: "avgPerPost", label: "เฉลี่ยต่อโพสต์", fmt: "num", always: true },
+    { key: "share", label: "% ของยอดรวม", fmt: "share", always: true, noDelta: true,
+      tip: "ช่องนี้คิดเป็นกี่ % ของ Views / Reach รวมทุกช่อง — เป็นส่วนแบ่งระหว่างช่อง " +
+           "ไม่ใช่ retention (retention คือคอลัมน์ 'ดูจนจบ')" },
+  ];
 
   /* ลำดับที่ใช้แสดงผลทุกที่ — เปลี่ยนที่นี่ที่เดียวได้ทั้งหน้า */
   var ORDER = ["youtube", "tiktok", "facebook"];
@@ -111,6 +147,11 @@
 
   window.SOCIAL_CONFIG = {
     PLATFORMS: PLATFORMS,
+    VIEW_COLS: VIEW_COLS,
+    /** ช่องนี้ให้ตัวเลขนี้ได้จริงไหม — คอลัมน์ที่ทุกช่องมีเสมอไม่ต้องเช็ค */
+    hasStat: function (pk, key) {
+      return !!(PLATFORMS[pk].stats || {})[key];
+    },
     ORDER: ORDER,
     TABS: TABS,
     /** รวม engagement ตามที่แต่ละช่องนับ — ใช้ทั้งตอนคิด ER และตอนวาดแท่ง */
