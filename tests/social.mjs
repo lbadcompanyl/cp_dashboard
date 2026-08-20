@@ -303,8 +303,12 @@ console.log("\n[6] 🔴 ผลงานรายช่อง — หนึ่ง
   /* 🔴 เจ้าของถามว่า "สัดส่วน" คืออะไร retention หรือเปล่า — เปลี่ยนชื่อเป็น "% ของยอดรวม"
      และแยก retention ออกมาเป็นคอลัมน์ "ดูจนจบ" ของมันเอง (19 ส.ค. 2026)
      ⚠️ ชื่อคอลัมน์ที่ตีความได้ 2 แบบ = เจ้าของอ่านตัวเลขผิดโดยไม่มีอะไรเตือน */
+  /* 🔴 ห้ามใช้คำว่า "ดูจนจบ" เป็นชื่อคอลัมน์ — YouTube ให้ averageViewPercentage
+     ซึ่งแปลว่า "ดูเฉลี่ยกี่ % ของความยาวคลิป" ไม่ใช่ "มีคนกี่ % ที่ดูจนจบ"
+     TikTok ให้อัตราการดูจบจริง = คนละนิยาม อยู่คอลัมน์เดียวกัน
+     จึงต้องใช้ชื่อกลางๆ ว่า Retention แล้วอธิบายความต่างไว้ที่ ⓘ */
   for (const want of ["Views / Reach", "% ของยอดรวม", "โพสต์", "เฉลี่ยต่อโพสต์",
-                      "ดูเกิน 3 วิ", "ดูเฉลี่ย/ครั้ง", "ดูจนจบ", "เวลาดูรวม"]) {
+                      "ดูเกิน 3 วิ", "ดูเฉลี่ย/ครั้ง", "Retention", "เวลาดูรวม"]) {
     ok(hR.some((x) => x.includes(want)), `แท็บ Views / Reach มีคอลัมน์ "${want}"`);
   }
   ok(!hR.some((x) => /^สัดส่วน/.test(x.trim())), "ไม่มีคอลัมน์ชื่อ 'สัดส่วน' ลอยๆ ที่ตีความได้หลายแบบ");
@@ -2150,6 +2154,35 @@ console.log("\n[52] 🔴 ช่องในตารางต้องสูง�
     return { w: Math.round(b.width), h: Math.round(b.height) };
   });
   ok(tog.h >= 32, `ปุ่มกางสูงพอกดโดน (${tog.w}×${tog.h}px)`);
+
+  /* 🔴 ต้องเด่นพอให้รู้ว่ากดได้ (เจ้าของแจ้ง 2 รอบ 19 ส.ค. 2026)
+     เดิมเป็นลูกศรสีจางบนพื้นขาว กลืนไปกับข้อความจนไม่มีใครรู้ว่ากดได้
+     ⚠️ เช็คว่าพื้นหลังไม่ใช่สีเดียวกับพื้นการ์ด และตัดกับตัวอักษรบนปุ่มพอ */
+  const car = await pg.$eval(".caret", (e) => {
+    const cs = getComputedStyle(e);
+    const rgb = (v) => (v.match(/\d+/g) || []).map(Number);
+    return { bg: rgb(cs.backgroundColor), fg: rgb(cs.color), w: Math.round(e.getBoundingClientRect().width) };
+  });
+  const lum = (c) => {
+    const f = c.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+    return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2];
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = lum(a) > lum(b) ? [lum(a), lum(b)] : [lum(b), lum(a)];
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  ok(ratio(car.bg, [255, 255, 255]) >= 2.5,
+     `พื้นปุ่มตัดกับพื้นการ์ด (${ratio(car.bg, [255, 255, 255]).toFixed(1)}:1)`);
+  ok(ratio(car.fg, car.bg) >= 4.5,
+     `ลูกศรบนปุ่มอ่านออก (${ratio(car.fg, car.bg).toFixed(1)}:1)`);
+  ok(car.w >= 20, `ปุ่มลูกศรกว้างพอ (${car.w}px)`);
+
+  // กางแล้วต้องดูต่างจากแถวที่ยังไม่ได้กาง
+  const before = await pg.$eval(".caret", (e) => getComputedStyle(e).backgroundColor);
+  await pg.click("[data-perf]");
+  await pg.waitForTimeout(200);
+  const after = await pg.$eval(".perf-r.open .caret", (e) => getComputedStyle(e).backgroundColor);
+  ok(before !== after, `กางแล้วปุ่มเปลี่ยนสี (${before} → ${after})`);
   await pg.close();
 }
 

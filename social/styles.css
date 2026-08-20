@@ -369,13 +369,18 @@ body {
   padding:7px 8px 7px 4px; border-radius:8px; min-height:34px;
 }
 .rowtog:hover { color:var(--accent); background:var(--surface-2); }
+/* 🔴 ปุ่มกางต้องเด่นพอให้รู้ว่ากดได้ (เจ้าของแจ้ง 2 รอบ 19 ส.ค. 2026)
+   เดิมเป็นลูกศรสีจางบนพื้นขาว กลืนไปกับข้อความจนไม่มีใครรู้ว่ากดได้
+   ตอนนี้เป็นปุ่มสีน้ำเงินทึบ — สีเดียวกับปุ่มอื่นที่กดได้ทั้งหน้า */
 .caret {
-  color:var(--muted); font-size:.86rem; width:18px; height:18px; flex:none;
+  color:#fff; font-size:.78rem; width:22px; height:22px; flex:none;
   display:inline-flex; align-items:center; justify-content:center;
-  border:1px solid var(--border); border-radius:5px; background:var(--surface);
+  border:0; border-radius:6px; background:var(--accent);
+  box-shadow:0 1px 2px rgba(16,24,40,.18);
 }
-.rowtog:hover .caret { border-color:var(--accent); color:var(--accent); }
-.perf-r.open .caret { border-color:var(--accent); color:var(--accent); }
+.rowtog:hover .caret { background:#1d4ed8; }
+/* กางอยู่ = สลับเป็นโทนเข้ม ให้ต่างจากแถวที่ยังไม่ได้กาง */
+.perf-r.open .caret { background:var(--ink); }
 .tbl.perf .drill { padding:7px 8px; color:var(--muted); font-size:1.05rem; line-height:1; min-height:34px; }
 .tbl.perf .drill:hover { color:var(--accent); }
 .perf-r.open { background:var(--surface-2); }
