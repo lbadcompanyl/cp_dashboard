@@ -33,12 +33,12 @@ export default {
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
     }
-    // 🚫 `/debugmeta` ถูกถอดออกจากเส้นทางก่อนปล่อยขึ้น production (20 ส.ค. 2026)
-    //    กฎเหล็กข้อ 2 ใน CLAUDE.md: โค้ดทดลอง / debug endpoint ห้ามขึ้น production
-    //    ตัวนี้เปิดให้ใครก็ได้ยิง GET แล้ว **เผาเครดิต ScrapeCreators ที่จ่ายเงิน** ทีละครั้ง
-    //    และคืน response ดิบของต้นทางออกมาทั้งก้อน
-    //    ฟังก์ชัน debugMeta() ยังอยู่ข้างล่างครบ — เวลาจะไล่ปัญหาเรื่อง thumbnail
-    //    ให้เปิดเส้นทางกลับมาชั่วคราวตอนรันในเครื่อง แล้วถอดออกก่อน deploy ทุกครั้ง
+    /* 🚫 เคยมี `/debugmeta` ตรงนี้ — ถอดออกทั้งเส้นทางและฟังก์ชันแล้ว (เจ้าของสั่ง 20 ส.ค. 2026)
+       ตอนนั้นทำไว้ไล่ปัญหาเรื่อง map field รูปปก ซึ่งแก้จบไปแล้ว
+       ⚠️ ห้ามเอากลับมาแบบเปิดค้างไว้ ไม่ว่ากรณีใด — ไม่มีการตรวจสิทธิ์เลย
+          ใครรู้ URL ก็ยิงได้ แล้วมัน **เผาเครดิต ScrapeCreators ที่จ่ายเงิน** ทีละครั้ง
+          พร้อมคืน response ดิบของต้นทางออกมาทั้งก้อน (กฎเหล็กข้อ 2 ใน CLAUDE.md)
+       ✅ ต้องไล่ปัญหาแบบนั้นอีก ให้เขียนขึ้นใหม่ตอนรันในเครื่อง แล้วอย่า commit */
     if (request.method !== "POST" || url.pathname !== "/analyze") {
       return cors(json({ error: "ไม่พบ endpoint (ใช้ POST /analyze)" }, 404), origin);
     }
@@ -312,28 +312,6 @@ async function fetchScrapeCreators(kind, url, limit, env) {
   } catch (e) { /* meta ไม่มาก็ไม่เป็นไร */ }
 
   return { comments: out, credits_remaining, post_title, post_thumb };
-}
-
-/** debug: ดู response จริงของ post/video เพื่อ map field รูปปก/หัวข้อให้ตรง */
-async function debugMeta(url, env) {
-  if (!env.SCRAPECREATORS_API_KEY) return { error: "ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY" };
-  const platform = detectPlatform(url);
-  if (platform !== "facebook" && platform !== "tiktok") return { error: "ใช้ได้เฉพาะลิงก์ FB/TikTok" };
-  const ep = platform === "facebook"
-    ? "https://api.scrapecreators.com/v1/facebook/post"
-    : "https://api.scrapecreators.com/v2/tiktok/video";
-  const api = new URL(ep);
-  api.searchParams.set("url", url);
-  const r = await fetch(api.toString(), { headers: { "x-api-key": env.SCRAPECREATORS_API_KEY } });
-  const data = await r.json().catch(() => ({}));
-  return {
-    ok: r.ok, status: r.status, endpoint: ep,
-    extracted: {
-      title: deepFindStr(data, ["desc", "message", "title", "caption", "text", "content", "description"]),
-      thumb: deepFindUrl(data, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "picture", "photo", "image", "display_url"]),
-    },
-    raw: data,
-  };
 }
 
 /** ค้นหาสตริง (หัวข้อ) จาก response ที่ไม่รู้โครงสร้างแน่ชัด */
