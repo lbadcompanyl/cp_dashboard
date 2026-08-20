@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="1" />
+<meta name="page-ver" content="2" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -36,7 +36,7 @@
   .sc-field { display: flex; flex-direction: column; gap: 5px; }
   .sc-field.sc-grow { flex: 1 1 320px; }
   .sc-field label { font-size: 10.5px; color: var(--sc-muted); text-transform: uppercase; letter-spacing: .04em; }
-  .sc-wrap input[type=url], .sc-wrap input[type=number] {
+  .sc-wrap input[type=url], .sc-wrap input[type=number], .sc-wrap select {
     font: inherit; font-size: 13.5px; color: var(--sc-ink); background: var(--sc-plane);
     border: 1px solid #d1d5db; border-radius: 9px; padding: 9px 11px; width: 100%;
   }
@@ -151,7 +151,14 @@
           <label for="url">ลิงก์โพส (YouTube · Facebook · TikTok)</label>
           <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
         </div>
-        <div class="sc-field" style="width:128px">
+        <div class="sc-field" style="width:168px">
+          <label for="target">วัดท่าทีต่อ</label>
+          <select id="target">
+            <option value="cp">🏢 เครือ CP</option>
+            <option value="general">💬 อารมณ์รวม</option>
+          </select>
+        </div>
+        <div class="sc-field" style="width:118px">
           <label for="limit">ดึงกี่คอมเมนต์</label>
           <input type="number" id="limit" value="200" min="10" max="2000" step="10" />
         </div>
@@ -175,6 +182,7 @@
         <h2>ผลวิเคราะห์ Sentiment</h2>
         <p class="sc-sub" id="resSub"></p>
         <div class="sc-posthead" id="postHead" style="display:none"></div>
+        <p class="sc-sub" id="donutCap" style="margin:0 0 10px"></p>
         <div class="sc-senti">
           <div class="sc-donut" id="donut"><div class="sc-mid"><div class="sc-big" id="donutBig">–</div><div class="sc-lab">เชิงบวก</div></div></div>
           <div class="sc-legend" id="legend"></div>
@@ -287,6 +295,7 @@ async function analyze(){
 
   const opts = {
     url, platform,
+    target: el("target").value,
     limit: Math.max(10, Math.min(2000, +el("limit").value || 200)),
     anonymize: true, samples: true,
   };
@@ -314,12 +323,16 @@ async function callWorker(opts){
 }
 async function demoResult(opts){
   await new Promise(r => setTimeout(r, 700));
-  const total = Math.min(opts.limit, 214);
+  const fetched = Math.min(opts.limit, 214);
+  const isCP = opts.target === "cp";
+  const notRel = isCP ? Math.round(fetched*0.72) : 0;   // ส่วนใหญ่ไม่ได้พูดถึง CP
+  const total = fetched - notRel;
   const pos = Math.round(total*0.58), neg = Math.round(total*0.16), neu = total-pos-neg;
   return {
     platform: opts.platform, source_url: opts.url, demo: true,
+    target: opts.target, not_related: notRel,
     post_title: "ตัวอย่าง: รีวิวร้านอาหารเปิดใหม่ อร่อยจริงหรือแค่กระแส?", post_thumb: "",
-    fetched_count: total, analyzed_count: total,
+    fetched_count: fetched, analyzed_count: fetched,
     sentiment: { positive: pos, neutral: neu, negative: neg },
     engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
     time_range: { earliest: "2026-08-10", latest: "2026-08-19" },
@@ -352,9 +365,12 @@ function renderResult(d){
   const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
   const pp = pct(s.positive,total), pnu = pct(s.neutral,total), pn = 100-pp-pnu;
 
+  const isCP = d.target === "cp";
   el("resSub").innerHTML =
-    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์`) +
+    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ดึงมา ${d.analyzed_count||total} คอมเมนต์`) +
+    (isCP ? ` · <b>พูดถึง CP ${total} คอมเมนต์</b> (ไม่เกี่ยว ${d.not_related||0})` : "") +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
+  el("donutCap").textContent = isCP ? "% ของคอมเมนต์ที่พูดถึงเครือ CP เท่านั้น" : "";
   if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
 
   const hasPost = d.post_title || d.post_thumb;
@@ -383,7 +399,12 @@ function renderResult(d){
     </div>`).join("");
 
   const eng = d.engagement || {};
-  const stats = [
+  const stats = isCP ? [
+    ["คอมเมนต์ทั้งหมด", d.analyzed_count||total],
+    ["พูดถึงเครือ CP", total],
+    ["ไม่เกี่ยวกับ CP", d.not_related||0],
+    ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
+  ] : [
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
     ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
     ["จำนวน Reply", (eng.total_replies!=null? Number(eng.total_replies).toLocaleString() : "—")],
@@ -424,12 +445,13 @@ function renderAudit(d){
   const audit = d.audit || [];
   el("auditCard").style.display = audit.length ? "" : "none";
   if (!audit.length) return;
-  const counts = { all: audit.length, positive:0, neutral:0, negative:0 };
+  const counts = { all: audit.length, positive:0, neutral:0, negative:0, not_related:0 };
   audit.forEach(a => { if (counts[a.sentiment] != null) counts[a.sentiment]++; });
   const filters = [["all","ทั้งหมด"],["positive","บวก"],["neutral","กลาง"],["negative","ลบ"]];
+  if (counts.not_related) filters.push(["not_related","ไม่เกี่ยวกับ CP"]);
   el("auditFilter").innerHTML = filters.map(([k,l]) => `<button class="sc-afbtn${k==="all"?" sc-on":""}" data-f="${k}" type="button">${l} (${counts[k]||0})</button>`).join("");
-  const tagL = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
-  const tagC = { positive:"--sc-pos", neutral:"--sc-neu", negative:"--sc-neg" };
+  const tagL = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยว" };
+  const tagC = { positive:"--sc-pos", neutral:"--sc-neu", negative:"--sc-neg", not_related:"--sc-muted" };
   function draw(f){
     const rows = audit.filter(a => f==="all" || a.sentiment===f);
     auditRows = rows;
@@ -443,7 +465,7 @@ function renderAudit(d){
   draw("all");
 }
 function auditSheets(){
-  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };
   const sheets = lastResult ? buildSheets(lastResult) : {};
   sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.text])];
   return sheets;
@@ -460,7 +482,10 @@ function buildSheets(d){
   const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
   const summary = [
     ["รายการ","ค่า"],["แพลตฟอร์ม", d.platform||""],["ลิงก์", d.source_url||""],
+    ["หัวข้อโพส", d.post_title||""],
+    ["วัดท่าทีต่อ", d.target==="cp" ? "เครือ CP" : "อารมณ์รวม"],
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],["คอมเมนต์ที่ดึงมา", d.fetched_count||""],
+    ...(d.target==="cp" ? [["พูดถึงเครือ CP", total],["ไม่เกี่ยวกับ CP", d.not_related||0]] : []),
     ["ยอดถูกใจ/รีแอกชัน", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
     ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
     ["สรุปภาพรวม", d.summary||""],
@@ -468,7 +493,7 @@ function buildSheets(d){
   const senti = [["Sentiment","จำนวน","เปอร์เซ็นต์"],["เชิงบวก", s.positive||0, pct(s.positive,total)+"%"],["กลาง", s.neutral||0, pct(s.neutral,total)+"%"],["เชิงลบ", s.negative||0, pct(s.negative,total)+"%"],["รวม", total, "100%"]];
   const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term, k.count||0])];
   const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
-  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };
   if ((d.samples||[]).length) sheets["ตัวอย่าง"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[sentTh[x.sentiment]||x.sentiment, x.text])];
   return sheets;
 }

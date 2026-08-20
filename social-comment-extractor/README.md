@@ -73,6 +73,23 @@ npx wrangler secret put SCRAPECREATORS_API_KEY
    ข้อความ/like/เวลา มาครบ; ถ้า field ชื่อไม่ตรง แก้ที่ `pickField()` ใน `worker.js` (คอมเมนต์กำกับไว้)
 4. (แนะนำ) ตั้ง `ALLOW_ORIGIN` ใน `wrangler.toml` เป็นโดเมนหน้าเว็บของคุณ แทน `"*"` เพื่อกันคนอื่นยิง Worker
 
+## 🏢 โหมด "วัดท่าทีต่อเครือ CP" (aspect-based)
+
+นอกจากอารมณ์รวม ระบบวัด **ท่าทีที่มีต่อ CP โดยเฉพาะ** ได้ (ค่าเริ่มต้นของแท็บใน Issue Dashboard)
+
+- ป้าย 4 แบบ: `positive` · `neutral` · `negative` · **`not_related`** (ไม่ได้พูดถึง CP)
+- **% คิดจากเฉพาะคอมเมนต์ที่พูดถึง CP** ไม่ใช่ทั้งหมด — ไม่งั้นตัวเลขจะเพี้ยน
+  (โพสปลาหมอคางดำส่วนใหญ่ด่าปลา/รัฐ ไม่ได้ด่า CP)
+- เกณฑ์ตัดสินอยู่ที่ **[`RUBRIC-CP.md`](RUBRIC-CP.md)** — อ่านก่อนใช้/ก่อน label
+
+### สอน AI ให้แม่นขึ้น (few-shot)
+ตัวอย่างสอนอยู่ที่ตัวแปร **`CP_EXAMPLES`** บนสุดของ `worker/worker.js`
+เพิ่มเคสที่ AI เคยตอบผิดเข้าไป → Deploy → แม่นขึ้นทันที (ไม่ต้องเทรนโมเดล)
+· วิธีสร้างชุดข้อมูล label ดูที่ [`labels/README.md`](labels/README.md)
+
+> ⚠️ **worker deploy ด้วยการ copy-paste ไฟล์เดียว** — จึงเก็บตัวอย่างไว้ใน `worker.js`
+> ห้ามแยกเป็นไฟล์อื่น ไม่งั้น deploy ผ่าน Cloudflare web editor ไม่ได้
+
 ## โมเดล sentiment
 ตั้งใน `wrangler.toml` → `CLAUDE_MODEL`:
 - `claude-haiku-4-5` — **ค่าเริ่มต้น** ถูก เหมาะจัดหมวดคอมเมนต์จำนวนมาก
