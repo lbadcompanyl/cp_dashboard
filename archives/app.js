@@ -313,6 +313,32 @@ function renderList() {
   $("#more").innerHTML = more;
 }
 
+// ---------- กล่องตัวกรอง (พับได้) ----------
+// ⚠️ จำสถานะไว้ใน localStorage ไม่ใช่ใน DOM อย่างเดียว — ไม่งั้นกดกางไว้แล้ว
+//    พอเปลี่ยนหน้า/รีเฟรช ต้องมากางใหม่ทุกครั้ง
+const FOPEN_KEY = "archivesFiltersOpen";
+function setFiltersOpen(open) {
+  $("#filters").hidden = !open;
+  $("#ftoggle").setAttribute("aria-expanded", open ? "true" : "false");
+  $(".fcaret").textContent = open ? "▾" : "▸";
+  try { localStorage.setItem(FOPEN_KEY, open ? "1" : "0"); } catch {}
+}
+
+// สรุปว่ากรองอะไรไว้ — ต้องอ่านรู้เรื่องโดยไม่ต้องกางกล่อง
+function filterSummary() {
+  const bits = [];
+  if (state.cats.size) bits.push([...state.cats].join(", "));
+  if (state.srcs.size) {
+    bits.push(state.srcs.size === 1 ? [...state.srcs][0] : `สำนักข่าว ${state.srcs.size} เจ้า`);
+  }
+  if (state.from || state.to) {
+    const th = (d) => d ? d.split("-").reverse().join("/") : "";
+    bits.push(state.from && state.to ? `${th(state.from)}–${th(state.to)}`
+      : state.from ? `ตั้งแต่ ${th(state.from)}` : `ถึง ${th(state.to)}`);
+  }
+  return bits.length ? bits.join(" · ") : "ยังไม่ได้กรอง — แตะเพื่อเลือกวันที่ หมวด หรือสำนักข่าว";
+}
+
 function renderCount() {
   const n = filtered.length;
   const loadedYears = [...loaded].sort((a, b) => b - a);
@@ -322,6 +348,7 @@ function renderCount() {
     `<span class="dim"> · ค้นในปี ${loadedYears.join(", ")}${older.length ? ` (ยังไม่รวม ${older.join(", ")})` : ""}</span>`;
   $("#clearall").hidden = !hasFilter();
   $("#qclear").hidden = !state.q;
+  $("#fsum").textContent = filterSummary();
   $("#loadednote").textContent = older.length
     ? `เลือกวันที่ย้อนไปถึงปีไหน ระบบจะโหลดปีนั้นให้เอง (ยังไม่โหลด: ${older.join(", ")})`
     : "โหลดครบทุกปีแล้ว";
@@ -392,6 +419,7 @@ async function withBusy(fn) {
 }
 
 function bind() {
+  $("#ftoggle").addEventListener("click", () => setFiltersOpen($("#filters").hidden));
   $("#q").addEventListener("input", onSearchInput);
   $("#qclear").addEventListener("click", () => {
     $("#q").value = ""; state.q = ""; state.shown = PAGE; syncURL(true); render(); $("#q").focus();
@@ -465,6 +493,11 @@ function fillInputs() {
   bind();
   readQuery();
   fillInputs();
+  // เปิด URL ที่มีตัวกรองติดมาแล้ว ให้กางกล่องให้เลย — ไม่งั้นเห็นผลถูกกรองอยู่แต่ไม่รู้ว่ากรองด้วยอะไร
+  const preset = !!(state.from || state.to || state.cats.size || state.srcs.size);
+  let saved = false;
+  try { saved = localStorage.getItem(FOPEN_KEY) === "1"; } catch {}
+  setFiltersOpen(preset || saved);
   $("#list").innerHTML = `<div class="loading"><span class="spin"></span>กำลังโหลดคลังข่าว…</div>`;
   try {
     INDEX = await fetch("data/index.json").then((r) => {

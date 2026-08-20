@@ -69,6 +69,12 @@ async function open(ctx, qs = "") {
   return page;
 }
 
+// กล่องตัวกรองพับไว้เป็นค่าตั้งต้น — เทสต์ที่จะไปกดตัวกรองต้องกางก่อน
+async function openFilters(p) {
+  if (await p.$eval("#filters", (e) => e.hidden)) await p.click("#ftoggle");
+  await p.waitForTimeout(80);
+}
+
 const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
 await fakeData(ctx);
 const page = await open(ctx);
@@ -252,6 +258,7 @@ console.log("\n[4] ตัดหางพาดหัวตอนแสดง แ
 // ── [5] ตัวกรอง ────────────────────────────────────────────────────────
 console.log("\n[5] ตัวกรอง");
 {
+  await openFilters(page);
   await page.fill("#q", "");
   await page.waitForTimeout(400);
   const all = await page.$eval("#count", (e) => e.textContent);
@@ -306,6 +313,7 @@ console.log("\n[5] ตัวกรอง");
 // ── [6] URL + ปุ่ม back ────────────────────────────────────────────────
 console.log("\n[6] URL เก็บสถานะ");
 {
+  await openFilters(page);
   await page.fill("#q", "ซีพี");
   await page.waitForTimeout(400);
   const cat = await page.$eval("#cats .ch", (b) => b.dataset.cat);
@@ -378,6 +386,7 @@ console.log("\n[8] แบ่งหน้า");
 console.log("\n[9] ขยายช่วงวันที่ย้อนไปปีเก่า");
 {
   const p = await open(ctx);
+  await openFilters(p);
   const idx = await p.evaluate(() => fetch("data/index.json").then((r) => r.json()));
   const years = idx.years.map((x) => x.y).sort((a, b) => b - a);
   ok("index.json แยกไฟล์ตามปี", years.length > 1, JSON.stringify(years));
@@ -398,6 +407,52 @@ console.log("\n[9] ขยายช่วงวันที่ย้อนไป�
   await p.close();
 }
 
+// ── [9b] กล่องตัวกรองพับได้ ────────────────────────────────────────────
+console.log("\n[9b] กล่องตัวกรองพับได้");
+{
+  // ⚠️ ต้องใช้ context ใหม่ — เทสต์ก่อนหน้ากางกล่องไว้ แล้วสถานะถูกจำใน localStorage
+  //    ถ้าใช้ context เดิมจะวัด "ค่าตั้งต้น" ไม่ได้เลย
+  const fresh = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  await fakeData(fresh);
+  const p = await open(fresh);
+  ok("เปิดหน้ามาตัวกรองพับอยู่", await p.$eval("#filters", (e) => e.hidden));
+  ok("หัวกล่องบอกว่ายังไม่ได้กรอง", /ยังไม่ได้กรอง/.test(await p.$eval("#fsum", (e) => e.textContent)));
+  ok("มีปุ่มกางให้เห็น", await p.$eval("#ftoggle", (e) => e.offsetHeight > 0));
+
+  await p.click("#ftoggle");
+  await p.waitForTimeout(100);
+  ok("กดแล้วกางออก", !(await p.$eval("#filters", (e) => e.hidden)));
+  ok("กางแล้วเห็นชิพหมวดจริง", (await p.$$eval("#cats .ch", (e) => e.length)) > 0);
+
+  // เลือกตัวกรองแล้วหัวกล่องต้องสรุปให้อ่านได้โดยไม่ต้องกาง
+  const cat = await p.$eval("#cats .ch", (b) => b.dataset.cat);
+  await p.click(`#cats [data-cat="${cat}"]`);
+  await p.waitForTimeout(120);
+  ok("หัวกล่องสรุปหมวดที่เลือกไว้", (await p.$eval("#fsum", (e) => e.textContent)).includes(cat),
+    await p.$eval("#fsum", (e) => e.textContent));
+
+  await p.click("#ftoggle");
+  await p.waitForTimeout(100);
+  ok("กดอีกทีพับกลับ", await p.$eval("#filters", (e) => e.hidden));
+  ok("พับแล้วยังอ่านออกว่ากรองอะไรอยู่", (await p.$eval("#fsum", (e) => e.textContent)).includes(cat));
+
+  // ⚠️ จำสถานะไว้ ไม่ใช่กางใหม่ทุกครั้งที่เปิดหน้า
+  await p.click("#ftoggle");
+  await p.waitForTimeout(100);
+  const p2 = await open(fresh);
+  ok("จำไว้ว่ากางค้างไว้ (เปิดหน้าใหม่ยังกางอยู่)", !(await p2.$eval("#filters", (e) => e.hidden)));
+  await p2.close();
+
+  // เปิด URL ที่มีตัวกรองติดมา ต้องกางให้เห็นว่ากรองด้วยอะไร
+  await p.click("#ftoggle");                       // พับกลับ + จำว่าพับ
+  await p.waitForTimeout(100);
+  const p3 = await open(fresh, `?cat=${encodeURIComponent(cat)}`);
+  ok("เปิดลิงก์ที่มีตัวกรองติดมา = กางให้เอง", !(await p3.$eval("#filters", (e) => e.hidden)));
+  await p3.close();
+  await p.close();
+  await fresh.close();
+}
+
 // ── [10] มือถือ ────────────────────────────────────────────────────────
 console.log("\n[10] มือถือ");
 {
@@ -407,6 +462,7 @@ console.log("\n[10] มือถือ");
   const over = await p.evaluate(() => document.scrollingElement.scrollWidth - innerWidth);
   ok("ไม่มีอะไรล้นออกนอกจอ", over <= 1, `เกิน ${over}px`);
 
+  await openFilters(p);
   const boxes = await p.$$eval(".fbox", (els) => els.map((e) => {
     const r = e.getBoundingClientRect();
     return { x: Math.round(r.x), w: Math.round(r.width) };
@@ -421,6 +477,7 @@ console.log("\n[10] มือถือ");
 
   // จอกว้างต้องเรียงแนวนอน
   const p2 = await open(ctx);
+  await openFilters(p2);
   const bx = await p2.$$eval(".fbox", (els) => els.map((e) => Math.round(e.getBoundingClientRect().x)));
   ok("จอกว้าง = เรียงแนวนอน 3 คอลัมน์", new Set(bx).size === 3, JSON.stringify(bx));
   await p2.close();

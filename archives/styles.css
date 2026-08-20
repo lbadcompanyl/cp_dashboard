@@ -81,6 +81,23 @@ body {
 
 /* ── กล่องตัวกรอง 3 ตัว ───────────────────────────────────────────
    จอแคบซ้อนแนวตั้ง · จอกว้างเรียงแนวนอน (ดู @media ท้ายไฟล์) */
+/* ⚠️ ต้องมาก่อนกฎ .filters { display:grid } — ไม่งั้น display ชนะ [hidden] แล้วพับไม่ลง */
+[hidden] { display:none !important; }
+
+.filterwrap { display:flex; flex-direction:column; gap:10px; }
+.ftoggle {
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left; cursor:pointer;
+  font-family:inherit; font-size:.82rem; color:var(--ink);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:11px 13px;
+}
+.ftoggle:hover { background:var(--surface-2); }
+.ftoggle .fcaret { color:var(--muted); font-size:.7rem; width:10px; flex:none; }
+.ftoggle .ftitle { font-weight:650; flex:none; }
+/* สรุปว่ากรองอะไรไว้บ้าง — อ่านได้โดยไม่ต้องกางกล่อง */
+.ftoggle .fsum { color:var(--muted); font-weight:400; font-size:.76rem;
+                 flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
 .filters { display:grid; grid-template-columns:1fr; gap:10px; }
 .fbox { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 13px; }
 .fh { margin:0 0 9px; font-size:.82rem; font-weight:650; display:flex; gap:7px; align-items:baseline; flex-wrap:wrap; }
