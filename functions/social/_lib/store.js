@@ -136,3 +136,39 @@ export async function fetchJSON(url, { timeout = 8000, headers = {} } = {}) {
     clearTimeout(t);
   }
 }
+
+/**
+ * ช่อง YouTube ที่จะดูสถิติ — อ่านจาก env
+ *
+ * ⚠️ ชื่อช่องอยู่ใน env ไม่ได้เขียนไว้ในโค้ด — repo เป็น public และเจ้าของ
+ *    ขอไม่ให้ชื่อบริษัทอยู่ในของที่เปิดสาธารณะ (14 ส.ค. 2026)
+ *    ใส่อย่างใดอย่างหนึ่ง: YT_CHANNEL_ID (ขึ้นต้น UC...) หรือ YT_CHANNEL_HANDLE (@ชื่อช่อง)
+ *
+ * 🔴 ยกมาไว้ตรงนี้เพราะ endpoint ที่ถาม YouTube Analytics ทุกตัวต้องใช้ (20 ส.ค. 2026)
+ *    ก่อนหน้านี้มีอยู่แต่ใน youtube.js ส่วน youtube-top.js ฮาร์ดโค้ด channel==MINE ไว้
+ *    ซึ่งเป็นบั๊กเดียวกับที่เคยเจอแล้วแก้ไปแล้วรอบหนึ่ง — ดูคำเตือนที่ resolveChannelId()
+ */
+export function channelQuery(env) {
+  const id = String(env.YT_CHANNEL_ID || "").trim();
+  if (/^UC[\w-]{20,}$/.test(id)) return { key: "id", val: id };
+  const h = String(env.YT_CHANNEL_HANDLE || "").trim();
+  if (h) return { key: "forHandle", val: h.startsWith("@") ? h : "@" + h };
+  return null;
+}
+
+/**
+ * แปลง env ให้เป็น "รหัสช่องจริง" (UC...) ด้วย Data API
+ *
+ * 🚫 อย่าถาม YouTube Analytics ด้วย channel==MINE เป็นทางหลักเด็ดขาด
+ *    ถ้าบัญชี Google ที่กดอนุญาตไม่ได้เป็นเจ้าของช่องนี้ MINE จะไปหยิบ
+ *    "ช่องของบัญชีนั้น" ซึ่งมักว่างเปล่า แล้ว **ตอบ 200 พร้อมข้อมูลเปล่า**
+ *    ไม่มี error อะไรบอกเลย — เจอจริง 2 รอบ (19 ส.ค. กับ 20 ส.ค. 2026)
+ *    ต้องถามด้วย channel==<รหัสช่อง> ก่อนเสมอ แล้วค่อยตกไปที่ MINE
+ */
+export async function resolveChannelId(env, ch) {
+  if (ch.key === "id") return ch.val;
+  const u = "https://www.googleapis.com/youtube/v3/channels?part=id&" +
+    ch.key + "=" + encodeURIComponent(ch.val) + "&key=" + env.YT_API_KEY;
+  const r = await fetchJSON(u);
+  return (r.ok && r.body?.items?.[0]?.id) || "";
+}

@@ -8,7 +8,7 @@
 // ยังไม่ได้: เวลาที่คนดูรวม · ดูจบกี่ % · ผู้ชมเป็นใคร
 //   → พวกนั้นต้องใช้ YouTube Analytics API ซึ่งต้อง OAuth (ดู SOCIAL-HANDOFF.md)
 
-import { ST, payload, cached, missingEnv, fetchJSON } from "../_lib/store.js";
+import { ST, payload, cached, missingEnv, fetchJSON, channelQuery } from "../_lib/store.js";
 
 // ⭐ บวกเลขนี้ทุกครั้งที่แก้โครงข้อมูลที่คืนออกไป ไม่งั้นผู้ใช้จะเห็นของเก่าค้างเป็นชั่วโมง
 const DATA_VER = "4";
@@ -58,19 +58,6 @@ const API = "https://www.googleapis.com/youtube/v3";
 const MAX_VIDEOS = 12;      // พอสำหรับ "คลิปล่าสุด/ดังสุด" ไม่ต้องดึงทั้งช่อง
 const EDGE_TTL = 900;       // 15 นาที
 const KV_FRESH = 30 * 60 * 1000; // ของใน KV อายุไม่เกิน 30 นาที = ยังสด
-
-/**
- * ⚠️ ชื่อช่องอยู่ใน env ไม่ได้เขียนไว้ในโค้ด — repo เป็น public และเจ้าของ
- *    ขอไม่ให้ชื่อบริษัทอยู่ในของที่เปิดสาธารณะ (14 ส.ค. 2026)
- *    ใส่อย่างใดอย่างหนึ่ง: YT_CHANNEL_ID (ขึ้นต้น UC...) หรือ YT_CHANNEL_HANDLE (@ชื่อช่อง)
- */
-function channelQuery(env) {
-  const id = String(env.YT_CHANNEL_ID || "").trim();
-  if (/^UC[\w-]{20,}$/.test(id)) return { key: "id", val: id };
-  const h = String(env.YT_CHANNEL_HANDLE || "").trim();
-  if (h) return { key: "forHandle", val: h.startsWith("@") ? h : "@" + h };
-  return null;
-}
 
 const num = (v) => (v == null || v === "" ? null : Number(v));
 
