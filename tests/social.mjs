@@ -1994,6 +1994,37 @@ console.log("\n[48] 🔴 Analytics ตอบ 200 แต่เป็นศูน�
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[49] 🔴 เหลือช่องเดียว — ห้ามพูดเปรียบเทียบกับตัวเอง");
+{
+  /* 🔴 เจอจริงตอนต่อ YouTube ได้ช่องเดียว (19 ส.ค. 2026)
+     ขึ้นพร้อมกัน 2 บรรทัด: "Views รวมลดลง 26%" กับ "YouTube ลดลง 26%"
+     ⚠️ ข้อความที่พูดซ้ำตัวเองทำให้เจ้าของไม่เชื่อถือกล่องสรุปทั้งกล่อง */
+  const { pg } = await open();
+  await pg.click('[data-ch="tiktok"]');
+  await pg.waitForTimeout(150);
+  await pg.click('[data-ch="facebook"]');
+  await pg.waitForTimeout(220);
+
+  const chips = await pg.$$eval("#chips .ch.on", (n) => n.length);
+  ok(chips === 1, `เหลือช่องเดียว (${chips})`);
+
+  const ins = await pg.$$eval(".insight-l li", (n) => n.map((x) => x.innerText.trim()));
+  ok(!ins.some((t) => /เปลี่ยนแปลงมากที่สุด/.test(t)), `ไม่มีข้อ "ช่องที่เปลี่ยนแปลงมากที่สุด" (${ins.length} ข้อ)`);
+  ok(!ins.some((t) => /สูงสุดที่/.test(t)), "ไม่มีข้อ 'ช่องที่ ER สูงสุด' — ไม่มีอะไรให้เทียบ");
+
+  // ⚠️ แถวรายช่องใต้ยอดรวมก็ซ้ำกับยอดรวมเป๊ะ
+  ok((await pg.$$(".bd-r")).length === 0, "ไม่มีแถวรายช่องซ้ำกับยอดรวม");
+
+  // เปิดกลับมา 2 ช่อง แล้วข้อเปรียบเทียบต้องกลับมา
+  await pg.click('[data-ch="tiktok"]');
+  await pg.waitForTimeout(220);
+  const ins2 = await pg.$$eval(".insight-l li", (n) => n.map((x) => x.innerText.trim()));
+  ok(ins2.some((t) => /สูงสุดที่|เปลี่ยนแปลงมากที่สุด/.test(t)), "เปิด 2 ช่องแล้วข้อเปรียบเทียบกลับมา");
+  ok((await pg.$$(".bd-r")).length > 0, "แถวรายช่องกลับมาด้วย");
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);

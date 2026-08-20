@@ -546,8 +546,10 @@
       }
     }
 
-    // ① ช่องที่ Views / Reach ขยับแรงที่สุด (บวกหรือลบก็ได้)
-    if (cr) {
+    /* ① ช่องที่ Views / Reach ขยับแรงที่สุด
+       ⚠️ มีช่องเดียวข้อนี้ไม่มีความหมาย — มันคือยอดรวมข้อ ⓪ นั่นเอง
+          เจอจริง 19 ส.ค. 2026: "Views รวมลดลง 26%" คู่กับ "YouTube ลดลง 26%" */
+    if (cr && order.length > 1) {
       var mv = null;
       order.forEach(function (pk) {
         var a = cur[pk], b = prev[pk];
@@ -565,9 +567,10 @@
       }
     }
 
-    // ② ช่องที่คนมีส่วนร่วมดีที่สุดในช่วงนี้ (ER ของช่องนั้นเทียบกับตัวเอง)
+    /* ② ช่องที่ ER ดีที่สุดในช่วงนี้
+       ⚠️ "สูงสุด" ต้องมีอะไรให้เทียบ มีช่องเดียวก็ไม่ใช่การเปรียบเทียบ */
     var bestEr = null;
-    order.forEach(function (pk) {
+    if (order.length > 1) order.forEach(function (pk) {
       var a = cur[pk];
       if (!a || a.er == null || !a.reach) return;
       if (!bestEr || a.er > bestEr.er) bestEr = { pk: pk, er: a.er };
@@ -669,6 +672,9 @@
      *    (ใส่ไปจะได้เลขที่ดูเหมือนสัดส่วนแต่ไม่มีความหมายเลย) */
     function bd(pick, opt) {
       if (!state.breakdown) return "";
+      /* ⚠️ มีช่องเดียว แถวรายช่องจะเท่ากับยอดรวมเป๊ะ ("YT 100% 41,500" ใต้ "41,500")
+         ซ้ำเปล่าๆ และทำให้การ์ดสูงขึ้นโดยไม่ได้อะไร */
+      if (order.length < 2) return "";
       opt = opt || {};
       var vals = order.map(function (pk) { return pick(cur[pk], prev[pk], pk, r, cr); });
       var share = !opt.pp && !opt.noShare;
