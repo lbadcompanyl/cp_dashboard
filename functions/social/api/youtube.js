@@ -11,7 +11,7 @@
 import { ST, payload, cached, missingEnv, fetchJSON } from "../_lib/store.js";
 
 // ⭐ บวกเลขนี้ทุกครั้งที่แก้โครงข้อมูลที่คืนออกไป ไม่งั้นผู้ใช้จะเห็นของเก่าค้างเป็นชั่วโมง
-const DATA_VER = "3";
+const DATA_VER = "4";
 
 /* ── ชั้นที่ 2: YouTube Analytics (ตัวเลขรายวัน) ─────────────────────────
  * ต้องมี refresh token ที่ได้จาก /social/api/connect?p=google
@@ -28,16 +28,26 @@ const ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports";
       ผู้ใช้เปลี่ยนช่วงเวลาบ่อยมาก ขอใหม่ทุกครั้งจะยิงต้นทางรัวๆ โดยไม่จำเป็น */
 const ANALYTICS_DAYS = 760;
 
-const METRICS = [
-  "views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
-  "likes", "comments", "shares", "subscribersGained", "subscribersLost",
-].join(",");
+/* 🔴 Impressions / CTR เป็น "ของแถม" ต้องถอยได้ (เจ้าของสั่งเพิ่ม 20 ส.ค. 2026)
+ *    2 ตัวนี้ YouTube ไม่ได้ให้ทุกช่องและทุกช่วงเวลา (ช่องใหม่ / ข้อมูลเก่ามาก
+ *    / บางชุด dimension ใช้ไม่ได้) พอขอแล้วไม่ผ่าน Google ตอบ 400 ทั้งคำขอ
+ * ⚠️ ห้ามให้ 2 ตัวนี้ลากชั้นรายวันทั้งชุดพังตาม — ยอดวิว/engagement คือหัวใจของหน้า
+ *    ถ้าขอไม่ผ่าน ให้ถอยไปขอชุดเดิมแล้วปล่อยคอลัมน์ Impressions ว่าง (ขึ้น "—")
+ * 🚫 ยืนยันของจริงจากเครื่องที่รัน session ไม่ได้ (ยิงเข้า Google ไม่ได้)
+ *    ตัวถอยจึงไม่ใช่ของฟุ่มเฟือย แต่เป็นสิ่งเดียวที่กันไม่ให้เดาผิดแล้วหน้าพังทั้งหน้า */
+const IMP = ["impressions", "impressionsClickThroughRate"];
 
-/* รายคลิปไม่มี subscribersGained/Lost ให้ขอ — ขอไปจะได้ 400 ทั้งคำขอ */
-const METRICS_VIDEO = [
+const BASE = [
   "views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
   "likes", "comments", "shares",
-].join(",");
+];
+
+const METRICS = BASE.concat(["subscribersGained", "subscribersLost"], IMP).join(",");
+const METRICS_LITE = BASE.concat(["subscribersGained", "subscribersLost"]).join(",");
+
+/* รายคลิปไม่มี subscribersGained/Lost ให้ขอ — ขอไปจะได้ 400 ทั้งคำขอ */
+const METRICS_VIDEO = BASE.concat(IMP).join(",");
+const METRICS_VIDEO_LITE = BASE.join(",");
 
 function ymd(d) {
   return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") +
@@ -233,14 +243,30 @@ async function buildAnalytics(env, channel, videos) {
   const end = new Date();
   const start = new Date(end.getTime() - ANALYTICS_DAYS * 864e5);
 
-  const ask = async (ids) => {
+  // ช่องนี้ขอ Impressions/CTR ได้ไหม — รู้ได้ตอนถามจริงเท่านั้น
+  let impOK = true;
+
+  const raw = async (ids, metrics) => {
     const u = ANALYTICS + "?" + new URLSearchParams({
       ids, startDate: ymd(start), endDate: ymd(end),
-      dimensions: "day", metrics: METRICS, sort: "day",
+      dimensions: "day", metrics, sort: "day",
     }).toString();
     const r = await fetch(u, { headers: { authorization: "Bearer " + tk.token } });
     const j = await r.json().catch(() => null);
     return { r, j };
+  };
+
+  const ask = async (ids) => {
+    if (!impOK) return raw(ids, METRICS_LITE);
+    const out = await raw(ids, METRICS);
+    if (out.r.ok) return out;
+    /* ⚠️ ถอยเฉพาะตอน 400 (คำขอไม่ถูกใจ) เท่านั้น
+       401/403 คือเรื่องสิทธิ์ ถอย metric ไปก็ไม่ช่วย และจะกลบสาเหตุจริง */
+    if (out.r.status !== 400) return out;
+    const lite = await raw(ids, METRICS_LITE);
+    if (!lite.r.ok) return out;      // พังด้วยเหตุอื่น — คืน error ตัวจริง
+    impOK = false;
+    return lite;
   };
 
   /* 🔴 ถามด้วย "รหัสช่องตรงๆ" ก่อน แล้วค่อยตกไปที่ channel==MINE
@@ -275,8 +301,21 @@ async function buildAnalytics(env, channel, videos) {
     return i == null ? null : row[i];
   };
 
+  /* Impressions / CTR → เก็บเป็น "ถูกโชว์กี่ครั้ง" กับ "กลายเป็นการกดกี่ครั้ง"
+     ⚠️ ห้ามส่ง CTR เป็น % ออกไปตรงๆ — หน้าเว็บต้องรวมหลายวันแล้วหาร
+        ถ้าได้มาเป็น % รายวัน การเฉลี่ยจะถ่วงน้ำหนักผิด (วันที่ถูกโชว์ 10 ครั้ง
+        จะมีน้ำหนักเท่าวันที่ถูกโชว์แสนครั้ง)
+     ⚠️ ไม่มีตัวเลข = null ไม่ใช่ 0 — 0 แปลว่า "ไม่เคยถูกโชว์เลย" ซึ่งคนละเรื่อง */
+  const clicksOf = (row) => {
+    const imp = at(row, "impressions");
+    if (imp == null) return { impressions: null, viewClicks: null };
+    const ctr = at(row, "impressionsClickThroughRate");   // Google ให้มาเป็น 0-100
+    return { impressions: imp, viewClicks: Math.round((imp * (ctr || 0)) / 100) };
+  };
+
   const daily = j.rows.map((row) => ({
     date: at(row, "day"),
+    ...clicksOf(row),
     views: at(row, "views") || 0,
     likes: at(row, "likes") || 0,
     comments: at(row, "comments") || 0,
@@ -320,17 +359,23 @@ async function buildAnalytics(env, channel, videos) {
   const ids = (videos || []).map((v) => v.id).filter(Boolean);
   if (ids.length) {
     try {
-      const vu = ANALYTICS + "?" + new URLSearchParams({
-        ids: usedMine ? "channel==MINE" : "channel==" + channel.id,
-        startDate: ymd(start), endDate: ymd(end),
-        dimensions: "video",
-        filters: "video==" + ids.join(","),
-        metrics: METRICS_VIDEO,
-        sort: "-views",
-        maxResults: String(ids.length),
-      }).toString();
-      const vr = await fetch(vu, { headers: { authorization: "Bearer " + tk.token } });
-      const vj = await vr.json().catch(() => null);
+      const vask = async (metrics) => {
+        const vu = ANALYTICS + "?" + new URLSearchParams({
+          ids: usedMine ? "channel==MINE" : "channel==" + channel.id,
+          startDate: ymd(start), endDate: ymd(end),
+          dimensions: "video",
+          filters: "video==" + ids.join(","),
+          metrics,
+          sort: "-views",
+          maxResults: String(ids.length),
+        }).toString();
+        const rr = await fetch(vu, { headers: { authorization: "Bearer " + tk.token } });
+        return { rr, jj: await rr.json().catch(() => null) };
+      };
+      /* ⚠️ ถอย metric แยกจากชั้นรายวัน — ชุด dimension คนละแบบ
+         ผ่านที่ dimensions=day ไม่ได้แปลว่าจะผ่านที่ dimensions=video ด้วย */
+      let { rr: vr, jj: vj } = await vask(impOK ? METRICS_VIDEO : METRICS_VIDEO_LITE);
+      if (!vr.ok && vr.status === 400 && impOK) ({ rr: vr, jj: vj } = await vask(METRICS_VIDEO_LITE));
       if (vr.ok && vj && Array.isArray(vj.rows)) {
         const vc = {};
         (vj.columnHeaders || []).forEach((h, i) => { vc[h.name] = i; });
@@ -338,7 +383,12 @@ async function buildAnalytics(env, channel, videos) {
         vj.rows.forEach((row) => {
           const id = va(row, "video");
           if (!id) return;
+          const vimp = va(row, "impressions");
           byVideo[id] = {
+            impressions: vimp == null ? null : vimp,
+            viewClicks: vimp == null
+              ? null
+              : Math.round((vimp * (va(row, "impressionsClickThroughRate") || 0)) / 100),
             views: va(row, "views"),
             likes: va(row, "likes"),
             comments: va(row, "comments"),

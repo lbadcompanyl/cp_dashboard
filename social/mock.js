@@ -146,6 +146,11 @@
         row.watchTime = Math.round(reach * (2.4 + rnd() * 2.6) / 60);      // ชั่วโมง
         row.avgViewDuration = Math.round(150 + rnd() * 190);               // วินาที
         row.completionRate = 0.28 + rnd() * 0.3;                           // averageViewPercentage
+        /* CTR ของ YouTube อยู่ราว 3-8% ในช่องส่วนใหญ่ · เก็บเป็น "ถูกโชว์กี่ครั้ง"
+           กับ "กลายเป็นการดูกี่ครั้ง" ไม่ใช่เก็บเป็น % สำเร็จรูป —
+           ⚠️ รวมหลายวันต้องบวกทั้งสองตัวก่อนหาร ถ้าเก็บเป็น % จะเฉลี่ยผิดถ่วงน้ำหนัก */
+        row.viewClicks = Math.round(reach * (0.62 + rnd() * 0.16));        // วิวที่มาจากการกดปก
+        row.impressions = Math.round(row.viewClicks / (0.035 + rnd() * 0.045));
       } else if (pk === "tiktok") {
         row.likes = Math.round(eng * 0.80);
         row.comments = Math.round(eng * 0.07);
@@ -159,6 +164,10 @@
         /* ⚠️ Facebook เล่นวิดีโอเองตอนเลื่อนผ่าน ยอดวิวดิบจึงพองกว่าคนที่หยุดดูจริงมาก
            ตัวเลข "ดูเกิน 3 วินาที" จึงต้องน้อยกว่า reach เสมอ (ราว 1 ใน 3) */
         row.views3s = Math.round(reach * (0.24 + rnd() * 0.16));
+        /* Facebook: impressions มากกว่า reach เสมอ (คนเดียวเห็นได้หลายครั้ง)
+           ตัวเศษของอัตราหยุดดูคือ "ดูเกิน 3 วิ" ไม่ใช่การกด — FB ไม่มีการกด */
+        row.impressions = Math.round(reach * (1.25 + rnd() * 0.5));
+        row.viewClicks = row.views3s;
       }
       daily.push(row);
 
@@ -195,6 +204,8 @@
         post.watchTime = Math.round(pv * (2.4 + rnd() * 2.6) / 60);
         post.avgViewDuration = Math.round(150 + rnd() * 190);
         post.completionRate = 0.28 + rnd() * 0.3;
+        post.viewClicks = Math.round(pv * (0.62 + rnd() * 0.16));
+        post.impressions = Math.round(post.viewClicks / (0.035 + rnd() * 0.045));
       } else {
         post.likes = Math.round(pe * (pk === "tiktok" ? 0.80 : 0.74));
         post.comments = Math.round(pe * (pk === "tiktok" ? 0.07 : 0.14));
@@ -204,6 +215,8 @@
           post.completionRate = 0.32 + rnd() * 0.28;
         } else {
           post.views3s = Math.round(pv * (0.24 + rnd() * 0.16));
+          post.impressions = Math.round(pv * (1.25 + rnd() * 0.5));
+          post.viewClicks = post.views3s;
         }
       }
       posts.push(post);
@@ -281,6 +294,12 @@
         if (po.avgViewDuration != null) out.avgViewDuration = po.avgViewDuration;
         if (po.completionRate != null) out.completionRate = po.completionRate;
         if (po.watchTime != null) out.watchTime = Math.round(po.watchTime * f);
+        if (po.views3s != null) out.views3s = Math.round(po.views3s * f);
+        /* ⚠️ ทั้งคู่ต้องคูณสัดส่วนเท่ากัน ไม่งั้น View rate ของช่วงสั้นจะเพี้ยน */
+        if (po.impressions != null) {
+          out.impressions = Math.round(po.impressions * f);
+          out.viewClicks = Math.round((po.viewClicks || 0) * f);
+        }
         return out[rk] > 0 ? out : null;
       })
       .filter(Boolean)

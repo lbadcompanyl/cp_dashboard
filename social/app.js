@@ -351,8 +351,14 @@
     var a = { likes: 0, comments: 0, shares: 0, days: rows.length };
     a[rk] = 0;
     var wt = 0, avd = 0, cr = 0;
+    /* ⚠️ View rate เป็น "อัตราส่วน" — ต้องรวมตัวเศษกับตัวส่วนก่อนแล้วค่อยหาร
+       เอาค่ารายวันมาเฉลี่ยไม่ได้ วันที่ถูกโชว์ 10 ครั้งจะถ่วงเท่ากับวันที่ถูกโชว์แสนครั้ง
+       (คนละแบบกับ Retention ข้างล่างที่ต้นทางให้มาเป็น % รายวันอยู่แล้ว) */
+    var imp = 0, clk = 0, hasImp = false;
     a.views3s = 0;
     rows.forEach(function (x) {
+      if (x.impressions != null) { imp += x.impressions; hasImp = true; }
+      clk += x.viewClicks || 0;
       a[rk] += x[rk] || 0;
       a.likes += x.likes || 0;
       a.comments += x.comments || 0;
@@ -365,6 +371,10 @@
     a.watchTime = wt;
     a.avgViewDuration = avd / rows.length;
     a.completionRate = cr / rows.length;
+    // ไม่มีตัวเลขให้เลย = ไม่รู้ ต้องเป็น null ให้ตารางขึ้น "—" ไม่ใช่ 0
+    a.impressions = hasImp ? imp : null;
+    a.viewClicks = hasImp ? clk : null;
+    a.viewRate = imp > 0 ? clk / imp : null;
     a.engagement = C.engagementOf(pk, a);
     a.reach = C.reachOf(pk, a);
     a.er = P.er(a);
@@ -928,9 +938,12 @@
         one.reach = C.reachOf(pk, one);
         one.engagement = C.engagementOf(pk, one);
         one.er = P.er(one);
-        ["views3s", "avgViewDuration", "completionRate", "watchTime"].forEach(function (k) {
+        ["views3s", "avgViewDuration", "completionRate", "watchTime",
+         "impressions", "viewClicks"].forEach(function (k) {
           if (po[k] != null) one[k] = po[k];
         });
+        // อัตราส่วนของคอนเทนต์ใบเดียว คิดจากตัวเลขของใบนั้น ไม่ใช่ลอกค่าของทั้งช่องมา
+        one.viewRate = one.impressions > 0 ? (one.viewClicks || 0) / one.impressions : null;
         one.posts = 1;
         one.avgPerPost = one.reach;
         return { po: po, a: one };
@@ -1441,8 +1454,12 @@
       rows.some(function (x) { return x.completionRate != null; });
     var hasAvd = C.hasStat(pk, "avgViewDuration") &&
       rows.some(function (x) { return x.avgViewDuration != null; });
+    /* 🔴 เจ้าของสั่งเพิ่ม 20 ส.ค. 2026 — คู่กับ Retention คนละครึ่งของเรื่องเดียวกัน
+       View rate = ปกกับพาดหัวดีพอให้คนหยุดไหม · Retention = หยุดแล้วอยู่ต่อไหม */
+    var hasVr = C.hasStat(pk, "viewRate") &&
+      rows.some(function (x) { return x.impressions != null; });
 
-    if (hasRet || hasAvd) {
+    if (hasRet || hasAvd || hasVr) {
       var retWhat = pk === "youtube"
         ? "ดูเฉลี่ยกี่ % ของความยาวคลิป — คลิป 10 นาที คนดูเฉลี่ย 4 นาที = 40%"
         : "สัดส่วนของการดูที่ดูไปจนจบ";
@@ -1469,6 +1486,22 @@
               return { y: x.avgViewDuration == null ? null : x.avgViewDuration };
             }) },
           { id: "p-" + pk + "-avd", fmtYSec: true }) + "</div>";
+      }
+      if (hasVr) {
+        /* ⚠️ ชื่อบนหัวกราฟใช้ชื่อจริงของช่องนั้น (CTR / อัตราหยุดดู)
+           ไม่ใช่ป้ายกลางๆ ของตารางรวม — ในแท็บของช่องเดียวไม่ต้องกลัวอ่านข้ามช่องผิด */
+        var vrName = P.viewRateLabel || "View rate";
+        h += '<div class="duo-c">' + dailyPanel(vrName + " รายวัน",
+          (P.viewRateWhat || "") + " · คู่กับ Retention คนละครึ่งของเรื่องเดียวกัน — " +
+          "ตัวนี้บอกว่าปกกับพาดหัวดีพอให้คนหยุดไหม ส่วน Retention บอกว่าหยุดแล้วอยู่ต่อไหม " +
+          "· ถ้า Impressions เยอะแต่ตัวนี้ต่ำ แปลว่าระบบเอาไปโชว์ให้แล้วแต่คนไม่สนใจ " +
+          "· แกนไม่ได้เริ่มจาก 0 ให้ดูรูปทรงว่าวันไหนดีกว่าวันไหน",
+          { label: vrName, color: "#c2410c", tipFmt: "pctnum",
+            points: rows.map(function (x) {
+              // วันที่ไม่ถูกโชว์เลย = หารไม่ได้ ต้องเป็นเส้นขาด ไม่ใช่ 0%
+              return { y: x.impressions > 0 ? ((x.viewClicks || 0) / x.impressions) * 100 : null };
+            }) },
+          { id: "p-" + pk + "-vr", unit: "%" }) + "</div>";
       }
       h += "</div>";
     }

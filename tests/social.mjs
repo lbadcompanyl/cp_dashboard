@@ -318,13 +318,20 @@ console.log("\n[6] 🔴 ผลงานรายช่อง — หนึ่ง
   const cells = await pg.$$eval(".tbl.perf tbody tr", (n) => n.map((r) =>
     [...r.querySelectorAll("td")].map((c) => ({ t: c.innerText.trim().split("\n")[0], na: c.classList.contains("na"), tip: c.title }))));
   const [yt, tt, fb] = cells;
-  ok(fb[1].t !== "—" && !fb[1].na, `Facebook มี "ดูเกิน 3 วิ" จริง (${fb[1].t})`);
-  ok(yt[1].na && tt[1].na, "YouTube กับ TikTok ไม่มีตัวเลข 3 วินาที → ขึ้น —");
-  ok(/ระยะเวลา/.test(yt[1].tip || ""), "บอกเหตุผลที่ไม่มีตัวเลข");
-  ok(fb[4].na, "Facebook ไม่มีเวลาดูรวม → ขึ้น —");
-  ok(!yt[4].na && yt[4].t !== "—", `YouTube มีเวลาดูรวม (${yt[4].t})`);
-  ok(!yt[3].na && parseFloat(yt[3].t) > 0, `ดูจนจบของ YouTube มีค่าจริง ไม่ใช่ 0% (${yt[3].t})`);
-  ok(!tt[2].na && tt[2].t !== "0:00", `ดูเฉลี่ยของ TikTok มีค่าจริง (${tt[2].t})`);
+  /* ⚠️ อ้างคอลัมน์ด้วย "ชื่อหัวตาราง" ไม่ใช่เลขลำดับ —
+     เพิ่มคอลัมน์ใหม่ทีไรเลขจะเลื่อนหมด แล้วเทสต์ตกทั้งชุดโดยที่โค้ดไม่ได้ผิด
+     (เกิดจริงตอนแทรก Impressions / View rate เข้ามา 20 ส.ค. 2026)
+     −1 เพราะหัวตารางมีคอลัมน์ชื่อช่องนำหน้า ส่วน cells นับเฉพาะ td */
+  const ci = (name) => hR.findIndex((x) => x.includes(name)) - 1;
+  const c3s = ci("ดูเกิน 3 วิ"), cAvd = ci("ดูเฉลี่ย/ครั้ง"),
+        cRet = ci("Retention"), cWt = ci("เวลาดูรวม");
+  ok(fb[c3s].t !== "—" && !fb[c3s].na, `Facebook มี "ดูเกิน 3 วิ" จริง (${fb[c3s].t})`);
+  ok(yt[c3s].na && tt[c3s].na, "YouTube กับ TikTok ไม่มีตัวเลข 3 วินาที → ขึ้น —");
+  ok(/ระยะเวลา/.test(yt[c3s].tip || ""), "บอกเหตุผลที่ไม่มีตัวเลข");
+  ok(fb[cWt].na, "Facebook ไม่มีเวลาดูรวม → ขึ้น —");
+  ok(!yt[cWt].na && yt[cWt].t !== "—", `YouTube มีเวลาดูรวม (${yt[cWt].t})`);
+  ok(!yt[cRet].na && parseFloat(yt[cRet].t) > 0, `Retention ของ YouTube มีค่าจริง ไม่ใช่ 0% (${yt[cRet].t})`);
+  ok(!tt[cAvd].na && tt[cAvd].t !== "0:00", `ดูเฉลี่ยของ TikTok มีค่าจริง (${tt[cAvd].t})`);
   ok(!hR.some((x) => /Likes/.test(x)), "สลับแท็บแล้วคอลัมน์ของอีกแท็บหายไปจริง");
   ok(await pg.$eval('[data-ptab="reach"]', (e) => e.classList.contains("on")), "แท็บที่กดติดสถานะ");
 
@@ -594,7 +601,7 @@ console.log("\n[11] 🔴 กราฟรายช่อง — แยก ยอ�
        จะมีกราฟ Retention กับเวลาที่ดูเฉลี่ยเพิ่มมา (Facebook ไม่มี) */
     const wantN = await pg.evaluate((k) => {
       const P = window.SOCIAL_CONFIG.PLATFORMS[k], st = P.stats || {};
-      return 2 + (st.completionRate ? 1 : 0) + (st.avgViewDuration ? 1 : 0);
+      return 2 + (st.completionRate ? 1 : 0) + (st.avgViewDuration ? 1 : 0) + (st.viewRate ? 1 : 0);
     }, t.toLowerCase());
     ok(g.length === wantN, `${t}: มีกราฟรายวัน ${wantN} อัน (${g.map((x) => x.title).join(" / ")})`);
     // 2 อันแรกยังเป็นยอดวิวกับ ER เสมอ — ตรวจเฉพาะ 2 อันนั้น
@@ -2049,7 +2056,8 @@ console.log("\n[50] 🔴 ตัวเลขรายคลิปต้องค�
   const daily = [];
   for (let i = 39; i >= 0; i--) {
     daily.push({ date: day(i), views: 5000, likes: 200, comments: 10, shares: 15,
-      watchTime: 250, avgViewDuration: 190, completionRate: 0.42, gained: 30, lost: 5 });
+      watchTime: 250, avgViewDuration: 190, completionRate: 0.42, gained: 30, lost: 5,
+      impressions: 90000, viewClicks: 5000 });
   }
   const followers = daily.map((d, i) => ({ date: d.date, value: 41000 - (daily.length - i) * 25, gained: d.gained, lost: d.lost }));
 
@@ -2067,7 +2075,7 @@ console.log("\n[50] 🔴 ตัวเลขรายคลิปต้องค�
       ],
       analytics: { daily, followers, approxLevel: true, byVideo: {
         v1: { views: 6200, likes: 300, comments: 12, shares: 41, watchTime: 310,
-              avgViewDuration: 205, completionRate: 0.47 },
+              avgViewDuration: 205, completionRate: 0.47, impressions: 98000, viewClicks: 6100 },
       } } } }) }));
   for (const k of ["tiktok", "facebook"]) {
     await pg.route(`**/social/api/${k}`, (r) => r.fulfill({ status: 200, contentType: "application/json",
@@ -2208,7 +2216,8 @@ console.log("\n[53] 🔴 กราฟ Retention ในแท็บรายช�
   const clean = yt.map((x) => x.replace(/ⓘ.*/s, "").trim());
   ok(clean.some((x) => /^Retention รายวัน/.test(x)), `YouTube มีกราฟ Retention (${clean.filter((x) => /รายวัน/.test(x)).join(" | ")})`);
   ok(clean.some((x) => /เวลาที่ดูเฉลี่ยต่อครั้ง/.test(x)), "YouTube มีกราฟเวลาที่ดูเฉลี่ย");
-  ok((await pg.$$("svg.chart")).length === 4, "แท็บ YouTube มีกราฟรายวัน 4 อัน");
+  // Views · ER · Retention · เวลาที่ดูเฉลี่ย · CTR (เพิ่ม 20 ส.ค. 2026)
+  ok((await pg.$$("svg.chart")).length === 5, "แท็บ YouTube มีกราฟรายวัน 5 อัน");
 
   const axOf = (i) => pg.$$eval("svg.chart", (n, k) =>
     [...n[k].querySelectorAll(".ax:not(.ax-x):not(.ax-r)")].map((x) => x.textContent.trim()), i);
@@ -2238,7 +2247,8 @@ console.log("\n[53] 🔴 กราฟ Retention ในแท็บรายช�
   await tabTo(pg, "Facebook");
   const fb = (await secs(pg)).map((x) => x.replace(/ⓘ.*/s, "").trim());
   ok(!fb.some((x) => /Retention/.test(x)), `Facebook ไม่มีกราฟ Retention (${fb.filter((x) => /รายวัน/.test(x)).join(" | ")})`);
-  ok((await pg.$$("svg.chart")).length === 2, "Facebook มีกราฟรายวัน 2 อันตามเดิม");
+  // Facebook ไม่มี Retention แต่มีอัตราหยุดดู (3 วิ ÷ impressions)
+  ok((await pg.$$("svg.chart")).length === 3, "Facebook มีกราฟรายวัน 3 อัน (Reach · ER · อัตราหยุดดู)");
   ok(errs.length === 0, "ไม่มี JS error");
   await pg.close();
 
@@ -2415,6 +2425,81 @@ console.log("\n[56] 🔴 Engagement แยกประเภท: แท่งแ
 
   // ยังมี delta เทียบช่วงก่อนหน้าอยู่
   ok((await pg.$$(".hb .hb-x .dlt")).length === 3, "ทุกแถวมี delta เทียบช่วงก่อนหน้า");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[57] 🔴 Impressions + View rate — ช่องไหนมีจริง ช่องไหนไม่มี");
+{
+  /* เจ้าของสั่งเพิ่ม 20 ส.ค. 2026 · ถามมาว่า "ใช้ร่วมกับ FB, TikTok ได้ไหม"
+     ได้แค่ FB — TikTok เป็นฟีดที่คลิปเล่นเอง ไม่มีขั้นตอน "เห็นแล้วกด"
+     จึงไม่มีทั้งตัวเศษและตัวส่วน · ต้องขึ้น "—" พร้อมเหตุผล ห้ามเดาค่าให้ */
+  const { pg, errs } = await open();
+  await pg.click('[data-ptab="reach"]');
+  await pg.waitForTimeout(200);
+
+  const head = await pg.$$eval(".tbl.perf thead th", (n) => n.map((x) => x.textContent.trim()));
+  for (const want of ["Impressions", "View rate"]) {
+    ok(head.some((x) => x.includes(want)), `มีคอลัมน์ "${want}"`);
+  }
+  /* ⚠️ ห้ามใช้คำว่า CTR เป็นชื่อคอลัมน์รวม — Facebook ไม่มีการกด นับที่ 3 วินาทีแทน
+     บทเรียนเดียวกับ "ดูจนจบ" ที่เคยทำให้อ่านค่า YouTube ผิดความหมาย */
+  ok(!head.some((x) => /\bCTR\b/.test(x)), `คอลัมน์รวมไม่ใช้คำว่า CTR (${head.join(" | ")})`);
+
+  const iImp = head.findIndex((x) => x.includes("Impressions")) - 1;
+  const iVr = head.findIndex((x) => x.includes("View rate")) - 1;
+  const cells = await pg.$$eval(".tbl.perf tbody tr", (n) => n.map((r) => ({
+    ch: r.querySelector("th").innerText.trim().replace(/[▸▾›]/g, "").trim(),
+    td: [...r.querySelectorAll("td")].map((c) => ({
+      t: c.querySelector(".cv") ? c.querySelector(".cv").textContent.trim() : "—",
+      na: c.classList.contains("na"), tip: c.getAttribute("title") || "",
+    })),
+  })));
+  const row = (name) => cells.find((c) => new RegExp(name).test(c.ch));
+
+  const yt = row("YouTube"), tt = row("TikTok"), fb = row("Facebook");
+  ok(!yt.td[iImp].na && !yt.td[iVr].na, `YouTube มีทั้งสองค่า (${yt.td[iImp].t} → ${yt.td[iVr].t})`);
+  ok(!fb.td[iImp].na && !fb.td[iVr].na, `Facebook มีทั้งสองค่า (${fb.td[iImp].t} → ${fb.td[iVr].t})`);
+  ok(tt.td[iImp].na && tt.td[iVr].na, "TikTok ขึ้น — ทั้งสองช่อง ไม่ใช่ 0");
+  ok(/เห็นแล้วกด|ไม่เปิดเผย/.test(tt.td[iVr].tip), `TikTok บอกเหตุผลที่ไม่มี (${tt.td[iVr].tip})`);
+
+  /* ⚠️ Impressions ต้องมากกว่ายอดที่กลายเป็นการดูเสมอ — ถูกโชว์แล้วไม่ได้ดูก็มี
+     ถ้ากลับกันแปลว่าจับคู่ตัวเศษ/ตัวส่วนผิดข้าง */
+  const n = (t) => parseFloat(t) * ({ K: 1e3, M: 1e6 }[t.slice(-1)] || 1);
+  ok(n(yt.td[iImp].t) > n(yt.td[0].t) * 0.9 || parseFloat(yt.td[iVr].t) < 100,
+     `View rate ของ YouTube ไม่เกิน 100% (${yt.td[iVr].t})`);
+  ok(parseFloat(fb.td[iVr].t) < 100, `View rate ของ Facebook ไม่เกิน 100% (${fb.td[iVr].t})`);
+
+  /* 🔴 หัวใจของการเก็บเป็น "จำนวนครั้ง" ไม่ใช่ % สำเร็จรูป:
+     รวมหลายวันต้องบวกตัวเศษกับตัวส่วนก่อนหาร ไม่ใช่เฉลี่ย % รายวัน
+     เช็คด้วยการคิดเองจากข้อมูลดิบแล้วเทียบกับที่หน้าเว็บโชว์ */
+  const chk = await pg.evaluate(() => {
+    // ช่วงตั้งต้นของหน้าคือ 30 วันล่าสุด — อ่าน daily ที่ mock สร้างไว้ตรงๆ
+    const rows = window.SOCIAL_MOCK.platforms.youtube.daily.slice(-30);
+    const imp = rows.reduce((t, x) => t + (x.impressions || 0), 0);
+    const clk = rows.reduce((t, x) => t + (x.viewClicks || 0), 0);
+    const weighted = (clk / imp) * 100;
+    const mean = rows.reduce((t, x) => t + (x.viewClicks / x.impressions) * 100, 0) / rows.length;
+    return { weighted, mean, gap: Math.abs(weighted - mean) };
+  });
+  /* วิธีถ่วงน้ำหนักกับวิธีเฉลี่ยดิบให้คนละเลข ถ้าไม่ต่างกันเลยแปลว่าเทสต์นี้พิสูจน์อะไรไม่ได้ */
+  ok(chk.gap > 0.05, `2 วิธีคิดให้คนละเลขจริง (ถ่วงน้ำหนัก ${chk.weighted.toFixed(2)}% vs เฉลี่ยดิบ ${chk.mean.toFixed(2)}%)`);
+  const shown = parseFloat(yt.td[iVr].t);
+  ok(Math.abs(shown - chk.weighted) < Math.abs(shown - chk.mean),
+     `หน้าเว็บใช้วิธีถ่วงน้ำหนัก (โชว์ ${shown}% ใกล้ ${chk.weighted.toFixed(2)}% มากกว่า ${chk.mean.toFixed(2)}%)`);
+
+  // แท็บของช่องเรียกชื่อจริงของช่องนั้น ไม่ใช่ป้ายกลางๆ
+  await tabTo(pg, "YouTube");
+  const gy = await pg.$$eval(".sec", (n) => n.map((x) => x.textContent).filter((x) => /รายวัน/.test(x)));
+  ok(gy.some((x) => /CTR รายวัน/.test(x)), "แท็บ YouTube เรียกว่า CTR");
+  await tabTo(pg, "Facebook");
+  const gf = await pg.$$eval(".sec", (n) => n.map((x) => x.textContent).filter((x) => /รายวัน/.test(x)));
+  ok(gf.some((x) => /อัตราหยุดดู รายวัน/.test(x)), "แท็บ Facebook เรียกว่าอัตราหยุดดู");
+  await tabTo(pg, "TikTok");
+  const gt = await pg.$$eval(".sec", (n) => n.map((x) => x.textContent).filter((x) => /รายวัน/.test(x)));
+  ok(!gt.some((x) => /CTR|อัตราหยุดดู/.test(x)), "แท็บ TikTok ไม่มีกราฟนี้เลย");
+
+  ok(errs.length === 0, "ไม่มี JS error");
   await pg.close();
 }
 

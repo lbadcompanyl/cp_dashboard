@@ -13,7 +13,7 @@
 import { ST, payload, cached, missingEnv } from "../_lib/store.js";
 
 // ⭐ บวกเลขนี้ทุกครั้งที่แก้โครงข้อมูลที่คืนออกไป
-const DATA_VER = "1";
+const DATA_VER = "2";
 
 const API = "https://www.googleapis.com/youtube/v3";
 const OAUTH_TOKEN = "https://oauth2.googleapis.com/token";
@@ -23,10 +23,14 @@ const TOP_N = 10;
 const EDGE_TTL = 1800;            // 30 นาที — อันดับไม่ได้เปลี่ยนรายนาที
 const KV_FRESH = 60 * 60 * 1000;  // ของใน KV อายุไม่เกิน 1 ชม. = ยังสด
 
-const METRICS = [
+const BASE = [
   "views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
   "likes", "comments", "shares",
-].join(",");
+];
+/* ⚠️ Impressions / CTR ขอไม่ผ่านได้ (ดูเหตุผลเต็มใน youtube.js) — ต้องถอยได้
+   ขอไม่ผ่านแล้วปล่อยพังทั้งคำขอ = อันดับคอนเทนต์หายทั้งการ์ด เพราะของแถม 2 ตัว */
+const METRICS = BASE.concat(["impressions", "impressionsClickThroughRate"]).join(",");
+const METRICS_LITE = BASE.join(",");
 
 const num = (v) => (v == null || v === "" ? null : Number(v));
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
@@ -101,18 +105,23 @@ async function buildTop(env, from, to) {
 
   /* 🎯 หัวใจของแบบ A: ให้ Google เรียงให้เลยว่าในช่วงนี้คลิปไหนทำยอดสูงสุด
      ไม่ได้กรองด้วยวันที่ลงคลิป — คลิปเก่าที่ดังขึ้นมาใหม่จึงติดอันดับได้ */
-  const u = ANALYTICS + "?" + new URLSearchParams({
-    ids: "channel==MINE",
-    startDate: from,
-    endDate: to,
-    dimensions: "video",
-    metrics: METRICS,
-    sort: "-views",
-    maxResults: String(TOP_N),
-  }).toString();
+  const ask = async (metrics) => {
+    const u = ANALYTICS + "?" + new URLSearchParams({
+      ids: "channel==MINE",
+      startDate: from,
+      endDate: to,
+      dimensions: "video",
+      metrics,
+      sort: "-views",
+      maxResults: String(TOP_N),
+    }).toString();
+    const rr = await fetch(u, { headers: { authorization: "Bearer " + tk.token } });
+    return { rr, jj: await rr.json().catch(() => null) };
+  };
 
-  const r = await fetch(u, { headers: { authorization: "Bearer " + tk.token } });
-  const j = await r.json().catch(() => null);
+  let { rr: r, jj: j } = await ask(METRICS);
+  // ถอยเฉพาะ 400 — 401/403 เป็นเรื่องสิทธิ์ ถอย metric ไม่ช่วยและจะกลบสาเหตุจริง
+  if (!r.ok && r.status === 400) ({ rr: r, jj: j } = await ask(METRICS_LITE));
   if (!r.ok || !j || !Array.isArray(j.rows)) {
     const why = (j && j.error && j.error.message) || `HTTP ${r.status}`;
     return payload({ status: r.status === 401 || r.status === 403 ? ST.AUTH_FAILED : ST.ERROR, message: why });
@@ -122,9 +131,18 @@ async function buildTop(env, from, to) {
   (j.columnHeaders || []).forEach((h, i) => { col[h.name] = i; });
   const at = (row, name) => (col[name] == null ? null : row[col[name]]);
 
+  /* ไม่มีตัวเลข = null ไม่ใช่ 0 · ส่งเป็นจำนวนครั้ง ไม่ใช่ % (ดูเหตุผลใน youtube.js) */
+  const impOf = (row) => {
+    const imp = at(row, "impressions");
+    if (imp == null) return { impressions: null, viewClicks: null };
+    const ctr = at(row, "impressionsClickThroughRate");
+    return { impressions: num(imp), viewClicks: Math.round((num(imp) * (num(ctr) || 0)) / 100) };
+  };
+
   const rows = j.rows
     .map((row) => ({
       id: at(row, "video"),
+      ...impOf(row),
       views: num(at(row, "views")) || 0,
       likes: num(at(row, "likes")) || 0,
       comments: num(at(row, "comments")) || 0,

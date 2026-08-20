@@ -93,6 +93,12 @@
         if (extra.watchTime != null) po.watchTime = extra.watchTime;
         if (extra.avgViewDuration != null) po.avgViewDuration = extra.avgViewDuration;
         if (extra.completionRate != null) po.completionRate = extra.completionRate;
+        /* ⚠️ ตัวเศษกับตัวส่วนของ View rate ต้องมาคู่กันเสมอ
+           มาแค่ตัวเดียว = คิดอัตราส่วนไม่ได้ ต้องปล่อยว่างทั้งคู่ให้ขึ้น "—" */
+        if (extra.impressions != null) {
+          po.impressions = extra.impressions;
+          po.viewClicks = extra.viewClicks || 0;
+        }
       }
       return po;
     });
@@ -234,6 +240,10 @@
           if (v.watchTime != null) po.watchTime = v.watchTime;
           if (v.avgViewDuration != null) po.avgViewDuration = v.avgViewDuration;
           if (v.completionRate != null) po.completionRate = v.completionRate;
+          if (v.impressions != null) {
+            po.impressions = v.impressions;
+            po.viewClicks = v.viewClicks || 0;
+          }
           return po;
         });
       })
