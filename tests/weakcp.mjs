@@ -64,7 +64,7 @@ for (const [name, f] of [["trend", "../functions/api/trend/feeds.js"],
   ok("จำไว้ 7 วัน", /max-age=604800/.test(src));
   ok("ใช้ edge cache ไม่ใช่ KV (โควตาเขียนมีจำกัด)",
      !/kv\.put\([^)]*cpai/.test(src) && (src.match(/kv\.put\(/g) || []).length <= 1);
-  ok("สั่งตรวจของเก่าใหม่ทั้งคลัง (VFY_VER)", /const VFY_VER = 2;/.test(src));
+  ok("สั่งตรวจของเก่าใหม่ทั้งคลัง (VFY_VER)", /const VFY_VER = \d+;/.test(src)); // ⚠️ ห้ามตรึงเลข — ตัวเลขนี้ถูกบวกทุกครั้งที่แก้ด่านตรวจ
 }
 
 console.log("\n[5] ตรรกะแคช — ถามครั้งเดียวต่อข่าว 1 ใบ");
