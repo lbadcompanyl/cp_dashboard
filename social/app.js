@@ -25,19 +25,27 @@
    *    (แผงเลือกวันที่ กับ ตัวคำนวณช่วง อ่านจากลิสต์เดียวกัน)
    * ⚠️ "ล่าสุด N วัน" นับรวมวันนี้ด้วย — ให้ตรงกับที่คนอ่านเข้าใจ
    *    ส่วนตัวที่เป็นเดือน/ปี ใช้ขอบเดือน-ปีปฏิทินจริง ไม่ใช่ลบจำนวนวันตายตัว */
+  /* 🔴 ทุกช่วงยึด "วันล่าสุดที่ต้นทางสรุปยอดแล้ว" ไม่ใช่วันนี้ (เจ้าของถาม 20 ส.ค. 2026)
+   *    YouTube Analytics ช้ากว่าปัจจุบัน 2-3 วัน · ยึดวันนี้เมื่อไหร่
+   *    "7 วันล่าสุด" จะเหลือข้อมูลจริงแค่ 4 วัน แล้วเอาไปเทียบกับช่วงก่อนหน้าที่ครบ 7
+   *    → ตัวเลข ▼ ดูแย่กว่าความจริงทุกครั้ง โดยไม่มีอะไรบอก
+   * 🚫 ทางแก้ไม่ใช่ "ตัดช่วงสั้นๆ ออก" — เสียของดีไปเปล่าๆ
+   *    เลื่อนปลายช่วงมาจบที่วันที่มีข้อมูลจริงแทน (YouTube Studio กับ GA4 ทำแบบนี้)
+   * ⚠️ "วันนี้/เมื่อวาน" ถอดออกแล้ว — ยึด anchor เมื่อไหร่ 2 คำนี้จะโกหกทันที
+   *    แทนด้วย "วันล่าสุด" ซึ่งพูดตรงกับสิ่งที่ได้จริง
+   */
   var PRESETS = [
-    { key: "today", label: "วันนี้", at: function (t) { return [t, t]; } },
-    { key: "yesterday", label: "เมื่อวาน", at: function (t) { var y = addDays(t, -1); return [y, y]; } },
+    { key: "1d", label: "วันล่าสุด", at: function (t) { return [t, t]; } },
     { key: "7d", label: "7 วันล่าสุด", at: function (t) { return [addDays(t, -6), t]; } },
     { key: "30d", label: "30 วันล่าสุด", at: function (t) { return [addDays(t, -29), t]; } },
-    { key: "mtd", label: "เดือนนี้ถึงวันนี้", at: function (t) { return [new Date(t.getFullYear(), t.getMonth(), 1), t]; } },
+    { key: "mtd", label: "เดือนนี้", at: function (t) { return [new Date(t.getFullYear(), t.getMonth(), 1), t]; } },
     { key: "lastmonth", label: "เดือนที่แล้ว (ทั้งเดือน)", at: function (t) {
         return [new Date(t.getFullYear(), t.getMonth() - 1, 1), new Date(t.getFullYear(), t.getMonth(), 0)]; } },
     { key: "3m", label: "3 เดือนล่าสุด", at: function (t) {
         var a = new Date(t.getTime()); a.setMonth(a.getMonth() - 3); return [addDays(a, 1), t]; } },
     { key: "12m", label: "12 เดือนล่าสุด", at: function (t) {
         var a = new Date(t.getTime()); a.setFullYear(a.getFullYear() - 1); return [addDays(a, 1), t]; } },
-    { key: "ytd", label: "ปีนี้ถึงวันนี้", at: function (t) { return [new Date(t.getFullYear(), 0, 1), t]; },
+    { key: "ytd", label: "ปีนี้", at: function (t) { return [new Date(t.getFullYear(), 0, 1), t]; },
       suffix: function (t) { return String(t.getFullYear()); } },
     { key: "lastyear", label: "ปีที่แล้ว", at: function (t) {
         return [new Date(t.getFullYear() - 1, 0, 1), new Date(t.getFullYear() - 1, 11, 31)]; },
@@ -150,19 +158,43 @@
     return needYear ? thaiFull(from) + " – " + thaiFull(to) : thaiShort(from) + " – " + thaiShort(to);
   }
 
-  function range() {
+  /**
+   * วันล่าสุดที่ "ทุกช่องที่เปิดอยู่" สรุปยอดแล้ว — ใช้เป็นปลายทางของทุกช่วงสำเร็จรูป
+   *
+   * ⚠️ ยึดช่องที่ช้าที่สุด ไม่ใช่เร็วที่สุด — หน้านี้มีไว้เทียบข้ามช่อง
+   *    ถ้าปล่อยให้ปลายช่วงเลยวันที่บางช่องมีข้อมูล ช่องนั้นจะดูตกทันทีทั้งที่ไม่ได้ตก
+   * ⚠️ ยังไม่โหลดเสร็จ / ไม่มีช่องไหนมีข้อมูลรายวัน → ใช้วันนี้ไปก่อน
+   *    คืน null ไม่ได้ range() เรียกก่อน DATA มาถึงเสมอ
+   */
+  function dataEnd() {
     var t = midnight(new Date());
+    if (!DATA) return t;
+    var ends = [];
+    C.ORDER.forEach(function (pk) {
+      if (!isOn(pk)) return;
+      var d = (DATA.platforms[pk] || {}).daily || [];
+      if (d.length) ends.push(parseKey(d[d.length - 1].date));
+    });
+    if (!ends.length) return t;
+    var e = ends.reduce(function (m, x) { return x < m ? x : m; });
+    return e < t ? e : t;
+  }
+
+  function range() {
+    var today = midnight(new Date());
     var a, b;
     if (state.preset === "custom" && state.start && state.end) {
       a = parseKey(state.start); b = parseKey(state.end);
       if (a > b) { var sw = a; a = b; b = sw; }
+      /* ⚠️ ช่วงที่ผู้ใช้พิมพ์เอง ไม่เลื่อนให้ — ตัดแค่ "อนาคต" ที่ไม่มีทางมีข้อมูล
+         สั่งมาเองว่าอยากดูถึงวันไหน ก็ต้องได้ตามนั้น แล้วค่อยบอกด้วยป้ายว่าท้ายช่วงยังไม่มีข้อมูล */
+      if (b > today) b = today;
     } else {
       var p = presetOf(state.preset);
-      var pair = (p.custom ? presetOf("30d") : p).at(t);
+      var pair = (p.custom ? presetOf("30d") : p).at(dataEnd());
       a = midnight(pair[0]); b = midnight(pair[1]);
+      if (b > today) b = today;
     }
-    // 🔴 ไม่มีข้อมูลของอนาคต — ตัดปลายไว้ที่วันนี้เสมอ
-    if (b > t) b = t;
     if (a > b) a = b;
     return { from: key(a), to: key(b), days: Math.round((b - a) / 864e5) + 1 };
   }
@@ -701,7 +733,25 @@
       }).join(" · ") + "</b>" +
       "<div>ต้นทางสรุปยอดรายวันช้ากว่าปัจจุบัน " + most.gap + " วัน — " +
       "<b>ไม่ใช่ว่าไม่มีคนดู</b> และเร่งไม่ได้ · " +
-      "ยอดรวมกับตัวเลขเทียบของช่วงนี้จึงยังไม่นับ " + most.gap + " วันล่าสุด</div></div></div>";
+      "ยอดรวมกับตัวเลขเทียบของช่วงนี้จึงยังไม่นับ " + most.gap + " วันล่าสุด" +
+      " · ช่วงสำเร็จรูปเลื่อนให้เองแล้ว ถ้าอยากได้ตัวเลขที่เทียบกันตรงๆ ให้เลือกจากรายการแทนช่วงกำหนดเอง" +
+      "</div></div></div>";
+  }
+
+  /* ป้ายบอกว่าช่วงสำเร็จรูปถูกเลื่อนมาจบก่อนวันนี้ เพราะต้นทางยังสรุปไม่ถึง
+     ⚠️ คนละใบกับ lagNote ข้างบน — อันนั้นเตือนว่า "ข้อมูลขาดท้ายช่วง"
+        อันนี้บอกว่า "เราเลื่อนช่วงให้แล้ว ตัวเลขที่เห็นครบและเทียบกันได้"
+        ถ้าไม่บอก ผู้ใช้จะงงว่าทำไมเลือก 7 วันล่าสุดแล้วปลายช่วงไม่ใช่วันนี้ */
+  function shiftNote(r) {
+    if (state.preset === "custom") return "";
+    var today = key(midnight(new Date()));
+    if (r.to >= today) return "";
+    var gap = Math.round((parseKey(today) - parseKey(r.to)) / 864e5);
+    return '<div class="lagbar"><span class="lag-i">🕓</span><div><b>ช่วงนี้จบที่ ' +
+      esc(thaiShort(r.to)) + " ไม่ใช่วันนี้</b>" +
+      "<div>ต้นทางสรุปยอดรายวันช้ากว่าปัจจุบัน " + gap + " วัน (ปกติของ YouTube ไม่ใช่ว่าไม่มีคนดู) · " +
+      "เลื่อนช่วงมาจบที่วันที่มีข้อมูลจริงให้แล้ว <b>ตัวเลขที่เห็นจึงครบและเทียบกับช่วงก่อนหน้าได้ตรงๆ</b>" +
+      " · อยากดูถึงวันนี้จริงๆ ให้เลือก \"กำหนดเอง…\"</div></div></div>";
   }
 
   function renderSummary() {
@@ -735,7 +785,7 @@
     });
     if (!any) return empty("ไม่มีข้อมูลในช่วงที่เลือก", "ลองขยายช่วงเวลา หรือเลือกวันที่ใหม่");
 
-    var h = lagNote(order, r);
+    var h = shiftNote(r) + lagNote(order, r);
 
     // ① สรุปรวม 4 ใบ — นับจากช่องที่เปิดอยู่เท่านั้น
     var tf = 0, tv = 0, te = 0, pf = 0, pv = 0, pe = 0;
@@ -1529,7 +1579,7 @@
 
     if (!a) return empty("ไม่มีข้อมูลของ " + P.label + " ในช่วงที่เลือก", "ลองขยายช่วงเวลา หรือเลือกวันที่ใหม่");
 
-    var h = lagNote([pk], r);
+    var h = shiftNote(r) + lagNote([pk], r);
 
     // ① สรุปของช่อง — รวม metric เฉพาะแพลตฟอร์มไว้ในกริดเดียวกัน
     // ⚠️ เดิมแยกเป็น 2 กริด ทำให้ TikTok เหลือใบ "ดูจนจบ" ลอยเดี่ยวท้ายแถว
