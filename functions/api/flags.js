@@ -1,3 +1,4 @@
+import { startLog, finishLog, resetLog } from "./_lib/syslog.js";
 // Cloudflare Pages Function: /api/flags  (GET อ่าน · POST แก้)
 // เก็บ flag/keyword ของแดชบอร์ดบน KV → sync ข้ามเครื่อง/ทุกคน (แยกตาม scope: ir / pr)
 // ต้อง bind KV namespace ชื่อ FLAGS_KV ใน Cloudflare Pages → Settings → Functions → KV bindings
@@ -100,7 +101,19 @@ export async function onRequest(context) {
     let body = {};
     try { body = await request.json(); } catch {}
     const s = applyOp(await readState(env, scope), body);
-    await env.FLAGS_KV.put(kvKey(env, scope), JSON.stringify(s));
+    // ⚠️ บันทึกระบบ **เฉพาะตอนเขียนไม่สำเร็จ** — ตรงนี้เขียน KV อยู่แล้ว 1 ครั้ง
+    //    ถ้าบันทึกตอนสำเร็จด้วยจะเป็น 2 ครั้งต่อการกดปุ่ม ⚑/🗂 หนึ่งครั้ง = โควตาหมดเร็วเท่าตัว
+    //    และปุ่มพวกนี้อยู่บนแดชบอร์ดสาธารณะ ใครก็กดได้ ยิ่งต้องระวัง
+    try {
+      await env.FLAGS_KV.put(kvKey(env, scope), JSON.stringify(s));
+    } catch (e) {
+      const err = String((e && e.message) || e).slice(0, 80);
+      resetLog();
+      const L = startLog("api/flags");
+      L.note = "scope " + scope + " · op " + String(body.op || "?").slice(0, 20);
+      context.waitUntil(finishLog(env, L, { err }));
+      return json({ error: "บันทึกไม่สำเร็จ: " + err }, 500);
+    }
     return json({ configured: true, ...s });
   }
 

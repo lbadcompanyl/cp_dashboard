@@ -1,3 +1,4 @@
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 // GET /api/trend/archive?src=alert1&days=90&format=csv
 // ดึงคลังข่าวสะสมของคอลัมน์ CP / หัวข้อที่จับตามอง ออกมาเป็นไฟล์
 //
@@ -64,7 +65,12 @@ export async function onRequest(context) {
   try {
     const raw = await kv.get((env.APP_ENV ? String(env.APP_ENV) + ":" : "") + ARCHIVE_KEY);
     store = raw ? JSON.parse(raw) || {} : {};
-  } catch {
+  } catch (e) {
+    // 📋 คลังข่าวคือที่ที่ชีต Google มาดึงทุกชั่วโมง — อ่านไม่ได้เมื่อไหร่ ชีตจะค้างเงียบๆ
+    //    เคยไล่หาสาเหตุกัน 2 รอบเพราะไม่มีอะไรบันทึกไว้ให้ดู
+    resetLog();
+    const La = startLog("trend/archive");
+    context.waitUntil(finishLog(env, La, { err: "อ่านคลังข้อมูลจาก KV ไม่สำเร็จ: " + String((e && e.message) || e).slice(0, 80) }));
     return text("อ่านคลังข้อมูลไม่สำเร็จ", 500);
   }
 

@@ -111,7 +111,7 @@ export const AD_PITCH_RE = /หาซื้อได้ที่|วางจำ
 
 export const CP_BRANDS = [
   "ซีพี", "cp all", "cpall", "cpf", "ซีพีเอฟ", "ซีพี ออลล์", "ซีพีแรม", "cpram", "cp axtra", "แอ็กซ์ตร้า",
-  "cp group", "cp foods", "cp land", "cp brand", "cp fresh", "cp meiji", "cp-meiji", "cp intertrade",
+  "cp group", "cp foods", "cp land", "cp brand", "cp fresh", "cpfresh", "cp meiji", "cp-meiji", "cp intertrade",
   "เจริญโภคภัณฑ์", "charoen pokphand", "pokphand", "เจียรวนนท์",
   "เซเว่น", "7-eleven", "7 eleven", "seven eleven", "7-11", "7 11", "แม็คโคร", "makro", "โลตัส", "lotus's",
   "cpaxt", "ซีพี แอ็กซ์ตร้า", "ซีพีแอ็กซ์ตร้า", "cppc", "ซีพีพีซี",
@@ -318,20 +318,50 @@ export function cpExamples(decisions, max = 8) {
 // จงใจตั้งเกณฑ์ให้แคบ: "เครือซีพี" / "ซีพีเอฟ" มีขอบด้านหนึ่งเป็นช่องว่าง/ขอบข้อความ = strong
 // (weak ไม่ได้แปลว่าตัดทิ้ง แค่ส่งให้ AI อ่านพาดหัวตัดสินอีกที)
 const THAI_LETTER = /[ก-ฮะ-๎]/;
+
+// ⚠️ **`CP` เดี่ยวๆ ไม่นับเป็นหลักฐานชี้ขาด แต่ก็ห้ามมองข้าม** (แก้ 20 ส.ค. 2026)
+// ของเดิมไม่มี `cp` เดี่ยวในลิสต์เลย ข่าวที่เขียนชื่อเครือเป็นอังกฤษล้วนจึง "ไม่เจอชื่อเครือ"
+// แล้วตกไปด่านอ่านเนื้อข่าว → ถูกตัดทิ้งด้วยเหตุผล "ไม่มีชื่อเครือ CP ในพาดหัว"
+// เจอจริง: "เปิดแผน รฟฟท.บริหาร 'แอร์พอร์ตเรลลิงก์' รับมือเลิกสัญญา**ไฮสปีด CP**" ของกรุงเทพธุรกิจ
+// — ข่าวเลิกสัญญารถไฟความเร็วสูงของเครือ ซึ่งเป็นข่าวที่ควรอยู่ในคอลัมน์ที่สุด
+//
+// 🚫 **ห้ามใส่ลง `CP_BRANDS` ตรงๆ** — `CP` เป็นตัวย่อของอย่างอื่นเยอะมาก
+// (cerebral palsy · ภาควิชาวิศวกรรมคอมพิวเตอร์ จุฬาฯ · รหัสรุ่นสินค้า)
+// ปล่อยผ่านฟรีเมื่อไหร่ = ของไม่เกี่ยวไหลเข้าคอลัมน์ CP ทันที
+// ✅ ให้เป็น **weak** = ส่งให้ AI อ่านพาดหัวตัดสิน — วิธีเดียวกับ `เอ็มซีพีไอ`
+const CP_WEAK_BRANDS = ["cp"];
+
+const BRAND_RE = new Map();
+const brandRe = (b) => {
+  let re = BRAND_RE.get(b);
+  if (!re) { re = new RegExp(termPattern(b), "gi"); BRAND_RE.set(b, re); }
+  re.lastIndex = 0;
+  return re;
+};
+
 /** @returns "strong" | "weak" | "" (ไม่เจอชื่อเครือเลย) */
 export function cpEvidence(text) {
   const hay = dropFalseCP(String(text || "").replace(/\[\[\/?hl\]\]/g, "")).toLowerCase();
   let found = "";
-  for (const b of CP_BRANDS) {
-    let i = hay.indexOf(b);
-    while (i !== -1) {
-      const before = i > 0 ? hay[i - 1] : "";
-      const after = i + b.length < hay.length ? hay[i + b.length] : "";
-      // คำละตินมี (?<![a-z0-9]) คุมอยู่แล้วใน termPattern — ที่นี่ดูเฉพาะการฝังกลางคำไทย
-      if (!(THAI_LETTER.test(before) && THAI_LETTER.test(after))) return "strong";
-      found = "weak";
-      i = hay.indexOf(b, i + 1);
+  const scan = (list, level) => {
+    for (const b of list) {
+      // ⚠️ ใช้ `termPattern` ไม่ใช่ `indexOf` — คำละตินต้องตรงทั้งคำ
+      // ของเดิมใช้ indexOf ทำให้ `cpf` ไปเจอกลาง `cpfresh` และ `cp all` เจอใน `cp allocation`
+      const re = brandRe(b);
+      let m;
+      while ((m = re.exec(hay))) {
+        const before = m.index > 0 ? hay[m.index - 1] : "";
+        const after = hay[m.index + m[0].length] || "";
+        if (!(THAI_LETTER.test(before) && THAI_LETTER.test(after))) return level;
+        found = "weak";
+        if (re.lastIndex === m.index) re.lastIndex++;
+      }
     }
-  }
+    return "";
+  };
+  const strong = scan(CP_BRANDS, "strong");
+  if (strong) return strong;
+  // ชื่อเต็มไม่มี — ลองคำย่อที่กำกวม ถ้าเจอให้ AI ตัดสิน (ไม่ปล่อยผ่าน ไม่ตัดทิ้ง)
+  if (scan(CP_WEAK_BRANDS, "weak")) return "weak";
   return found;
 }
