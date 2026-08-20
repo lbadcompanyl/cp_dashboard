@@ -13,6 +13,8 @@
 //    (blob เก่าที่มีแต่ items ยังอ่านได้ตามปกติ — ไม่ต้องย้ายข้อมูล)
 
 export const ALLOW_KEY = "noise:allow";
+import { startLog, finishLog, resetLog } from "./_lib/syslog.js";
+
 const MAX = 500; // กันไม่ให้ blob โตไม่มีที่สิ้นสุด — เก่าสุดหลุดออกก่อน
 
 // เทียบลิงก์แบบเดียวกับที่ feeds.js ใช้ dedupe (ตัด query/ท้าย /) ไม่งั้นลิงก์เดิมที่พ่วง
@@ -94,7 +96,15 @@ export async function onRequest(context) {
   try {
     await kv.put(prefix(env) + ALLOW_KEY, JSON.stringify({ items, blocked }));
   } catch (e) {
-    return json({ error: "บันทึกไม่สำเร็จ: " + String((e && e.message) || e).slice(0, 80) }, 500);
+    // ⚠️ บันทึกระบบ **เฉพาะตอนบันทึกไม่สำเร็จ** — endpoint นี้เขียน KV อยู่แล้ว 1 ครั้ง
+    //    ถ้าบันทึก log ตอนสำเร็จด้วยจะกลายเป็น 2 ครั้งต่อการกดปุ่ม 1 ครั้ง = โควตาหมดเร็วเท่าตัว
+    //    ตอนพังไม่มีการเขียน KV สำเร็จอยู่แล้ว จึงไม่เพิ่มภาระ และเป็นจังหวะที่ต้องรู้จริงๆ
+    const err = String((e && e.message) || e).slice(0, 80);
+    resetLog();
+    const L = startLog("api/allow");
+    L.note = "กด " + mode + " แล้วบันทึกไม่สำเร็จ";
+    context.waitUntil(finishLog(env, L, { err }));
+    return json({ error: "บันทึกไม่สำเร็จ: " + err }, 500);
   }
   return json({ ok: true, mode, on: body.on !== false, count: Object.keys(target).length });
 }

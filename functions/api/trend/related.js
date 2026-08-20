@@ -1,3 +1,4 @@
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 // GET /api/trend/related?q=<คำ>&geo=TH&time=now%201-d
 // ดึง Related queries (Top + Rising) ของคำที่ระบุ จาก Google Trends API (ไม่เป็นทางการ)
 // Google จำกัด rate จาก edge IP บ่อย (429) → เก็บผลสำเร็จลง KV ไว้เสิร์ฟแทนตอนโดนจำกัด
@@ -51,6 +52,10 @@ export async function onRequest(context) {
       }
     } catch {}
     // ไม่ throw — ส่ง error กลับให้ UI แสดง fallback (ไม่ให้พังทั้งจอ)
+    // บันทึกไว้ด้วย: จอไม่พังก็จริง แต่ผู้ใช้ไม่เห็น "คำที่เกี่ยวข้อง" โดยไม่มีอะไรบอกว่าทำไม
+    resetLog();
+    const L = startLog("trend/related");
+    context.waitUntil(finishLog(context.env || {}, L, { err: String((e && e.message) || e).slice(0, 120) }));
     return json({ q, geo, time, top: [], rising: [], error: String(e.message || e) }, 200);
   }
 }

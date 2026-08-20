@@ -8,6 +8,8 @@
 // ⚠️ เป็นการอ่านหน้าเว็บ ไม่ใช่ API ทางการ — โครงสร้างเปลี่ยนเมื่อไหร่ก็พังได้
 // จึงมี 3 กลยุทธ์การแกะ + สลับไปตัวสำรอง + KV ค้างของเก่าไว้เสิร์ฟแทน
 
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
+
 const FETCH_TIMEOUT = 10000;
 const EDGE_TTL = 900;         // เทรนด์ขยับทุก ~30 นาที cache ที่ edge 15 นาทีพอ
 const KV_TTL = 6 * 3600;      // เก็บของเก่าไว้ 6 ชม. เผื่อทั้งสองแหล่งล่ม
@@ -228,10 +230,23 @@ export async function onRequest(context) {
     { method: "GET" }
   );
   const hit = await cache.match(key);
+  // ⚠️ cache hit ต้องออกก่อนถึงบรรทัด log — ไม่งั้นทุกคนที่เปิดหน้าเว็บกินโควตา KV คนละครั้ง
   if (hit) return browserCopy(hit);
 
   const kv = env.FLAGS_KV;
   const kvKey = (env.APP_ENV ? String(env.APP_ENV) + ":" : "") + `xtrends:${geo}`;
+
+  // บันทึกระบบ — คอลัมน์นี้พึ่งเว็บของคนอื่น (getdaytrends/trends24) ที่ล่มบ่อย
+  // จึงบันทึกเฉพาะตอน "มีต้นทางล่ม" เท่านั้น สำเร็จเรียบร้อยไม่ต้องเขียนอะไร
+  resetLog();
+  const L = startLog("trend/xtrends");
+  L.cache = "miss";
+  const done = (resp, note) => {
+    for (const a of attempts) if (a.err) L.fail(a.source, a.err);
+    if (note) L.warn(note);
+    context.waitUntil(finishLog(env, L));
+    return resp;
+  };
 
   const attempts = [];
   for (const src of SOURCES) {
@@ -255,7 +270,10 @@ export async function onRequest(context) {
         if (kv) context.waitUntil(kv.put(kvKey, JSON.stringify(body), { expirationTtl: KV_TTL }).catch(() => {}));
         const edge = json(body, 200, EDGE_TTL);
         context.waitUntil(cache.put(key, edge.clone()));
-        return browserCopy(edge);
+        L.kvWrites = kv ? 1 : 0;
+        L.count("trends", trends.length);
+        if (catDiag.err) L.fail("workers-ai", catDiag.err);
+        return done(browserCopy(edge));
       }
     } catch (e) {
       attempts.push({ source: src.id, err: String((e && e.message) || e).slice(0, 120) });
@@ -267,11 +285,13 @@ export async function onRequest(context) {
     const stale = kv ? await kv.get(kvKey) : null;
     if (stale) {
       const old = JSON.parse(stale);
-      return browserCopy(json({ ...old, stale: true, meta: { ...(old.meta || {}), attempts } }, 200, 300));
+      return done(browserCopy(json({ ...old, stale: true, meta: { ...(old.meta || {}), attempts } }, 200, 300)),
+                  "ต้นทางล่มทั้งหมด — เสิร์ฟของเก่าที่เก็บไว้");
     }
   } catch {}
 
-  return browserCopy(json({ geo, count: 0, trends: [], error: "all sources failed", meta: { attempts } }, 200, 120));
+  return done(browserCopy(json({ geo, count: 0, trends: [], error: "all sources failed", meta: { attempts } }, 200, 120)),
+              "ต้นทางล่มทั้งหมด และไม่มีของเก่าให้เสิร์ฟ");
 }
 
 /* ---------- ดึงหน้าเว็บ ---------- */

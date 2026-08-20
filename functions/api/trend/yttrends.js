@@ -21,6 +21,8 @@
 // ⚠️ บวกเลขนี้ทุกครั้งที่ "โครงของ items เปลี่ยน" (เพิ่ม/แก้ field, เปลี่ยนวิธีเรียง)
 // ไม่งั้นของเก่าใน KV/edge cache จะถูกเสิร์ฟต่ออีกเป็นชั่วโมงทั้งที่โค้ดใหม่ขึ้นไปแล้ว
 // เคยพลาดมาแล้ว: แก้วิธีเรียง + เพิ่มธง live แต่ผู้ใช้ยังเห็นของเก่าเรียงผิดอยู่ 1 ชม.
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
+
 const DATA_VER = "8"; // bump: แยกชาร์ตข่าว/ทั่วไป (kind) + ฟิลด์ catFiltered
 
 const FETCH_TIMEOUT = 7000;
@@ -77,8 +79,21 @@ export async function onRequest(context) {
     { method: "GET" }
   );
   const hit = await cache.match(key);
+  // ⚠️ cache hit ต้องออกก่อนถึงบรรทัด log — ไม่งั้นทุกคนที่เปิดหน้าเว็บกินโควตา KV คนละครั้ง
   if (hit) return browserCopy(hit);
 
+  // บันทึกระบบ — คอลัมน์นี้พึ่ง instance อาสาสมัคร (Invidious/Piped) ที่ล่มบ่อยและล่มแบบค้าง
+  // บันทึกเฉพาะตอนมีต้นทางล่ม/ตกไปใช้ตัวสำรอง เท่านั้น สำเร็จเรียบร้อยไม่เขียนอะไร
+  resetLog();
+  const L = startLog("trend/yttrends");
+  const done = (resp, note) => {
+    for (const a of attempts) if (a.err) L.fail(a.id || a.source || "?", a.err);
+    if (note) L.warn(note);
+    context.waitUntil(finishLog(env, L));
+    return resp;
+  };
+
+  const attempts = [];
   const kv = env.FLAGS_KV;
   // แยก key ตามโหมด — สองโหมดเป็นคนละชาร์ต ถ้าใช้ key เดียวกันจะทับกันไปมา
   // และสถิติยอดวิวย้อนหลังก็ต้องแยก เพราะเป็นคนละชุดคลิป
@@ -97,7 +112,7 @@ export async function onRequest(context) {
         if (!staleKey && Number.isFinite(age) && age >= 0 && age < KV_FRESH && (saved.body.items || []).length) {
           const edge = json({ ...saved.body, fromKv: true }, 200, EDGE_TTL);
           context.waitUntil(cache.put(key, edge.clone()));
-          return browserCopy(edge);
+          return browserCopy(edge); // ของใน KV ยังสด — ไม่ได้ยิงเน็ต ไม่มีอะไรต้องบันทึก
         }
       }
     } catch {}
@@ -106,7 +121,6 @@ export async function onRequest(context) {
     (s) => s && Number.isFinite(s.t) && Date.now() - s.t < HIST_KEEP_MS
   );
 
-  const attempts = [];
   const won = await race(geo, attempts, env, catId);
   if (won) {
     const now = Date.now();
@@ -140,14 +154,20 @@ export async function onRequest(context) {
     }
     const edge = json(body, 200, EDGE_TTL);
     context.waitUntil(cache.put(key, edge.clone()));
-    return browserCopy(edge);
+    L.cache = "miss";
+    L.kvWrites = kv ? 1 : 0;
+    L.count("items", items.length);
+    return done(browserCopy(edge),
+                won.id === "youtube:api" ? "" : `ไม่ได้ใช้ YouTube API — ตกไปใช้ ${won.id}`);
   }
 
   // ดึงไม่ได้เลย → เสิร์ฟของเก่าดีกว่าโชว์หน้าว่าง
   if (saved && saved.body && (saved.body.items || []).length) {
-    return browserCopy(json({ ...saved.body, stale: true, meta: { ...(saved.body.meta || {}), attempts } }, 200, 300));
+    return done(browserCopy(json({ ...saved.body, stale: true, meta: { ...(saved.body.meta || {}), attempts } }, 200, 300)),
+                "ต้นทางล่มทั้งหมด — เสิร์ฟของเก่าที่เก็บไว้");
   }
-  return browserCopy(json({ geo, kind, catFiltered: false, count: 0, items: [], error: "no source available", meta: { attempts } }, 200, 120));
+  return done(browserCopy(json({ geo, kind, catFiltered: false, count: 0, items: [], error: "no source available", meta: { attempts } }, 200, 120)),
+              "ต้นทางล่มทั้งหมด และไม่มีของเก่าให้เสิร์ฟ");
 }
 
 /* ---------- วิวเพิ่มขึ้นเท่าไหร่ในช่วง N ชั่วโมง ---------- */

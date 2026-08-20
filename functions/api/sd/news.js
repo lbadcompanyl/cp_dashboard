@@ -5,6 +5,7 @@
 // คืน JSON { q, geo, articles:[{title,link,sourceLabel,publishedAt}], provider, diag }
 
 import { parseGeneric } from "../trend/_lib/parser.js";
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 
 const FETCH_TIMEOUT = 12000;
 const EDGE_TTL = 1800;   // cache 30 นาที ที่ edge
@@ -31,7 +32,13 @@ export async function onRequest(context) {
   const cache = caches.default;
   const key = new Request(url.origin + `/api/sd/news?v=${CACHE_VER}&q=${encodeURIComponent(q)}&geo=${geo}`, { method: "GET" });
   const hit = await cache.match(key);
+  // ⚠️ cache hit ต้องออกก่อนถึงบรรทัด log — ไม่งั้นทุกคนที่เปิดหน้าเว็บกินโควตา KV คนละครั้ง
   if (hit) return browserCopy(hit);
+
+  // บันทึกระบบ — คำค้นมีได้ไม่จำกัด cache key จึงแตกเยอะมาก
+  // **ห้ามบันทึกทุก build** บันทึกเฉพาะตอนต้นทางล่มหรือหาข่าวไม่เจอเลย
+  resetLog();
+  const L = startLog("sd/news");
 
   // แยกคำในกลุ่มกลับจาก "a OR \"b c\" OR d" → ["a","b c","d"]
   const terms = q.split(/\s+OR\s+/i).map((t) => t.replace(/^"|"$/g, "").trim()).filter(Boolean).slice(0, MAX_TERMS);
@@ -60,6 +67,13 @@ export async function onRequest(context) {
 
   const body = json({ q, geo, articles, provider, diag }, articles.length ? EDGE_TTL : 0);
   if (articles.length) context.waitUntil(cache.put(key, body.clone()));
+
+  L.cache = "miss";
+  L.count("articles", articles.length);
+  for (const d of diag) if (d && d.err) L.fail(d.provider || d.term || "?", d.err);
+  if (provider !== "bing") L.warn("Bing ไม่ได้ข่าวเลย — ตกไปใช้ Google");
+  else if (!articles.length) L.warn("ไม่ได้ข่าวเลยทั้งสองต้นทาง: " + q.slice(0, 60));
+  context.waitUntil(finishLog(context.env, L));
   return browserCopy(body);
 }
 

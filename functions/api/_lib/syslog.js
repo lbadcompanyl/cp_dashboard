@@ -84,6 +84,26 @@ export async function writeLog(env, entry) {
   }
 }
 
+// ---------- กันเขียนซ้ำเรื่องเดิมรัวๆ ----------
+// ⚠️ **จำเป็น ไม่ใช่ของหรู** — endpoint ที่ดึงข้อมูลสด (เทรนด์ · X · YouTube · โซเชียล)
+// มี cache key แยกตามประเทศ/ช่วงเวลา/หมวด ถ้าต้นทางล่มยาว **ทุก request จะเป็น build ที่ error**
+// แล้วเขียน log คนละครั้ง = โควตา KV หมดใน 1 ชม. ซึ่งคือปัญหาเดียวกับที่ log มีไว้ตรวจ
+//
+// จึงบันทึก "เรื่องเดิม จาก endpoint เดิม" ได้ครั้งเดียวต่อ 5 นาที
+// 📌 ที่ใช้ edge cache ตรงนี้ได้ เพราะเก็บแค่ **ตัวนับว่าเพิ่งเขียนไปแล้ว** ไม่ใช่ตัว log
+//    (ตัว log ยังอยู่ใน KV ตามกฎ — edge cache แยกตามศูนย์ข้อมูล ใช้เก็บ log ไม่ได้)
+//    ผลข้างเคียงที่ยอมรับได้: ศูนย์ข้อมูลละ 1 ครั้ง/5 นาที ยังห่างเพดานมาก
+const THROTTLE_SEC = 300;
+async function throttled(src, sig) {
+  try {
+    const cache = caches.default;
+    const key = new Request("https://syslog.internal/" + encodeURIComponent(src) + "/" + encodeURIComponent(sig));
+    if (await cache.match(key)) return true;
+    await cache.put(key, new Response("1", { headers: { "cache-control": "max-age=" + THROTTLE_SEC } }));
+    return false;
+  } catch { return false; }
+}
+
 // ---------- ตัวช่วยเก็บระหว่างทาง ----------
 // ใช้ในตัว endpoint: สร้าง 1 ตัวต่อ request แล้วค่อย finish() ตอนจบ
 export function startLog(src) {
@@ -97,9 +117,12 @@ export function startLog(src) {
     kvWrites: 0,    // เขียน KV กี่ครั้ง (ไม่รวมตัว log เอง)
     cache: "",      // hit / miss / rebuild
     note: "",
+    flagged: false, // มีเรื่องผิดปกติที่อยากให้บันทึกไว้ แม้จะไม่ถึงขั้น error
     fail(host, err) { this.upstream.push({ host: String(host).slice(0, 60), err: String(err).slice(0, 120) }); },
     count(k, n) { this.counts[k] = (this.counts[k] || 0) + (n || 0); },
     drop(why, n) { this.drops[why] = (this.drops[why] || 0) + (n || 1); },
+    // "ไม่ได้พัง แต่ผิดปกติ" — เช่นดึงสำเร็จแต่ได้ 0 รายการ, ตกไปใช้ต้นทางสำรอง
+    warn(msg) { this.note = String(msg).slice(0, 200); this.flagged = true; },
     ms() { return Date.now() - t0; },
   };
 }
@@ -108,10 +131,20 @@ export function startLog(src) {
  * ปิดท้าย: เขียนลง KV **เฉพาะเมื่อมีอะไรน่าบันทึกจริงๆ**
  * ⚠️ กฎข้อ 2 — cache hit ที่ไม่ได้ build อะไรเลย ไม่ต้องเขียน
  *    ไม่งั้นทุกคนที่เปิดหน้าเว็บจะกินโควตา KV คนละครั้ง
+ *
+ * `built: true` = "งานหลักของ endpoint นี้ทำงานจริงรอบนี้" ใช้ได้เฉพาะ endpoint ที่
+ * **มี cache key เดียว** (ข่าว PR / ข่าว IR) ซึ่ง build ราวชั่วโมงละครั้ง
+ * endpoint ที่ cache key แตกตามพารามิเตอร์ **ห้ามส่ง built: true** ให้ปล่อยเป็นค่าปริยาย
+ * แล้วบันทึกเฉพาะตอนพัง/ผิดปกติแทน ไม่งั้นโควตา KV หมด
  */
 export async function finishLog(env, L, { built = false, err = "" } = {}) {
-  const worth = built || !!err || L.upstream.length > 0;
+  const worth = built || !!err || L.flagged || L.upstream.length > 0;
   if (!worth) return false;
+  // เรื่องที่ไม่ใช่ build ปกติ = อาจเกิดรัวๆ ต้องผ่านตัวกันเขียนซ้ำก่อน
+  if (!built) {
+    const sig = String(err || L.note || (L.upstream[0] || {}).err || "?").slice(0, 60);
+    if (await throttled(L.src, sig)) return false;
+  }
   return writeLog(env, {
     src: L.src,
     ok: !err,
