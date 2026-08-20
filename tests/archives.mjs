@@ -521,6 +521,8 @@ console.log("\n[10] มือถือ");
   ok("จอแคบ = ซ้อนแนวตั้ง (ทุกกล่องชิดซ้ายเท่ากัน)",
     boxes.every((b) => b.x === boxes[0].x), JSON.stringify(boxes));
 
+  // ⚠️ 3 ช่องต้องสูงเท่ากันบนจอกว้าง (เคยเป็นการ์ด 3 ใบ สูงไม่เท่ากันและกินที่)
+  //    และของยาวๆ ต้อง "เลื่อนอยู่ข้างใน" ไม่ใช่ถูกตัดหาย
   const wide = await p.$$eval("#list .item, .fbox, #q", (els) =>
     els.filter((e) => e.getBoundingClientRect().right > innerWidth + 1).length);
   ok("ไม่มีการ์ด/กล่องตัวไหนยื่นเลยขอบจอ", wide === 0, `${wide} ตัว`);
@@ -530,6 +532,19 @@ console.log("\n[10] มือถือ");
   await openFilters(p2);
   const bx = await p2.$$eval(".fbox", (els) => els.map((e) => Math.round(e.getBoundingClientRect().x)));
   ok("จอกว้าง = เรียงแนวนอน 3 คอลัมน์", new Set(bx).size === 3, JSON.stringify(bx));
+
+  const hs = await p2.$$eval(".fbox", (els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+  ok("จอกว้าง = 3 ช่องสูงเท่ากัน", new Set(hs).size === 1, JSON.stringify(hs));
+  const box = await p2.evaluate(() => {
+    const s = document.querySelector("#srcs");
+    return { scrolls: s.scrollHeight > s.clientHeight, h: s.clientHeight,
+             n: document.querySelectorAll("#srcs .src").length,
+             panel: Math.round(document.querySelector("#filters").getBoundingClientRect().height) };
+  });
+  // ⚠️ ของยาวต้องเลื่อนได้ ไม่ใช่ถูก overflow:hidden ตัดหายจนกดไม่ถึง
+  ok("รายชื่อสำนักข่าวยาวๆ เลื่อนอยู่ข้างในได้", box.n < 5 || box.scrolls, `${box.n} เจ้า · สูง ${box.h}px`);
+  ok("รายชื่อสูงพอกดใช้ได้จริง", box.h >= 90, `${box.h}px`);
+  ok("แถบตัวกรองไม่สูงจนกินที่", box.panel <= 230, `${box.panel}px`);
   await p2.close();
   await p.close();
   await m.close();
