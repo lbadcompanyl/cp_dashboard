@@ -86,6 +86,10 @@ Cloudflare → cp-dashboard → Settings → Build → Branch control → Produc
 1. **ห้าม push ขึ้น production โดยไม่ได้รับคำสั่งชัดเจน** — เคยพลาดมาแล้ว 2 ครั้ง
    การ "บอกทีหลัง" หรือ "หมายเหตุไว้ท้ายข้อความ" ไม่นับว่าขออนุญาต
 2. **โค้ดทดลอง / debug endpoint ห้ามขึ้น production** — ลบทิ้งก่อน merge ทุกครั้ง
+   · เคยหลุดมาแล้ว 3 ครั้ง ล่าสุด `GET /debugmeta` ใน `social-comment-extractor/worker/worker.js`
+     (commit `b08bff6`) — เปิดให้ใครก็ได้ยิงแล้ว **เผาเครดิต ScrapeCreators ที่จ่ายเงิน**
+     พร้อมคืน response ดิบของต้นทาง · ถอดเส้นทางออกแล้ว 20 ส.ค. 2026 ตัวฟังก์ชันยังอยู่
+   · **ก่อน release ทุกครั้ง ให้ไล่ดู commit ที่ขึ้นต้นด้วย `debug`/`test`/`tmp` ในช่วงที่จะปล่อย**
 3. งานพัฒนาอยู่บน branch งาน (`claude/...`) → ทดสอบบน staging → ขึ้น production เมื่อได้รับอนุมัติ
 4. ถ้าไม่แน่ใจว่า branch ไหนคือ environment ไหน — **ถาม อย่าเดา**
 

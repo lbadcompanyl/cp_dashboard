@@ -33,9 +33,12 @@ export default {
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
     }
-    if (request.method === "GET" && url.pathname === "/debugmeta") {
-      return cors(json(await debugMeta(url.searchParams.get("url") || "", env)), origin);
-    }
+    // 🚫 `/debugmeta` ถูกถอดออกจากเส้นทางก่อนปล่อยขึ้น production (20 ส.ค. 2026)
+    //    กฎเหล็กข้อ 2 ใน CLAUDE.md: โค้ดทดลอง / debug endpoint ห้ามขึ้น production
+    //    ตัวนี้เปิดให้ใครก็ได้ยิง GET แล้ว **เผาเครดิต ScrapeCreators ที่จ่ายเงิน** ทีละครั้ง
+    //    และคืน response ดิบของต้นทางออกมาทั้งก้อน
+    //    ฟังก์ชัน debugMeta() ยังอยู่ข้างล่างครบ — เวลาจะไล่ปัญหาเรื่อง thumbnail
+    //    ให้เปิดเส้นทางกลับมาชั่วคราวตอนรันในเครื่อง แล้วถอดออกก่อน deploy ทุกครั้ง
     if (request.method !== "POST" || url.pathname !== "/analyze") {
       return cors(json({ error: "ไม่พบ endpoint (ใช้ POST /analyze)" }, 404), origin);
     }
