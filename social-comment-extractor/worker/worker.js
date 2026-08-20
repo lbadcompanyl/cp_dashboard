@@ -136,8 +136,8 @@ async function creditBalance(env) {
 /** หาเลขเครดิตจาก response ของ ScrapeCreators ไม่ว่าจะใช้ชื่อ field แบบไหน */
 function findCredits(obj) {
   if (obj == null || typeof obj !== "object") return null;
-  const keys = ["credits_remaining", "creditsRemaining", "credits", "credit", "credit_balance",
-    "creditBalance", "balance", "remaining", "available", "credits_left", "creditsLeft"];
+  const keys = ["credits_remaining", "creditsRemaining", "creditCount", "credit_count", "credits", "credit",
+    "credit_balance", "creditBalance", "balance", "remaining", "available", "credits_left", "creditsLeft"];
   for (const k of keys) if (typeof obj[k] === "number") return obj[k];
   for (const v of Object.values(obj)) if (v && typeof v === "object") { const n = findCredits(v); if (n != null) return n; }
   for (const v of Object.values(obj)) if (typeof v === "number") return v; // เผื่อ response เป็น {something: N} ล้วน
