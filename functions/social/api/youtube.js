@@ -11,7 +11,7 @@
 import { ST, payload, cached, missingEnv, fetchJSON } from "../_lib/store.js";
 
 // ⭐ บวกเลขนี้ทุกครั้งที่แก้โครงข้อมูลที่คืนออกไป ไม่งั้นผู้ใช้จะเห็นของเก่าค้างเป็นชั่วโมง
-const DATA_VER = "2";
+const DATA_VER = "3";
 
 /* ── ชั้นที่ 2: YouTube Analytics (ตัวเลขรายวัน) ─────────────────────────
  * ต้องมี refresh token ที่ได้จาก /social/api/connect?p=google
@@ -31,6 +31,12 @@ const ANALYTICS_DAYS = 760;
 const METRICS = [
   "views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
   "likes", "comments", "shares", "subscribersGained", "subscribersLost",
+].join(",");
+
+/* รายคลิปไม่มี subscribersGained/Lost ให้ขอ — ขอไปจะได้ 400 ทั้งคำขอ */
+const METRICS_VIDEO = [
+  "views", "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
+  "likes", "comments", "shares",
 ].join(",");
 
 function ymd(d) {
@@ -170,7 +176,7 @@ async function buildYouTube(env, ch) {
   }
 
   // ── 4) ชั้นรายวันจาก YouTube Analytics (ถ้าเชื่อมไว้) ────────────────
-  const an = await buildAnalytics(env, channel);
+  const an = await buildAnalytics(env, channel, videos);
   if (an && an.authFailed) {
     /* ⚠️ ได้ข้อมูลสาธารณะมาแล้ว แต่สิทธิ์ของชั้นรายวันหมดอายุ
        ห้ามทิ้งของที่ได้มาแล้วทั้งหมด — คืนไปด้วย พร้อมบอกว่าชั้นไหนพัง */
@@ -213,7 +219,7 @@ async function accessToken(env) {
  * ⚠️ Analytics ให้ "ผู้ติดตามเข้า/ออกรายวัน" ไม่ได้ให้ "ยอดสะสมรายวัน"
  *    ยอดสะสมย้อนหลังจึงต้องเดินถอยจากยอดปัจจุบัน — ดูหมายเหตุตรงจุดที่คำนวณ
  */
-async function buildAnalytics(env, channel) {
+async function buildAnalytics(env, channel, videos) {
   const miss = missingEnv(env, ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_REFRESH_TOKEN"]);
   if (miss.length) return null;          // ยังไม่ได้ต่อชั้นนี้ — ไม่ใช่ข้อผิดพลาด
 
@@ -304,6 +310,48 @@ async function buildAnalytics(env, channel) {
     }
   }
 
+  /* ── รายคลิป ────────────────────────────────────────────────────────
+   * 🔴 Data API ให้แค่ ยอดวิว/ไลก์/คอมเมนต์ ต่อคลิป — ไม่มีเวลาที่คนดู ดูจนจบ แชร์
+   *    เจ้าของถามว่า "ทำไมขาดข้อมูลตรงนี้" (19 ส.ค. 2026) เพราะแถวย่อยของตาราง
+   *    ขึ้น "—" ทั้งที่แถวรวมของช่องมีตัวเลข — Analytics ให้ต่อคลิปได้ ก็ขอมาเลย
+   * ⚠️ ล้มตรงนี้ห้ามทำให้ทั้งชั้นรายวันพัง — ถือเป็นของแถม ไม่มีก็ยังใช้งานได้
+   */
+  const byVideo = {};
+  const ids = (videos || []).map((v) => v.id).filter(Boolean);
+  if (ids.length) {
+    try {
+      const vu = ANALYTICS + "?" + new URLSearchParams({
+        ids: usedMine ? "channel==MINE" : "channel==" + channel.id,
+        startDate: ymd(start), endDate: ymd(end),
+        dimensions: "video",
+        filters: "video==" + ids.join(","),
+        metrics: METRICS_VIDEO,
+        sort: "-views",
+        maxResults: String(ids.length),
+      }).toString();
+      const vr = await fetch(vu, { headers: { authorization: "Bearer " + tk.token } });
+      const vj = await vr.json().catch(() => null);
+      if (vr.ok && vj && Array.isArray(vj.rows)) {
+        const vc = {};
+        (vj.columnHeaders || []).forEach((h, i) => { vc[h.name] = i; });
+        const va = (row, name) => (vc[name] == null ? null : row[vc[name]]);
+        vj.rows.forEach((row) => {
+          const id = va(row, "video");
+          if (!id) return;
+          byVideo[id] = {
+            views: va(row, "views"),
+            likes: va(row, "likes"),
+            comments: va(row, "comments"),
+            shares: va(row, "shares"),
+            watchTime: Math.round((va(row, "estimatedMinutesWatched") || 0) / 60),
+            avgViewDuration: va(row, "averageViewDuration"),
+            completionRate: (va(row, "averageViewPercentage") || 0) / 100,
+          };
+        });
+      }
+    } catch (e) { /* ของแถม ล้มได้ ไม่ต้องพาชั้นรายวันล้มตาม */ }
+  }
+
   /* 🔴 ด่านกันเคส "ได้ 200 แต่เป็นศูนย์ทั้งกระดาน" (เจอจริง 19 ส.ค. 2026)
    * เกิดตอนบัญชีที่กดอนุญาตไม่ใช่เจ้าของช่องนี้ แล้ว channel==MINE ไปหยิบ
    * ช่องเปล่าของบัญชีนั้นมาแทน — API ตอบสำเร็จ ไม่มี error อะไรเลย
@@ -319,5 +367,5 @@ async function buildAnalytics(env, channel) {
         : "ดึงสถิติมาได้แต่เป็นศูนย์ทั้งหมด — ตรวจว่าช่องที่ตั้งไว้กับบัญชีที่กดอนุญาตเป็นช่องเดียวกันหรือไม่" };
   }
 
-  return { data: { daily, followers, approxLevel: true } };
+  return { data: { daily, followers, byVideo, approxLevel: true } };
 }

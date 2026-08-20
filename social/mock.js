@@ -139,9 +139,10 @@
       row[reachKey] = reach;
       // แบ่ง engagement ตามส่วนประกอบที่ช่องนั้นนับจริง
       if (pk === "youtube") {
-        row.likes = Math.round(eng * 0.88);
-        row.comments = eng - row.likes;
-        row.shares = 0;                        // YouTube ไม่ให้ตัวเลขแชร์
+        // 🔴 YouTube นับแชร์ด้วยแล้ว — ตัวเลขมาจาก YouTube Analytics (19 ส.ค. 2026)
+        row.likes = Math.round(eng * 0.84);
+        row.comments = Math.round(eng * 0.09);
+        row.shares = eng - row.likes - row.comments;
         row.watchTime = Math.round(reach * (2.4 + rnd() * 2.6) / 60);      // ชั่วโมง
         row.avgViewDuration = Math.round(150 + rnd() * 190);               // วินาที
         row.completionRate = 0.28 + rnd() * 0.3;                           // averageViewPercentage
@@ -188,9 +189,9 @@
       };
       post[reachKey] = pv;
       if (pk === "youtube") {
-        post.likes = Math.round(pe * 0.88);
-        post.comments = pe - post.likes;
-        post.shares = 0;
+        post.likes = Math.round(pe * 0.84);
+        post.comments = Math.round(pe * 0.09);
+        post.shares = Math.max(0, pe - post.likes - post.comments);
         post.watchTime = Math.round(pv * (2.4 + rnd() * 2.6) / 60);
         post.avgViewDuration = Math.round(150 + rnd() * 190);
         post.completionRate = 0.28 + rnd() * 0.3;

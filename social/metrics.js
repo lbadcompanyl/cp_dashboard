@@ -29,13 +29,19 @@
       reachKey: "views",
       reachLabel: "Views",
       erLabel: "Engagement rate",
-      erFormula: "(ไลก์ + คอมเมนต์) ÷ Views",
-      erNote: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API จึงไม่ได้นับรวม",
-      er: function (a) { return rate(a.likes + a.comments, a.views); },
+      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ Views",
+      /* 🔴 เดิมไม่นับแชร์ เพราะชั้น API key (YouTube Data API) ไม่เปิดเผยตัวเลขนี้
+         พอต่อ YouTube Analytics แล้วได้มาจริง เจ้าของสั่งให้นับด้วย (19 ส.ค. 2026)
+         ⚠️ ผลข้างเคียง: ค่า ER ของ YouTube สูงขึ้นเล็กน้อยเทียบกับที่เคยเห็นก่อนหน้า
+            แลกกับการที่ทั้ง 3 ช่องใช้สูตรตัวเศษเดียวกัน เทียบกันได้ตรงขึ้น
+            (ตัวส่วนยังต่างกันอยู่ — YouTube/TikTok เป็น Views · Facebook เป็น Reach) */
+      erNote: "ตัวเลขแชร์มาจาก YouTube Analytics — ถ้าต่อแค่ API key จะไม่มีส่วนนี้",
+      er: function (a) { return rate(a.likes + a.comments + (a.shares || 0), a.views); },
       // ส่วนประกอบของ engagement — ใช้วาด stacked bar และโชว์จำนวนจริง
       parts: [
         { key: "likes", label: "ไลก์", color: "#dc2626" },
         { key: "comments", label: "คอมเมนต์", color: "#ea9010" },
+        { key: "shares", label: "แชร์", color: "#9333ea" },
       ],
       // metric เฉพาะแพลตฟอร์ม — โผล่เฉพาะในแท็บของช่องนั้น
       extras: [

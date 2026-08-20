@@ -68,8 +68,17 @@
     var ch = res.data.channel || {};
     var vids = res.data.videos || [];
 
+    var an0 = res.data.analytics || {};
+    var byVideo = an0.byVideo || {};
+
+    /* ⚠️ ตัวเลขต่อคลิปมาจาก 2 ที่ ต้องรู้ว่าอันไหนมาจากไหน
+       Data API  → ยอดวิว ไลก์ คอมเมนต์ (มีเสมอ)
+       Analytics → แชร์ เวลาที่คนดู ดูเฉลี่ย ดูจนจบ (มีเฉพาะตอนต่อชั้นที่ 2)
+       ตัวที่ Analytics ไม่ได้ให้มา ต้องปล่อยเป็น undefined ห้ามใส่ 0
+       — 0 แปลว่า "วัดได้แล้วได้ศูนย์" คนละเรื่องกับ "ยังไม่ได้ต่อชั้นนั้น" */
     var posts = vids.map(function (v) {
-      return {
+      var extra = byVideo[v.id] || null;
+      var po = {
         id: v.id,
         title: v.title,
         thumb: v.thumb,
@@ -78,10 +87,14 @@
         views: v.views || 0,
         likes: v.likes || 0,
         comments: v.comments || 0,
-        // ⚠️ YouTube ไม่เปิดเผยจำนวนแชร์ — 0 ตรงนี้แปลว่า "ไม่นับ" ไม่ใช่ "ไม่มีใครแชร์"
-        //    ตัววาดรู้เรื่องนี้จาก PLATFORMS.youtube.parts ที่ไม่มี shares อยู่แล้ว
-        shares: 0,
       };
+      if (extra) {
+        if (extra.shares != null) po.shares = extra.shares;
+        if (extra.watchTime != null) po.watchTime = extra.watchTime;
+        if (extra.avgViewDuration != null) po.avgViewDuration = extra.avgViewDuration;
+        if (extra.completionRate != null) po.completionRate = extra.completionRate;
+      }
+      return po;
     });
 
     /* ชั้นรายวันมาจาก YouTube Analytics — ไม่มีก็ยังใช้ชั้นสาธารณะได้

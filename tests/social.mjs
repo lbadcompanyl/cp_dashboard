@@ -291,12 +291,10 @@ console.log("\n[6] 🔴 ผลงานรายช่อง — หนึ่ง
 
   /* ⚠️ YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API — ต้องขึ้น "—" ห้ามใส่ 0
      (0 แปลว่า "ไม่มีใครแชร์" ซึ่งคนละเรื่องกับ "ไม่รู้") */
-  const ytShare = await pg.$eval(".tbl.perf tbody tr:first-child td:nth-child(4)",
-    (e) => ({ t: e.innerText.trim(), na: e.classList.contains("na"), tip: e.getAttribute("title") || "" }));
-  ok(ytShare.t === "—" && ytShare.na, `YouTube คอลัมน์แชร์เป็น "—" ไม่ใช่ 0 (${ytShare.t})`);
-  ok(/แชร์/.test(ytShare.tip), "มีคำอธิบายว่าทำไมไม่มีตัวเลข");
-  const ttShare = await pg.$eval(".tbl.perf tbody tr:nth-child(2) td:nth-child(4)", (e) => e.innerText.trim());
-  ok(ttShare !== "—", `TikTok มีตัวเลขแชร์จริง (${ttShare.replace(/\n/g, " ")})`);
+  /* 🔴 YouTube มีตัวเลขแชร์แล้ว (มาจาก YouTube Analytics) — เดิมขึ้น "—" */
+  const shareCol = await pg.$$eval(".tbl.perf tbody tr", (n) =>
+    n.map((r) => r.querySelectorAll("td")[2].innerText.trim().split("\n")[0]));
+  ok(shareCol.every((x) => x !== "—"), `ทุกช่องมีตัวเลขแชร์ (${shareCol.join(" / ")})`);
 
   // สลับแท็บแล้วชุดคอลัมน์ต้องเปลี่ยนจริง
   await pg.click('[data-ptab="reach"]');
@@ -371,15 +369,12 @@ console.log("\n[7] 🔴 สัดส่วนแยกช่อง — แท่
      และต้องมีป้ายบอก ไม่งั้นอ่านว่า "YouTube ไม่มีใครแชร์เลย" ซึ่งไม่จริง */
   const shareRow = await pg.evaluate(() => {
     const r = [...document.querySelectorAll(".sbar-r")].find((x) => /แชร์/.test(x.querySelector(".sbar-l").textContent));
-    return {
-      segs: r.querySelectorAll(".share-s").length,
-      note: (r.querySelector(".sbar-x") || {}).textContent || "",
-      tip: (r.querySelector(".sbar-x") || {}).title || "",
-    };
+    return { segs: r.querySelectorAll(".share-s").length, note: (r.querySelector(".sbar-x") || {}).textContent || "" };
   });
-  ok(shareRow.segs === 2, `แถวแชร์แบ่งแค่ 2 ช่อง (${shareRow.segs})`);
-  ok(/YT/.test(shareRow.note), `มีป้ายบอกว่าไม่รวมช่องไหน (${shareRow.note.trim()})`);
-  ok(/ไม่เปิดเผย/.test(shareRow.tip), "ป้ายอธิบายเหตุผลเมื่อเอาเมาส์ชี้");
+  /* 🔴 YouTube นับแชร์ด้วยแล้ว แถวนี้จึงครบ 3 ช่อง และไม่ต้องมีป้าย "ไม่รวม"
+     ⚠️ กลไกป้าย "ไม่รวมช่องไหน" ยังต้องอยู่ — ช่องใหม่ที่ไม่มี metric นั้นจะได้ใช้ */
+  ok(shareRow.segs === 3, `แถวแชร์ครบ 3 ช่อง (${shareRow.segs})`);
+  ok(!shareRow.note.trim(), "ไม่มีป้าย 'ไม่รวม' เพราะทุกช่องมีตัวเลขแล้ว");
 
   // มี delta หน่วย pt (ส่วนต่างของสัดส่วน ไม่ใช่ % ของ %)
   ok((await pg.$$eval(".sbar-i .dlt", (n) => n.length)) > 0, "มี delta ของสัดส่วน");
@@ -715,10 +710,15 @@ console.log("\n[14] สูตร ER ของแต่ละช่องต้�
     await tabTo(pg, t);
     f[t] = await pg.$eval(".formula b", (e) => e.textContent);
   }
-  ok(!/แชร์/.test(f.YouTube), "YouTube: สูตรไม่มีแชร์");
+  /* 🔴 YouTube นับแชร์ด้วยแล้ว (เจ้าของสั่ง 19 ส.ค. 2026 — "youtube ก็มี feature share")
+     ตัวเลขมาจาก YouTube Analytics ซึ่งชั้น API key ไม่มีให้
+     ⚠️ ตัวเศษเหมือนกันหมดแล้ว แต่ "ตัวส่วน" ยังต่างกัน — Facebook หารด้วย Reach
+        เทียบข้ามช่องตรงๆ จึงยังทำไม่ได้ ต้องเหลือคำเตือนนี้ไว้ */
+  ok(/แชร์/.test(f.YouTube), `YouTube: นับแชร์ด้วยแล้ว (${f.YouTube})`);
   ok(/แชร์/.test(f.TikTok), "TikTok: นับแชร์ด้วย");
   ok(/Reach/.test(f.Facebook), "Facebook: หารด้วย Reach");
-  ok(new Set(Object.values(f)).size === 3, "ทั้ง 3 ช่องใช้สูตรคนละแบบจริง");
+  ok(/Views/.test(f.YouTube) && /Views/.test(f.TikTok), "YouTube/TikTok หารด้วย Views");
+  ok(f.Facebook !== f.YouTube, "ตัวส่วนของ Facebook ยังต่างจากอีก 2 ช่อง");
   await pg.close();
 }
 
@@ -2022,6 +2022,77 @@ console.log("\n[49] 🔴 เหลือช่องเดียว — ห้�
   const ins2 = await pg.$$eval(".insight-l li", (n) => n.map((x) => x.innerText.trim()));
   ok(ins2.some((t) => /สูงสุดที่|เปลี่ยนแปลงมากที่สุด/.test(t)), "เปิด 2 ช่องแล้วข้อเปรียบเทียบกลับมา");
   ok((await pg.$$(".bd-r")).length > 0, "แถวรายช่องกลับมาด้วย");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[50] 🔴 ตัวเลขรายคลิปต้องครบ ไม่ใช่ '—' ทั้งแถว");
+{
+  /* 🔴 เจ้าของถาม "ทำไมขาดข้อมูลตรงนี้" (19 ส.ค. 2026)
+     แถวรวมของช่องมีตัวเลข แต่แถวย่อยรายคลิปขึ้น "—" หมด
+     เพราะ Data API ให้แค่ ยอดวิว/ไลก์/คอมเมนต์ ต่อคลิป
+     ⚠️ Analytics ขอต่อคลิปได้ (dimensions=video) ก็ต้องขอมา ไม่ใช่ปล่อยว่าง */
+  const day = (i) => new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+  const daily = [];
+  for (let i = 39; i >= 0; i--) {
+    daily.push({ date: day(i), views: 5000, likes: 200, comments: 10, shares: 15,
+      watchTime: 250, avgViewDuration: 190, completionRate: 0.42, gained: 30, lost: 5 });
+  }
+  const followers = daily.map((d, i) => ({ date: d.date, value: 41000 - (daily.length - i) * 25, gained: d.gained, lost: d.lost }));
+
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  await pg.route("**/social/api/youtube", (r) => r.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ ok: true, status: "ok", need: [], message: "", at: 1, data: {
+      channel: { id: "UC1", title: "ช่อง", subs: 41000, subsApprox: true, views: 5200000, videos: 1100, url: "#" },
+      videos: [
+        { id: "v1", title: "คลิปมีสถิติครบ", at: day(5) + "T00:00:00Z", thumb: "",
+          url: "https://youtu.be/v1", views: 6200, likes: 300, comments: 12 },
+        { id: "v2", title: "คลิปที่ Analytics ไม่ได้ให้มา", at: day(9) + "T00:00:00Z", thumb: "",
+          url: "https://youtu.be/v2", views: 4600, likes: 210, comments: 8 },
+      ],
+      analytics: { daily, followers, approxLevel: true, byVideo: {
+        v1: { views: 6200, likes: 300, comments: 12, shares: 41, watchTime: 310,
+              avgViewDuration: 205, completionRate: 0.47 },
+      } } } }) }));
+  for (const k of ["tiktok", "facebook"]) {
+    await pg.route(`**/social/api/${k}`, (r) => r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ ok: false, status: "not-configured", need: ["X"], message: "" }) }));
+  }
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".tbl.perf", { timeout: 5000 });
+
+  await pg.click('[data-ptab="reach"]');
+  await pg.waitForTimeout(150);
+  await pg.click('[data-perf="youtube"]');
+  await pg.waitForTimeout(250);
+
+  const rows = await pg.$$eval(".perf-sub .sub-t", (n) =>
+    n.map((c) => ({
+      title: c.innerText.split("\n")[0].trim(),
+      cells: [...c.parentElement.querySelectorAll("td")].slice(1).map((x) => x.innerText.trim()),
+    })));
+  const full = rows.find((r) => /มีสถิติครบ/.test(r.title));
+  ok(!!full, "เจอแถวของคลิปที่มีสถิติครบ");
+  ok(full.cells.filter((x) => x === "—").length <= 1,
+     `คลิปนั้นมีตัวเลขเกือบทุกคอลัมน์ (${full.cells.join(" | ")})`);
+  ok(full.cells.some((x) => /:/.test(x)), "มีเวลาที่ดูเฉลี่ย (รูปแบบ นาที:วินาที)");
+  ok(full.cells.some((x) => /%/.test(x)), "มีสัดส่วนดูจนจบ");
+
+  /* ⚠️ คลิปที่ Analytics ไม่ได้ให้มา ต้องขึ้น "—" ไม่ใช่ 0
+     — 0 แปลว่า "วัดได้แล้วได้ศูนย์" คนละเรื่องกับ "ยังไม่ได้ตัวเลขมา" */
+  const none = rows.find((r) => /ไม่ได้ให้มา/.test(r.title));
+  ok(!!none && none.cells.filter((x) => x === "—").length >= 3,
+     `คลิปที่ไม่มีสถิติขึ้น — ไม่ใช่ 0 (${none ? none.cells.join(" | ") : "ไม่เจอ"})`);
+
+  // แชร์รายคลิปต้องโผล่ในแท็บ Engagement ด้วย
+  await pg.click('[data-ptab="engagement"]');
+  await pg.waitForTimeout(200);
+  const eng = await pg.$$eval(".perf-sub .sub-t", (n) =>
+    n.map((c) => [...c.parentElement.querySelectorAll("td")][3].innerText.trim()));
+  ok(eng[0] !== "—", `คลิปแรกมีตัวเลขแชร์ (${eng[0]})`);
+  ok(errs.length === 0, "ไม่มี JS error");
   await pg.close();
 }
 
