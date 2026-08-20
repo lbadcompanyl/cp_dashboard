@@ -82,6 +82,9 @@
   .sc-li .sc-pct { width: 44px; text-align: right; font-weight: 700; }
   .sc-li .sc-cnt { width: 46px; text-align: right; color: var(--sc-muted); }
 
+  .sc-posthead { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 14px; }
+  .sc-posthead .sc-thumb { width: 120px; height: 67px; object-fit: cover; border-radius: 8px; border: 1px solid var(--sc-border); flex: none; }
+  .sc-posthead .sc-ptitle { font-size: 13.5px; font-weight: 600; color: var(--sc-ink); line-height: 1.4; }
   .sc-summary { background: var(--sc-plane); border: 1px solid var(--sc-border); border-radius: 10px; padding: 14px; font-size: 13.5px; color: var(--sc-ink2); }
 
   .sc-kwlist { display: flex; flex-direction: column; gap: 8px; }
@@ -171,6 +174,7 @@
       <div class="sc-card">
         <h2>ผลวิเคราะห์ Sentiment</h2>
         <p class="sc-sub" id="resSub"></p>
+        <div class="sc-posthead" id="postHead" style="display:none"></div>
         <div class="sc-senti">
           <div class="sc-donut" id="donut"><div class="sc-mid"><div class="sc-big" id="donutBig">–</div><div class="sc-lab">เชิงบวก</div></div></div>
           <div class="sc-legend" id="legend"></div>
@@ -323,6 +327,7 @@ async function demoResult(opts){
   const pos = Math.round(total*0.58), neg = Math.round(total*0.16), neu = total-pos-neg;
   return {
     platform: opts.platform, source_url: opts.url, demo: true,
+    post_title: "ตัวอย่าง: รีวิวร้านอาหารเปิดใหม่ อร่อยจริงหรือแค่กระแส?", post_thumb: "",
     fetched_count: total, analyzed_count: total,
     sentiment: { positive: pos, neutral: neu, negative: neg },
     engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
@@ -361,6 +366,13 @@ function renderResult(d){
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
   if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
   showClaudeTokens(d.claude_usage, d.claude_rate_remaining);
+
+  const hasPost = d.post_title || d.post_thumb;
+  el("postHead").style.display = hasPost ? "" : "none";
+  el("postHead").innerHTML = hasPost
+    ? (d.post_thumb ? `<img class="sc-thumb" src="${d.post_thumb}" alt="ปกโพส">` : "") +
+      `<div class="sc-ptitle">${escapeHtml(d.post_title||"")}</div>`
+    : "";
 
   const css = getComputedStyle(document.querySelector(".sc-wrap"));
   const cPos = css.getPropertyValue("--sc-pos"), cNeu = css.getPropertyValue("--sc-neu"), cNeg = css.getPropertyValue("--sc-neg");
@@ -478,7 +490,7 @@ function setFont(ctx,w,s){ ctx.font = w + " " + s + 'px ' + FF; }
 function roundRect(ctx,x,y,w,h,r){ r=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
 function wrapLines(ctx,text,maxW){ const lines=[]; let line=""; for (const ch of String(text)){ if (ch==="\n"){ lines.push(line); line=""; continue; } const t=line+ch; if (ctx.measureText(t).width>maxW && line){ lines.push(line); line=ch; } else line=t; } if (line) lines.push(line); return lines; }
 async function ensureFont(){ try { if (document.fonts && document.fonts.load){ await Promise.all([document.fonts.load('700 27px "IBM Plex Sans Thai"'),document.fonts.load('600 15px "IBM Plex Sans Thai"'),document.fonts.load('400 14px "IBM Plex Sans Thai"')]); await document.fonts.ready; } } catch(e){} }
-function reportPass(ctx, d, draw){
+function reportPass(ctx, d, draw, thumb){
   const W=900, pad=44, cw=W-2*pad;
   const s=d.sentiment||{}; const total=(s.positive||0)+(s.neutral||0)+(s.negative||0);
   const pp=pct(s.positive,total), pnu=pct(s.neutral,total), pn=100-pp-pnu;
@@ -487,6 +499,18 @@ function reportPass(ctx, d, draw){
   y+=26;
   if (draw){ ctx.fillStyle=RC.muted; setFont(ctx,400,13.5); ctx.fillText(`${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์${d.demo?" · Demo":""}`, pad, y); }
   y+=20;
+  // รูปปก + หัวข้อโพส
+  if (d.post_title || thumb){
+    const tw=132, th=Math.round(tw*9/16); let tx=pad;
+    if (thumb){
+      if (draw){ ctx.save(); roundRect(ctx,pad,y,tw,th,8); ctx.clip(); const ir=thumb.width/thumb.height, tr=tw/th; let dw,dh; if(ir>tr){ dh=th; dw=th*ir; } else { dw=tw; dh=tw/ir; } ctx.drawImage(thumb, pad-(dw-tw)/2, y-(dh-th)/2, dw, dh); ctx.restore(); ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,tw,th,8); ctx.stroke(); }
+      tx = pad + tw + 14;
+    }
+    setFont(ctx,600,14);
+    const lines = d.post_title ? wrapLines(ctx, d.post_title, W-pad-tx).slice(0,3) : [];
+    if (draw){ ctx.fillStyle=RC.ink; let ty=y+13; for (const ln of lines){ ctx.fillText(ln, tx, ty); ty+=19; } }
+    y += Math.max(thumb?th:0, lines.length*19) + 16;
+  }
   if (draw){ ctx.strokeStyle=RC.border; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke(); }
   y+=26;
   const R=62, cx=pad+R, cy=y+R;
@@ -536,19 +560,21 @@ function reportPass(ctx, d, draw){
   y+=28;
   return { W, H: Math.ceil(y) };
 }
-function drawReportCanvas(d, scale){
+function drawReportCanvas(d, scale, thumb){
   const scratch=document.createElement("canvas").getContext("2d");
-  const { W, H } = reportPass(scratch, d, false);
+  const { W, H } = reportPass(scratch, d, false, thumb);
   const canvas=document.createElement("canvas");
   canvas.width=Math.round(W*scale); canvas.height=Math.round(H*scale);
   canvas._W=W; canvas._H=H;
   const ctx=canvas.getContext("2d"); ctx.scale(scale,scale);
   ctx.fillStyle=RC.bg; ctx.fillRect(0,0,W,H); ctx.textBaseline="alphabetic"; ctx.textAlign="left";
-  reportPass(ctx, d, true); return canvas;
+  reportPass(ctx, d, true, thumb); return canvas;
 }
+function loadImg(src){ return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; }); }
 async function renderReport(d){
   await ensureFont();
-  const canvas=drawReportCanvas(d, 2);
+  const thumb = d.post_thumb ? await loadImg(d.post_thumb) : null;
+  const canvas=drawReportCanvas(d, 2, thumb);
   const blob=await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.92));
   const jpeg=blob ? new Uint8Array(await blob.arrayBuffer()) : null;
   return { blob, jpeg, pw:canvas._W, ph:canvas._H, iw:canvas.width, ih:canvas.height };
