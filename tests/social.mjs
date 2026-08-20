@@ -590,15 +590,23 @@ console.log("\n[11] 🔴 กราฟรายช่อง — แยก ยอ�
         };
       });
     });
-    ok(g.length === 2, `${t}: มีกราฟรายวัน 2 อัน (${g.map((x) => x.title).join(" / ")})`);
+    /* ⚠️ จำนวนกราฟไม่เท่ากันทุกช่องโดยตั้งใจ — ช่องที่ให้ตัวเลขคุณภาพการดู
+       จะมีกราฟ Retention กับเวลาที่ดูเฉลี่ยเพิ่มมา (Facebook ไม่มี) */
+    const wantN = await pg.evaluate((k) => {
+      const P = window.SOCIAL_CONFIG.PLATFORMS[k], st = P.stats || {};
+      return 2 + (st.completionRate ? 1 : 0) + (st.avgViewDuration ? 1 : 0);
+    }, t.toLowerCase());
+    ok(g.length === wantN, `${t}: มีกราฟรายวัน ${wantN} อัน (${g.map((x) => x.title).join(" / ")})`);
+    // 2 อันแรกยังเป็นยอดวิวกับ ER เสมอ — ตรวจเฉพาะ 2 อันนั้น
+    const g2 = g.slice(0, 2);
 
     /* 🔴 เดิมเป็นกราฟเดียวแกนคู่ — 2 เส้นตัดกันไปมาโดยที่จุดตัดไม่มีความหมาย
        (คนละหน่วย คนละแกน) เจ้าของสั่งแยกเป็น 2 กราฟ 19 ส.ค. 2026 */
-    for (const c of g) {
+    for (const c of g2) {
       ok(c.paths === 1, `${t} · ${c.title}: มีเส้นเดียว (${c.paths})`);
       ok(c.axR === 0, `${t} · ${c.title}: ไม่มีแกนขวาแล้ว`);
     }
-    const [v, er] = g;
+    const [v, er] = g2;
     ok(!/%$/.test(v.ax[0] || ""), `${t}: กราฟแรกเป็นยอดวิว/การเข้าถึง ไม่ใช่ % (${v.ax.join(" ")})`);
     ok(er.ax.every((x) => /%$/.test(x)), `${t}: กราฟที่สองเป็นหน่วย % ทุกป้าย (${er.ax.join(" ")})`);
     ok(!er.ax.some((x) => x.startsWith("+")), `${t}: แกน ER ไม่มีเครื่องหมาย + (เป็นระดับ ไม่ใช่การเปลี่ยนแปลง)`);
@@ -1891,9 +1899,10 @@ console.log("\n[45] 🔴 ชั้นรายวันจาก YouTube Analyti
   const row = await pg.$$eval(".tbl.perf tbody tr:first-child td", (n) => n.map((x) => x.innerText.trim()));
   ok(row.filter((x) => x !== "—").length >= 3, `ตารางมีตัวเลขจริง (${row.join(" | ").replace(/\n/g, " ")})`);
 
-  // แท็บรายช่องต้องมีกราฟ 2 อันเหมือนช่องปกติ
+  /* แท็บรายช่องต้องมีกราฟรายวันครบ 4 อัน — ยอดวิว · ER · Retention · เวลาที่ดูเฉลี่ย
+     (ข้อมูลจำลองในเทสต์นี้มี completionRate กับ avgViewDuration ครบ) */
   await tabTo(pg, "YouTube");
-  ok((await pg.$$("svg.chart")).length === 2, "แท็บรายช่องมีกราฟรายวันครบ 2 อัน");
+  ok((await pg.$$("svg.chart")).length === 4, "แท็บรายช่องมีกราฟรายวันครบ 4 อัน");
   const cards = await pg.$$eval(".scgrid .sc-v", (n) => n.map((x) => x.textContent.trim()));
   ok(cards.some((x) => /K|M/.test(x)), `การ์ดของช่องมีตัวเลขจริง (${cards.join(" / ")})`);
 
@@ -2184,6 +2193,60 @@ console.log("\n[52] 🔴 ช่องในตารางต้องสูง�
   const after = await pg.$eval(".perf-r.open .caret", (e) => getComputedStyle(e).backgroundColor);
   ok(before !== after, `กางแล้วปุ่มเปลี่ยนสี (${before} → ${after})`);
   await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[53] 🔴 กราฟ Retention ในแท็บรายช่อง");
+{
+  /* 🔴 เจ้าของสั่งเพิ่ม 19 ส.ค. 2026 — YouTube ให้น้ำหนักกับ "เวลาที่คนดู" เป็นหลัก
+     ยอดวิวอย่างเดียวบอกไม่ได้ว่าคลิปดีจริงหรือแค่ปกดี
+     ⚠️ ขึ้นเฉพาะช่องที่ให้ตัวเลขนี้จริง — Facebook ไม่มี ต้องไม่วาดกราฟเปล่า */
+  const { pg, errs } = await open();
+
+  await tabTo(pg, "YouTube");
+  const yt = await secs(pg);
+  const clean = yt.map((x) => x.replace(/ⓘ.*/s, "").trim());
+  ok(clean.some((x) => /^Retention รายวัน/.test(x)), `YouTube มีกราฟ Retention (${clean.filter((x) => /รายวัน/.test(x)).join(" | ")})`);
+  ok(clean.some((x) => /เวลาที่ดูเฉลี่ยต่อครั้ง/.test(x)), "YouTube มีกราฟเวลาที่ดูเฉลี่ย");
+  ok((await pg.$$("svg.chart")).length === 4, "แท็บ YouTube มีกราฟรายวัน 4 อัน");
+
+  const axOf = (i) => pg.$$eval("svg.chart", (n, k) =>
+    [...n[k].querySelectorAll(".ax:not(.ax-x):not(.ax-r)")].map((x) => x.textContent.trim()), i);
+
+  // แกน Retention เป็น % และไม่เริ่มจาก 0 (ค่าจริงอยู่ในช่วงแคบ)
+  const ret = await axOf(2);
+  ok(ret.every((x) => /%$/.test(x)), `แกน Retention เป็น % (${ret.join(" ")})`);
+  ok(parseFloat(ret[0]) > 0, `แกน Retention ไม่เริ่มจาก 0 (${ret[0]})`);
+
+  /* ⚠️ แกนเวลาต้องอ่านเป็น นาที:วินาที — วินาทีดิบ (245) ไม่มีใครรู้ว่านานแค่ไหน */
+  const avd = await axOf(3);
+  ok(avd.every((x) => /^\d+:\d{2}$/.test(x)), `แกนเวลาอ่านเป็น น:วว (${avd.join(" ")})`);
+
+  // เอาเมาส์ชี้แล้วต้องอ่านค่าเป็นเวลาด้วย ไม่ใช่ตัวเลขดิบ
+  const box = (await pg.$$(".chartbox"))[3];
+  const bb = await box.boundingBox();
+  await pg.mouse.move(bb.x + bb.width * 0.5, bb.y + bb.height * 0.5);
+  await pg.waitForTimeout(180);
+  const tip = await box.$eval(".ctip", (e) => e.innerText);
+  ok(/\d+:\d{2}/.test(tip), `กล่องบอกค่าอ่านเป็นเวลา (${tip.replace(/\n/g, " ")})`);
+
+  // TikTok มีเหมือนกัน (นิยาม retention ต่างกัน แต่มีตัวเลข)
+  await tabTo(pg, "TikTok");
+  ok((await secs(pg)).some((x) => /Retention รายวัน/.test(x)), "TikTok มีกราฟ Retention ด้วย");
+
+  /* ⚠️ Facebook ไม่มีตัวเลขพวกนี้ — ต้องไม่วาดกราฟเปล่าให้ดูเหมือนไม่มีคนดู */
+  await tabTo(pg, "Facebook");
+  const fb = (await secs(pg)).map((x) => x.replace(/ⓘ.*/s, "").trim());
+  ok(!fb.some((x) => /Retention/.test(x)), `Facebook ไม่มีกราฟ Retention (${fb.filter((x) => /รายวัน/.test(x)).join(" | ")})`);
+  ok((await pg.$$("svg.chart")).length === 2, "Facebook มีกราฟรายวัน 2 อันตามเดิม");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+
+  // มือถือยุบเป็นบน-ล่าง ไม่ล้นแนวนอน
+  const { pg: m } = await open({ width: 390, height: 900 });
+  await tabTo(m, "YouTube");
+  ok(await m.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth), "มือถือ: ไม่ล้นแนวนอน");
+  await m.close();
 }
 
 await browser.close();

@@ -1358,7 +1358,10 @@
       out += rows.length
         ? CH.line({
             id: opt.id, labels: dayLabels, series: [series], height: 190,
-            zeroFloor: true, baseZero: opt.baseZero, fmtYNum: opt.fmtYNum, unitLeft: opt.unit || "",
+            zeroFloor: true, baseZero: opt.baseZero, fmtYNum: opt.fmtYNum,
+            // ⚠️ วินาทีดิบบนแกนอ่านยาก (245 ไม่รู้ว่านานแค่ไหน) แปลงเป็น น:วว
+            fmtY: opt.fmtYSec ? function (v) { return dur(v); } : null,
+            unitLeft: opt.unit || "",
             aria: title,
           })
         : empty("ไม่มีข้อมูลรายวันในช่วงนี้");
@@ -1387,6 +1390,48 @@
         " · แกนไม่ได้เริ่มจาก 0 เพราะค่าจริงอยู่ในช่วงแคบ ให้ดูรูปทรงว่าวันไหนดีกว่าวันไหน ไม่ใช่ดูความสูงของเส้น",
         sEr, { id: "p-" + pk + "-er", unit: "%" }) + "</div>" +
       "</div>";
+
+    /* ②b คุณภาพการดู — Retention กับเวลาที่ดูเฉลี่ย
+     * 🔴 เจ้าของสั่งเพิ่ม 19 ส.ค. 2026 — YouTube ให้น้ำหนักกับ "เวลาที่คนดู" เป็นหลัก
+     *    ยอดวิวอย่างเดียวบอกไม่ได้ว่าคลิปดีจริงหรือแค่ปกดี
+     * ⚠️ ขึ้นเฉพาะช่องที่ให้ตัวเลขนี้จริง (ดู stats ใน metrics.js) — Facebook ไม่มี
+     * ⚠️ Retention ของแต่ละเจ้านิยามไม่เหมือนกัน ต้องเขียนบอกในหัวข้อของช่องนั้นเลย
+     *    YouTube = ดูเฉลี่ยกี่ % ของความยาวคลิป · TikTok = สัดส่วนที่ดูจนจบจริง */
+    var hasRet = C.hasStat(pk, "completionRate") &&
+      rows.some(function (x) { return x.completionRate != null; });
+    var hasAvd = C.hasStat(pk, "avgViewDuration") &&
+      rows.some(function (x) { return x.avgViewDuration != null; });
+
+    if (hasRet || hasAvd) {
+      var retWhat = pk === "youtube"
+        ? "ดูเฉลี่ยกี่ % ของความยาวคลิป — คลิป 10 นาที คนดูเฉลี่ย 4 นาที = 40%"
+        : "สัดส่วนของการดูที่ดูไปจนจบ";
+
+      h += '<div class="duo">';
+      if (hasRet) {
+        h += '<div class="duo-c">' + dailyPanel("Retention รายวัน",
+          retWhat + " · เป็นตัวชี้วัดคุณภาพของคอนเทนต์ที่ตรงกว่ายอดวิว — " +
+          "ยอดวิวบอกว่าคนกดเข้ามากี่คน (ปกดี) ส่วน retention บอกว่าเข้ามาแล้วอยู่ต่อไหม (เนื้อดี) " +
+          "· แกนไม่ได้เริ่มจาก 0 เพราะค่าจริงอยู่ในช่วงแคบ ให้ดูรูปทรง ไม่ใช่ความสูงของเส้น",
+          { label: "Retention", color: "#7c3aed", tipFmt: "pctnum",
+            points: rows.map(function (x) {
+              // ไม่มีค่า = ไม่รู้ ไม่ใช่ 0 → ส่ง null ให้เส้นขาด
+              return { y: x.completionRate == null ? null : x.completionRate * 100 };
+            }) },
+          { id: "p-" + pk + "-ret", unit: "%" }) + "</div>";
+      }
+      if (hasAvd) {
+        h += '<div class="duo-c">' + dailyPanel("เวลาที่ดูเฉลี่ยต่อครั้ง รายวัน",
+          "ดูนานเฉลี่ยกี่นาที:วินาทีต่อการดู 1 ครั้ง · คู่กับ Retention — " +
+          "คลิปยาวที่ retention ต่ำ อาจมีเวลาดูจริงมากกว่าคลิปสั้นที่ retention สูง",
+          { label: "ดูเฉลี่ยต่อครั้ง", color: "#0891b2", tipFmt: "dur",
+            points: rows.map(function (x) {
+              return { y: x.avgViewDuration == null ? null : x.avgViewDuration };
+            }) },
+          { id: "p-" + pk + "-avd", fmtYSec: true }) + "</div>";
+      }
+      h += "</div>";
+    }
 
     // ③ แยกประเภทการมีส่วนร่วม
     var parts = P.parts.map(function (p) { return { key: p.key, label: p.label, value: a[p.key] || 0, color: p.color }; });
@@ -1697,6 +1742,8 @@
   function tipVal(kind, v) {
     if (v == null) return "ไม่มีข้อมูล";
     if (kind === "pctnum") return v.toFixed(2).replace(/\.?0+$/, "") + "%";
+    // ⚠️ ค่าที่เป็นวินาทีต้องอ่านเป็น น:วว — 245 วินาทีดิบไม่มีใครรู้ว่านานแค่ไหน
+    if (kind === "dur") return dur(v);
     return Math.round(v).toLocaleString("th-TH");
   }
 
