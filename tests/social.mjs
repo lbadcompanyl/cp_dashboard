@@ -2096,6 +2096,63 @@ console.log("\n[50] 🔴 ตัวเลขรายคลิปต้องค�
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[51] 🔴 การ์ดคอนเทนต์ต้องบอกจำนวน engagement ไม่ใช่มีแต่ ER");
+{
+  const { pg } = await open();
+  /* 🔴 เจ้าของแจ้ง 19 ส.ค. 2026 — ER เป็นอัตราส่วน
+     2% ของคนดู 100 กับ 2% ของคนดู 100,000 คนละเรื่องกันมาก
+     ต้องเห็นทั้งฐานและอัตราส่วนถึงจะตัดสินได้ว่าใบไหนดีจริง */
+  const meta = await pg.$eval(".tcards .post-m", (e) => e.innerText.replace(/\n/g, " "));
+  ok(/Engagement/.test(meta), `มีจำนวน engagement (${meta})`);
+  ok(/ER/.test(meta), "ยังมี ER อยู่");
+  ok(/Views|Reach/.test(meta), "ยังมียอดวิว/การเข้าถึงอยู่");
+
+  // ตัวเลขต้องเน้นให้อ่านง่ายกว่าป้ายกำกับ
+  const bold = await pg.$$eval(".tcards .post-m b", (n) => n.length);
+  ok(bold >= 3, `ตัวเลขถูกเน้นแยกจากป้ายกำกับ (${bold} ตัว)`);
+  const size = await pg.$eval(".tcards .post-m", (e) => parseFloat(getComputedStyle(e).fontSize));
+  ok(size >= 13, `ตัวอักษรใหญ่พออ่าน (${size}px)`);
+
+  /* ⚠️ หัวข้อต้องตรงกับเกณฑ์ที่ใช้เรียงจริง — เรียงตามอัตราส่วน ไม่ใช่จำนวน
+     พอโชว์จำนวน engagement ด้วยแล้ว ชื่อ "Engagement สูงสุด" จะดูเหมือนเรียงผิด */
+  const heads = await secs(pg);
+  ok(heads.some((x) => /Engagement rate สูงสุด/.test(x)), `หัวข้อบอกว่าเรียงตาม rate (${heads.find((x) => /สูงสุด/.test(x))})`);
+
+  // เรียงตาม ER จริงตามที่หัวข้อบอก
+  const ers = await pg.$$eval(".duo .duo-c:first-child .tcards .tcard", (n) =>
+    [...n[0].querySelectorAll(".post-m")].map((m) => parseFloat((m.innerText.match(/ER\s+([\d.]+)%/) || [])[1])));
+  ok(ers.length === 2 && ers[0] >= ers[1], `เรียงตาม ER จริง (${ers.join(" > ")})`);
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[52] 🔴 ช่องในตารางต้องสูงเท่ากันทั้งแถว + ปุ่มกางกดโดน");
+{
+  const { pg } = await open();
+  /* 🔴 เคยใส่ display:flex บน <th> ตรงๆ ทำให้ช่องนั้นหลุดออกจากการจัดแถวของตาราง
+     เส้นขอบล่างสั้นกว่าช่องอื่นและความสูงไม่เท่ากัน (เจ้าของเห็น 19 ส.ค. 2026)
+     ⚠️ ถ้าเทสต์นี้ตก ให้ดูว่ามีใครใส่ display:flex/grid บน td/th อีกหรือเปล่า */
+  const m = await pg.evaluate(() => {
+    const r = document.querySelector(".tbl.perf tbody tr");
+    return [...r.children].map((c) => {
+      const b = c.getBoundingClientRect();
+      return { top: Math.round(b.top), h: Math.round(b.height), disp: getComputedStyle(c).display };
+    });
+  });
+  ok(new Set(m.map((c) => c.h)).size === 1, `ทุกช่องในแถวสูงเท่ากัน (${m.map((c) => c.h).join("/")})`);
+  ok(new Set(m.map((c) => c.top)).size === 1, `ทุกช่องเริ่มที่ระดับเดียวกัน (${m.map((c) => c.top).join("/")})`);
+  ok(m.every((c) => /table-cell/.test(c.disp)), `ทุกช่องยังเป็น table-cell (${m.map((c) => c.disp).join("/")})`);
+
+  // ⚠️ ปุ่มกางต้องใหญ่พอให้นิ้วกดโดน
+  const tog = await pg.$eval(".rowtog", (e) => {
+    const b = e.getBoundingClientRect();
+    return { w: Math.round(b.width), h: Math.round(b.height) };
+  });
+  ok(tog.h >= 32, `ปุ่มกางสูงพอกดโดน (${tog.w}×${tog.h}px)`);
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);

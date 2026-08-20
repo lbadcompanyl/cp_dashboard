@@ -358,14 +358,25 @@ body {
 
 /* แถวช่องกางดูคอนเทนต์ที่ทำยอดนั้นได้
    ⚠️ ปุ่มกาง กับ ปุ่มไปแท็บของช่อง เป็นคนละปุ่ม — ปุ่มเดียวทำ 2 อย่างแล้วเดาไม่ถูกว่าจะเกิดอะไร */
-.tbl.perf th[scope="row"] { display:flex; align-items:center; gap:2px; }
+/* 🔴 ห้ามใส่ display:flex บน <th> โดยตรง — ช่องตารางจะหลุดออกจากการจัดแถว
+   เส้นขอบล่างจะสั้นกว่าช่องอื่นและความสูงแถวไม่เท่ากัน (เจ้าของเห็น 19 ส.ค. 2026)
+   จัดเรียงที่ div ข้างในแทน ช่องตารางยังเป็น table-cell ตามปกติ */
+.rowhead { display:flex; align-items:center; gap:2px; }
 .rowtog {
-  background:none; border:0; padding:2px 0; margin:0; font:inherit; color:var(--ink);
-  cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; font-weight:600;
+  background:none; border:0; margin:0; font:inherit; color:var(--ink);
+  cursor:pointer; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; font-weight:600;
+  /* ⚠️ พื้นที่กดต้องใหญ่พอสำหรับนิ้ว — ปุ่มกางเดิมเล็กเกินไป */
+  padding:7px 8px 7px 4px; border-radius:8px; min-height:34px;
 }
-.rowtog:hover { color:var(--accent); }
-.caret { color:var(--muted); font-size:.7rem; width:10px; }
-.tbl.perf .drill { padding:2px 6px; color:var(--muted); font-size:1rem; line-height:1; }
+.rowtog:hover { color:var(--accent); background:var(--surface-2); }
+.caret {
+  color:var(--muted); font-size:.86rem; width:18px; height:18px; flex:none;
+  display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--border); border-radius:5px; background:var(--surface);
+}
+.rowtog:hover .caret { border-color:var(--accent); color:var(--accent); }
+.perf-r.open .caret { border-color:var(--accent); color:var(--accent); }
+.tbl.perf .drill { padding:7px 8px; color:var(--muted); font-size:1.05rem; line-height:1; min-height:34px; }
 .tbl.perf .drill:hover { color:var(--accent); }
 .perf-r.open { background:var(--surface-2); }
 
@@ -540,8 +551,12 @@ body {
           display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 /* ⚠️ บรรทัดตัวเลขใต้ชื่อคอนเทนต์ เคยเล็กจนอ่านไม่ออก (เจ้าของแจ้ง 19 ส.ค. 2026)
    เป็นตัวเลขที่ต้องอ่านจริง ไม่ใช่ข้อความประกอบ จึงต้องใหญ่พอๆ กับตัวเลขที่อื่น */
-.post-m { font-size:.78rem; color:var(--ink-2); display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; }
+/* ⚠️ บรรทัดตัวเลขใต้ชื่อคอนเทนต์ — เจ้าของแจ้งว่าเล็กไป 2 รอบ (19 ส.ค. 2026)
+   เป็นตัวเลขที่ต้องอ่านจริง ไม่ใช่ข้อความประกอบ · ตัวเลขเน้นหนา ป้ายกำกับจาง */
+.post-m { font-size:.84rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:3px 12px; align-items:center; }
 .post-m span { white-space:nowrap; }
+.post-m b { color:var(--ink); font-weight:650; font-variant-numeric:tabular-nums; }
+.post-d { font-size:.78rem; }
 .chip { border:1px solid var(--border); border-radius:999px; padding:0 7px; font-size:.68rem; }
 .badge { font-size:.65rem; border-radius:999px; padding:1px 7px; margin-left:6px; vertical-align:middle; }
 .badge.new { background:var(--accent); color:#fff; }

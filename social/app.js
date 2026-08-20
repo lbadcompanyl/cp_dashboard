@@ -508,11 +508,15 @@
       rank + '<img src="' + esc(p.thumb) + '" alt="" loading="lazy">' +
       '<div class="post-b"><div class="post-t">' + esc(p.title) + badge +
       (live ? ' <span class="ext">↗</span>' : "") + "</div>" +
+      /* ⚠️ ต้องมี "จำนวน engagement" ด้วย ไม่ใช่มีแต่ ER (เจ้าของแจ้ง 19 ส.ค. 2026)
+         ER เป็นอัตราส่วน — 2% ของคนดู 100 กับ 2% ของคนดู 100,000 คนละเรื่องกันมาก
+         ต้องเห็นทั้งฐานและอัตราส่วนถึงจะตัดสินได้ว่าใบไหนดีจริง */
       '<div class="post-m">' +
       (opts.showPlatform ? '<span class="chip" style="border-color:' + P.rawColor + '">' + esc(P.label) + "</span>" : "") +
-      "<span>" + esc(P.reachLabel) + " " + esc(num(reach)) + "</span>" +
-      "<span>ER " + esc(pct(P.er(p)) || "—") + "</span>" +
-      "<span>" + esc(thaiShort(p.publishedAt)) + "</span>" +
+      "<span>" + esc(P.reachLabel) + " <b>" + esc(num(reach)) + "</b></span>" +
+      "<span>Engagement <b>" + esc(num(C.engagementOf(pk, p))) + "</b></span>" +
+      "<span>ER <b>" + esc(pct(P.er(p)) || "—") + "</b></span>" +
+      '<span class="post-d">' + esc(thaiShort(p.publishedAt)) + "</span>" +
       "</div></div></" + tag + ">";
   }
 
@@ -864,13 +868,16 @@
 
       /* ⚠️ ชื่อช่องเป็นปุ่มกาง/พับ ส่วนทางลัดไปแท็บของช่องเป็นปุ่มแยกอีกอัน
          ปุ่มเดียวทำ 2 อย่างไม่ได้ — กดแล้วเดาไม่ถูกว่าจะกางหรือจะเปลี่ยนหน้า */
-      h += '<tr class="perf-r' + (open ? " open" : "") + '"><th scope="row">' +
+      /* ⚠️ ห้ามใส่ display:flex บน <th> โดยตรง — ช่องตารางจะหลุดออกจากการจัดแถว
+         แล้วเส้นขอบล่างกับความสูงของแถวจะไม่ตรงกับช่องอื่น (เจ้าของเห็น 19 ส.ค. 2026)
+         ต้องห่อของข้างในด้วย div แล้วค่อยจัดเรียงที่ div นั้นแทน */
+      h += '<tr class="perf-r' + (open ? " open" : "") + '"><th scope="row"><div class="rowhead">' +
         '<button type="button" class="rowtog" data-perf="' + esc(pk) + '" aria-expanded="' +
           (open ? "true" : "false") + '" title="กางดูคอนเทนต์ที่ทำยอดนี้">' +
           '<span class="caret">' + (open ? "▾" : "▸") + "</span>" +
           '<span class="pdot" style="background:' + P.rawColor + '"></span>' + esc(P.label) + "</button>" +
         '<button type="button" class="drill" data-tab="' + esc(pk) + '" ' +
-          'title="ไปที่แท็บของ' + esc(P.label) + '">›</button></th>';
+          'title="ไปที่แท็บของ' + esc(P.label) + '">›</button></div></th>';
 
       COLS.forEach(function (c2) {
         if (!a) { h += '<td class="num na">—</td>'; return; }
@@ -1044,7 +1051,9 @@
 
     h += '<div class="duo">' +
       '<div class="duo-c">' +
-        sec("Engagement สูงสุด", "2 อันดับแรกของแต่ละช่อง",
+        /* ⚠️ เรียงตาม "อัตราส่วน" ไม่ใช่ "จำนวน" — ชื่อหัวข้อต้องบอกให้ตรง
+       ไม่งั้นพอโชว์จำนวน engagement ด้วยแล้ว จะดูเหมือนเรียงผิด */
+    sec("Engagement rate สูงสุด", "2 อันดับแรกของแต่ละช่อง",
           "เรียงตาม Engagement rate ซึ่งแต่ละช่องคิดคนละสูตร จึงหยิบมาช่องละใบ ไม่เอามาเรียงรวมกัน · กดเพื่อเปิดโพสต์จริง") +
         '<div class="panel">' + bestList("er") + "</div>" +
       "</div>" +
