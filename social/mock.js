@@ -68,6 +68,17 @@
     return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
   }
 
+  /* ลิงก์ของโพสต์
+   * 🔴 ของจริงคือ URL โพสต์ที่ API ส่งมา (YouTube watch · TikTok share_url · Facebook permalink)
+   * ⚠️ ของจำลองใช้รูปแบบเดียวกันแต่ใส่ id ที่บอกว่าเป็นของปลอม (`mock-…`)
+   *    ตั้งใจให้กดแล้วเห็นว่าเปิดแท็บใหม่ได้จริง — ปลายทางจะไม่เจอโพสต์ ซึ่งถูกแล้ว
+   *    เพราะห้ามพาไปโพสต์ของคนอื่นแล้วทำให้เข้าใจว่าเป็นของเรา */
+  function postUrl(pk, id) {
+    if (pk === "youtube") return "https://www.youtube.com/watch?v=mock-" + id;
+    if (pk === "tiktok") return "https://www.tiktok.com/@example/video/mock-" + id;
+    return "https://www.facebook.com/permalink.php?story_fbid=mock-" + id;
+  }
+
   /* หัวข้อจำลอง — เขียนให้ความยาวหลากหลาย จะได้เห็นว่าตัดบรรทัดแล้วหน้าตาเป็นยังไง */
   var TITLES = [
     "เบื้องหลังการผลิตที่ไม่เคยเปิดเผยมาก่อน",
@@ -128,20 +139,35 @@
       row[reachKey] = reach;
       // แบ่ง engagement ตามส่วนประกอบที่ช่องนั้นนับจริง
       if (pk === "youtube") {
-        row.likes = Math.round(eng * 0.88);
-        row.comments = eng - row.likes;
-        row.shares = 0;                        // YouTube ไม่ให้ตัวเลขแชร์
+        // 🔴 YouTube นับแชร์ด้วยแล้ว — ตัวเลขมาจาก YouTube Analytics (19 ส.ค. 2026)
+        row.likes = Math.round(eng * 0.84);
+        row.comments = Math.round(eng * 0.09);
+        row.shares = eng - row.likes - row.comments;
         row.watchTime = Math.round(reach * (2.4 + rnd() * 2.6) / 60);      // ชั่วโมง
         row.avgViewDuration = Math.round(150 + rnd() * 190);               // วินาที
+        row.completionRate = 0.28 + rnd() * 0.3;                           // averageViewPercentage
+        /* CTR ของ YouTube อยู่ราว 3-8% ในช่องส่วนใหญ่ · เก็บเป็น "ถูกโชว์กี่ครั้ง"
+           กับ "กลายเป็นการดูกี่ครั้ง" ไม่ใช่เก็บเป็น % สำเร็จรูป —
+           ⚠️ รวมหลายวันต้องบวกทั้งสองตัวก่อนหาร ถ้าเก็บเป็น % จะเฉลี่ยผิดถ่วงน้ำหนัก */
+        row.viewClicks = Math.round(reach * (0.62 + rnd() * 0.16));        // วิวที่มาจากการกดปก
+        row.impressions = Math.round(row.viewClicks / (0.035 + rnd() * 0.045));
       } else if (pk === "tiktok") {
         row.likes = Math.round(eng * 0.80);
         row.comments = Math.round(eng * 0.07);
         row.shares = eng - row.likes - row.comments;
         row.completionRate = 0.32 + rnd() * 0.28;
+        row.avgViewDuration = Math.round(9 + rnd() * 22);   // คลิปสั้น หน่วยเป็นวินาที
       } else {
         row.likes = Math.round(eng * 0.74);
         row.comments = Math.round(eng * 0.14);
         row.shares = eng - row.likes - row.comments;
+        /* ⚠️ Facebook เล่นวิดีโอเองตอนเลื่อนผ่าน ยอดวิวดิบจึงพองกว่าคนที่หยุดดูจริงมาก
+           ตัวเลข "ดูเกิน 3 วินาที" จึงต้องน้อยกว่า reach เสมอ (ราว 1 ใน 3) */
+        row.views3s = Math.round(reach * (0.24 + rnd() * 0.16));
+        /* Facebook: impressions มากกว่า reach เสมอ (คนเดียวเห็นได้หลายครั้ง)
+           ตัวเศษของอัตราหยุดดูคือ "ดูเกิน 3 วิ" ไม่ใช่การกด — FB ไม่มีการกด */
+        row.impressions = Math.round(reach * (1.25 + rnd() * 0.5));
+        row.viewClicks = row.views3s;
       }
       daily.push(row);
 
@@ -167,18 +193,31 @@
         id: pk + "-" + pid,
         title: TITLES[pid % TITLES.length],
         thumb: thumb(C.rawColor, pid, rnd),
-        url: "#",
+        url: postUrl(pk, pid),
         publishedAt: dayKey(pd),
       };
       post[reachKey] = pv;
       if (pk === "youtube") {
-        post.likes = Math.round(pe * 0.88);
-        post.comments = pe - post.likes;
-        post.shares = 0;
+        post.likes = Math.round(pe * 0.84);
+        post.comments = Math.round(pe * 0.09);
+        post.shares = Math.max(0, pe - post.likes - post.comments);
+        post.watchTime = Math.round(pv * (2.4 + rnd() * 2.6) / 60);
+        post.avgViewDuration = Math.round(150 + rnd() * 190);
+        post.completionRate = 0.28 + rnd() * 0.3;
+        post.viewClicks = Math.round(pv * (0.62 + rnd() * 0.16));
+        post.impressions = Math.round(post.viewClicks / (0.035 + rnd() * 0.045));
       } else {
         post.likes = Math.round(pe * (pk === "tiktok" ? 0.80 : 0.74));
         post.comments = Math.round(pe * (pk === "tiktok" ? 0.07 : 0.14));
         post.shares = Math.max(0, pe - post.likes - post.comments);
+        if (pk === "tiktok") {
+          post.avgViewDuration = Math.round(9 + rnd() * 22);
+          post.completionRate = 0.32 + rnd() * 0.28;
+        } else {
+          post.views3s = Math.round(pv * (0.24 + rnd() * 0.16));
+          post.impressions = Math.round(pv * (1.25 + rnd() * 0.5));
+          post.viewClicks = post.views3s;
+        }
       }
       posts.push(post);
     }
@@ -186,10 +225,90 @@
     return { daily: daily, followers: followers, posts: posts };
   }
 
+  /* ── ช่องที่ "ยังไม่ได้เชื่อมต่อ" ──────────────────────────────────
+   * ของจริง: API จะตอบ ok:false พร้อม need[] ว่าขาด env ตัวไหน
+   * ตอนนี้ยังเป็นข้อมูลจำลอง จึงเปิดดูสถานะนั้นได้ด้วย ?off=facebook
+   * (คั่นหลายช่องด้วยจุลภาค) — ไว้ตรวจว่าหน้าตาตอนยังไม่เชื่อมเป็นยังไง
+   * ⚠️ อ่านที่ชั้นข้อมูล ไม่ใช่ที่หน้าเว็บ เพราะพอต่อของจริงแล้ว
+   *    หน้าเว็บต้องอ่านสถานะจากที่เดียวกันนี้โดยไม่ต้องแก้อะไรเพิ่ม */
+  var NEED = {
+    youtube: ["YT_API_KEY", "SOCIAL_YT_CHANNEL_ID"],
+    tiktok: ["SOCIAL_TT_CLIENT_KEY", "SOCIAL_TT_CLIENT_SECRET", "SOCIAL_TT_REFRESH_TOKEN"],
+    facebook: ["SOCIAL_FB_PAGE_ID", "SOCIAL_FB_TOKEN"],
+  };
+  var off = {};
+  try {
+    (new URLSearchParams(location.search).get("off") || "").split(",").forEach(function (k) {
+      k = k.trim(); if (k) off[k] = 1;
+    });
+  } catch (e) {}
+
   var platforms = {};
-  window.SOCIAL_CONFIG.ORDER.forEach(function (pk) { platforms[pk] = buildPlatform(pk); });
+  window.SOCIAL_CONFIG.ORDER.forEach(function (pk) {
+    if (off[pk]) {
+      platforms[pk] = {
+        daily: [], followers: [], posts: [],
+        status: { connected: false, need: NEED[pk] || [] },
+      };
+      return;
+    }
+    platforms[pk] = buildPlatform(pk);
+    platforms[pk].status = { connected: true, need: [] };
+  });
+
+  /* ── อันดับคอนเทนต์ตามช่วงเวลา (แบบเดียวกับที่ของจริงทำ) ────────────
+   * 🔴 ของจริงถาม YouTube ว่า "ช่วงนี้คลิปไหนทำยอดสูงสุด" ซึ่งรวมคลิปเก่าด้วย
+   *    ข้อมูลจำลองต้องตอบแบบเดียวกัน ไม่งั้นหน้า demo กับของจริงทำงานคนละอย่าง
+   *
+   * ⚠️ ไม่เก็บยอดรายวันต่อโพสต์ (โพสต์ละ 500 วัน × หลายสิบโพสต์ = หนักเกินจำเป็น)
+   *    ใช้สูตรการสลายตัวแทน: ยอดวิวส่วนใหญ่เกิดใน 1-2 สัปดาห์แรกแล้วค่อยๆ เหลือหาง
+   *    views ที่เกิดระหว่างวันที่ a ถึง b หลังลง = V × (e^(-a/τ) − e^(-b/τ))
+   *    τ = 6 วัน → ~90% ของยอดเกิดใน 14 วันแรก ซึ่งใกล้เคียงของจริง
+   */
+  var DECAY_TAU = 6;
+
+  function shareInRange(post, from, to) {
+    var pub = new Date(post.publishedAt + "T00:00:00");
+    var a = Math.max(0, Math.round((new Date(from + "T00:00:00") - pub) / 864e5));
+    var b = Math.round((new Date(to + "T00:00:00") - pub) / 864e5) + 1;
+    if (b <= 0) return 0;                       // ยังไม่ได้ลงในช่วงนี้
+    if (b <= a) return 0;
+    return Math.exp(-a / DECAY_TAU) - Math.exp(-b / DECAY_TAU);
+  }
+
+  /** คลิปที่ทำยอดสูงสุดในช่วงที่เลือก — ไม่กรองด้วยวันที่ลง */
+  function topInRange(pk, from, to, limit) {
+    var P = window.SOCIAL_CONFIG.PLATFORMS[pk];
+    var rk = P.reachKey;
+    return (platforms[pk].posts || [])
+      .map(function (po) {
+        var f = shareInRange(po, from, to);
+        if (!f) return null;
+        var out = { id: po.id, title: po.title, thumb: po.thumb, url: po.url, publishedAt: po.publishedAt };
+        // ⚠️ ปัดเป็นจำนวนเต็มทุกตัว — ยอดวิว 0.4 ครั้งไม่มีอยู่จริง
+        out[rk] = Math.round((po[rk] || 0) * f);
+        out.likes = Math.round((po.likes || 0) * f);
+        out.comments = Math.round((po.comments || 0) * f);
+        if (po.shares != null) out.shares = Math.round(po.shares * f);
+        // ค่าเฉลี่ยไม่ต้องคูณสัดส่วน — เป็นค่าเฉลี่ยอยู่แล้ว
+        if (po.avgViewDuration != null) out.avgViewDuration = po.avgViewDuration;
+        if (po.completionRate != null) out.completionRate = po.completionRate;
+        if (po.watchTime != null) out.watchTime = Math.round(po.watchTime * f);
+        if (po.views3s != null) out.views3s = Math.round(po.views3s * f);
+        /* ⚠️ ทั้งคู่ต้องคูณสัดส่วนเท่ากัน ไม่งั้น View rate ของช่วงสั้นจะเพี้ยน */
+        if (po.impressions != null) {
+          out.impressions = Math.round(po.impressions * f);
+          out.viewClicks = Math.round((po.viewClicks || 0) * f);
+        }
+        return out[rk] > 0 ? out : null;
+      })
+      .filter(Boolean)
+      .sort(function (x, y) { return (y[rk] || 0) - (x[rk] || 0); })
+      .slice(0, limit || 10);
+  }
 
   window.SOCIAL_MOCK = {
+    topInRange: topInRange,
     isMock: true,               // ⚠️ หน้าเว็บใช้ธงนี้ตัดสินใจว่าจะขึ้นแถบเตือน
     generatedAt: new Date().toISOString(),
     platforms: platforms,

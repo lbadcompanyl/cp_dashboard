@@ -39,13 +39,32 @@
       if (!dup) {
         return (function (d) {
           return function (v) {
-            var t = v.toFixed(d);
-            return unit === "%" ? (v > 0 ? "+" : "") + t + "%" : t + unit;
+            // ⚠️ ห้ามเติม "+" หน้าเลขเปอร์เซ็นต์ — แกนนี้ใช้กับ Engagement rate
+            // ซึ่งเป็น "ระดับ" ไม่ใช่ "การเปลี่ยนแปลง" (เคยขึ้น +8% ทั้งที่แปลว่า 8%)
+            return v.toFixed(d) + unit;
           };
         })(dec);
       }
     }
     return function (v) { return v.toFixed(3) + unit; };
+  }
+
+  /**
+   * เลือกจำนวนทศนิยมให้ตัวย่อเลข (num ของ app.js) จนกว่าป้ายแกนจะไม่ซ้ำกัน
+   * 🔴 ต่างจาก axisFmt ตรงที่ตัวนี้ใช้กับตัวย่อแบบ K/M — ปัดเป็น K เฉยๆ แล้วช่วงข้อมูลแคบ
+   *    จะได้ป้ายซ้ำ (258K / 258K / 259K / 259K) อ่านไม่ออกว่าแกนไล่ยังไง
+   */
+  function pickFmt(values, fn) {
+    for (var d = 0; d <= 2; d++) {
+      var seen = {}, dup = false;
+      for (var i = 0; i < values.length; i++) {
+        var t = fn(values[i], d);
+        if (seen[t]) { dup = true; break; }
+        seen[t] = 1;
+      }
+      if (!dup) return (function (dd) { return function (v) { return fn(v, dd); }; })(d);
+    }
+    return function (v) { return fn(v, 2); };
   }
 
   function extent(series, pick) {
@@ -92,6 +111,10 @@
     var L = extent(vis, function (s) { return s.axis !== "right"; });
     var R = hasRight ? extent(vis, function (s) { return s.axis === "right"; }) : null;
     if (o.zeroFloor && L && L.lo < 0) L.lo = 0;
+    /* baseZero = "ให้แกนเริ่มที่ 0 เสมอ" ต่างจาก zeroFloor ที่แค่กันไม่ให้ต่ำกว่า 0
+       ⚠️ ใช้กับค่าที่ 0 มีความหมายจริง (ยอดวิวรายวัน = วันนั้นไม่มีคนดู)
+          ห้ามใช้กับอัตราส่วนอย่าง ER ที่ค่าจริงอยู่ในช่วงแคบ — ลากถึง 0 แล้วเส้นจะแบนจนอ่านไม่ออก */
+    if (o.baseZero && L && L.lo > 0) L.lo = 0;
     if (R && o.zeroFloorRight && R.lo < 0) R.lo = 0;
 
     var iw = W - PAD_L - PAD_R, ih = H - PAD_T - PAD_B;
@@ -101,7 +124,7 @@
 
     var ticks = [0, 1, 2, 3];
     var lVals = L ? ticks.map(function (g) { return L.lo + ((L.hi - L.lo) * g) / 3; }) : [];
-    var fmtL = L ? (o.fmtY || axisFmt(lVals, o.unitLeft || "")) : null;
+    var fmtL = L ? (o.fmtYNum ? pickFmt(lVals, o.fmtYNum) : (o.fmtY || axisFmt(lVals, o.unitLeft || ""))) : null;
     var rVals = R ? ticks.map(function (g) { return R.lo + ((R.hi - R.lo) * g) / 3; }) : [];
     var fmtR = R ? (o.fmtYRight || axisFmt(rVals, o.unitRight || "")) : null;
 
@@ -140,7 +163,7 @@
 
     [0, Math.floor((count - 1) / 2), count - 1].forEach(function (i, k) {
       if (i < 0 || !labels[i]) return;
-      out += '<text x="' + n(X(i)) + '" y="' + (H - 8) + '" class="ax" text-anchor="' +
+      out += '<text x="' + n(X(i)) + '" y="' + (H - 8) + '" class="ax ax-x" text-anchor="' +
         (k === 0 ? "start" : k === 2 ? "end" : "middle") + '">' + esc(labels[i]) + "</text>";
     });
     out += "</svg>";
@@ -182,15 +205,35 @@
     return out + "</div>";
   }
 
-  /* ── แท่งซ้อน ─────────────────────────────────────────────────────── */
-  function stack(parts) {
-    var list = (parts || []).filter(function (p) { return p.value > 0; });
-    var total = list.reduce(function (a, p) { return a + p.value; }, 0);
-    if (!total) return "";
-    var out = '<div class="stackbar" role="img" aria-label="สัดส่วนการมีส่วนร่วม">';
+  /* ── แท่งแนวนอน แถวละหนึ่งประเภท ───────────────────────────────────
+   * 🔴 มาแทนแท่งซ้อน 100% (เจ้าของแจ้ง 19 ส.ค. 2026 ว่า "ดูยาก")
+   *    ถูกแล้ว — พอ Likes กิน 92% ส่วน Comments 0.7% ในแท่งเดียวกัน
+   *    ช่องของ Comments จะบางจนมองไม่เห็นและเอาเมาส์ชี้ก็แทบไม่โดน
+   * ⚠️ แยกเป็นคนละแถวแล้ว "ตัวเลขกับ %" ยังอ่านได้เสมอแม้แท่งจะสั้นมาก
+   *    ความยาวแท่งเทียบกับตัวที่มากที่สุด ไม่ใช่เทียบกับผลรวม —
+   *    เทียบกับผลรวมแล้วแท่งที่ใหญ่สุดจะยาวไม่เต็มแถว ดูเหมือนวาดพลาด
+   * 🚫 ไม่ใช้ pie เพราะปัญหาเดียวกับแท่งซ้อน — ชิ้น 0.7% มองไม่เห็นอยู่ดี
+   */
+  function hbars(parts, opt) {
+    opt = opt || {};
+    var list = (parts || []).filter(function (p) { return p.value != null; });
+    var total = list.reduce(function (a, p) { return a + (p.value || 0); }, 0);
+    var max = 0;
+    list.forEach(function (p) { max = Math.max(max, p.value || 0); });
+    if (!max) return "";
+
+    var out = '<div class="hb" role="img" aria-label="' + esc(opt.aria || "แท่งเปรียบเทียบ") + '">';
     list.forEach(function (p) {
-      out += '<span style="width:' + n((p.value / total) * 100) + "%;background:" + esc(p.color) +
-        '" title="' + esc(p.label + " " + p.value.toLocaleString("th-TH")) + '"></span>';
+      var share = total ? (p.value / total) * 100 : 0;
+      out += '<div class="hb-r">' +
+        '<div class="hb-n"><span class="hb-d" style="background:' + esc(p.color) + '"></span>' +
+          esc(p.label) + "</div>" +
+        '<div class="hb-t"><span class="hb-b" style="width:' + n((p.value / max) * 100) +
+          "%;background:" + esc(p.color) + '"></span></div>' +
+        '<div class="hb-v">' + esc(p.text != null ? p.text : String(p.value)) +
+          '<span class="hb-p">' + n(share) + "%</span></div>" +
+        '<div class="hb-x">' + (p.extra || "") + "</div>" +
+        "</div>";
     });
     return out + "</div>";
   }
@@ -218,5 +261,8 @@
     return out + "</div>";
   }
 
-  window.SOCIAL_CHARTS = { line: line, share100: share100, stack: stack, diverging: diverging, axisFmt: axisFmt };
+  window.SOCIAL_CHARTS = {
+    line: line, share100: share100, hbars: hbars,
+    diverging: diverging, axisFmt: axisFmt,
+  };
 })();
