@@ -285,7 +285,7 @@ console.log("\n[6] 🔴 ผลงานรายช่อง — หนึ่ง
   /* 🔴 ไลก์ / คอมเมนต์ / แชร์ ต้องแยกเป็นคอลัมน์ — เดิมมีแต่ยอดรวม
      ตัวเลขแยกอยู่ในแท็บรายช่องอย่างเดียว เทียบข้ามช่องไม่ได้เลย */
   const hEng = await pg.$$eval(".tbl.perf thead th", (n) => n.map((x) => x.textContent.trim()));
-  for (const want of ["ไลก์", "คอมเมนต์", "แชร์", "Engagement รวม", "ER"]) {
+  for (const want of ["Likes", "Comments", "Shares", "Engagement รวม", "ER"]) {
     ok(hEng.some((x) => x.includes(want)), `แท็บ Engagement มีคอลัมน์ "${want}"`);
   }
 
@@ -325,7 +325,7 @@ console.log("\n[6] 🔴 ผลงานรายช่อง — หนึ่ง
   ok(!yt[4].na && yt[4].t !== "—", `YouTube มีเวลาดูรวม (${yt[4].t})`);
   ok(!yt[3].na && parseFloat(yt[3].t) > 0, `ดูจนจบของ YouTube มีค่าจริง ไม่ใช่ 0% (${yt[3].t})`);
   ok(!tt[2].na && tt[2].t !== "0:00", `ดูเฉลี่ยของ TikTok มีค่าจริง (${tt[2].t})`);
-  ok(!hR.some((x) => /ไลก์/.test(x)), "สลับแท็บแล้วคอลัมน์ของอีกแท็บหายไปจริง");
+  ok(!hR.some((x) => /Likes/.test(x)), "สลับแท็บแล้วคอลัมน์ของอีกแท็บหายไปจริง");
   ok(await pg.$eval('[data-ptab="reach"]', (e) => e.classList.contains("on")), "แท็บที่กดติดสถานะ");
 
   // % ของยอดรวม ต้องรวมกันได้ราว 100%
@@ -355,7 +355,7 @@ console.log("\n[7] 🔴 สัดส่วนแยกช่อง — แท่
      ประโยชน์อยู่ที่เทียบข้ามแถว: ช่องที่กินยอดวิว 64% อาจได้คอมเมนต์แค่ 20% */
   const rows = await pg.$$eval(".sbar-r .sbar-l", (n) => n.map((x) => x.textContent.trim()));
   ok(rows.length >= 4, `มีหลายแถว ไม่ใช่แท่งเดียว (${rows.length} แถว)`);
-  for (const want of ["Views / Reach", "Engagement", "ไลก์", "คอมเมนต์", "แชร์"]) {
+  for (const want of ["Views / Reach", "Engagement", "Likes", "Comments", "Shares"]) {
     ok(rows.some((x) => x.includes(want)), `มีแถว "${want}"`);
   }
   ok((await pg.$$(".sbars .share")).length === rows.length, "ทุกแถวมีแท่งของตัวเอง");
@@ -372,7 +372,7 @@ console.log("\n[7] 🔴 สัดส่วนแยกช่อง — แท่
      ไม่งั้นสัดส่วนของอีก 2 ช่องจะถูกกดให้เล็กลงด้วยตัวเลขที่ไม่มีอยู่จริง
      และต้องมีป้ายบอก ไม่งั้นอ่านว่า "YouTube ไม่มีใครแชร์เลย" ซึ่งไม่จริง */
   const shareRow = await pg.evaluate(() => {
-    const r = [...document.querySelectorAll(".sbar-r")].find((x) => /แชร์/.test(x.querySelector(".sbar-l").textContent));
+    const r = [...document.querySelectorAll(".sbar-r")].find((x) => /Shares/.test(x.querySelector(".sbar-l").textContent));
     return { segs: r.querySelectorAll(".share-s").length, note: (r.querySelector(".sbar-x") || {}).textContent || "" };
   });
   /* 🔴 YouTube นับแชร์ด้วยแล้ว แถวนี้จึงครบ 3 ช่อง และไม่ต้องมีป้าย "ไม่รวม"
@@ -726,8 +726,8 @@ console.log("\n[14] สูตร ER ของแต่ละช่องต้�
      ตัวเลขมาจาก YouTube Analytics ซึ่งชั้น API key ไม่มีให้
      ⚠️ ตัวเศษเหมือนกันหมดแล้ว แต่ "ตัวส่วน" ยังต่างกัน — Facebook หารด้วย Reach
         เทียบข้ามช่องตรงๆ จึงยังทำไม่ได้ ต้องเหลือคำเตือนนี้ไว้ */
-  ok(/แชร์/.test(f.YouTube), `YouTube: นับแชร์ด้วยแล้ว (${f.YouTube})`);
-  ok(/แชร์/.test(f.TikTok), "TikTok: นับแชร์ด้วย");
+  ok(/Shares/.test(f.YouTube), `YouTube: นับแชร์ด้วยแล้ว (${f.YouTube})`);
+  ok(/Shares/.test(f.TikTok), "TikTok: นับแชร์ด้วย");
   ok(/Reach/.test(f.Facebook), "Facebook: หารด้วย Reach");
   ok(/Views/.test(f.YouTube) && /Views/.test(f.TikTok), "YouTube/TikTok หารด้วย Views");
   ok(f.Facebook !== f.YouTube, "ตัวส่วนของ Facebook ยังต่างจากอีก 2 ช่อง");
@@ -1637,7 +1637,7 @@ console.log("\n[39] 🔴 กดแถวช่องแล้วกางดู�
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[40] 🔴 คอนเทนต์เด่น — ช่องละ 2 อันดับ");
+console.log("\n[40] 🔴 คอนเทนต์เด่น — ช่องละ 2 อันดับ (เรียงตามยอดที่เกิดในช่วงนี้)");
 {
   const { pg } = await open();
   /* 🔴 เจ้าของสั่ง 19 ส.ค. 2026 — ใบเดียวต่อช่องบอกไม่ได้ว่าใบที่ชนะโดดออกมาใบเดียว
@@ -2247,6 +2247,175 @@ console.log("\n[53] 🔴 กราฟ Retention ในแท็บรายช�
   await tabTo(m, "YouTube");
   ok(await m.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth), "มือถือ: ไม่ล้นแนวนอน");
   await m.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[54] 🔴 อันดับคอนเทนต์คิดจาก 'ยอดที่เกิดในช่วงที่เลือก' ไม่ใช่วันที่ลง");
+{
+  /* 🔴 เจ้าของเลือกแบบ A (19 ส.ค. 2026)
+     เดิมคัดเฉพาะคลิปที่ "ลง" ในช่วงนี้ → คลิปเก่าที่ดังขึ้นมาใหม่ไม่ติดอันดับเลย
+     ทั้งที่มันคือตัวที่ทำยอดให้ช่วงนั้นจริงๆ */
+  const { pg, errs } = await open();
+
+  // หัวข้อต้องบอกเกณฑ์ใหม่ ไม่ใช่ค้างข้อความเดิม
+  const heads = await secs(pg);
+  ok(heads.some((x) => /ยอดที่เกิดในช่วงนี้/.test(x)), "หัวข้อบอกว่าคิดจากยอดที่เกิดในช่วงนี้");
+  ok(!heads.some((x) => /คลิปที่ลงในช่วงนี้/.test(x)), "ไม่มีข้อความเกณฑ์เดิมค้างอยู่");
+
+  const listOf = async () => pg.$$eval(".duo .duo-c:last-child .tcards .post", (n) =>
+    n.map((x) => ({
+      t: x.querySelector(".post-t").textContent.trim(),
+      v: x.querySelector(".post-m").innerText.replace(/\n/g, " "),
+    })));
+
+  const wide = await listOf();
+  ok(wide.length === 6, `ได้อันดับครบ 3 ช่อง × 2 ใบ (${wide.length})`);
+
+  /* ⚠️ เปลี่ยนช่วงเวลาแล้วอันดับต้องคิดใหม่ — ถ้าเหมือนเดิมเป๊ะ
+     แปลว่ายังใช้ยอดสะสมตลอดอายุคลิปอยู่ ไม่ได้คิดตามช่วง */
+  await setPeriod(pg, 7);
+  await closePeriod(pg);
+  await pg.waitForTimeout(400);
+  const narrow = await listOf();
+  ok(narrow.length > 0, "ช่วงสั้นก็ยังมีอันดับ");
+  ok(JSON.stringify(wide) !== JSON.stringify(narrow), "เปลี่ยนช่วงเวลาแล้วอันดับคิดใหม่จริง");
+
+  /* ⚠️ ตัวเลขต้องเป็น "ยอดของช่วงนั้น" — ช่วง 7 วันต้องน้อยกว่าช่วง 30 วัน
+     ของคลิปเดียวกัน ถ้าเท่ากันแปลว่ายังโชว์ยอดสะสมอยู่ */
+  const numOf = (s2) => {
+    const m = String(s2).match(/(?:Views|Reach)\s+([\d.]+)([KM]?)/);
+    if (!m) return 0;
+    return parseFloat(m[1]) * (m[2] === "M" ? 1e6 : m[2] === "K" ? 1e3 : 1);
+  };
+  const same = narrow.find((x) => wide.some((w) => w.t === x.t));
+  if (same) {
+    const w = wide.find((x) => x.t === same.t);
+    ok(numOf(same.v) <= numOf(w.v), `คลิปเดียวกัน ช่วงสั้นยอดน้อยกว่าหรือเท่า (${numOf(same.v)} ≤ ${numOf(w.v)})`);
+  } else {
+    ok(true, "ช่วงสั้นได้คนละชุดกับช่วงยาว (ยิ่งชัดว่าคิดตามช่วง)");
+  }
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[55] 🔴 ของจริง — ถาม endpoint ด้วยช่วงที่เลือก และรอด้วยไอคอนหมุน");
+{
+  const day = (i) => new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+  const daily = [];
+  for (let i = 39; i >= 0; i--) {
+    daily.push({ date: day(i), views: 5000, likes: 200, comments: 10, shares: 15,
+      watchTime: 250, avgViewDuration: 190, completionRate: 0.42, gained: 30, lost: 5 });
+  }
+  const followers = daily.map((d, i) => ({ date: d.date, value: 41000 - (daily.length - i) * 25, gained: d.gained, lost: d.lost }));
+
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1100 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  const seen = [];
+  const body = (b) => ({ status: 200, contentType: "application/json", body: JSON.stringify(b) });
+
+  await pg.route("**/social/api/youtube-top*", async (r) => {
+    const u = new URL(r.request().url());
+    seen.push({ from: u.searchParams.get("from"), to: u.searchParams.get("to") });
+    // หน่วงไว้เพื่อดูว่าระหว่างรอหน้าเว็บแสดงอะไร
+    await new Promise((res) => setTimeout(res, 900));
+    r.fulfill(body({ ok: true, status: "ok", need: [], message: "", at: 1, data: {
+      from: u.searchParams.get("from"), to: u.searchParams.get("to"),
+      videos: [
+        /* 🎯 คลิปที่ลงตั้งแต่ 8 เดือนก่อน แต่ช่วงนี้มีคนดูเยอะสุด
+           เกณฑ์เดิมจะไม่มีทางเห็นใบนี้เลย */
+        { id: "old1", title: "คลิปเก่าที่กลับมาดัง", at: day(240) + "T00:00:00Z", thumb: "",
+          url: "https://youtu.be/old1", views: 80000, likes: 3000, comments: 120, shares: 400,
+          watchTime: 4000, avgViewDuration: 210, completionRate: 0.45 },
+        { id: "new1", title: "คลิปใหม่", at: day(5) + "T00:00:00Z", thumb: "",
+          url: "https://youtu.be/new1", views: 12000, likes: 500, comments: 20, shares: 60,
+          watchTime: 600, avgViewDuration: 180, completionRate: 0.38 },
+      ] } }));
+  });
+  await pg.route("**/social/api/youtube", (r) => r.fulfill(body({
+    ok: true, status: "ok", need: [], message: "", at: 1, data: {
+      channel: { id: "UC1", title: "ช่อง", subs: 41000, subsApprox: true, views: 5200000, videos: 1100, url: "#" },
+      videos: [{ id: "new1", title: "คลิปใหม่", at: day(5) + "T00:00:00Z", thumb: "",
+                 url: "https://youtu.be/new1", views: 12000, likes: 500, comments: 20 }],
+      analytics: { daily, followers, approxLevel: true, byVideo: {} } } })));
+  for (const k of ["tiktok", "facebook"]) {
+    await pg.route(`**/social/api/${k}`, (r) => r.fulfill(body({
+      ok: false, status: "not-configured", need: ["X"], message: "" })));
+  }
+
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".grid4 .sc", { timeout: 5000 });
+
+  /* ⚠️ ระหว่างรออันดับ ต้องขึ้นไอคอนหมุน ไม่ใช่โชว์อันดับของช่วงก่อนหน้าค้างไว้
+     (ฟีเจอร์มาตรฐานข้อ 6 ของโปรเจกต์) */
+  ok((await pg.$$(".loading .spin")).length > 0, "ระหว่างรออันดับมีไอคอนหมุน");
+
+  await pg.waitForSelector(".tcards .post", { timeout: 5000 });
+  ok((await pg.$$(".loading")).length === 0, "โหลดเสร็จแล้วไอคอนหมุนหาย ไม่หมุนค้าง");
+
+  const titles = await pg.$$eval(".duo .duo-c:last-child .tcards .post-t", (n) => n.map((x) => x.textContent.trim()));
+  ok(/คลิปเก่าที่กลับมาดัง/.test(titles[0]), `คลิปเก่าที่ทำยอดสูงสุดขึ้นอันดับ 1 (${titles.join(" / ")})`);
+
+  // ⚠️ ต้องถาม endpoint ด้วยช่วงที่ผู้ใช้เลือกจริง
+  ok(seen.length >= 1 && /^\d{4}-\d{2}-\d{2}$/.test(seen[0].from), `ส่งช่วงวันที่ไปด้วย (${JSON.stringify(seen[0])})`);
+
+  // เปลี่ยนช่วง → ต้องขอใหม่ · กลับมาช่วงเดิม → ต้องไม่ขอซ้ำ
+  const n1 = seen.length;
+  await setPeriod(pg, 7);
+  await closePeriod(pg);
+  await pg.waitForTimeout(1300);
+  ok(seen.length > n1, `เปลี่ยนช่วงแล้วขอใหม่ (${seen.length} ครั้ง)`);
+  const n2 = seen.length;
+  await tabTo(pg, "YouTube");
+  await tabTo(pg, "ภาพรวม");
+  await pg.waitForTimeout(500);
+  ok(seen.length === n2, "สลับแท็บไปกลับไม่ยิงซ้ำ (จำผลไว้แล้ว)");
+  ok(errs.length === 0, "ไม่มี JS error");
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[56] 🔴 Engagement แยกประเภท: แท่งแนวนอนแถวละประเภท ไม่ใช่แท่งซ้อน");
+{
+  /* เจ้าของแจ้ง 19 ส.ค. 2026 ว่าแท่งซ้อน "ดูยาก" — ถูกแล้ว
+     Likes กิน ~84% ส่วน Shares ~7% อยู่ในแท่งเดียวกัน ช่องของ Shares
+     จะบางจนอ่านตัวเลขไม่ออกและเอาเมาส์ชี้แทบไม่โดน */
+  const { pg } = await open();
+  await tabTo(pg, "YouTube");
+
+  ok((await pg.$$(".stackbar")).length === 0, "ไม่มีแท่งซ้อนเหลืออยู่");
+
+  const rows = await pg.$$eval(".hb .hb-r", (n) => n.map((r) => ({
+    label: r.querySelector(".hb-n").textContent.trim(),
+    val: r.querySelector(".hb-v").firstChild.textContent.trim(),
+    pct: parseFloat(r.querySelector(".hb-p").textContent),
+    w: parseFloat(r.querySelector(".hb-b").style.width),
+  })));
+  ok(rows.length === 3, `มี 3 แถว แถวละประเภท (${rows.length})`);
+
+  /* 🔴 เจ้าของสั่งใช้ภาษาอังกฤษทับศัพท์กับคำพวกนี้ทั้งหมด (19 ส.ค. 2026) */
+  ok(rows.map((r) => r.label).join(",") === "Likes,Comments,Shares",
+     `ใช้ชื่อภาษาอังกฤษ (${rows.map((r) => r.label).join(" / ")})`);
+
+  /* ⚠️ หัวใจของการเปลี่ยน: ตัวเลขกับ % ต้องอ่านได้ทุกแถว แม้แท่งจะสั้นมาก
+     แท่งซ้อนของเดิมทำไม่ได้ เพราะตัวเลขอยู่ใน title ของช่องที่บางเกินจะชี้โดน */
+  ok(rows.every((r) => r.val && r.val !== "0" && r.pct > 0),
+     `ทุกแถวอ่านตัวเลขและ % ได้ (${rows.map((r) => r.label + " " + r.val + " " + r.pct + "%").join(" · ")})`);
+
+  // % รวมกันได้ 100 (สัดส่วนของผลรวม)
+  const tot = rows.reduce((a, r) => a + r.pct, 0);
+  ok(Math.abs(tot - 100) < 0.5, `% รวมกันได้ 100 (${tot.toFixed(1)}%)`);
+
+  /* ⚠️ ความยาวแท่งเทียบกับ "ตัวที่มากสุด" ไม่ใช่ผลรวม — จงใจ
+     เทียบกับผลรวมแล้วแท่งที่ใหญ่สุดจะยาวไม่เต็มแถว ดูเหมือนวาดพลาด */
+  ok(Math.abs(Math.max(...rows.map((r) => r.w)) - 100) < 0.5,
+     `แท่งที่มากสุดยาวเต็มแถว (${Math.max(...rows.map((r) => r.w))}%)`);
+  ok(rows.every((r) => r.w >= r.pct - 0.5), "แท่งอื่นยาวกว่าสัดส่วนของผลรวม (เทียบกับตัวมากสุด)");
+
+  // ยังมี delta เทียบช่วงก่อนหน้าอยู่
+  ok((await pg.$$(".hb .hb-x .dlt")).length === 3, "ทุกแถวมี delta เทียบช่วงก่อนหน้า");
+  await pg.close();
 }
 
 await browser.close();

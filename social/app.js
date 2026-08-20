@@ -112,6 +112,10 @@
     perfTab: "engagement",
     // แถวไหนของตารางกางดูคอนเทนต์อยู่ { youtube:true, ... }
     perfOpen: {},
+    /* อันดับคอนเทนต์ "ตามยอดที่เกิดในช่วงที่เลือก" — เก็บแยกตามช่วง
+       ⚠️ ต้อง cache ในหน้าเว็บด้วย ไม่งั้นสลับแท็บทีก็ยิงใหม่ทุกครั้ง
+          ค่า undefined = ยังไม่เคยขอ · null = ขอแล้วช่องนี้ทำไม่ได้ */
+    topCache: {},
   };
 
   /* ── วันที่ ──────────────────────────────────────────────────────── */
@@ -212,6 +216,25 @@
   /* เชื่อมแล้วแต่ต้นทางให้ได้แค่ยอด ณ ตอนนี้ ยังไม่มีประวัติรายวัน
      ⚠️ คนละเรื่องกับ "ยังไม่ได้เชื่อม" — ตัวเลขที่มีอยู่ต้องแสดง ไม่ใช่ทิ้งทั้งช่อง */
   function isPartial(pk) { return !!statusOf(pk).partial; }
+
+  /* ── อันดับคอนเทนต์ตามยอดที่เกิดในช่วงที่เลือก ─────────────────────
+   * 🔴 เจ้าของเลือกแบบ A (19 ส.ค. 2026) — "ช่วงนี้ยอดวิวมาจากคลิปไหน"
+   *    ไม่ใช่ "คลิปที่ลงในช่วงนี้ ตัวไหนดีสุด" · คลิปเก่าที่ดังขึ้นมาใหม่ต้องติดอันดับ
+   * ⚠️ ต้องยิงใหม่ทุกครั้งที่ช่วงเวลาเปลี่ยน จึงโหลดแยกจากข้อมูลหลัก
+   *    ระหว่างรอ ต้องขึ้นไอคอนหมุน ไม่ใช่โชว์อันดับของช่วงก่อนหน้าค้างไว้
+   */
+  function topKey(pk, r) { return pk + "|" + r.from + "|" + r.to; }
+
+  function topFor(pk, r) {
+    var k = topKey(pk, r);
+    if (k in state.topCache) return state.topCache[k];   // null ก็ถือว่าเคยขอแล้ว
+    state.topCache[k] = undefined;                        // กันยิงซ้ำระหว่างรอ
+    window.SOCIAL_DATA.loadTop(pk, r.from, r.to).then(function (list) {
+      state.topCache[k] = list;
+      render();
+    });
+    return undefined;
+  }
   function nowOf(pk) { return ((DATA && DATA.platforms[pk]) || {}).now || null; }
 
   /** ช่องที่ผู้ใช้เปิดไว้ "และ" มีตัวเลขรายวันให้คิด — ยอดรวมทุกใบนับจากชุดนี้
@@ -721,7 +744,8 @@
                return { text: a ? num(a.reach) : null, cur: a ? a.reach : null, prev: b ? b.reach : null };
              }) }) +
       card({ label: "Engagement รวม" + nch, value: num(te),
-             tip: "Engagement = ไลก์ + คอมเมนต์ + แชร์ ตามที่แต่ละช่องนับได้ · YouTube ไม่มีตัวเลขแชร์ให้",
+             tip: "Engagement = Likes + Comments + Shares ตามที่แต่ละช่องนับได้ · " +
+                  "ตัวเลข Shares ของ YouTube มาจาก YouTube Analytics ถ้าต่อแค่ API key จะไม่มีส่วนนี้",
              delta: delta(te, cr ? pe : null),
              extra: bd(function (a, b) {
                return { text: a ? num(a.engagement) : null, cur: a ? a.engagement : null, prev: b ? b.engagement : null };
@@ -821,9 +845,9 @@
     order.forEach(function (pk) { if (cur[pk]) shareTot += cur[pk].reach; });
 
     var ENG_COLS = [
-      { key: "likes", label: "ไลก์", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
-      { key: "comments", label: "คอมเมนต์", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
-      { key: "shares", label: "แชร์", na: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API" },
+      { key: "likes", label: "Likes", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
+      { key: "comments", label: "Comments", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
+      { key: "shares", label: "Shares", na: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API" },
       { key: "engagement", label: "Engagement รวม", strong: true, always: true },
       { key: "er", label: "ER", fmt: "pct", pp: true, always: true,
         tip: "แต่ละช่องคิด ER คนละสูตร เทียบข้ามช่องตรงๆ ไม่ได้" },
@@ -958,9 +982,9 @@
     var SHARE_ROWS = [
       { key: "reach", label: "Views / Reach" },
       { key: "engagement", label: "Engagement" },
-      { key: "likes", label: "ไลก์" },
-      { key: "comments", label: "คอมเมนต์" },
-      { key: "shares", label: "แชร์", part: true },
+      { key: "likes", label: "Likes" },
+      { key: "comments", label: "Comments" },
+      { key: "shares", label: "Shares", part: true },
     ];
 
     h += sec("สัดส่วนแยกช่อง", null,
@@ -1021,17 +1045,28 @@
     var TOP_PER_CHANNEL = 2;
 
     function bestList(rank) {
+      var waiting = false;
       var rows = order.map(function (pk) {
         var P = C.PLATFORMS[pk];
-        var top = postsIn(pk, r)
+        var inRange = topFor(pk, r);
+        if (inRange === undefined) { waiting = true; return { pk: pk, top: [], best: null }; }
+
+        /* ⚠️ ช่องที่ยังทำอันดับตามช่วงไม่ได้ (null) ตกไปใช้วิธีเดิม —
+           คัดจากคลิปที่ "ลง" ในช่วงนั้น · ต้องบอกไว้ในหัวข้อว่าคนละเกณฑ์กัน */
+        var pool = inRange || postsIn(pk, r);
+        var top = pool
           .map(function (p) { return { p: p, v: rank === "er" ? P.er(p) : (p[P.reachKey] || 0) }; })
           .filter(function (x) { return x.v != null; })
           .sort(function (x, y) { return y.v - x.v; })
           .slice(0, TOP_PER_CHANNEL);
         return { pk: pk, top: top, best: top[0] };
       });
+
+      if (waiting) {
+        return '<div class="loading"><span class="spin"></span> กำลังจัดอันดับคอนเทนต์ของช่วงนี้…</div>';
+      }
       if (!rows.some(function (x) { return x.best; })) {
-        return empty("ไม่มีคอนเทนต์ที่เผยแพร่ในช่วงนี้", "ลองขยายช่วงเวลา");
+        return empty("ไม่มีคอนเทนต์ที่มียอดเข้ามาในช่วงนี้", "ลองขยายช่วงเวลา");
       }
       /* ⚠️ แยกเป็นกล่องต่อช่อง ไม่ใช่ลิสต์รวมที่ติดป้ายช่องไว้ในแต่ละใบ
          เจ้าของสั่งไว้ตั้งแต่รอบรีวิว: ต้องเห็นเป็น 3 ช่องแยกกันชัดๆ
@@ -1057,17 +1092,22 @@
        คัด = คลิปที่ "เผยแพร่" ในช่วงที่เลือก ไม่ใช่คลิปที่ "มียอดเข้ามา" ในช่วงนั้น
        เรียง = ยอดสะสมตลอดอายุคลิป ไม่ใช่ยอดที่เกิดขึ้นเฉพาะในช่วงที่เลือก
        ไม่บอกไว้ = อ่านแล้วเข้าใจไปคนละอย่างได้ 3 แบบ */
-    sec("Engagement rate สูงสุด", "คลิปที่ลงในช่วงนี้ · ยอดสะสมตลอดอายุคลิป",
-          "คัดเฉพาะคอนเทนต์ที่ \"เผยแพร่\" ในช่วงที่เลือก แล้วเรียงตาม Engagement rate " +
-          "· ตัวเลขที่เห็นเป็นยอดสะสมตั้งแต่วันที่ลง ไม่ใช่ยอดเฉพาะในช่วงนี้ " +
-          "· ⚠️ ใบที่ลงต้นช่วงมีเวลาสะสมมากกว่าใบที่เพิ่งลง เทียบกันตรงๆ จึงเสียเปรียบกัน " +
+    /* 🔴 เกณฑ์เปลี่ยนแล้ว (เจ้าของเลือกแบบ A · 19 ส.ค. 2026)
+       เดิม: คัดเฉพาะคลิปที่ "ลง" ในช่วงนี้ → คลิปเก่าที่ดังขึ้นมาใหม่ไม่ติดอันดับเลย
+       ตอนนี้: ทุกคลิป เรียงตามยอดที่ "เกิดขึ้นจริง" ในช่วงที่เลือก
+       ⚠️ ตัวเลขที่เห็นจึงเป็นยอดของช่วงนี้ ไม่ใช่ยอดสะสมตลอดอายุคลิป
+          ต้องเขียนบอก ไม่งั้นเอาไปเทียบกับตัวเลขในหน้า YouTube Studio แล้วงงว่าทำไมไม่ตรง */
+    sec("Engagement rate สูงสุด", "ยอดที่เกิดในช่วงนี้ · รวมคลิปเก่าที่กลับมาดัง",
+          "คิดจากยอดที่ \"เกิดขึ้นจริงในช่วงที่เลือก\" ไม่ได้ดูว่าคลิปลงเมื่อไหร่ — " +
+          "คลิปที่ลงไปนานแล้วแต่ช่วงนี้มีคนดูเยอะก็ติดอันดับได้ " +
+          "· ตัวเลขที่เห็นเป็นยอดเฉพาะช่วงนี้ ไม่ใช่ยอดสะสมตั้งแต่วันที่ลง " +
           "· แต่ละช่องคิด ER คนละสูตร จึงหยิบมาช่องละ 2 ใบ ไม่เอามาเรียงรวมกัน · กดเพื่อเปิดโพสต์จริง") +
         '<div class="panel">' + bestList("er") + "</div>" +
       "</div>" +
       '<div class="duo-c">' +
-        sec("Views / Reach สูงสุด", "คลิปที่ลงในช่วงนี้ · ยอดสะสมตลอดอายุคลิป",
-          "คัดเฉพาะคอนเทนต์ที่ \"เผยแพร่\" ในช่วงที่เลือก แล้วเรียงตาม Views (Facebook ใช้ Reach) " +
-          "· ตัวเลขที่เห็นเป็นยอดสะสมตั้งแต่วันที่ลง ไม่ใช่ยอดเฉพาะในช่วงนี้ " +
+        sec("Views / Reach สูงสุด", "ยอดที่เกิดในช่วงนี้ · รวมคลิปเก่าที่กลับมาดัง",
+          "คิดจากยอดที่ \"เกิดขึ้นจริงในช่วงที่เลือก\" ไม่ได้ดูว่าคลิปลงเมื่อไหร่ " +
+          "· ตัวเลขที่เห็นเป็นยอดเฉพาะช่วงนี้ ไม่ใช่ยอดสะสมตั้งแต่วันที่ลง " +
           "· เป็นคนละอันดับกับฝั่งซ้าย เพราะใบที่คนดูเยอะไม่ได้แปลว่า Engagement เยอะ") +
         '<div class="panel">' + bestList("reach") + "</div>" +
       "</div>" +
@@ -1439,14 +1479,15 @@
     h += sec("Engagement แยกประเภท", null, P.erNote);
     h += '<div class="panel">';
     if (totalPart) {
-      h += CH.stack(parts) + '<div class="legend row">';
-      parts.forEach(function (p) {
-        h += '<div class="lg"><span class="lg-d" style="background:' + p.color + '"></span>' +
-          '<span class="lg-n">' + esc(p.label) + '</span><span class="lg-v">' + esc(num(p.value)) + "</span>" +
-          '<span class="lg-s">' + esc(pct(p.value / totalPart)) + "</span>" +
-          delta(p.value, b ? b[p.key] : null) + "</div>";
-      });
-      h += "</div>";
+      /* 🔴 เปลี่ยนจากแท่งซ้อน 100% เป็นแท่งแนวนอนแถวละประเภท (เจ้าของแจ้ง 19 ส.ค. 2026)
+         แท่งซ้อนอ่านไม่ได้เมื่อสัดส่วนต่างกันมาก — Likes 92% กับ Comments 0.7%
+         อยู่ในแท่งเดียวกัน ช่องของ Comments จะบางจนมองไม่เห็น */
+      h += CH.hbars(parts.map(function (p) {
+        return {
+          label: p.label, color: p.color, value: p.value, text: num(p.value),
+          extra: delta(p.value, b ? b[p.key] : null),
+        };
+      }), { aria: "Engagement แยกประเภท" });
     } else {
       h += empty("ไม่มี Engagement ในช่วงนี้");
     }

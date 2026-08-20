@@ -203,8 +203,46 @@
     } catch (e) { return false; }
   }
 
+  /* ── อันดับคอนเทนต์ตามช่วงเวลาที่เลือก ─────────────────────────────
+   * 🔴 แยกออกจาก load() เพราะผลลัพธ์ "เปลี่ยนตามช่วงที่ผู้ใช้เลือก"
+   *    ส่วน load() คืนข้อมูลของช่องซึ่งไม่ขึ้นกับช่วงเวลา โหลดครั้งเดียวพอ
+   * ⚠️ ช่องที่ยังไม่รองรับ ให้คืน null ไม่ใช่ [] — null แปลว่า "ทำไม่ได้"
+   *    ส่วน [] แปลว่า "ทำได้แต่ช่วงนี้ไม่มีคลิปไหนมียอดเลย" คนละความหมาย
+   */
+  var TOP_ENDPOINT = { youtube: "/social/api/youtube-top" };
+
+  function loadTop(pk, from, to) {
+    if (wantMock()) {
+      var mk = window.SOCIAL_MOCK;
+      return Promise.resolve(mk && mk.topInRange ? mk.topInRange(pk, from, to, 10) : null);
+    }
+    var ep = TOP_ENDPOINT[pk];
+    if (!ep) return Promise.resolve(null);
+
+    return fetch(ep + "?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to),
+      { headers: { accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.ok || !res.data) return null;
+        return (res.data.videos || []).map(function (v) {
+          var po = {
+            id: v.id, title: v.title, thumb: v.thumb, url: v.url,
+            publishedAt: dayKey(v.at),
+            views: v.views || 0, likes: v.likes || 0, comments: v.comments || 0,
+          };
+          if (v.shares != null) po.shares = v.shares;
+          if (v.watchTime != null) po.watchTime = v.watchTime;
+          if (v.avgViewDuration != null) po.avgViewDuration = v.avgViewDuration;
+          if (v.completionRate != null) po.completionRate = v.completionRate;
+          return po;
+        });
+      })
+      .catch(function () { return null; });
+  }
+
   window.SOCIAL_DATA = {
     load: function () { return wantMock() ? useMock() : loadReal(); },
+    loadTop: loadTop,
     isMockRequested: wantMock,
   };
 })();

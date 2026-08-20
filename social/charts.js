@@ -205,15 +205,35 @@
     return out + "</div>";
   }
 
-  /* ── แท่งซ้อน ─────────────────────────────────────────────────────── */
-  function stack(parts) {
-    var list = (parts || []).filter(function (p) { return p.value > 0; });
-    var total = list.reduce(function (a, p) { return a + p.value; }, 0);
-    if (!total) return "";
-    var out = '<div class="stackbar" role="img" aria-label="สัดส่วน Engagement แยกประเภท">';
+  /* ── แท่งแนวนอน แถวละหนึ่งประเภท ───────────────────────────────────
+   * 🔴 มาแทนแท่งซ้อน 100% (เจ้าของแจ้ง 19 ส.ค. 2026 ว่า "ดูยาก")
+   *    ถูกแล้ว — พอ Likes กิน 92% ส่วน Comments 0.7% ในแท่งเดียวกัน
+   *    ช่องของ Comments จะบางจนมองไม่เห็นและเอาเมาส์ชี้ก็แทบไม่โดน
+   * ⚠️ แยกเป็นคนละแถวแล้ว "ตัวเลขกับ %" ยังอ่านได้เสมอแม้แท่งจะสั้นมาก
+   *    ความยาวแท่งเทียบกับตัวที่มากที่สุด ไม่ใช่เทียบกับผลรวม —
+   *    เทียบกับผลรวมแล้วแท่งที่ใหญ่สุดจะยาวไม่เต็มแถว ดูเหมือนวาดพลาด
+   * 🚫 ไม่ใช้ pie เพราะปัญหาเดียวกับแท่งซ้อน — ชิ้น 0.7% มองไม่เห็นอยู่ดี
+   */
+  function hbars(parts, opt) {
+    opt = opt || {};
+    var list = (parts || []).filter(function (p) { return p.value != null; });
+    var total = list.reduce(function (a, p) { return a + (p.value || 0); }, 0);
+    var max = 0;
+    list.forEach(function (p) { max = Math.max(max, p.value || 0); });
+    if (!max) return "";
+
+    var out = '<div class="hb" role="img" aria-label="' + esc(opt.aria || "แท่งเปรียบเทียบ") + '">';
     list.forEach(function (p) {
-      out += '<span style="width:' + n((p.value / total) * 100) + "%;background:" + esc(p.color) +
-        '" title="' + esc(p.label + " " + p.value.toLocaleString("th-TH")) + '"></span>';
+      var share = total ? (p.value / total) * 100 : 0;
+      out += '<div class="hb-r">' +
+        '<div class="hb-n"><span class="hb-d" style="background:' + esc(p.color) + '"></span>' +
+          esc(p.label) + "</div>" +
+        '<div class="hb-t"><span class="hb-b" style="width:' + n((p.value / max) * 100) +
+          "%;background:" + esc(p.color) + '"></span></div>' +
+        '<div class="hb-v">' + esc(p.text != null ? p.text : String(p.value)) +
+          '<span class="hb-p">' + n(share) + "%</span></div>" +
+        '<div class="hb-x">' + (p.extra || "") + "</div>" +
+        "</div>";
     });
     return out + "</div>";
   }
@@ -241,5 +261,8 @@
     return out + "</div>";
   }
 
-  window.SOCIAL_CHARTS = { line: line, share100: share100, stack: stack, diverging: diverging, axisFmt: axisFmt };
+  window.SOCIAL_CHARTS = {
+    line: line, share100: share100, hbars: hbars,
+    diverging: diverging, axisFmt: axisFmt,
+  };
 })();

@@ -243,7 +243,53 @@
     platforms[pk].status = { connected: true, need: [] };
   });
 
+  /* ── อันดับคอนเทนต์ตามช่วงเวลา (แบบเดียวกับที่ของจริงทำ) ────────────
+   * 🔴 ของจริงถาม YouTube ว่า "ช่วงนี้คลิปไหนทำยอดสูงสุด" ซึ่งรวมคลิปเก่าด้วย
+   *    ข้อมูลจำลองต้องตอบแบบเดียวกัน ไม่งั้นหน้า demo กับของจริงทำงานคนละอย่าง
+   *
+   * ⚠️ ไม่เก็บยอดรายวันต่อโพสต์ (โพสต์ละ 500 วัน × หลายสิบโพสต์ = หนักเกินจำเป็น)
+   *    ใช้สูตรการสลายตัวแทน: ยอดวิวส่วนใหญ่เกิดใน 1-2 สัปดาห์แรกแล้วค่อยๆ เหลือหาง
+   *    views ที่เกิดระหว่างวันที่ a ถึง b หลังลง = V × (e^(-a/τ) − e^(-b/τ))
+   *    τ = 6 วัน → ~90% ของยอดเกิดใน 14 วันแรก ซึ่งใกล้เคียงของจริง
+   */
+  var DECAY_TAU = 6;
+
+  function shareInRange(post, from, to) {
+    var pub = new Date(post.publishedAt + "T00:00:00");
+    var a = Math.max(0, Math.round((new Date(from + "T00:00:00") - pub) / 864e5));
+    var b = Math.round((new Date(to + "T00:00:00") - pub) / 864e5) + 1;
+    if (b <= 0) return 0;                       // ยังไม่ได้ลงในช่วงนี้
+    if (b <= a) return 0;
+    return Math.exp(-a / DECAY_TAU) - Math.exp(-b / DECAY_TAU);
+  }
+
+  /** คลิปที่ทำยอดสูงสุดในช่วงที่เลือก — ไม่กรองด้วยวันที่ลง */
+  function topInRange(pk, from, to, limit) {
+    var P = window.SOCIAL_CONFIG.PLATFORMS[pk];
+    var rk = P.reachKey;
+    return (platforms[pk].posts || [])
+      .map(function (po) {
+        var f = shareInRange(po, from, to);
+        if (!f) return null;
+        var out = { id: po.id, title: po.title, thumb: po.thumb, url: po.url, publishedAt: po.publishedAt };
+        // ⚠️ ปัดเป็นจำนวนเต็มทุกตัว — ยอดวิว 0.4 ครั้งไม่มีอยู่จริง
+        out[rk] = Math.round((po[rk] || 0) * f);
+        out.likes = Math.round((po.likes || 0) * f);
+        out.comments = Math.round((po.comments || 0) * f);
+        if (po.shares != null) out.shares = Math.round(po.shares * f);
+        // ค่าเฉลี่ยไม่ต้องคูณสัดส่วน — เป็นค่าเฉลี่ยอยู่แล้ว
+        if (po.avgViewDuration != null) out.avgViewDuration = po.avgViewDuration;
+        if (po.completionRate != null) out.completionRate = po.completionRate;
+        if (po.watchTime != null) out.watchTime = Math.round(po.watchTime * f);
+        return out[rk] > 0 ? out : null;
+      })
+      .filter(Boolean)
+      .sort(function (x, y) { return (y[rk] || 0) - (x[rk] || 0); })
+      .slice(0, limit || 10);
+  }
+
   window.SOCIAL_MOCK = {
+    topInRange: topInRange,
     isMock: true,               // ⚠️ หน้าเว็บใช้ธงนี้ตัดสินใจว่าจะขึ้นแถบเตือน
     generatedAt: new Date().toISOString(),
     platforms: platforms,

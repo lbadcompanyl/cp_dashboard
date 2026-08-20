@@ -462,6 +462,26 @@ body {
 .chart .ax { fill:var(--muted); font-size:10px; font-family:system-ui,sans-serif; }
 .chart .ax-r { fill:var(--ink-2); }
 
+/* ── แท่งแนวนอน แถวละหนึ่งประเภท ─────────────────────────────────
+   🔴 มาแทนแท่งซ้อน 100% ที่อ่านไม่ได้เมื่อสัดส่วนต่างกันมาก
+   ⚠️ ความยาวแท่งเทียบกับตัวที่มากสุด ไม่ใช่ผลรวม — ตัวที่มากสุดจึงยาวเต็มแถวเสมอ
+      ส่วน % ที่โชว์เป็นสัดส่วนของผลรวม (คนละอย่างกัน จงใจ) */
+.hb { display:flex; flex-direction:column; gap:9px; }
+.hb-r { display:grid; grid-template-columns:96px 1fr auto; gap:4px 10px; align-items:center; }
+.hb-n { font-size:.8rem; color:var(--ink-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+.hb-d { width:9px; height:9px; border-radius:3px; flex:none; }
+.hb-t { background:var(--surface-2); border-radius:6px; height:18px; overflow:hidden; }
+.hb-b { display:block; height:100%; border-radius:6px; min-width:2px; }
+.hb-v { font-size:.86rem; font-weight:650; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hb-p { color:var(--muted); font-weight:400; font-size:.72rem; margin-left:6px; }
+/* delta วางบรรทัดล่างของคอลัมน์ตัวเลข ไม่แย่งที่แท่ง */
+.hb-x { grid-column:3; text-align:right; margin-top:-3px; }
+
+@media (max-width:520px) {
+  .hb-r { grid-template-columns:78px 1fr auto; gap:3px 8px; }
+  .hb-n { font-size:.74rem; }
+}
+
 /* ── สัดส่วนแยกช่อง: แท่ง 100% หลายแถว เส้นละตัวชี้วัด ──────────────
    🔴 เดิมมีแท่งเดียว บอกได้แค่ "ช่องไหนใหญ่" ซึ่งดูจากตารางก็รู้
       ประโยชน์อยู่ที่เทียบข้ามแถว — ช่องที่กินยอดวิวเยอะแต่ได้คอมเมนต์น้อย
@@ -514,10 +534,6 @@ body {
 .share { display:flex; height:30px; border-radius:8px; overflow:hidden; background:var(--surface-2); }
 .share-s { display:flex; align-items:center; justify-content:center; min-width:2px; }
 .share-s b { font-size:.72rem; font-weight:700; color:#fff; }
-
-/* แท่งซ้อน (หน้ารายช่อง) */
-.stackbar { display:flex; height:15px; border-radius:999px; overflow:hidden; background:var(--surface-2); }
-.stackbar span { display:block; height:100%; }
 
 /* ── diverging bar: หายไปทางซ้าย เพิ่มมาทางขวา ───────────────────── */
 .dv { display:flex; flex-direction:column; }

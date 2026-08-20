@@ -29,7 +29,7 @@
       reachKey: "views",
       reachLabel: "Views",
       erLabel: "Engagement rate",
-      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ Views",
+      erFormula: "(Likes + Comments + Shares) ÷ Views",
       /* 🔴 เดิมไม่นับแชร์ เพราะชั้น API key (YouTube Data API) ไม่เปิดเผยตัวเลขนี้
          พอต่อ YouTube Analytics แล้วได้มาจริง เจ้าของสั่งให้นับด้วย (19 ส.ค. 2026)
          ⚠️ ผลข้างเคียง: ค่า ER ของ YouTube สูงขึ้นเล็กน้อยเทียบกับที่เคยเห็นก่อนหน้า
@@ -39,9 +39,9 @@
       er: function (a) { return rate(a.likes + a.comments + (a.shares || 0), a.views); },
       // ส่วนประกอบของ engagement — ใช้วาด stacked bar และโชว์จำนวนจริง
       parts: [
-        { key: "likes", label: "ไลก์", color: "#dc2626" },
-        { key: "comments", label: "คอมเมนต์", color: "#ea9010" },
-        { key: "shares", label: "แชร์", color: "#9333ea" },
+        { key: "likes", label: "Likes", color: "#dc2626" },
+        { key: "comments", label: "Comments", color: "#ea9010" },
+        { key: "shares", label: "Shares", color: "#9333ea" },
       ],
       // metric เฉพาะแพลตฟอร์ม — โผล่เฉพาะในแท็บของช่องนั้น
       extras: [
@@ -66,13 +66,13 @@
       reachKey: "views",
       reachLabel: "Views",
       erLabel: "Engagement rate",
-      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ Views",
+      erFormula: "(Likes + Comments + Shares) ÷ Views",
       erNote: "TikTok นับแชร์รวมด้วย ตัวเลข ER จึงมักสูงกว่าช่องอื่นโดยธรรมชาติ",
       er: function (a) { return rate(a.likes + a.comments + a.shares, a.views); },
       parts: [
-        { key: "likes", label: "ไลก์", color: "#0d9488" },
-        { key: "comments", label: "คอมเมนต์", color: "#1d78c9" },
-        { key: "shares", label: "แชร์", color: "#7048c4" },
+        { key: "likes", label: "Likes", color: "#0d9488" },
+        { key: "comments", label: "Comments", color: "#1d78c9" },
+        { key: "shares", label: "Shares", color: "#7048c4" },
       ],
       extras: [
         { key: "views", label: "Views ของวิดีโอ", fmt: "num" },
@@ -95,13 +95,13 @@
       reachKey: "reach",
       reachLabel: "Reach",
       erLabel: "Engagement rate",
-      erFormula: "(ไลก์ + คอมเมนต์ + แชร์) ÷ Reach",
+      erFormula: "(Likes + Comments + Shares) ÷ Reach",
       erNote: "Facebook วัดจากจำนวนคนที่เห็นโพสต์ (reach) ไม่ใช่จำนวนครั้งที่ถูกเปิด",
       er: function (a) { return rate(a.likes + a.comments + a.shares, a.reach); },
       parts: [
-        { key: "likes", label: "ไลก์", color: "#2563eb" },
-        { key: "comments", label: "คอมเมนต์", color: "#4f6ed6" },
-        { key: "shares", label: "แชร์", color: "#8257c9" },
+        { key: "likes", label: "Likes", color: "#2563eb" },
+        { key: "comments", label: "Comments", color: "#4f6ed6" },
+        { key: "shares", label: "Shares", color: "#8257c9" },
       ],
       extras: [
         { key: "reach", label: "Reach", fmt: "num" },
