@@ -103,6 +103,8 @@ async function analyze(opts, env) {
   return {
     platform,
     source_url: url,
+    post_title: collected.post_title || "",
+    post_thumb: collected.post_thumb || "",
     fetched_count: comments.length,
     analyzed_count: labels.length,
     sentiment,
@@ -128,7 +130,18 @@ async function creditBalance(env) {
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) return { error: "ScrapeCreators: " + (data?.error || data?.message || ("HTTP " + r.status)) };
-  return { credits_remaining: data.credits_remaining ?? data.credits ?? data.balance ?? null };
+  return { credits_remaining: findCredits(data), raw: data };
+}
+
+/** หาเลขเครดิตจาก response ของ ScrapeCreators ไม่ว่าจะใช้ชื่อ field แบบไหน */
+function findCredits(obj) {
+  if (obj == null || typeof obj !== "object") return null;
+  const keys = ["credits_remaining", "creditsRemaining", "credits", "credit", "credit_balance",
+    "creditBalance", "balance", "remaining", "available", "credits_left", "creditsLeft"];
+  for (const k of keys) if (typeof obj[k] === "number") return obj[k];
+  for (const v of Object.values(obj)) if (v && typeof v === "object") { const n = findCredits(v); if (n != null) return n; }
+  for (const v of Object.values(obj)) if (typeof v === "number") return v; // เผื่อ response เป็น {something: N} ล้วน
+  return null;
 }
 
 /* ---------------- collectors ---------------- */
@@ -190,7 +203,38 @@ async function fetchYouTube(url, limit, env) {
     pageToken = data.nextPageToken || "";
     if (!pageToken) break;
   }
-  return { comments: out };
+
+  // ดึงหัวข้อ + รูปปกของคลิป (สำหรับใส่ในรายงาน) — base64 กัน CORS ตอนวาดลง canvas
+  let post_title = "", post_thumb = "";
+  try {
+    const metaApi = new URL("https://www.googleapis.com/youtube/v3/videos");
+    metaApi.searchParams.set("part", "snippet");
+    metaApi.searchParams.set("id", vid);
+    metaApi.searchParams.set("key", env.YOUTUBE_API_KEY);
+    const mr = await fetch(metaApi.toString());
+    const md = await mr.json();
+    const sn = md.items && md.items[0] && md.items[0].snippet;
+    if (sn) {
+      post_title = sn.title || "";
+      const th = sn.thumbnails || {};
+      const turl = (th.medium || th.high || th.default || {}).url;
+      if (turl) {
+        const ir = await fetch(turl);
+        if (ir.ok) {
+          const buf = new Uint8Array(await ir.arrayBuffer());
+          post_thumb = "data:" + (ir.headers.get("content-type") || "image/jpeg") + ";base64," + toB64(buf);
+        }
+      }
+    }
+  } catch (e) { /* รูป/หัวข้อไม่มาก็ไม่เป็นไร */ }
+
+  return { comments: out, post_title, post_thumb };
+}
+
+function toB64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
 }
 
 /**
