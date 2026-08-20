@@ -5,6 +5,7 @@
 import feeds from "../../../ir-feeds.config.js";
 import { parseGeneric } from "../trend/_lib/parser.js";
 import { readDecisions } from "../allow.js";
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 import {
   noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
@@ -363,6 +364,9 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms) {
 }
 
 async function buildAndStore(cache, cacheKey, env, allowAI) {
+  // ⚠️ ตัวกันเขียน log ซ้ำอยู่ระดับโมดูล — Workers ใช้โมดูลเดิมข้าม request
+  //    ไม่รีเซ็ตแล้ว build รอบที่ 2 ในเครื่องเดิมจะไม่บันทึกอะไรเลย (เงียบหาย)
+  resetLog();
   // ⚠️ ต้องตั้งใหม่ทุกครั้งที่ build — Workers ใช้โมดูลเดิมซ้ำข้าม request
   // cpEx = ตัวอย่างสอน AI จากที่เจ้าของกด ↩/⚑ — ได้จาก blob เดียวกัน ไม่มี KV read เพิ่ม
   let cpEx = [];
@@ -523,6 +527,22 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       }
     }
   }
+
+  // ---------- บันทึกระบบ (ไว้ไล่ปัญหาที่หน้า /admin/) ----------
+  // ⚠️ เขียน KV เพิ่ม **1 ครั้งต่อ build** เท่านั้น — cache hit ไม่วิ่งผ่านตรงนี้เลย
+  //    ห้ามย้ายไปไว้ใน onRequest เด็ดขาด จะกลายเป็นเขียนทุกครั้งที่มีคนเปิดหน้าเว็บ
+  //    แล้วโควตา KV (1,000 ครั้ง/วัน ใช้ร่วมทั้งโปรเจกต์) จะหมดเอง
+  try {
+    const L = startLog("ir/feeds");
+    L.cache = allowAI ? "build+ai" : "build";
+    for (const e of errors || []) L.fail(e.label || e.id || "?", e.message || "");
+    for (const k of Object.keys(sources)) L.count(k, ((sources[k] || {}).items || []).length);
+    for (const d of (alertVerify && alertVerify.dropped) || []) L.drop(d.why || "?", 1);
+    for (const d of (swept && swept.dropped) || []) L.drop(d.why || "?", 1);
+    L.count("pruned", ((pruned && pruned.alert1) || []).length + ((pruned && pruned.alert2) || []).length);
+    L.kvWrites = arDiag && arDiag.saved ? 1 : 0;
+    await finishLog(env, L, { built: true, err: (arDiag && arDiag.err) || "" });
+  } catch {}
 
   const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, ai: aiDiag, archive: arDiag, alerts: alertMeta, alert2Cut, alert2CutList, alertVerify, swept, pruned });
   const resp = new Response(body, {

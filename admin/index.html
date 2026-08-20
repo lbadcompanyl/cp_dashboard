@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>🛠 หน้าจัดการ · CP Dashboard</title>
-<meta name="page-ver" content="20">
+<meta name="page-ver" content="21">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛠</text></svg>">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="robots" content="noindex, nofollow">
@@ -20,6 +20,13 @@
   <span id="vtag" class="vtag"></span>
 </header>
 
+<!-- ⚠️ แท็บระดับบนสุด — "บันทึกระบบ" ไม่ผูกกับแดชบอร์ดใดแดชบอร์ดหนึ่ง
+     จึงต้องซ่อนแถบเลือกแดชบอร์ด (.scopes) ตอนอยู่แท็บนั้น ไม่งั้นดูเหมือนกรองได้ทั้งที่ไม่ได้กรอง -->
+<nav class="ptabs" id="ptabs">
+  <button type="button" data-page="manage" class="on">🚩 จัดการข่าว</button>
+  <button type="button" data-page="log">📋 บันทึกระบบ</button>
+</nav>
+
 <!-- เลือกว่ากำลังจัดการแดชบอร์ดไหน — flag/keyword ของแต่ละอันเก็บแยกกอง ไม่ปนกัน -->
 <nav class="scopes" id="scopes">
   <button type="button" data-scope="pr"   class="on">PR · <span class="thin">/trend/</span></button>
@@ -28,6 +35,7 @@
 </nav>
 
 <main class="wrap">
+<div id="pgManage">
   <section class="card">
     <h2>🚩 คำแนะนำตัดข่าว</h2>
     <p class="lead">ข่าวที่กด ⚑ ไว้บนแดชบอร์ด มารวมกันที่นี่ พร้อมคำ/เว็บที่ควรตัด — คัดลอกไปแปะใน Google Alert แล้วกด Update</p>
@@ -51,6 +59,20 @@
     <p class="lead">คำที่พิมพ์เก็บไว้จากปุ่ม ➕ บนแดชบอร์ด — ที่นี่คือที่ประกอบเป็น query แล้วคัดลอกไปแปะใน Google Alert</p>
     <div id="admKw"></div>
   </section>
+</div>
+
+<div id="pgLog" hidden>
+  <section class="card wide">
+    <h2>📋 บันทึกระบบ</h2>
+    <p class="lead">ทุกครั้งที่ระบบดึงข่าวรอบใหม่ จะบันทึกไว้ที่นี่ 1 บรรทัด — ได้ข่าวมากี่ใบ ตัดทิ้งกี่ใบเพราะอะไร ต้นทางไหนล่ม ใช้เวลาเท่าไร <b>ครอบทุกแดชบอร์ด</b> ใช้ตอนสงสัยว่า "ทำไมข่าวหาย" หรือ "ทำไมคลังไม่โต"</p>
+    <div class="logbar">
+      <select id="logSrc" aria-label="กรองตามแดชบอร์ด"><option value="">ทุกแดชบอร์ด</option></select>
+      <button id="logReload" class="mini" type="button">🔄 โหลดใหม่</button>
+      <span id="logMeta" class="thin"></span>
+    </div>
+    <div id="admLog"></div>
+  </section>
+</div>
 </main>
 
 <footer class="foot">
@@ -58,6 +80,6 @@
 </footer>
 
 <script src="/flags.js?v=32"></script>
-<script src="./app.js?v=16"></script>
+<script src="./app.js?v=17"></script>
 </body>
 </html>
