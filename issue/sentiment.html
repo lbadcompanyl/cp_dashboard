@@ -83,7 +83,7 @@
   .sc-li .sc-cnt { width: 46px; text-align: right; color: var(--sc-muted); }
 
   .sc-posthead { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 14px; }
-  .sc-posthead .sc-thumb { width: 120px; height: 67px; object-fit: cover; border-radius: 8px; border: 1px solid var(--sc-border); flex: none; }
+  .sc-posthead .sc-thumb { width: 140px; height: auto; max-height: 120px; object-fit: contain; border-radius: 8px; border: 1px solid var(--sc-border); background: var(--sc-surface2); flex: none; }
   .sc-posthead .sc-ptitle { font-size: 13.5px; font-weight: 600; color: var(--sc-ink); line-height: 1.4; }
   .sc-summary { background: var(--sc-plane); border: 1px solid var(--sc-border); border-radius: 10px; padding: 14px; font-size: 13.5px; color: var(--sc-ink2); }
 
@@ -493,15 +493,17 @@ function reportPass(ctx, d, draw, thumb){
   y+=20;
   // รูปปก + หัวข้อโพส
   if (d.post_title || thumb){
-    const tw=132, th=Math.round(tw*9/16); let tx=pad;
+    let tx=pad, thumbH=0;
     if (thumb){
-      if (draw){ ctx.save(); roundRect(ctx,pad,y,tw,th,8); ctx.clip(); const ir=thumb.width/thumb.height, tr=tw/th; let dw,dh; if(ir>tr){ dh=th; dw=th*ir; } else { dw=tw; dh=tw/ir; } ctx.drawImage(thumb, pad-(dw-tw)/2, y-(dh-th)/2, dw, dh); ctx.restore(); ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,tw,th,8); ctx.stroke(); }
-      tx = pad + tw + 14;
+      const maxW=150, maxH=110, ar=(thumb.width||16)/(thumb.height||9);
+      let dw=maxW, dh=maxW/ar; if (dh>maxH){ dh=maxH; dw=maxH*ar; }
+      if (draw){ ctx.save(); roundRect(ctx,pad,y,dw,dh,8); ctx.clip(); ctx.drawImage(thumb,pad,y,dw,dh); ctx.restore(); ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,dw,dh,8); ctx.stroke(); }
+      tx = pad + dw + 14; thumbH = dh;
     }
     setFont(ctx,600,14);
     const lines = d.post_title ? wrapLines(ctx, d.post_title, W-pad-tx).slice(0,3) : [];
-    if (draw){ ctx.fillStyle=RC.ink; let ty=y+13; for (const ln of lines){ ctx.fillText(ln, tx, ty); ty+=19; } }
-    y += Math.max(thumb?th:0, lines.length*19) + 16;
+    if (draw){ ctx.fillStyle=RC.ink; let ty=y+15; for (const ln of lines){ ctx.fillText(ln, tx, ty); ty+=19; } }
+    y += Math.max(thumbH, lines.length*19) + 16;
   }
   if (draw){ ctx.strokeStyle=RC.border; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke(); }
   y+=26;
