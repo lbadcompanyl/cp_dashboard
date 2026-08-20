@@ -101,6 +101,7 @@
   .sc-sample { border: 1px solid var(--sc-border); border-left-width: 3px; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: var(--sc-ink2); background: var(--sc-plane); }
   .sc-sample.sc-pos { border-left-color: var(--sc-pos); }
   .sc-sample.sc-neg { border-left-color: var(--sc-neg); }
+  .sc-nonemsg { color: var(--sc-muted); font-size: 12.5px; padding: 5px 0; }
 
   .sc-bar-tools { display: flex; gap: 8px; flex-wrap: wrap; }
 
@@ -163,7 +164,6 @@
         <span id="platformBadge" class="sc-badge">แพลตฟอร์ม: —</span>
         <span class="sc-badge sc-on" title="ตัดชื่อผู้คอมเมนต์ออกเสมอ (PDPA)">🔒 ปกปิดชื่ออัตโนมัติ</span>
         <button class="sc-chip" id="creditsChip" type="button" title="เครดิต ScrapeCreators คงเหลือ — กดเพื่อตรวจสอบ">💠 เครดิต: <span id="creditsChipVal">—</span></button>
-        <button class="sc-chip" id="claudeChip" type="button" title="Claude tokens ที่ใช้ในการวิเคราะห์ล่าสุด">🧠 tokens: <span id="claudeChipVal">—</span></button>
       </div>
       <div class="sc-loading" id="loading"><span class="sc-spinner"></span><span id="loadingText">กำลังดึงคอมเมนต์และวิเคราะห์…</span></div>
       <div class="sc-err" id="err"></div>
@@ -271,15 +271,6 @@ async function checkCredits(){
   finally { el("creditsChip").disabled = false; }
 }
 el("creditsChip").onclick = checkCredits;
-function showClaudeTokens(usage, rateRemaining){
-  const c = el("claudeChipVal");
-  if (!c) return;
-  if (!usage || usage.total == null){ c.textContent = "—"; return; }
-  c.textContent = Number(usage.total).toLocaleString();
-  el("claudeChip").title =
-    `Claude tokens ล่าสุด: input ${Number(usage.input||0).toLocaleString()} + output ${Number(usage.output||0).toLocaleString()} = ${Number(usage.total).toLocaleString()}` +
-    (rateRemaining != null ? `\nrate-limit เหลือ/นาที: ${Number(rateRemaining).toLocaleString()} tokens` : "");
-}
 
 /* ---------------- analyze ---------------- */
 el("analyzeBtn").onclick = analyze;
@@ -365,7 +356,6 @@ function renderResult(d){
     escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์`) +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
   if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
-  showClaudeTokens(d.claude_usage, d.claude_rate_remaining);
 
   const hasPost = d.post_title || d.post_thumb;
   el("postHead").style.display = hasPost ? "" : "none";
@@ -413,13 +403,15 @@ function renderResult(d){
     </div>`).join("") : `<div style="color:var(--sc-muted);font-size:12.5px">— ไม่มีข้อมูลคำ —</div>`;
 
   const samples = d.samples || [];
-  el("sampleCard").style.display = samples.length ? "" : "none";
-  const groups = [["positive","บวก 😊","--sc-pos","sc-pos",pp,s.positive],["negative","ลบ 😞","--sc-neg","sc-neg",pn,s.negative]];
-  el("sampleList").innerHTML = groups.map(([key,label,color,cls,gp,gc]) => {
-    const items = samples.filter(x => x.sentiment === key);
-    if (!items.length) return "";
-    return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>` +
-      items.map(x => `<div class="sc-sample ${cls}">${escapeHtml(x.text)}</div>`).join("") + `</div>`;
+  el("sampleCard").style.display = total ? "" : "none";
+  const groups = [["positive","บวก 😊","เชิงบวก","--sc-pos","sc-pos",pp,s.positive],["negative","ลบ 😞","เชิงลบ","--sc-neg","sc-neg",pn,s.negative]];
+  el("sampleList").innerHTML = groups.map(([key,label,word,color,cls,gp,gc]) => {
+    const items = gc > 0 ? samples.filter(x => x.sentiment === key) : [];
+    let body;
+    if (gc === 0) body = `<div class="sc-nonemsg">— ไม่มีคอมเมนต์${word} —</div>`;
+    else if (!items.length) body = `<div class="sc-nonemsg">— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —</div>`;
+    else body = items.map(x => `<div class="sc-sample ${cls}">${escapeHtml(x.text)}</div>`).join("");
+    return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>${body}</div>`;
   }).join("");
 
   renderAudit(d);
@@ -544,14 +536,20 @@ function reportPass(ctx, d, draw, thumb){
   }
   if (d.summary){ if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("สรุปภาพรวม", pad, y); } y+=22; setFont(ctx,400,14); for (const ln of wrapLines(ctx,d.summary,cw)){ if (draw){ ctx.fillStyle=RC.ink2; ctx.fillText(ln, pad, y+12); } y+=21; } y+=16; }
   const samples=d.samples||[];
-  if (samples.length){
+  if (total){
     if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("ตัวอย่างคอมเมนต์ (ถอดความ)", pad, y); }
     y+=24;
-    for (const [key,lab,col,gp,gc] of [["positive","บวก",RC.pos,pp,s.positive],["negative","ลบ",RC.neg,pn,s.negative]]){
-      const items=samples.filter(x=>x.sentiment===key); if (!items.length) continue;
+    for (const [key,lab,word,col,gp,gc] of [["positive","บวก","เชิงบวก",RC.pos,pp,s.positive],["negative","ลบ","เชิงลบ",RC.neg,pn,s.negative]]){
+      const items = gc>0 ? samples.filter(x=>x.sentiment===key) : [];
       if (draw){ ctx.fillStyle=col; setFont(ctx,600,13); ctx.fillText(`${lab} · ${gp}%  (${gc} คอมเมนต์)`, pad, y+10); }
-      y+=22; setFont(ctx,400,13);
-      for (const it of items){ const lines=wrapLines(ctx,"“"+it.text+"”",cw-18); const boxH=lines.length*19+14; if (draw){ ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,cw,boxH,8); ctx.stroke(); ctx.fillStyle=col; ctx.fillRect(pad,y,3,boxH); ctx.fillStyle=RC.ink2; let ty=y+18; for (const ln of lines){ ctx.fillText(ln, pad+14, ty); ty+=19; } } y+=boxH+8; }
+      y+=22;
+      if (gc===0 || !items.length){
+        if (draw){ ctx.fillStyle=RC.muted; setFont(ctx,400,12.5); ctx.fillText(gc===0?`— ไม่มีคอมเมนต์${word} —`:"— ไม่มีตัวอย่าง —", pad, y+10); }
+        y+=24;
+      } else {
+        setFont(ctx,400,13);
+        for (const it of items){ const lines=wrapLines(ctx,"“"+it.text+"”",cw-18); const boxH=lines.length*19+14; if (draw){ ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,cw,boxH,8); ctx.stroke(); ctx.fillStyle=col; ctx.fillRect(pad,y,3,boxH); ctx.fillStyle=RC.ink2; let ty=y+18; for (const ln of lines){ ctx.fillText(ln, pad+14, ty); ty+=19; } } y+=boxH+8; }
+      }
       y+=6;
     }
   }

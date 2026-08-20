@@ -280,7 +280,59 @@ async function fetchScrapeCreators(kind, url, limit, env) {
     cursor = data.cursor || data.next_cursor || data.nextCursor || data.next_page_id || "";
     if (!cursor) break;
   }
-  return { comments: out, credits_remaining };
+
+  // หัวข้อ + รูปปกของโพส (best-effort, +1 credit) — เผื่อ field ต่างกันจึงค้นแบบยืดหยุ่น
+  let post_title = "", post_thumb = "";
+  try {
+    const metaEp = kind === "facebook"
+      ? "https://api.scrapecreators.com/v1/facebook/post"
+      : "https://api.scrapecreators.com/v2/tiktok/video";
+    const mApi = new URL(metaEp);
+    mApi.searchParams.set("url", url);
+    const mr = await fetch(mApi.toString(), { headers: { "x-api-key": env.SCRAPECREATORS_API_KEY } });
+    if (mr.ok) {
+      const md = await mr.json();
+      const c2 = findCredits(md); if (c2 != null) credits_remaining = c2;
+      post_title = String(deepFindStr(md, ["desc", "message", "title", "caption", "text", "content", "description"]) || "").slice(0, 300);
+      const turl = deepFindUrl(md, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "picture", "photo", "image", "display_url"]);
+      if (turl) {
+        const ir = await fetch(turl);
+        if (ir.ok) {
+          const buf = new Uint8Array(await ir.arrayBuffer());
+          if (buf.length < 3_000_000) post_thumb = "data:" + (ir.headers.get("content-type") || "image/jpeg") + ";base64," + toB64(buf);
+        }
+      }
+    }
+  } catch (e) { /* meta ไม่มาก็ไม่เป็นไร */ }
+
+  return { comments: out, credits_remaining, post_title, post_thumb };
+}
+
+/** ค้นหาสตริง (หัวข้อ) จาก response ที่ไม่รู้โครงสร้างแน่ชัด */
+function deepFindStr(obj, names, depth = 0) {
+  if (obj == null || depth > 6 || typeof obj !== "object") return "";
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string" && v.trim().length > 3 && names.includes(k.toLowerCase())) return v;
+  }
+  for (const v of Object.values(obj)) { if (v && typeof v === "object") { const r = deepFindStr(v, names, depth + 1); if (r) return r; } }
+  return "";
+}
+/** ค้นหา URL รูปจาก field ที่ชื่อเข้าเค้า (รองรับ url_list array แบบ TikTok) */
+function deepFindUrl(obj, hints, depth = 0) {
+  if (obj == null || depth > 6 || typeof obj !== "object") return "";
+  for (const [k, v] of Object.entries(obj)) {
+    if (hints.some(h => k.toLowerCase().includes(h))) {
+      if (typeof v === "string" && /^https?:\/\//.test(v)) return v;
+      if (Array.isArray(v)) { const u = v.find(x => typeof x === "string" && /^https?:\/\//.test(x)); if (u) return u; }
+      if (v && typeof v === "object") {
+        if (Array.isArray(v.url_list)) { const u = v.url_list.find(x => typeof x === "string" && /^https?:\/\//.test(x)); if (u) return u; }
+        if (typeof v.url === "string" && /^https?:\/\//.test(v.url)) return v.url;
+        if (typeof v.uri === "string" && /^https?:\/\//.test(v.uri)) return v.uri;
+      }
+    }
+  }
+  for (const v of Object.values(obj)) { if (v && typeof v === "object") { const r = deepFindUrl(v, hints, depth + 1); if (r) return r; } }
+  return "";
 }
 
 function pickField(obj, keys) {
