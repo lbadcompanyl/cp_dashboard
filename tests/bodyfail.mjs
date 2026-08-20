@@ -8,7 +8,10 @@ for (const [tag, file] of [["trend", "../functions/api/trend/feeds.js"],
                            ["ir", "../functions/api/ir/feeds.js"]]) {
   const src = fs.readFileSync(file, "utf8");
   console.log("\n-- " + tag + " --");
-  const body = src.slice(src.indexOf("async function bodyHasKeep"), src.indexOf("async function bodyHasKeep") + 1600);
+  // ⚠️ ตัดตั้งแต่หัวฟังก์ชันถึงปีกกาปิด ไม่ใช่นับจำนวนตัวอักษรตายตัว
+  //    เติมคอมเมนต์เข้าไปทีหลังทีไร ของที่จะตรวจจะหลุดออกนอกช่วงที่ตัดมา
+  const at = src.indexOf("async function bodyHasKeep");
+  const body = src.slice(at, src.indexOf("\n}", at) + 2);
   ok("อ่านไม่ได้ → คืน null (ไม่ใช่ false)", /if \(!body\) return null;/.test(body), body.slice(-160));
   ok("อ่านได้แล้วค่อยตัดสินจากคำ", /return keep\.some\(/.test(body));
   ok("null = เก็บไว้ ไม่ตัด", /verdict\[i\]\.ok = hits\[k\] !== false;/.test(src));
