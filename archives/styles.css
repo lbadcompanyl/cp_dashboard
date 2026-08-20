@@ -58,7 +58,7 @@ body {
    ⚠️ ติดบนสุดตลอด — เลื่อนดูผลลัพธ์ยาวๆ แล้วยังพิมพ์แก้คำค้นได้ทันที */
 /* ⭐ ช่องค้นหา = ฟีเจอร์หลัก ต้องเด่นกว่าทุกอย่างบนหน้า
    เว้นที่ให้หายใจข้างบน · ตัวใหญ่กว่าปกติ · เงาลอยขึ้นมาจากพื้น */
-.sticky { position:sticky; top:0; z-index:50; background:var(--plane); padding:46px 0 14px; }
+.sticky { position:sticky; top:0; z-index:50; background:var(--plane); padding:76px 0 16px; }
 .searchrow { position:relative; display:flex; align-items:center; }
 .sicon {
   position:absolute; left:20px; font-size:1.15rem; pointer-events:none; opacity:.8;
