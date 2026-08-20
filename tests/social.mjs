@@ -93,7 +93,14 @@ console.log("\n[3] delta — ทุกตัวเลขต้องมี ย�
   await setCompare(pg, "none");
   await pg.waitForTimeout(140);
   ok((await pg.$$(".dlt")).length === 0, "เลือกไม่เทียบ → ไม่มีป้ายเทียบเหลือเลย");
-  ok(!/▲|▼/.test(await view(pg)), "ไม่มีลูกศรค้างอยู่");
+  /* ⚠️ ลูกศรเรียงบนหัวตาราง (▲▼↕) ไม่ใช่ป้ายเทียบ — ต้องไม่นับรวม
+     เพิ่มเข้ามา 20 ส.ค. 2026 ตอนทำหัวตารางให้กดเรียงได้ */
+  const noCmp = await pg.evaluate(() => {
+    const v = document.querySelector("#view").cloneNode(true);
+    v.querySelectorAll(".srta").forEach((x) => x.remove());
+    return v.innerText;
+  });
+  ok(!/▲|▼/.test(noCmp), "ไม่มีลูกศรของป้ายเทียบค้างอยู่");
 
   await setCompare(pg, "prev");
   await pg.waitForTimeout(140);
@@ -102,33 +109,48 @@ console.log("\n[3] delta — ทุกตัวเลขต้องมี ย�
 }
 
 /* ────────────────────────────────────────────────────────────────── */
-console.log("\n[4] 🔴 กติกา delta ใหม่ — ฐานน้อยกว่า 1,000 ต้องบอกเป็นจำนวนจริง ไม่ใช่ %");
+console.log("\n[4] 🔴 ป้ายเทียบต้องเป็น % เสมอ — ห้ามสลับหน่วยเอง");
 {
+  /* 🔴 เจ้าของแจ้ง 20 ส.ค. 2026: "ตัว compare ของ period ไม่ตรง อันนึงเป็น % อีกอันเป็นหน่วย"
+     ของเดิมมีกฎว่าฐานเดิมต่ำกว่า 1,000 ให้บอกเป็นจำนวนจริงแทน %
+     เจตนาดี (% บนฐานหลักสิบหลอกตา) แต่ผลคือการ์ดในแถวเดียวกันใช้คนละหน่วย
+     และหน่วยสลับไปมาเองเวลาเปลี่ยนช่วงเวลา อ่านแล้วเหมือนระบบเพี้ยน */
   const { pg } = await open();
   await tabTo(pg, "Facebook");
   await setPeriod(pg, 30);
+  await closePeriod(pg);
+  await pg.waitForTimeout(300);
 
-  // "เพิ่มสุทธิในช่วงนี้" ของ Facebook อยู่หลักสิบ — ห้ามขึ้นเป็น %
-  const netCard = await pg.evaluate(() => {
-    const c = [...document.querySelectorAll(".sc")].find((x) => /เพิ่มสุทธิ/.test(x.querySelector(".sc-l").textContent));
-    return c ? { val: c.querySelector(".sc-v").textContent.trim(), d: c.querySelector(".sc-d").textContent.trim() } : null;
-  });
-  ok(!!netCard, "เจอการ์ดเพิ่มสุทธิ");
-  const base = Number(String(netCard.val).replace(/[^\d.]/g, ""));
-  ok(base < 1000, `ฐานอยู่หลักน้อยจริง (${netCard.val})`);
-  ok(!/%/.test(netCard.d), `delta ไม่ใช่ % (ได้ "${netCard.d}")`);
-  ok(/[+−-]\s*[\d,]/.test(netCard.d), "delta เป็นจำนวนจริงพร้อมเครื่องหมาย");
+  const cards = await pg.$$eval(".sc", (n) => n.map((c) => ({
+    label: c.querySelector(".sc-l").textContent.trim(),
+    val: c.querySelector(".sc-v").textContent.trim(),
+    d: c.querySelector(".sc-d") ? c.querySelector(".sc-d").textContent.trim() : "",
+  })));
 
-  // ของที่ฐานใหญ่ยังต้องเป็น % ตามเดิม
-  const bigD = await pg.evaluate(() => {
-    const c = [...document.querySelectorAll(".sc")].find((x) => /การเข้าถึง|ผู้ติดตาม$/.test(x.querySelector(".sc-l").textContent.trim()));
-    return c ? c.querySelector(".sc-d").textContent.trim() : "";
-  });
-  ok(/%/.test(bigD), `ฐานใหญ่ยังเป็น % (ได้ "${bigD}")`);
+  const net = cards.find((c) => /เพิ่มสุทธิ/.test(c.label));
+  ok(!!net, "เจอการ์ดเพิ่มสุทธิ");
+  const base = Number(String(net.val).replace(/[^\d.]/g, ""));
+  ok(base < 1000, `ฐานอยู่หลักน้อยจริง (${net.val})`);
 
-  // util เดียวจริง — ห้ามมีใครคิด % เองที่อื่น
+  /* ⚠️ ฐานน้อยก็ต้องเป็น % — ความสม่ำเสมอสำคัญกว่าการกันตัวเลขตกใจ
+     จำนวนจริงไม่ได้หายไป ย้ายไปอยู่ใน tooltip แทน */
+  ok(/%/.test(net.d), `ฐานน้อยก็ยังเป็น % (ได้ "${net.d}")`);
+
+  const withD = cards.filter((c) => c.d && !/ไม่มีข้อมูลเทียบ/.test(c.d));
+  const units = withD.map((c) => (/\bpt\b/.test(c.d) ? "pt" : /%/.test(c.d) ? "%" : "จำนวน"));
+  ok(!units.includes("จำนวน"),
+     `ไม่มีการ์ดไหนบอกเป็นจำนวนจริง (${withD.map((c, i) => c.label + "=" + units[i]).join(" · ")})`);
+
+  /* ⚠️ pt ยังต้องมีอยู่และถูกต้อง — ER/Retention เป็น % อยู่แล้ว
+     "จาก 40% เป็น 43%" คือ +3 pt ไม่ใช่ +7.5% */
+  ok(units.includes("pt"), "อัตราส่วนยังใช้หน่วย pt ตามเดิม");
+
+  // จำนวนจริงต้องยังตรวจสอบได้จาก tooltip
+  const tip = await pg.$eval(".sc .dlt", (e) => e.getAttribute("title") || "");
+  ok(/จากเดิม/.test(tip), `tooltip บอกจำนวนจริงกับฐานเดิม (${tip})`);
+
   const js = await (await fetch(BASE + "/social/app.js")).text();
-  ok((js.match(/DELTA_MIN_BASE/g) || []).length >= 2, "มีค่าคงที่ฐานขั้นต่ำอยู่จุดเดียวแล้วอ้างถึง");
+  ok(!/DELTA_MIN_BASE/.test(js), "ถอดกฎฐานขั้นต่ำออกหมดแล้ว ไม่เหลือค้าง");
   ok((js.match(/function delta\(/g) || []).length === 1, "มีฟังก์ชัน delta ตัวเดียวในไฟล์");
   await pg.close();
 }
@@ -1587,7 +1609,10 @@ console.log("\n[39] 🔴 กดแถวช่องแล้วกางดู�
   /* ⚠️ ยอดของช่องไม่ได้มาจากโพสต์ในช่วงนี้ทั้งหมด — โพสต์เก่ายังมีคนดูอยู่
      ไม่บอกไว้ เจ้าของจะบวกแถวย่อยแล้วงงว่าทำไมไม่เท่ายอดข้างบน */
   const note = await pg.$eval(".sub-note", (e) => e.innerText);
-  ok(/ของยอดช่อง/.test(note) && /โพสต์ที่ลงไว้ก่อนหน้า/.test(note), `บอกว่าแถวย่อยครอบคลุมเท่าไหร่ (${note})`);
+  /* 🔴 เกณฑ์เปลี่ยนแล้ว (20 ส.ค. 2026) — เอาทุกคลิปที่มียอดในช่วง ไม่ดูวันที่ลง
+     หมายเหตุจึงต้องบอกทั้ง "ครอบคลุมกี่ %" และ "ทำไมไม่ครบ 100%" */
+  ok(/ของยอดช่อง/.test(note) && /ไม่ได้ดูว่าลงเมื่อไหร่/.test(note),
+     `บอกว่าแถวย่อยครอบคลุมเท่าไหร่ และคิดจากอะไร (${note})`);
   ok(await pg.$eval('[data-perf="tiktok"]', (e) => e.getAttribute("aria-expanded") === "true"), "ปุ่มบอกสถานะกางให้ screen reader");
 
   // ⚠️ แถวย่อยต้องมีคอลัมน์เท่าหัวตาราง ไม่งั้นตัวเลขจะเลื่อนไปคนละคอลัมน์
@@ -2614,6 +2639,72 @@ console.log("\n[60] 🔴 ช่องเดียว: กล่องที่�
   await two.pg.waitForSelector(".sbars");
   ok(/สัดส่วนแยกช่อง/.test(await two.pg.$eval("body", (e) => e.innerText)), "2 ช่องขึ้นไป: กล่องกลับมา");
   await two.pg.close();
+
+  ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[61] 🔴 ตารางที่กางออกมา: ทุกคลิปที่มียอดในช่วง + กดหัวคอลัมน์เรียงได้");
+{
+  /* เจ้าของสั่ง 20 ส.ค. 2026 หลังเจอว่าแถวย่อยรวมกันได้แค่ 4.23% ของยอดช่อง
+     เพราะตารางคัดจาก "วันที่ลง" ส่วนการ์ดด้านล่างคัดจาก "ยอดที่เกิดในช่วง"
+     = คนละกฎกันอยู่ในหน้าเดียว */
+  const { pg, errs } = await open();
+  await pg.waitForSelector(".tbl.perf");
+
+  /* 🔴 Engagement รวม ต้องเป็นคอลัมน์แรก — เป็นตัวที่ตารางเรียงตามอยู่ */
+  const head = await pg.$$eval(".tbl.perf thead th", (n) => n.map((x) => x.textContent.replace(/[▲▼↕ⓘ]/g, "").trim()));
+  ok(head[1] === "Engagement รวม", `Engagement รวม อยู่คอลัมน์แรก (${head.join(" | ")})`);
+  ok((await pg.$$(".tbl.perf thead .srtb")).length === head.length - 1, "ทุกคอลัมน์มีปุ่มเรียง");
+
+  ok(await pg.$eval('[data-sort="engagement"]', (e) => /▼/.test(e.textContent)),
+     "แท็บ Engagement ตั้งต้นเรียงตาม Engagement รวม จากมากไปน้อย");
+  await pg.click('[data-ptab="reach"]');
+  await pg.waitForTimeout(250);
+  ok(await pg.$eval('[data-sort="reach"]', (e) => /▼/.test(e.textContent)),
+     "แท็บ Views ตั้งต้นเรียงตาม Views / Reach");
+  await pg.click('[data-ptab="engagement"]');
+  await pg.waitForTimeout(250);
+
+  await pg.click(".tbl.perf tbody th button");
+  await pg.waitForSelector(".perf-sub .sub-t", { timeout: 6000 });
+
+  const note = await pg.$eval(".sub-note", (e) => e.innerText);
+  ok(/ไม่ได้ดูว่าลงเมื่อไหร่/.test(note), `หมายเหตุบอกเกณฑ์ใหม่ (${note.slice(0, 50)}…)`);
+
+  /* 🔴 ต้องได้คลิปมากกว่าเฉพาะที่ลงในช่วง — ของเดิมได้ 11 ใบจาก 30 วัน */
+  const nRows = (await pg.$$(".perf-sub .sub-t")).length;
+  ok(nRows > 11, `ได้คลิปมากกว่าเฉพาะที่ลงในช่วง (${nRows} ใบ)`);
+
+  const colOf = (i) => pg.$$eval(".perf-sub .sub-t", (n, k) =>
+    n.map((c) => {
+      const t = ([...c.parentElement.querySelectorAll("td")][k].innerText || "").trim();
+      return parseFloat(t.replace(/,/g, "")) * ({ K: 1e3, M: 1e6 }[t.slice(-1)] || 1);
+    }), i);
+
+  const eng = await colOf(1);
+  ok(eng.every((v, i) => i === 0 || isNaN(v) || isNaN(eng[i - 1]) || eng[i - 1] >= v),
+     `ตั้งต้นเรียงจากมากไปน้อยจริง (${eng.slice(0, 4).join(" ")})`);
+
+  await pg.click('[data-sort="engagement"]');
+  await pg.waitForTimeout(350);
+  ok(await pg.$eval('[data-sort="engagement"]', (e) => /▲/.test(e.textContent)), "กดซ้ำแล้วสลับเป็นน้อยไปมาก");
+  const asc = await colOf(1);
+  ok(asc.every((v, i) => i === 0 || isNaN(v) || isNaN(asc[i - 1]) || asc[i - 1] <= v),
+     `เรียงกลับด้านจริง (${asc.slice(0, 4).join(" ")})`);
+
+  await pg.click('[data-sort="comments"]');
+  await pg.waitForTimeout(350);
+  ok(await pg.$eval('[data-sort="comments"]', (e) => /▼/.test(e.textContent)), "กดคอลัมน์ใหม่เริ่มจากมากไปน้อย");
+  ok(await pg.$eval('[data-sort="engagement"]', (e) => /↕/.test(e.textContent)), "คอลัมน์เดิมกลับเป็นสถานะปกติ");
+
+  /* ⚠️ สลับแท็บแล้วคีย์ที่เลือกไว้ไม่มีในชุดใหม่ ต้องตกกลับเป็นค่าตั้งต้น
+     ไม่งั้นเรียงด้วยคีย์ที่ไม่มีอยู่ = ทุกแถวได้ 0 ลำดับมั่วโดยไม่มีอะไรบอก */
+  await pg.click('[data-ptab="reach"]');
+  await pg.waitForTimeout(250);
+  ok(await pg.$eval('[data-sort="reach"]', (e) => /▼/.test(e.textContent)),
+     "สลับแท็บแล้วตกกลับเป็นค่าตั้งต้นของแท็บนั้น");
 
   ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
   await pg.close();
