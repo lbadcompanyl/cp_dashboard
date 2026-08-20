@@ -457,6 +457,31 @@ console.log("\n[9b] กล่องตัวกรองพับได้");
   await fresh.close();
 }
 
+// ── [9c] ลำดับความเด่น ─────────────────────────────────────────────────
+// เจ้าของสั่ง 2 รอบ: ช่องค้นหาต้องเป็นพระเอก · แต่ตัวกรอง "ต้องมองเห็น" ไม่ใช่เล็กจนหาไม่เจอ
+console.log("\n[9c] ลำดับความเด่น");
+{
+  for (const [name, w, h] of [["เดสก์ท็อป", 1200, 900], ["มือถือ", 390, 780]]) {
+    const c = await browser.newContext({ viewport: { width: w, height: h } });
+    await fakeData(c);
+    const p = await open(c);
+    const m = await p.evaluate(() => {
+      const r = (s) => { const b = document.querySelector(s).getBoundingClientRect();
+        return { top: b.top, h: b.height, w: b.width }; };
+      return { q: r("#q"), f: r("#ftoggle"), fs: +getComputedStyle(document.querySelector("#q")).fontSize.replace("px", "") };
+    });
+    ok(`${name}: ช่องค้นหาสูงกว่าปุ่มตัวกรองชัดเจน (พระเอก)`, m.q.h >= m.f.h * 1.3,
+      `ค้นหา ${Math.round(m.q.h)}px · ตัวกรอง ${Math.round(m.f.h)}px`);
+    ok(`${name}: ตัวอักษรช่องค้นหาใหญ่กว่าปกติ`, m.fs >= 17, `${m.fs}px`);
+    // ⚠️ เคยทำปุ่มตัวกรองเล็กจนเจ้าของมองไม่เห็น — กันไม่ให้เล็กกว่าขนาดที่กดได้จริง
+    ok(`${name}: ปุ่มตัวกรองยังกดได้จริง ไม่เล็กจนหาไม่เจอ`, m.f.h >= 34 && m.f.w >= 80,
+      `${Math.round(m.f.w)}×${Math.round(m.f.h)}px`);
+    ok(`${name}: ช่องค้นหาเว้นที่จากแถบบน ไม่ติดขอบ`, m.q.top >= 70, `${Math.round(m.q.top)}px`);
+    await p.close();
+    await c.close();
+  }
+}
+
 // ── [10] มือถือ ────────────────────────────────────────────────────────
 console.log("\n[10] มือถือ");
 {

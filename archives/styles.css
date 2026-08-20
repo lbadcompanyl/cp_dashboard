@@ -58,7 +58,7 @@ body {
    ⚠️ ติดบนสุดตลอด — เลื่อนดูผลลัพธ์ยาวๆ แล้วยังพิมพ์แก้คำค้นได้ทันที */
 /* ⭐ ช่องค้นหา = ฟีเจอร์หลัก ต้องเด่นกว่าทุกอย่างบนหน้า
    เว้นที่ให้หายใจข้างบน · ตัวใหญ่กว่าปกติ · เงาลอยขึ้นมาจากพื้น */
-.sticky { position:sticky; top:0; z-index:50; background:var(--plane); padding:26px 0 12px; }
+.sticky { position:sticky; top:0; z-index:50; background:var(--plane); padding:46px 0 14px; }
 .searchrow { position:relative; display:flex; align-items:center; }
 .sicon {
   position:absolute; left:20px; font-size:1.15rem; pointer-events:none; opacity:.8;
@@ -96,9 +96,18 @@ body {
 /* ⚠️ ต้องมาก่อนกฎ .filters { display:grid } — ไม่งั้น display ชนะ [hidden] แล้วพับไม่ลง */
 [hidden] { display:none !important; }
 
-/* ตัวกรอง = ของเสริม · เป็นปุ่มเล็กในแถวสถานะ ไม่ใช่กล่องใหญ่แข่งกับช่องค้นหา */
+/* ตัวกรอง = ของเสริม แต่ **ต้องมองเห็น** — เคยทำเล็กจนหาไม่เจอมาแล้ว (20 ส.ค. 2026)
+   วิธีให้เป็นรอง: ไม่ใช่ทำให้จาง แต่ให้เล็กกว่าช่องค้นหาอย่างชัดเจน (59px vs 38px) */
 .grow { flex:1; }
-#ftoggle .fcaret { color:var(--muted); font-size:.65rem; }
+#ftoggle {
+  padding:9px 16px; font-size:.85rem; font-weight:600; color:var(--ink);
+  border-color:var(--ink-2); gap:8px;
+}
+#ftoggle:hover { border-color:var(--accent); color:var(--accent); background:var(--surface-2); }
+#ftoggle .fcaret { color:var(--muted); font-size:.62rem; }
+/* กรองอยู่ = ทำให้เห็นชัดว่ารายการถูกกรองไว้ ไม่ใช่ข่าวหายไปเฉยๆ */
+#ftoggle.on { border-color:var(--accent); color:var(--accent); }
+#ftoggle.on .fcaret { color:var(--accent); }
 .fbadge {
   display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px;
   margin-left:5px; padding:0 4px; border-radius:999px;
@@ -106,7 +115,7 @@ body {
 }
 /* สรุปว่ากรองอะไรไว้ — อ่านได้โดยไม่ต้องกางกล่อง */
 .fsum {
-  margin:0 4px 8px; font-size:.74rem; color:var(--muted);
+  margin:0 4px 10px; font-size:.76rem; color:var(--accent);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 
@@ -162,7 +171,7 @@ body {
 
 /* ── แถวสถานะ ────────────────────────────────────────────────────── */
 .statusrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:14px 2px 9px; }
-.count { font-size:.85rem; font-weight:650; }
+.count { font-size:.92rem; font-weight:650; }
 .count .dim { color:var(--muted); font-weight:400; font-size:.8rem; }
 
 /* ── รายการผลลัพธ์ ───────────────────────────────────────────────── */

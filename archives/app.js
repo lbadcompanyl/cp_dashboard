@@ -354,6 +354,7 @@ function renderCount() {
   const [nFilters, sum] = filterSummary();
   $("#fbadge").hidden = !nFilters;
   $("#fbadge").textContent = nFilters || "";
+  $("#ftoggle").classList.toggle("on", !!nFilters);
   $("#fsum").hidden = !sum;
   $("#fsum").textContent = sum;
   $("#loadednote").textContent = older.length
