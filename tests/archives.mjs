@@ -467,16 +467,37 @@ console.log("\n[9c] ลำดับความเด่น");
     const p = await open(c);
     const m = await p.evaluate(() => {
       const r = (s) => { const b = document.querySelector(s).getBoundingClientRect();
-        return { top: b.top, h: b.height, w: b.width }; };
+        return { top: b.top, h: b.height, w: b.width, l: b.left, r: b.right, t: b.top, b: b.bottom }; };
       return { q: r("#q"), f: r("#ftoggle"), fs: +getComputedStyle(document.querySelector("#q")).fontSize.replace("px", "") };
     });
     ok(`${name}: ช่องค้นหาสูงกว่าปุ่มตัวกรองชัดเจน (พระเอก)`, m.q.h >= m.f.h * 1.3,
       `ค้นหา ${Math.round(m.q.h)}px · ตัวกรอง ${Math.round(m.f.h)}px`);
     ok(`${name}: ตัวอักษรช่องค้นหาใหญ่กว่าปกติ`, m.fs >= 17, `${m.fs}px`);
     // ⚠️ เคยทำปุ่มตัวกรองเล็กจนเจ้าของมองไม่เห็น — กันไม่ให้เล็กกว่าขนาดที่กดได้จริง
-    ok(`${name}: ปุ่มตัวกรองยังกดได้จริง ไม่เล็กจนหาไม่เจอ`, m.f.h >= 34 && m.f.w >= 80,
+    ok(`${name}: ปุ่มตัวกรองยังกดได้จริง ไม่เล็กจนหาไม่เจอ`, m.f.h >= 30 && m.f.w >= 44,
       `${Math.round(m.f.w)}×${Math.round(m.f.h)}px`);
     ok(`${name}: ช่องค้นหาเว้นที่จากแถบบน ไม่ติดขอบ`, m.q.top >= 70, `${Math.round(m.q.top)}px`);
+
+    // ⚠️ ปุ่มตัวกรองอยู่ "ในช่องค้นหา" มุมขวา — ต้องอยู่ในกรอบจริง ไม่ใช่ลอยข้างนอก
+    ok(`${name}: ปุ่มตัวกรองอยู่ในช่องค้นหา`,
+      m.f.l > m.q.l && m.f.r <= m.q.r + 1 && m.f.t >= m.q.t - 1 && m.f.b <= m.q.b + 1,
+      `ช่อง ${Math.round(m.q.l)}-${Math.round(m.q.r)} · ปุ่ม ${Math.round(m.f.l)}-${Math.round(m.f.r)}`);
+
+    // ⚠️ ข้อความที่พิมพ์ต้องไม่มุดใต้ปุ่ม — ต้องเผื่อ padding ขวาให้พ้นทั้งปุ่มล้างและปุ่มตัวกรอง
+    await p.fill("#q", "ปลาหมอคางดำ เชียงใหม่ ฝุ่นพิษ");
+    await p.waitForTimeout(300);
+    const z = await p.evaluate(() => {
+      const q = document.querySelector("#q"), cs = getComputedStyle(q);
+      const b = q.getBoundingClientRect();
+      const f = document.querySelector("#ftoggle").getBoundingClientRect();
+      const c = document.querySelector("#qclear").getBoundingClientRect();
+      return { textRight: b.right - parseInt(cs.paddingRight), f: f.left, c: c.left,
+               typable: b.width - parseInt(cs.paddingRight) - parseInt(cs.paddingLeft) };
+    });
+    ok(`${name}: ข้อความที่พิมพ์ไม่มุดใต้ปุ่ม`, z.textRight <= z.c + 1 && z.textRight <= z.f + 1,
+      `ข้อความจบ ${Math.round(z.textRight)} · ปุ่มล้าง ${Math.round(z.c)} · ตัวกรอง ${Math.round(z.f)}`);
+    ok(`${name}: ยังเหลือที่พิมพ์พอสมควร`, z.typable >= 180, `${Math.round(z.typable)}px`);
+    await p.fill("#q", "");
     await p.close();
     await c.close();
   }

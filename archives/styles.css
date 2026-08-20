@@ -66,7 +66,7 @@ body {
 #q {
   width:100%; font-family:inherit; font-size:1.15rem; font-weight:500; color:var(--ink);
   background:var(--surface); border:1.5px solid var(--border); border-radius:999px;
-  padding:18px 52px 18px 56px; -webkit-appearance:none; appearance:none;
+  padding:18px 162px 18px 56px; -webkit-appearance:none; appearance:none;
   box-shadow:0 2px 10px rgba(16,24,40,.06);
   transition:border-color .12s, box-shadow .12s;
 }
@@ -77,7 +77,7 @@ body {
   box-shadow:0 0 0 4px rgba(37,99,235,.15), 0 2px 10px rgba(16,24,40,.06);
 }
 .qclear {
-  position:absolute; right:12px; border:0; background:transparent; color:var(--muted);
+  position:absolute; right:118px; border:0; background:transparent; color:var(--muted);
   font-family:inherit; font-size:1.1rem; cursor:pointer; padding:9px 11px; line-height:1; border-radius:999px;
 }
 .qclear:hover { color:var(--ink); background:var(--surface-2); }
@@ -96,18 +96,30 @@ body {
 /* ⚠️ ต้องมาก่อนกฎ .filters { display:grid } — ไม่งั้น display ชนะ [hidden] แล้วพับไม่ลง */
 [hidden] { display:none !important; }
 
-/* ตัวกรอง = ของเสริม แต่ **ต้องมองเห็น** — เคยทำเล็กจนหาไม่เจอมาแล้ว (20 ส.ค. 2026)
-   วิธีให้เป็นรอง: ไม่ใช่ทำให้จาง แต่ให้เล็กกว่าช่องค้นหาอย่างชัดเจน (59px vs 38px) */
+/* ⚠️ ปุ่มตัวกรองอยู่ "ในช่องค้นหา" มุมขวา (เจ้าของสั่ง 20 ส.ค. 2026)
+   วางไว้เป็นปุ่มลอยนอกช่องแล้วมองไม่เห็น · ในช่องค้นหาคือจุดที่สายตาอยู่อยู่แล้ว
+   ⚠️ ต้องเผื่อ padding ขวาของ #q ให้พอ ไม่งั้นข้อความที่พิมพ์จะมุดใต้ปุ่ม */
 .grow { flex:1; }
-#ftoggle {
-  padding:9px 16px; font-size:.85rem; font-weight:600; color:var(--ink);
-  border-color:var(--ink-2); gap:8px;
+.ftoggle {
+  position:absolute; right:7px; z-index:2;
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-family:inherit;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
+  border-radius:999px; padding:9px 14px; font-size:.82rem; font-weight:600; line-height:1;
 }
-#ftoggle:hover { border-color:var(--accent); color:var(--accent); background:var(--surface-2); }
-#ftoggle .fcaret { color:var(--muted); font-size:.62rem; }
+.ftoggle:hover { border-color:var(--accent); color:var(--accent); }
+.ftoggle .fcaret { color:var(--muted); font-size:.6rem; }
+/* ⚠️ จอแคบ: เหลือแต่ไอคอน — คำว่า "ตัวกรอง" กินที่พิมพ์ไปเกือบครึ่งช่อง
+   (ปุ่มยังใหญ่พอกดได้ และยังเห็นชัดเพราะอยู่ในช่องค้นหา) */
+@media (max-width:560px) {
+  .ftoggle .flabel { display:none; }
+  .ftoggle { padding:9px 12px; }
+  #q { padding-right:104px; }
+  .qclear { right:64px; }
+}
 /* กรองอยู่ = ทำให้เห็นชัดว่ารายการถูกกรองไว้ ไม่ใช่ข่าวหายไปเฉยๆ */
-#ftoggle.on { border-color:var(--accent); color:var(--accent); }
-#ftoggle.on .fcaret { color:var(--accent); }
+.ftoggle.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+.ftoggle.on .fcaret { color:var(--on-accent); }
+.ftoggle.on .fbadge { background:var(--on-accent); color:var(--accent); }
 .fbadge {
   display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px;
   margin-left:5px; padding:0 4px; border-radius:999px;
