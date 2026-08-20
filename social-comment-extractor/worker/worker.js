@@ -33,9 +33,6 @@ export default {
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
     }
-    if (request.method === "GET" && url.pathname === "/debugmeta") {
-      return cors(json(await debugMeta(url.searchParams.get("url") || "", env)), origin);
-    }
     if (request.method !== "POST" || url.pathname !== "/analyze") {
       return cors(json({ error: "ไม่พบ endpoint (ใช้ POST /analyze)" }, 404), origin);
     }
@@ -309,28 +306,6 @@ async function fetchScrapeCreators(kind, url, limit, env) {
   } catch (e) { /* meta ไม่มาก็ไม่เป็นไร */ }
 
   return { comments: out, credits_remaining, post_title, post_thumb };
-}
-
-/** debug: ดู response จริงของ post/video เพื่อ map field รูปปก/หัวข้อให้ตรง */
-async function debugMeta(url, env) {
-  if (!env.SCRAPECREATORS_API_KEY) return { error: "ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY" };
-  const platform = detectPlatform(url);
-  if (platform !== "facebook" && platform !== "tiktok") return { error: "ใช้ได้เฉพาะลิงก์ FB/TikTok" };
-  const ep = platform === "facebook"
-    ? "https://api.scrapecreators.com/v1/facebook/post"
-    : "https://api.scrapecreators.com/v2/tiktok/video";
-  const api = new URL(ep);
-  api.searchParams.set("url", url);
-  const r = await fetch(api.toString(), { headers: { "x-api-key": env.SCRAPECREATORS_API_KEY } });
-  const data = await r.json().catch(() => ({}));
-  return {
-    ok: r.ok, status: r.status, endpoint: ep,
-    extracted: {
-      title: deepFindStr(data, ["desc", "message", "title", "caption", "text", "content", "description"]),
-      thumb: deepFindUrl(data, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "picture", "photo", "image", "display_url"]),
-    },
-    raw: data,
-  };
 }
 
 /** ค้นหาสตริง (หัวข้อ) จาก response ที่ไม่รู้โครงสร้างแน่ชัด */
