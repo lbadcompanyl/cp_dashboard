@@ -251,7 +251,7 @@
   function loadTop(pk, from, to) {
     if (wantMock()) {
       var mk = window.SOCIAL_MOCK;
-      return Promise.resolve(mk && mk.topInRange ? mk.topInRange(pk, from, to, 10) : null);
+      return Promise.resolve(mk && mk.topInRange ? mk.topInRange(pk, from, to, 50) : null);
     }
     var ep = TOP_ENDPOINT[pk];
     if (!ep) return Promise.resolve(null);
