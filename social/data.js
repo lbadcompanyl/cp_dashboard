@@ -42,6 +42,8 @@
         partial: false,
         authFailed: st === "auth-failed",
         fetchFailed: st === "error",
+        // เซสชันของ Cloudflare Access หมด — ไม่ใช่เรื่องการตั้งค่าเลย แค่ต้องล็อกอินใหม่
+        signedOut: st === "signed-out",
         need: (res && res.need) || [],
         message: (res && res.message) || "",
       },
@@ -167,14 +169,37 @@
 
   var MAP = { youtube: fromYouTube, tiktok: fromGeneric, facebook: fromGeneric };
 
-  function fetchOne(pk) {
-    return fetch(ENDPOINT[pk], { headers: { accept: "application/json" } })
-      .then(function (r) { return r.json(); })
+  /* ── ยิง API หนึ่งเส้น ────────────────────────────────────────────
+   * 🔴 Cloudflare Access ทำให้เกิดสถานะที่ 4 ที่ไม่เคยมีมาก่อน: "เซสชันหมดอายุ"
+   *    หน้าเว็บเปิดค้างไว้ข้ามคืน → เซสชันของ Access หมด → auto-refresh ทุก 3 นาที
+   *    ยิงไปแล้วได้ "หน้าเข้าสู่ระบบ" เป็น HTML กลับมาแทน JSON
+   * ⚠️ เอา HTML ไป r.json() จะพังเป็น syntax error แล้วตกลงไปที่ catch
+   *    ซึ่งรายงานว่า "ต่อกับเซิร์ฟเวอร์ไม่ได้" — พาไปไล่หาปัญหาเน็ต/ต้นทางผิดทาง
+   *    ทั้งที่แค่ต้องกดเข้าสู่ระบบใหม่ · เช็คชนิดของคำตอบก่อนแกะเสมอ
+   * ⚠️ อีกทางที่ Access ตอบคือ 302 ข้ามโดเมนไปหน้า login ของทีม
+   *    กรณีนั้น fetch จะถูก CORS บล็อกแล้ว reject — แยกจากเน็ตหลุดไม่ได้
+   *    ข้อความใน catch จึงต้องพูดถึงทั้ง 2 ความเป็นไปได้ ห้ามฟันธงอันเดียว
+   */
+  function apiGet(url) {
+    return fetch(url, { headers: { accept: "application/json" } })
+      .then(function (r) {
+        var ct = r.headers.get("content-type") || "";
+        if (ct.indexOf("json") < 0) {
+          return { ok: false, status: "signed-out", need: [],
+                   message: "เซสชันหมดอายุ ต้องเข้าสู่ระบบใหม่" };
+        }
+        return r.json();
+      })
       .catch(function (e) {
         /* ⚠️ ยิงไม่ถึง endpoint ≠ ยังไม่ได้เชื่อมต่อ — คนละเรื่องกัน
            ถ้าบอกว่า "ยังไม่ได้ใส่ค่า" ทั้งที่เน็ตหลุด เจ้าของจะไปนั่งไล่ตั้งค่าใหม่เปล่าๆ */
-        return { ok: false, status: "error", need: [], message: "ต่อกับเซิร์ฟเวอร์ไม่ได้ (" + (e.message || e) + ")" };
+        return { ok: false, status: "error", need: [],
+                 message: "ต่อกับเซิร์ฟเวอร์ไม่ได้ หรือเซสชันหมดอายุ (" + (e.message || e) + ")" };
       });
+  }
+
+  function fetchOne(pk) {
+    return apiGet(ENDPOINT[pk]);
   }
 
   /**
@@ -189,7 +214,13 @@
       order.forEach(function (pk, i) {
         platforms[pk] = MAP[pk](list[i]);
       });
-      return { isMock: false, generatedAt: new Date().toISOString(), platforms: platforms };
+      /* ⚠️ เซสชันหมดจะพังพร้อมกันทุกช่อง — ขึ้นการ์ดซ้ำ 3 ใบเป็นการรบกวนเปล่าๆ
+         ยกขึ้นเป็นแถบเดียวบนสุดแทน แล้วให้กดเข้าสู่ระบบใหม่ได้จากตรงนั้นเลย */
+      var signedOut = order.every(function (pk) {
+        return platforms[pk].status && platforms[pk].status.signedOut;
+      });
+      return { isMock: false, signedOut: signedOut,
+               generatedAt: new Date().toISOString(), platforms: platforms };
     });
   }
 
@@ -225,9 +256,7 @@
     var ep = TOP_ENDPOINT[pk];
     if (!ep) return Promise.resolve(null);
 
-    return fetch(ep + "?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to),
-      { headers: { accept: "application/json" } })
-      .then(function (r) { return r.json(); })
+    return apiGet(ep + "?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to))
       .then(function (res) {
         if (!res || !res.ok || !res.data) return null;
         return (res.data.videos || []).map(function (v) {

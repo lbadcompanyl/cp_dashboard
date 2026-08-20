@@ -35,6 +35,17 @@ body {
   font-weight:700; text-align:center; padding:8px 12px; font-size:.82rem;
 }
 
+/* เซสชันของ Cloudflare Access หมด — สีแดงเพื่อไม่ให้สับสนกับแถบข้อมูลจำลอง */
+#sobar {
+  position:sticky; top:0; z-index:61; background:#dc2626; color:#fff;
+  font-weight:700; text-align:center; padding:8px 12px; font-size:.82rem;
+  display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap;
+}
+#sobar button {
+  border:0; border-radius:999px; padding:5px 14px; cursor:pointer;
+  background:#fff; color:#b91c1c; font:inherit; font-weight:700; font-size:.78rem;
+}
+
 /* ── แถบบน ───────────────────────────────────────────────────────── */
 .appbar {
   display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -184,7 +195,7 @@ body {
   position:sticky; top:0; z-index:50; background:var(--plane);
   border-bottom:1px solid var(--border); padding-bottom:8px;
 }
-#mockbar ~ .wrap .sticky { top:36px; }
+#mockbar ~ .wrap .sticky, #sobar ~ .wrap .sticky { top:36px; }
 
 .ctrl-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding-top:10px; }
 .seg { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:3px; gap:2px; }

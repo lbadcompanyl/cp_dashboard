@@ -308,6 +308,11 @@
              "แล้วเอา token ตัวใหม่มาใส่แทนตัวเดิม",
           how: "ตั้ง SETUP_KEY ชั่วคราว → เปิด /social/api/connect → กดอนุญาตใหม่ → ใส่ token ใหม่ → ลบ SETUP_KEY ทิ้ง",
           showNeed: false }
+      : st.signedOut
+      ? { t: "เซสชันหมดอายุ",
+          p: "หน้านี้จำกัดสิทธิ์ด้วย Cloudflare Access — เปิดค้างไว้นานจนหมดเวลา " +
+             "<b>ไม่ใช่เรื่องการตั้งค่า</b> แค่ต้องเข้าสู่ระบบใหม่",
+          how: "กดปุ่มบนแถบด้านบน หรือรีเฟรชหน้านี้", showNeed: false }
       : st.fetchFailed
       ? { t: "ดึงข้อมูล " + P.label + " ไม่สำเร็จ",
           p: "ไม่ใช่เรื่องการตั้งค่า — ต้นทางหรือเส้นทางเน็ตมีปัญหาชั่วคราว ลองรีเฟรชหน้าอีกครั้ง",
@@ -2028,6 +2033,23 @@
     }
   }
 
+  /* ── เซสชันของ Cloudflare Access หมด ──────────────────────────────
+   * 🔴 แถบเดียวบนสุด ไม่ใช่การ์ดซ้ำ 3 ใบ — เซสชันหมดคือพังพร้อมกันทุกช่อง
+   * ⚠️ ต้องเป็น "โหลดหน้าใหม่" (location.reload) ไม่ใช่ยิง fetch ซ้ำ
+   *    Access จะพาไปหน้าเข้าสู่ระบบด้วยการ redirect ของทั้งหน้าเท่านั้น
+   *    ยิง fetch ซ้ำจะโดน CORS บล็อกเงียบๆ แล้วดูเหมือนปุ่มกดไม่ติด
+   */
+  function signedOutBanner() {
+    if (document.getElementById("sobar")) return;
+    var b = document.createElement("div");
+    b.id = "sobar";
+    b.innerHTML = "🔒 เซสชันหมดอายุ — ตัวเลขที่เห็นอยู่อาจเป็นของเก่า " +
+      '<button type="button" id="sobtn">เข้าสู่ระบบใหม่</button>';
+    document.body.insertBefore(b, document.body.firstChild);
+    var btn = document.getElementById("sobtn");
+    if (btn) btn.addEventListener("click", function () { location.reload(); });
+  }
+
   function mockBanner() {
     if (document.getElementById("mockbar")) return;
     var b = document.createElement("div");
@@ -2045,6 +2067,7 @@
     window.SOCIAL_DATA.load().then(function (d) {
       DATA = d;
       if (DATA && DATA.isMock) mockBanner();
+      if (DATA && DATA.signedOut) signedOutBanner();
       render();
     }).catch(function (e) {
       LOAD_ERR = e && (e.message || String(e));

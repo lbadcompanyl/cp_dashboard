@@ -2503,6 +2503,47 @@ console.log("\n[57] 🔴 Impressions + View rate — ช่องไหนมี
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[58] 🔴 เซสชัน Cloudflare Access หมด ต้องบอกให้ถูกเรื่อง");
+{
+  /* เจ้าของกำลังจะเปิด Access หน้า /social/ (20 ส.ค. 2026)
+     ⚠️ เซสชันหมดแล้ว Access จะตอบ "หน้าเข้าสู่ระบบ" เป็น HTML กลับมาแทน JSON
+        ของเดิมเอาไปแกะเป็น JSON แล้วพัง → รายงานว่า "ต่อกับเซิร์ฟเวอร์ไม่ได้"
+        ซึ่งพาไปไล่หาปัญหาเน็ต/ต้นทางผิดทาง ทั้งที่แค่ต้องกดเข้าสู่ระบบใหม่ */
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  for (const k of ["youtube", "tiktok", "facebook"]) {
+    await pg.route(`**/social/api/${k}`, (r) => r.fulfill({
+      status: 200, contentType: "text/html; charset=utf-8",
+      body: "<!doctype html><title>Sign in</title><body>Cloudflare Access</body>",
+    }));
+  }
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector("#sobar", { timeout: 5000 });
+
+  const bar = await pg.$eval("#sobar", (e) => e.textContent);
+  ok(/เซสชันหมดอายุ/.test(bar), `มีแถบบอกว่าเซสชันหมด (${bar.trim()})`);
+  ok(!!(await pg.$("#sobtn")), "มีปุ่มให้กดเข้าสู่ระบบใหม่");
+
+  /* ⚠️ ห้ามรายงานว่า "ยังไม่ได้เชื่อมต่อ" — ค่าใน Cloudflare ยังถูกอยู่ทุกตัว
+     บอกผิด = เจ้าของไปนั่งไล่ตั้งค่าใหม่ทั้งชุดโดยไม่จำเป็น */
+  const body = await pg.$eval("body", (e) => e.innerText);
+  ok(!/ยังไม่ได้เชื่อมต่อ/.test(body), "ไม่หลอกว่ายังไม่ได้เชื่อมต่อ");
+  ok(!/ต่อกับเซิร์ฟเวอร์ไม่ได้/.test(body), "ไม่หลอกว่าต่อเซิร์ฟเวอร์ไม่ได้");
+
+  /* ⚠️ ปุ่มต้องโหลดหน้าใหม่ ไม่ใช่ยิง fetch ซ้ำ — Access พาไปหน้าเข้าสู่ระบบ
+     ด้วยการ redirect ของทั้งหน้าเท่านั้น ยิง fetch ซ้ำจะโดนบล็อกเงียบๆ */
+  let navigated = false;
+  pg.on("framenavigated", (f) => { if (f === pg.mainFrame()) navigated = true; });
+  await pg.click("#sobtn");
+  await pg.waitForTimeout(600);
+  ok(navigated, "กดปุ่มแล้วโหลดหน้าใหม่จริง");
+
+  ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);
