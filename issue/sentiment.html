@@ -56,7 +56,7 @@
   .sc-spinner { width: 15px; height: 15px; border: 2px solid var(--sc-border); border-top-color: var(--sc-accent); border-radius: 50%; animation: scspin .8s linear infinite; }
   @keyframes scspin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .sc-spinner { animation-duration: 3s; } }
-  .sc-err { display: none; background: var(--sc-neg-soft); border: 1px solid var(--sc-border); border-radius: 10px; padding: 11px 13px; font-size: 13px; color: var(--sc-neg); margin-top: 14px; }
+  .sc-err { display: none; background: var(--sc-neg-soft); border: 1px solid var(--sc-border); border-radius: 10px; padding: 11px 13px; font-size: 13px; color: var(--sc-neg); margin-top: 14px; white-space: pre-line; line-height: 1.5; }
   .sc-err.sc-show { display: block; }
 
   #results { display: none; }
@@ -279,7 +279,7 @@ el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); }
 async function analyze(){
   const url = el("url").value.trim();
   const platform = detectPlatform(url);
-  if (!url || !platform){ showErr("กรุณาวางลิงก์ YouTube / Facebook / TikTok ที่ถูกต้อง"); return; }
+  if (!url || !platform){ showErr("⚠️ กรุณาวางลิงก์ YouTube / Facebook / TikTok ที่ถูกต้อง"); return; }
   hideErr();
   el("results").classList.remove("sc-show");
   setLoading(true, "กำลังดึงคอมเมนต์และวิเคราะห์…");
@@ -295,7 +295,7 @@ async function analyze(){
     lastResult = data;
     renderResult(data);
   } catch (e){
-    showErr("วิเคราะห์ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+    showErr(friendlyError(e && e.message ? e.message : String(e)));
   } finally {
     setLoading(false);
     el("analyzeBtn").disabled = false;
@@ -642,9 +642,33 @@ async function writeXlsx(sheets, filename){
 }
 
 /* ---------------- helpers ---------------- */
+function friendlyError(msg){
+  const m = String(msg).toLowerCase();
+  if (m.includes("not_found") || m.includes("not found") || m.includes("404"))
+    return "❌ ไม่พบโพส/คอมเมนต์ — ลิงก์ที่ใช้อาจไม่ใช่ “โพสเดี่ยว” (เช่นลิงก์กลุ่ม/โปรไฟล์/หน้าฟีด) หรือโพสถูกลบ/ตั้งเป็นส่วนตัว\nวิธีแก้: ใช้ลิงก์โพสเดี่ยว “สาธารณะ” — กดที่เวลาโพสเพื่อคัดลอกลิงก์ตรง (เช่น facebook.com/<เพจ>/posts/<id>, tiktok.com/@user/video/<id>)";
+  if (m.includes("commentsdisabled") || m.includes("ปิดคอมเมนต์"))
+    return "❌ โพส/วิดีโอนี้ปิดคอมเมนต์";
+  if (m.includes("ไม่พบคอมเมนต์"))
+    return "❌ ไม่พบคอมเมนต์ในโพสนี้ (อาจไม่มีคอมเมนต์ หรือดึงไม่ได้)";
+  if (m.includes("anthropic_api_key"))
+    return "⚙️ ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Worker (ใส่คีย์ + Deploy)";
+  if (m.includes("scrapecreators_api_key"))
+    return "⚙️ ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY ใน Worker (จำเป็นสำหรับ FB/TikTok)";
+  if (m.includes("youtube_api_key"))
+    return "⚙️ ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY ใน Worker";
+  if (m.includes("unauthorized") || m.includes("401") || (m.includes("invalid") && m.includes("key")))
+    return "🔑 คีย์ไม่ถูกต้องหรือหมดอายุ — ตรวจ API key ใน Worker";
+  if (m.includes("rate") || m.includes("429"))
+    return "⏳ เรียกถี่เกินไป (rate limit) — รอสักครู่แล้วลองใหม่";
+  if (m.includes("credit") || m.includes("insufficient") || m.includes("402"))
+    return "💠 เครดิต ScrapeCreators ไม่พอ — เติมที่ app.scrapecreators.com";
+  if (m.includes("failed to fetch") || m.includes("networkerror") || m.includes("load failed"))
+    return "🌐 ต่อ Worker ไม่ได้ — ตรวจว่า Worker ทำงานอยู่ และ URL ถูกต้อง";
+  return "วิเคราะห์ไม่สำเร็จ: " + msg;
+}
 const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function setLoading(on, text){ el("loading").classList.toggle("sc-show", on); if (text) el("loadingText").textContent = text; }
-function showErr(m){ const e = el("err"); e.textContent = "⚠️ " + m; e.classList.add("sc-show"); }
+function showErr(m){ const e = el("err"); e.textContent = m; e.classList.add("sc-show"); }
 function hideErr(){ el("err").classList.remove("sc-show"); }
 function toast(msg){ const t = el("toast"); t.textContent = msg; t.classList.add("sc-show"); setTimeout(()=>t.classList.remove("sc-show"),1800); }
 
