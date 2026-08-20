@@ -248,3 +248,97 @@ $("#scopes").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-scope]");
   if (b) show(b.dataset.scope);
 });
+
+/* ── 📋 บันทึกระบบ ─────────────────────────────────────────────────────
+ * อ่านจาก /api/log (อ่านอย่างเดียว) แล้ววาดเป็นรายการ 1 บรรทัดต่อ 1 รอบ build
+ *
+ * ⚠️ **ไม่ผูกกับแดชบอร์ดที่เลือกในแถบ .scopes** — log ครอบทุกแดชบอร์ด
+ *    จึงซ่อนแถบเลือกแดชบอร์ดตอนอยู่แท็บนี้ ไม่งั้นดูเหมือนกรองได้ทั้งที่ไม่ได้กรอง
+ * ⚠️ **โหลดตอนกดเข้าแท็บเท่านั้น** ไม่ได้โหลดตอนเปิดหน้า — คนส่วนใหญ่มาที่นี่
+ *    เพื่อจัดการข่าว ไม่ได้มาดู log จะได้ไม่เสีย KV read ฟรีๆ ทุกครั้งที่เปิดหน้า
+ */
+const WAIT_LOG = '<span class="spin"></span>กำลังโหลดบันทึก…';
+let logLoaded = false;
+
+// แปลงรหัสเหตุผลเป็นภาษาคน — ใช้ตาราง WHY_TH ชุดเดียวกับรายการข่าวที่ถูกตัด
+// ⚠️ เพิ่มเหตุผลใหม่ใน noiseReason() ต้องเติม WHY_TH ไม่งั้นที่นี่ก็ขึ้นเป็นรหัสดิบเหมือนกัน
+const logWhy = (w) => (typeof WHY_TH === "object" && WHY_TH[w]) || w;
+
+const fmtWhen = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso || "-";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function renderLog(items) {
+  const box = $("#admLog");
+  if (!items.length) {
+    // ⚠️ ว่างมีได้ 2 ความหมาย ต้องบอกให้ชัดว่าอันไหน ไม่งั้นเข้าใจว่าระบบพัง
+    box.innerHTML = `<p class="logempty"><b>ยังไม่มีบันทึก</b><br>
+      ระบบบันทึกเฉพาะตอนดึงข่าวรอบใหม่ (ประมาณชั่วโมงละครั้งต่อแดชบอร์ด)
+      ไม่ได้บันทึกทุกครั้งที่มีคนเปิดหน้าเว็บ — ถ้าเพิ่งปล่อยของใหม่ ให้รอรอบถัดไป
+      หรือกด <code>?rebuild</code> ที่ท้าย URL ของ API เพื่อสั่งดึงเดี๋ยวนี้</p>`;
+    return;
+  }
+  box.innerHTML = `<ul class="loglist">` + items.map((r) => {
+    const cuts = Object.entries(r.drops || {}).sort((a, b) => b[1] - a[1]);
+    const cls = !r.ok ? "bad" : (r.upstream || []).length ? "warn" : "";
+    const chips = [
+      ...Object.entries(r.counts || {}).map(([k, n]) => `<span class="logchip">${esc(k)} ${n}</span>`),
+      ...cuts.map(([w, n]) => `<span class="logchip cut">✂ ${esc(logWhy(w))} ${n}</span>`),
+      ...(r.upstream || []).map((u) => `<span class="logchip err">⚠ ${esc(u.host)}</span>`),
+      r.ai ? `<span class="logchip">🤖 ถาม AI ${r.ai}</span>` : "",
+      r.kvWrites ? `<span class="logchip">💾 เขียน ${r.kvWrites}</span>` : "",
+    ].filter(Boolean).join("");
+    return `<li class="${cls}">
+      <div class="logtop">
+        <span class="logdot"></span>
+        <span class="logsrc">${esc(r.src || "?")}</span>
+        <span class="logtime">${esc(fmtWhen(r.at))}</span>
+        <span class="logms">${r.ms != null ? r.ms + " ms" : ""} ${esc(r.cache || "")} ${r.env && r.env !== "prod" ? "· " + esc(r.env) : ""}</span>
+      </div>
+      <div class="logbody">${chips}</div>
+      ${r.note ? `<div class="lognote">${esc(r.note)}</div>` : ""}
+    </li>`;
+  }).join("") + `</ul>`;
+}
+
+async function loadLog() {
+  const box = $("#admLog");
+  box.innerHTML = `<p class="logempty">${WAIT_LOG}</p>`;
+  const src = $("#logSrc").value;
+  try {
+    const j = await fetch("/api/log" + (src ? "?src=" + encodeURIComponent(src) : "")).then((r) => r.json());
+    const items = j.items || [];
+    // ตัวเลือกในกล่องกรองสร้างจากของที่มีอยู่จริง ไม่ได้เขียนรายการไว้ตายตัว
+    if (!src) {
+      const seen = [...new Set(items.map((x) => x.src).filter(Boolean))].sort();
+      const sel = $("#logSrc");
+      const keep = sel.value;
+      sel.innerHTML = `<option value="">ทุกแดชบอร์ด</option>` +
+        seen.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+      sel.value = keep;
+    }
+    $("#logMeta").textContent = `${items.length} รายการ` + (j.total > items.length ? ` (ทั้งหมด ${j.total})` : "");
+    renderLog(items);
+  } catch (e) {
+    box.innerHTML = `<p class="logempty">โหลดบันทึกไม่สำเร็จ: ${esc(String(e.message || e))}</p>`;
+  }
+}
+
+function showPage(page) {
+  const isLog = page === "log";
+  $("#pgManage").hidden = isLog;
+  $("#pgLog").hidden = !isLog;
+  $("#scopes").hidden = isLog;   // log ครอบทุกแดชบอร์ด ไม่ใช่ของอันใดอันหนึ่ง
+  $$("#ptabs button").forEach((b) => b.classList.toggle("on", b.dataset.page === page));
+  if (isLog && !logLoaded) { logLoaded = true; loadLog(); }
+}
+
+$("#ptabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-page]");
+  if (b) showPage(b.dataset.page);
+});
+$("#logReload").addEventListener("click", loadLog);
+$("#logSrc").addEventListener("change", loadLog);
