@@ -75,7 +75,6 @@
    *    เปอร์เซ็นต์บนฐานเลขหลักสิบ/ร้อยหลอกตา — เคสจริงจากรอบรีวิว:
    *    Facebook เพิ่มสุทธิ 37 คน แล้วขึ้นว่า ▲23.3% ซึ่งอ่านแล้วเข้าใจผิดว่าโตเยอะ
    *    ⚠️ ห้ามคิด % เองที่อื่น ให้เรียก delta() ตัวนี้เท่านั้น */
-  var DELTA_MIN_BASE = 1000;
 
   var state = {
     tab: "summary",
@@ -110,6 +109,10 @@
     grain: "day",
     // ตาราง "ผลงานรายช่อง" กำลังดูชุดคอลัมน์ไหน — engagement | reach
     perfTab: "engagement",
+    /* คอลัมน์ที่ใช้เรียงแถวย่อย · null = ตามค่าตั้งต้นของแท็บนั้น
+       ⚠️ ต้องอยู่ใน state ไม่ใช่ใน DOM — render() สร้าง innerHTML ใหม่ทั้งก้อน */
+    perfSort: null,
+    perfSortDir: -1,
     // แถวไหนของตารางกางดูคอนเทนต์อยู่ { youtube:true, ... }
     perfOpen: {},
     /* อันดับคอนเทนต์ "ตามยอดที่เกิดในช่วงที่เลือก" — เก็บแยกตามช่วง
@@ -453,7 +456,17 @@
    * ป้ายเปรียบเทียบกับช่วงก่อน
    * ⚠️ เลือก "ไม่เทียบ" = ไม่มีป้ายเลย ไม่ใช่ป้ายที่เขียนว่า 0%
    * ⚠️ ช่วงเทียบไม่มีข้อมูล = บอกว่าไม่มีให้เทียบ ห้ามคิดเป็น +100%
-   * ⚠️ ฐานต่ำกว่า DELTA_MIN_BASE = บอกเป็นจำนวนจริง ไม่ใช่ %
+   *
+   * 🔴 ใช้ % เสมอ (เจ้าของแจ้ง 20 ส.ค. 2026: "อันนึงเป็น % อีกอันเป็นหน่วย")
+   *    ของเดิมมีกฎว่าฐานเดิมต่ำกว่า 1,000 ให้บอกเป็นจำนวนจริงแทน
+   *    เจตนาดี (% บนฐานหลักสิบหลอกตา) แต่ผลคือ **การ์ดในแถวเดียวกันใช้คนละหน่วย**
+   *    Engagement ขึ้น "+6,701" ส่วน Views ข้างๆ ขึ้น "26.2%" อ่านเทียบกันไม่ได้เลย
+   *    และหน่วยยังสลับไปมาเองเวลาเปลี่ยนช่วงเวลา ซึ่งอ่านแล้วเหมือนระบบเพี้ยน
+   * ⚠️ ยังกันเคสฐานเป็นศูนย์อยู่ — หารไม่ได้จริงๆ ต้องบอกว่าไม่มีให้เทียบ
+   * ⚠️ จำนวนจริงย้ายไปอยู่ใน tooltip แทน ไม่ได้หายไป —
+   *    % สูงๆ บนฐานน้อยจะได้ตรวจสอบได้ว่ามาจากเลขอะไร
+   * ⚠️ อัตราส่วน (ER · Retention · View rate) ยังเป็น pt เหมือนเดิมและถูกแล้ว
+   *    ตัวมันเป็น % อยู่แล้ว "จาก 40% เป็น 43%" คือ +3 pt ไม่ใช่ +7.5%
    */
   function delta(cur, prev, opt) {
     if (state.compare === "none") return "";
@@ -481,24 +494,18 @@
 
     var diff = cur - prev;
 
-    // 🔴 ฐานเล็ก → จำนวนจริง (เช่น +7) เพราะ % บนฐานหลักสิบหลักร้อยหลอกตา
-    if (Math.abs(prev) < DELTA_MIN_BASE) {
-      var mag = Math.abs(diff);
-      var txt = mag < 1 ? mag.toFixed(1) : String(Math.round(mag));
-      var dirA = dirOf(txt, diff);
-      return '<span class="dlt ' + dirA + '" title="เทียบกับ' + esc(compareText()) +
-        " · บอกเป็นจำนวนจริงเพราะฐานน้อยกว่า " + DELTA_BASE_LABEL + '">' +
-        arrow(dirA) + " " + (dirA === "down" ? "−" : dirA === "up" ? "+" : "") +
-        Number(txt).toLocaleString("th-TH") + "</span>";
-    }
-
+    // ฐานเป็นศูนย์ = หารไม่ได้ ต้องบอกว่าไม่มีให้เทียบ ห้ามคิดเป็น +100%
     if (!prev) return '<span class="dlt none">ไม่มีข้อมูลเทียบ</span>';
+
     var rr = (diff / Math.abs(prev)) * 100;
     var rTxt = Math.abs(rr).toFixed(1);
     var dir = dirOf(rTxt, rr);
-    return '<span class="dlt ' + dir + '"' + vs + ">" + arrow(dir) + " " + rTxt + "%</span>";
+    var sign = diff > 0 ? "+" : diff < 0 ? "−" : "";
+    var raw = Math.abs(diff) < 1 ? Math.abs(diff).toFixed(1) : Math.round(Math.abs(diff)).toLocaleString("th-TH");
+    return '<span class="dlt ' + dir + '" title="เทียบกับ' + esc(compareText()) +
+      " · " + sign + raw + " จากเดิม " + Math.round(Math.abs(prev)).toLocaleString("th-TH") + '">' +
+      arrow(dir) + " " + rTxt + "%</span>";
   }
-  var DELTA_BASE_LABEL = DELTA_MIN_BASE.toLocaleString("th-TH");
 
   /* ── ชิ้นส่วนหน้าจอ ──────────────────────────────────────────────── */
 
@@ -859,15 +866,31 @@
     var shareTot = 0;
     order.forEach(function (pk) { if (cur[pk]) shareTot += cur[pk].reach; });
 
+    /* 🔴 Engagement รวม ย้ายมาไว้หน้าสุด (เจ้าของสั่ง 20 ส.ค. 2026)
+       เป็นตัวที่ตารางเรียงตามอยู่ ต้องอยู่ติดชื่อคอนเทนต์ถึงจะกวาดตาอ่านได้
+       ของเดิมอยู่คอลัมน์ที่ 4 ต้องเลื่อนสายตาข้าม Likes/Comments/Shares ไปก่อน */
     var ENG_COLS = [
+      { key: "engagement", label: "Engagement รวม", strong: true, always: true },
       { key: "likes", label: "Likes", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
       { key: "comments", label: "Comments", na: "ช่องนี้ไม่เปิดเผยตัวเลขนี้" },
       { key: "shares", label: "Shares", na: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API" },
-      { key: "engagement", label: "Engagement รวม", strong: true, always: true },
       { key: "er", label: "ER", fmt: "pct", pp: true, always: true,
         tip: "แต่ละช่องคิด ER คนละสูตร เทียบข้ามช่องตรงๆ ไม่ได้" },
     ];
     var COLS = ptab === "engagement" ? ENG_COLS : C.VIEW_COLS;
+
+    /* ⚠️ ค่าตั้งต้นต้องตรงกับ KPI ของแท็บที่เปิดอยู่ (เจ้าของสั่ง 20 ส.ค. 2026)
+       แท็บ Engagement เรียงตาม Engagement รวม · แท็บ Views เรียงตาม Views/Reach
+       ⚠️ สลับแท็บแล้วคีย์ที่เคยเลือกไว้อาจไม่มีในชุดใหม่ ต้องตกกลับเป็นค่าตั้งต้น
+          ไม่งั้นเรียงด้วยคีย์ที่ไม่มีอยู่ = ทุกแถวได้ 0 ลำดับมั่วโดยไม่มีอะไรบอก */
+    var defSort = ptab === "engagement" ? "engagement" : "reach";
+    var sortKey = state.perfSort && COLS.some(function (c2) { return c2.key === state.perfSort; })
+      ? state.perfSort : defSort;
+    var sortDir = state.perfSortDir === 1 ? 1 : -1;
+    /* ⚠️ เขียนคีย์ที่ใช้จริงกลับเข้า state ด้วย — ไม่งั้นตอนยังเป็นค่าตั้งต้น (null)
+       ตัวรับคลิกจะเทียบไม่ตรง แล้วการกดคอลัมน์ที่เรียงอยู่แล้วครั้งแรกจะไม่สลับทิศ
+       (กดแล้วไม่มีอะไรเกิดขึ้น ดูเหมือนปุ่มเสีย) */
+    state.perfSort = sortKey;
 
     /** ค่าของคอลัมน์นั้นสำหรับช่องนี้ — คืน null เมื่อช่องนี้ไม่มีตัวเลขนั้น */
     function colVal(c2, a, pk) {
@@ -896,7 +919,13 @@
       }).join("") + "</div>" +
       '<div class="tblwrap"><table class="tbl perf"><thead><tr><th>ช่อง</th>' +
       COLS.map(function (c2) {
-        return '<th class="num">' + esc(c2.label) +
+        /* 🔴 กดหัวคอลัมน์เพื่อเรียง (เจ้าของสั่ง 20 ส.ค. 2026)
+           ⚠️ เรียงเฉพาะแถวย่อยรายคอนเทนต์ ไม่ได้เรียงแถวช่อง —
+              ลำดับช่องเป็นค่าคงที่ของทั้งหน้า สลับไปมาแล้วหาไม่เจอ */
+        var on = sortKey === c2.key;
+        return '<th class="num srt' + (on ? " on" : "") + '"><button type="button" class="srtb" data-sort="' +
+          esc(c2.key) + '" title="เรียง' + esc(c2.label) + '">' + esc(c2.label) +
+          '<span class="srta">' + (on ? (sortDir < 0 ? "▼" : "▲") : "↕") + "</span></button>" +
           (c2.tip ? ' <button type="button" class="tipi" data-tip="' + esc(c2.tip) + '" title="' +
             esc(c2.tip) + '" aria-label="คำอธิบาย">ⓘ</button>' : "") + "</th>";
       }).join("") + "</tr></thead><tbody>";
@@ -936,8 +965,18 @@
 
       /* แถวย่อย: คอนเทนต์ที่ทำยอดนั้น เรียงจากมากไปน้อยตามคอลัมน์หลักของแท็บ
          ⚠️ ค่าต่อโพสต์ที่ช่องไม่ได้ให้มา ต้องขึ้น "—" เหมือนแถวบน ไม่ใช่ 0 */
-      var mainKey = ptab === "engagement" ? "engagement" : "reach";
-      var list = postsIn(pk, r).map(function (po) {
+      /* 🔴 เจ้าของสั่ง 20 ส.ค. 2026: เอา "ทุกคลิปที่มียอดในช่วงนี้" ไม่ดูวันที่ลง
+         เกณฑ์เดียวกับการ์ดคอนเทนต์เด่นด้านล่าง — ของเดิมตารางใช้ "คลิปที่ลงในช่วงนี้"
+         ซึ่งเป็นคนละกฎกันอยู่ในหน้าเดียว และตอบไม่ได้ว่ายอดของช่องมาจากคลิปไหน
+         ⚠️ ยังไม่ครบ 100% อยู่ดี — YouTube ให้อันดับมาได้จำกัด ดูหมายเหตุใต้ตาราง */
+      var inRange = topFor(pk, r);
+      if (inRange === undefined) {
+        h += '<tr class="perf-sub"><td colspan="' + (COLS.length + 1) + '" class="sub-note">' +
+          '<span class="spin"></span> กำลังดึงคอนเทนต์ที่ทำยอดในช่วงนี้…</td></tr>';
+        return;
+      }
+      var byRange = !!inRange;
+      var list = (inRange || postsIn(pk, r)).map(function (po) {
         var one = { likes: po.likes || 0, comments: po.comments || 0, shares: po.shares || 0 };
         one[P.reachKey] = po[P.reachKey] || 0;
         one.reach = C.reachOf(pk, one);
@@ -952,21 +991,40 @@
         one.posts = 1;
         one.avgPerPost = one.reach;
         return { po: po, a: one };
-      }).sort(function (x, y) { return (y.a[mainKey] || 0) - (x.a[mainKey] || 0); });
+      }).sort(function (x, y) {
+        /* ⚠️ ค่าที่ไม่มี (null) ต้องไปอยู่ท้ายเสมอ ไม่ว่าจะเรียงขึ้นหรือลง
+           ปล่อยให้ null กลายเป็น 0 แล้วเรียงขึ้น มันจะขึ้นไปอยู่บนสุด
+           = "ไม่รู้ค่า" ดูเหมือน "น้อยที่สุด" ซึ่งคนละเรื่องกัน */
+        var xv = colVal({ key: sortKey, always: true }, x.a, pk);
+        var yv = colVal({ key: sortKey, always: true }, y.a, pk);
+        if (xv == null && yv == null) return 0;
+        if (xv == null) return 1;
+        if (yv == null) return -1;
+        return (xv - yv) * sortDir;
+      });
 
       if (!list.length) {
         h += '<tr class="perf-sub"><td colspan="' + (COLS.length + 1) + '" class="sub-none">' +
-          "ไม่มี" + esc(P.contentWord) + "ที่เผยแพร่ในช่วงนี้ — ตัวเลขข้างบนมาจากโพสต์เก่า</td></tr>";
+          "ไม่มี" + esc(P.contentWord) + "ที่มียอดเข้ามาในช่วงนี้</td></tr>";
         return;
       }
 
-      /* ⚠️ ยอดของช่องไม่ได้มาจากโพสต์ในช่วงนี้ทั้งหมด — โพสต์เก่ายังมีคนดูอยู่
-         ไม่บอกไว้ เจ้าของจะบวกแถวย่อยแล้วงงว่าทำไมไม่เท่ายอดข้างบน */
+      /* ⚠️ บอกให้ชัดว่าครอบคลุมกี่ % ของยอดช่อง
+         ⚠️ ต่อให้คิดจาก "ยอดที่เกิดในช่วง" แล้วก็ยังไม่ครบ 100% เพราะ YouTube
+            ส่งอันดับกลับมาได้จำกัด ส่วนหางยาวของคลิปเล็กๆ ไม่ได้อยู่ในลิสต์
+            ไม่เขียนบอก เจ้าของจะบวกแถวย่อยแล้วงงว่าทำไมไม่เท่ายอดข้างบน (เจอจริง 20 ส.ค.) */
+      var mainKey = ptab === "engagement" ? "engagement" : "reach";
       var covered = list.reduce(function (t2, x) { return t2 + (x.a[mainKey] || 0); }, 0);
       var whole = a ? a[mainKey] || 0 : 0;
       h += '<tr class="perf-sub"><td colspan="' + (COLS.length + 1) + '" class="sub-note">' +
-        esc(P.contentWord) + "ที่เผยแพร่ในช่วงนี้ " + list.length + " ใบ คิดเป็น " +
-        esc(whole ? pct(covered / whole) : "—") + " ของยอดช่อง — ที่เหลือมาจากโพสต์ที่ลงไว้ก่อนหน้า</td></tr>";
+        (byRange
+          ? esc(P.contentWord) + "ที่มียอดเข้ามาในช่วงนี้ " + list.length + " ใบ คิดเป็น " +
+            esc(whole ? pct(covered / whole) : "—") + " ของยอดช่อง — ไม่ได้ดูว่าลงเมื่อไหร่ " +
+            "· ที่ยังขาดคือหางยาวของคลิปเล็กๆ ที่ต้นทางไม่ได้ส่งอันดับมาให้"
+          : esc(P.contentWord) + "ที่เผยแพร่ในช่วงนี้ " + list.length + " ใบ คิดเป็น " +
+            esc(whole ? pct(covered / whole) : "—") + " ของยอดช่อง — ช่องนี้ยังดึง " +
+            "\"ยอดที่เกิดในช่วง\" ไม่ได้ จึงคัดจากวันที่ลงแทน") +
+        "</td></tr>";
 
       list.forEach(function (x) {
         var live = x.po.url && x.po.url !== "#";
@@ -2000,6 +2058,13 @@
 
     if (t.dataset.tch) { state.trendCh = t.dataset.tch; render(); return; }
     if (t.dataset.grain) { state.grain = t.dataset.grain; render(); return; }
+    if (t.dataset.sort && t.classList.contains("srtb")) {
+      /* กดคอลัมน์เดิมซ้ำ = สลับขึ้น/ลง · กดคอลัมน์ใหม่ = เริ่มจากมากไปน้อย
+         (คนอ่านตารางอยากรู้ "ตัวไหนเยอะสุด" ก่อนเสมอ) */
+      if (state.perfSort === t.dataset.sort) state.perfSortDir = state.perfSortDir === 1 ? -1 : 1;
+      else { state.perfSort = t.dataset.sort; state.perfSortDir = -1; }
+      render(); return;
+    }
     if (t.dataset.ptab) { state.perfTab = t.dataset.ptab; render(); return; }
     if (t.dataset.perf) {
       var rk = t.dataset.perf;

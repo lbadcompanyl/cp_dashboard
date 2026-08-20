@@ -19,7 +19,11 @@ const API = "https://www.googleapis.com/youtube/v3";
 const OAUTH_TOKEN = "https://oauth2.googleapis.com/token";
 const ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports";
 
-const TOP_N = 10;
+/* 🔴 ขยายจาก 10 เป็น 50 (เจ้าของสั่ง 20 ส.ค. 2026) — ตารางที่กางออกมาต้องโชว์
+   "ทุกคลิปที่มียอดในช่วงนี้" ไม่ใช่แค่ 10 อันดับแรก
+   ⚠️ 50 คือเพดานของ Data API ตอนขอชื่อ/รูปคลิป (videos?id=... รับได้ 50 ต่อคำขอ)
+      จะเอามากกว่านี้ต้องยิงหลายรอบ = โควตาเพิ่มโดยได้หางยาวที่ยอดแทบไม่มีผล */
+const TOP_N = 50;
 const EDGE_TTL = 1800;            // 30 นาที — อันดับไม่ได้เปลี่ยนรายนาที
 const KV_FRESH = 60 * 60 * 1000;  // ของใน KV อายุไม่เกิน 1 ชม. = ยังสด
 

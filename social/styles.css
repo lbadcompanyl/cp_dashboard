@@ -546,6 +546,19 @@ body {
 .share-s { display:flex; align-items:center; justify-content:center; min-width:2px; }
 .share-s b { font-size:.72rem; font-weight:700; color:#fff; }
 
+/* ── หัวตารางกดเรียงได้ ────────────────────────────────────────────
+   ⚠️ ลูกศรต้องกินที่คงที่ ไม่งั้นสลับคอลัมน์ที่เรียงอยู่แล้วตารางขยับทั้งตาราง */
+.tbl.perf th.srt { padding:0; }
+.srtb {
+  display:inline-flex; align-items:center; gap:4px; width:100%; justify-content:flex-end;
+  border:0; background:transparent; color:inherit; font:inherit; cursor:pointer;
+  padding:9px 10px; border-radius:6px;
+}
+.srtb:hover { background:var(--surface-2); }
+.srta { font-size:.62rem; color:var(--muted); width:9px; text-align:center; flex:none; }
+.tbl.perf th.srt.on .srtb { color:var(--accent); }
+.tbl.perf th.srt.on .srta { color:var(--accent); }
+
 /* ── diverging bar: หายไปทางซ้าย เพิ่มมาทางขวา ───────────────────── */
 .dv { display:flex; flex-direction:column; }
 .dv-row { display:grid; grid-template-columns:1fr auto; gap:4px 10px; align-items:center;
