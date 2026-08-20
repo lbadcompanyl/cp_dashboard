@@ -320,11 +320,12 @@ const FOPEN_KEY = "archivesFiltersOpen";
 function setFiltersOpen(open) {
   $("#filters").hidden = !open;
   $("#ftoggle").setAttribute("aria-expanded", open ? "true" : "false");
-  $(".fcaret").textContent = open ? "▾" : "▸";
+  $("#ftoggle .fcaret").textContent = open ? "▾" : "▸";
   try { localStorage.setItem(FOPEN_KEY, open ? "1" : "0"); } catch {}
 }
 
 // สรุปว่ากรองอะไรไว้ — ต้องอ่านรู้เรื่องโดยไม่ต้องกางกล่อง
+// คืน [จำนวนตัวกรองที่เปิดอยู่, ข้อความสรุป]
 function filterSummary() {
   const bits = [];
   if (state.cats.size) bits.push([...state.cats].join(", "));
@@ -336,7 +337,7 @@ function filterSummary() {
     bits.push(state.from && state.to ? `${th(state.from)}–${th(state.to)}`
       : state.from ? `ตั้งแต่ ${th(state.from)}` : `ถึง ${th(state.to)}`);
   }
-  return bits.length ? bits.join(" · ") : "ยังไม่ได้กรอง — แตะเพื่อเลือกวันที่ หมวด หรือสำนักข่าว";
+  return [bits.length, bits.length ? "กรองอยู่: " + bits.join(" · ") : ""];
 }
 
 function renderCount() {
@@ -348,7 +349,13 @@ function renderCount() {
     `<span class="dim"> · ค้นในปี ${loadedYears.join(", ")}${older.length ? ` (ยังไม่รวม ${older.join(", ")})` : ""}</span>`;
   $("#clearall").hidden = !hasFilter();
   $("#qclear").hidden = !state.q;
-  $("#fsum").textContent = filterSummary();
+
+  // ⚠️ ตัวกรองพับอยู่เป็นปกติ ถ้าไม่บอกว่ากรองอะไรไว้ จะเห็นเลขน้อยลงแล้วไม่รู้ว่าเพราะอะไร
+  const [nFilters, sum] = filterSummary();
+  $("#fbadge").hidden = !nFilters;
+  $("#fbadge").textContent = nFilters || "";
+  $("#fsum").hidden = !sum;
+  $("#fsum").textContent = sum;
   $("#loadednote").textContent = older.length
     ? `เลือกวันที่ย้อนไปถึงปีไหน ระบบจะโหลดปีนั้นให้เอง (ยังไม่โหลด: ${older.join(", ")})`
     : "โหลดครบทุกปีแล้ว";

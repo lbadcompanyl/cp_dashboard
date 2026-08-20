@@ -416,7 +416,8 @@ console.log("\n[9b] กล่องตัวกรองพับได้");
   await fakeData(fresh);
   const p = await open(fresh);
   ok("เปิดหน้ามาตัวกรองพับอยู่", await p.$eval("#filters", (e) => e.hidden));
-  ok("หัวกล่องบอกว่ายังไม่ได้กรอง", /ยังไม่ได้กรอง/.test(await p.$eval("#fsum", (e) => e.textContent)));
+  ok("ยังไม่ได้กรอง = ไม่มีป้ายบอกอะไรให้รก",
+    (await p.$eval("#fsum", (e) => e.hidden)) && (await p.$eval("#fbadge", (e) => e.hidden)));
   ok("มีปุ่มกางให้เห็น", await p.$eval("#ftoggle", (e) => e.offsetHeight > 0));
 
   await p.click("#ftoggle");
@@ -428,13 +429,16 @@ console.log("\n[9b] กล่องตัวกรองพับได้");
   const cat = await p.$eval("#cats .ch", (b) => b.dataset.cat);
   await p.click(`#cats [data-cat="${cat}"]`);
   await p.waitForTimeout(120);
-  ok("หัวกล่องสรุปหมวดที่เลือกไว้", (await p.$eval("#fsum", (e) => e.textContent)).includes(cat),
+  ok("สรุปบอกหมวดที่เลือกไว้", (await p.$eval("#fsum", (e) => e.textContent)).includes(cat),
     await p.$eval("#fsum", (e) => e.textContent));
+  ok("ปุ่มตัวกรองขึ้นเลขบอกว่ากรองอยู่กี่อย่าง",
+    (await p.$eval("#fbadge", (e) => e.textContent)) === "1");
 
   await p.click("#ftoggle");
   await p.waitForTimeout(100);
   ok("กดอีกทีพับกลับ", await p.$eval("#filters", (e) => e.hidden));
-  ok("พับแล้วยังอ่านออกว่ากรองอะไรอยู่", (await p.$eval("#fsum", (e) => e.textContent)).includes(cat));
+  ok("พับแล้วยังอ่านออกว่ากรองอะไรอยู่",
+    !(await p.$eval("#fsum", (e) => e.hidden)) && (await p.$eval("#fsum", (e) => e.textContent)).includes(cat));
 
   // ⚠️ จำสถานะไว้ ไม่ใช่กางใหม่ทุกครั้งที่เปิดหน้า
   await p.click("#ftoggle");
