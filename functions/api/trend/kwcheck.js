@@ -1,3 +1,4 @@
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 // GET /api/trend/kwcheck?q=ไข่แพง&geo=TH&time=today%2012-m
 // เช็ค Trend ของคำเดียว ว่าคนสนใจแค่ไหน — ใช้ตัดสินว่าควรเอาเข้า Alert ไหม
 //
@@ -44,7 +45,13 @@ export async function onRequest(context) {
     { method: "GET" }
   );
   const hit = await cache.match(key);
+  // ⚠️ cache hit ต้องออกก่อนถึงบรรทัด log — ไม่งั้นทุกครั้งที่กดค้นซ้ำกินโควตา KV
   if (hit) return browserCopy(hit);
+
+  // บันทึกระบบ — ผู้ใช้พิมพ์คำอะไรก็ได้ cache key จึงไม่มีขอบเขต
+  // **ห้ามบันทึกทุกครั้งที่ค้น** บันทึกเฉพาะตอนดึงไม่ได้ (เช่นโดน Google แบน 429)
+  resetLog();
+  const L = startLog("trend/kwcheck");
 
   const out = { q, geo, time, interest: null, related: { top: [], rising: [] }, volume: { available: false }, errors: [] };
 
@@ -79,6 +86,12 @@ export async function onRequest(context) {
   // แต่ก็ต้องสั้นพอที่พอหายแบนแล้วกดใหม่ได้ผลทันที
   const resp = json(out, 200, ok ? EDGE_TTL : 60);
   context.waitUntil(cache.put(key, resp.clone()));
+
+  L.cache = "miss";
+  for (const e of out.errors) L.fail("trends.google.com", e);
+  if (out.rateLimited) L.warn("Google แบนชั่วคราว (429) — เช็คคำไม่ได้");
+  else if (!ok) L.warn("ดึงข้อมูลเช็คคำไม่ได้: " + q.slice(0, 40));
+  context.waitUntil(finishLog(env, L, { err: ok ? "" : "ดึงข้อมูลไม่สำเร็จ" }));
   return browserCopy(resp);
 }
 

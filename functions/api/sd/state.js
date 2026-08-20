@@ -1,3 +1,4 @@
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 // Cloudflare Pages Function: /api/sd/state  (GET อ่าน · POST เขียนทั้งชุด)
 // เก็บ topic (กลุ่ม) + keyword set ของ SD dashboard บน KV → sync ข้ามเครื่อง (ชุดเดียวรวมทั้งองค์กร)
 // ใช้ binding FLAGS_KV เดียวกับ IR/PR · APP_ENV prefix แยก dev/prod
@@ -37,7 +38,17 @@ export async function onRequest(context) {
     try { body = await request.json(); } catch {}
     const s = clean(body);
     if (!s) return json({ error: "bad state" }, 400);
-    await env.FLAGS_KV.put(kvKey(env), JSON.stringify(s));
+    // ⚠️ บันทึกระบบ **เฉพาะตอนเขียนไม่สำเร็จ** — ตอนสำเร็จเขียน KV ไปแล้ว 1 ครั้ง
+    //    ถ้าบันทึก log ด้วยจะกลายเป็น 2 ครั้งต่อการบันทึกค่า 1 ครั้ง
+    try {
+      await env.FLAGS_KV.put(kvKey(env), JSON.stringify(s));
+    } catch (e) {
+      const err = String((e && e.message) || e).slice(0, 80);
+      resetLog();
+      const L = startLog("sd/state");
+      context.waitUntil(finishLog(env, L, { err }));
+      return json({ error: "บันทึกไม่สำเร็จ: " + err }, 500);
+    }
     return json({ configured: true, state: s });
   }
 

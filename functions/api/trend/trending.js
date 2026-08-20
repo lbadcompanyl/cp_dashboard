@@ -4,6 +4,7 @@
 
 import { parseTrends } from "./_lib/parser.js";
 import { fetchTrendingNow } from "./_lib/trends.js";
+import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 
 const VALID_HOURS = [4, 24, 48, 168];
 // หมวดหมู่แบบ Google Trends "Trending now" (0 = ทุกหมวด) — ต้องตรงกับ dropdown ใน trend/index.html
@@ -21,8 +22,11 @@ export async function onRequest(context) {
   const cache = caches.default;
   const key = new Request(url.origin + `/api/trend/trending?geo=${geo}&hours=${hours}&cat=${cat}&v=5`, { method: "GET" });
   const hit = await cache.match(key);
+  // ⚠️ cache hit ต้องออกก่อนถึงบรรทัด log — ไม่งั้นทุกคนที่เปิดหน้าเว็บกินโควตา KV คนละครั้ง
   if (hit) return browserCopy(hit);
 
+  resetLog();
+  const L = startLog("trend/trending");
   const out = { geo, hours, cat, items: [], error: null, source: "trendingnow" };
   try {
     out.items = await fetchTrendingNow(geo, hours, cat);
@@ -55,6 +59,16 @@ export async function onRequest(context) {
   });
   // cache เฉพาะตอนมีข้อมูลจริง — ถ้าดึงไม่ได้เลย อย่าเก็บไว้ ให้รอบหน้าลองใหม่
   if (out.items.length > 0) context.waitUntil(cache.put(key, edge.clone()));
+
+  // บันทึกเฉพาะตอนพัง/ผิดปกติ — endpoint นี้ cache key แตกตาม geo/hours/cat
+  // ถ้าบันทึกทุก build จะกินโควตา KV เป็นสิบเท่าของข่าว (ดูเหตุผลเต็มใน _lib/syslog.js)
+  L.cache = "miss";
+  L.count("items", out.items.length);
+  if (out.source !== "trendingnow") L.warn("ตกไปใช้ต้นทางสำรอง (RSS)");
+  if (out.error) L.fail("trends.google.com", out.error);
+  // "ทุกหมวด" แล้วยังว่าง = ผิดปกติ · หมวดเจาะจงว่างได้ตามปกติ ไม่ต้องบันทึก
+  else if (!out.items.length && cat === 0) L.warn("ดึงสำเร็จแต่ไม่ได้เทรนด์เลย");
+  context.waitUntil(finishLog(context.env, L, { err: out.items.length ? "" : (out.error || "") }));
   return browserCopy(edge);
 }
 

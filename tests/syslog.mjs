@@ -163,7 +163,9 @@ console.log("\n[6] แท็บบนหน้า admin");
 
   const rows = await p.$$eval(".loglist li", (els) => els.map((e) => e.textContent.replace(/\s+/g, " ").trim()));
   ok("แสดงครบทุกแถว", rows.length === 3, `${rows.length}`);
-  ok("บอกว่ามาจากแดชบอร์ดไหน", rows[0].includes("trend/feeds"));
+  // ⚠️ ต้องเป็นชื่อภาษาคน ไม่ใช่ path ของโค้ด (กฎเดียวกับ WHY_TH ของรายการข่าวที่ถูกตัด)
+  ok("บอกว่ามาจากช่องไหน เป็นภาษาคน ไม่ใช่ path ดิบ",
+     rows[0].includes("ข่าว PR") && !rows[0].includes("trend/feeds"), rows[0].slice(0, 80));
   ok("แปลรหัสเหตุผลเป็นภาษาคน ไม่ใช่รหัสดิบ",
     rows[0].includes("หน้ารวมบทความ") || !rows[0].includes("archive-page"), rows[0].slice(0, 160));
   ok("บอกจำนวนข่าวที่ได้", rows[0].includes("news 40"));
@@ -179,7 +181,7 @@ console.log("\n[6] แท็บบนหน้า admin");
   await p.selectOption("#logSrc", "ir/feeds");
   await p.waitForTimeout(400);
   const only = await p.$$eval(".loglist .logsrc", (els) => [...new Set(els.map((e) => e.textContent))]);
-  ok("กรองตามแดชบอร์ดได้", only.length === 1 && only[0] === "ir/feeds", JSON.stringify(only));
+  ok("กรองตามแดชบอร์ดได้", only.length === 1 && only[0] === "ข่าว IR", JSON.stringify(only));
 
   // ว่างต้องอธิบายว่าทำไมถึงว่าง ไม่ใช่ปล่อยหน้าเปล่า
   await ctx.route("**/api/log*", (r) =>
@@ -195,6 +197,63 @@ console.log("\n[6] แท็บบนหน้า admin");
   ok("ไม่มี JS error", errs.length === 0, errs.join(" | "));
 
   await browser.close();
+}
+
+// ── [7] ครอบทุกช่อง ไม่ใช่แค่ข่าว 2 ช่อง ────────────────────────────────
+// เจ้าของสั่ง: "log activities ต่างๆ ไว้แก้ปัญหา" — ของเดิมบันทึกแค่ trend/feeds กับ ir/feeds
+// ซึ่งเป็น 2 จุดจาก 20 จุด และไม่ใช่จุดที่พังบ่อยที่สุด (X/YouTube พึ่งเซิร์ฟเวอร์อาสาสมัคร)
+console.log("\n[7] บันทึกครอบทุกช่อง และทุกชื่อต้องแปลเป็นภาษาคนได้");
+{
+  const admin = fs.readFileSync("../admin/app.js", "utf8");
+  const files = [];
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = d + "/" + e.name;
+      if (e.isDirectory()) walk(f);
+      else if (e.name.endsWith(".js")) files.push(f);
+    }
+  })("../functions");
+
+  const sources = new Set();
+  const builtTrue = new Set();
+  for (const f of files) {
+    const src = fs.readFileSync(f, "utf8");
+    for (const m of src.matchAll(/startLog\("([^"]+)"\)/g)) sources.add(m[1]);
+    // ตัวไลบรารีเองมีคำนี้ในคอมเมนต์/ค่าปริยาย ไม่นับ — ดูเฉพาะ endpoint ที่เรียกใช้
+    if (!f.includes("_lib/") && /built:\s*true/.test(src)) builtTrue.add(f.replace("../functions/", ""));
+  }
+
+  // ช่องที่พังบ่อยที่สุดต้องอยู่ในนั้นแน่ๆ
+  for (const need of ["trend/feeds", "ir/feeds", "trend/trending", "trend/xtrends",
+                      "trend/yttrends", "trend/kwcheck", "trend/archive", "sd/news",
+                      "api/allow", "api/flags"]) {
+    ok(`บันทึกช่อง ${need} ด้วย`, sources.has(need));
+  }
+
+  // ⚠️ ทุกชื่อที่บันทึกได้ ต้องมีคำแปลไทย ไม่งั้นเจ้าของเห็นเป็น path ของโค้ด
+  for (const s2 of [...sources].sort()) {
+    ok(`แปลชื่อ "${s2}" เป็นภาษาคนได้`, admin.includes(`"${s2}":`));
+  }
+
+  // ⚠️ กฎโควตา: `built: true` ใช้ได้เฉพาะ endpoint ที่มี cache key เดียว (ข่าว PR / ข่าว IR)
+  //    endpoint ที่ cache key แตกตามพารามิเตอร์ ถ้าส่ง built:true จะเขียน KV ทุก build = โควตาหมด
+  ok("มีแค่ข่าว PR/IR ที่บันทึกทุก build (ที่เหลือบันทึกเฉพาะตอนผิดปกติ)",
+     [...builtTrue].sort().join(",") === "api/ir/feeds.js,api/trend/feeds.js",
+     [...builtTrue].join(","));
+
+  // ⚠️ ตัวกันเขียนซ้ำ — ถ้าต้นทางล่มยาว ทุก request จะเป็น build ที่ error
+  const lib = fs.readFileSync("../functions/api/_lib/syslog.js", "utf8");
+  ok("มีตัวกันเขียนซ้ำเรื่องเดิมรัวๆ", /throttled\(/.test(lib) && /caches\.default/.test(lib));
+  ok("ตัวกันเขียนซ้ำใช้กับของที่ไม่ใช่ build ปกติเท่านั้น", /if \(!built\)[\s\S]{0,200}?throttled\(/.test(lib));
+
+  // ⚠️ cache hit ห้ามเขียน log — ต้อง return ออกก่อนถึง startLog เสมอ
+  for (const f of ["api/trend/trending.js", "api/trend/xtrends.js", "api/trend/yttrends.js",
+                   "api/trend/kwcheck.js", "api/sd/news.js"]) {
+    const src = fs.readFileSync("../functions/" + f, "utf8");
+    const hitAt = src.search(/if \(hit\) return/);
+    const logAt = src.indexOf("startLog(");
+    ok(`${f}: cache hit ออกก่อนบรรทัด log`, hitAt !== -1 && logAt > hitAt);
+  }
 }
 
 console.log("\n" + (fail ? "❌ ตก" : "✅ ผ่านหมด") + " — ผ่าน " + pass + " · ตก " + fail + "\n");

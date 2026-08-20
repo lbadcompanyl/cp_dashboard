@@ -264,6 +264,27 @@ let logLoaded = false;
 // ⚠️ เพิ่มเหตุผลใหม่ใน noiseReason() ต้องเติม WHY_TH ไม่งั้นที่นี่ก็ขึ้นเป็นรหัสดิบเหมือนกัน
 const logWhy = (w) => (typeof WHY_TH === "object" && WHY_TH[w]) || w;
 
+// ชื่อจุดที่บันทึก — แปลเป็นภาษาคน ไม่ใช่ path ของโค้ด
+// ⚠️ **เพิ่ม startLog("...") ที่ endpoint ไหน ต้องมาเติมชื่อไทยที่นี่ด้วย**
+//    ไม่งั้นเจ้าของจะเห็นเป็น path ดิบ — เทสต์ `syslog.mjs` มีด่านจับ
+const SRC_TH = {
+  "trend/feeds": "ข่าว PR",
+  "ir/feeds": "ข่าว IR",
+  "trend/trending": "Google Trends",
+  "trend/xtrends": "เทรนด์ X",
+  "trend/yttrends": "คลิป YouTube",
+  "trend/kwcheck": "เช็ค Trend",
+  "trend/related": "คำที่เกี่ยวข้อง",
+  "trend/trendnews": "ข่าวของเทรนด์",
+  "trend/archive": "คลังข่าว (ชีตมาดึง)",
+  "sd/news": "ข่าว SD",
+  "api/allow": "ปุ่ม ↩/⚑",
+  "api/flags": "ปุ่ม ⚑/🗂 บนการ์ด",
+  "issue/state": "ค่าที่ตั้งไว้ (Issue)",
+  "sd/state": "ค่าที่ตั้งไว้ (SD)",
+};
+const logSrcTH = (s) => SRC_TH[s] || s || "?";
+
 const fmtWhen = (iso) => {
   const d = new Date(iso);
   if (isNaN(d)) return iso || "-";
@@ -275,10 +296,11 @@ function renderLog(items) {
   const box = $("#admLog");
   if (!items.length) {
     // ⚠️ ว่างมีได้ 2 ความหมาย ต้องบอกให้ชัดว่าอันไหน ไม่งั้นเข้าใจว่าระบบพัง
-    box.innerHTML = `<p class="logempty"><b>ยังไม่มีบันทึก</b><br>
-      ระบบบันทึกเฉพาะตอนดึงข่าวรอบใหม่ (ประมาณชั่วโมงละครั้งต่อแดชบอร์ด)
-      ไม่ได้บันทึกทุกครั้งที่มีคนเปิดหน้าเว็บ — ถ้าเพิ่งปล่อยของใหม่ ให้รอรอบถัดไป
-      หรือกด <code>?rebuild</code> ที่ท้าย URL ของ API เพื่อสั่งดึงเดี๋ยวนี้</p>`;
+    box.innerHTML = `<p class="logempty"><b>ยังไม่มีบันทึก — ปกติ ไม่ใช่ระบบพัง</b><br>
+      ที่นี่บันทึก 2 อย่างเท่านั้น: <b>ตอนดึงข่าวรอบใหม่</b> (ชั่วโมงละครั้งต่อแดชบอร์ด)
+      กับ <b>ตอนมีอะไรผิดปกติ</b> (ต้นทางล่ม · ดึงไม่ได้ · บันทึกไม่สำเร็จ)<br>
+      ช่องอื่นที่ทำงานราบรื่นจะไม่เขียนอะไรเลย เพราะโควตาการเขียนมีจำกัดและใช้ร่วมกันทั้งเว็บ<br>
+      อยากเห็นเดี๋ยวนี้ ให้กด <code>?rebuild</code> ที่ท้าย URL ของ API เพื่อสั่งดึงรอบใหม่</p>`;
     return;
   }
   box.innerHTML = `<ul class="loglist">` + items.map((r) => {
@@ -294,7 +316,7 @@ function renderLog(items) {
     return `<li class="${cls}">
       <div class="logtop">
         <span class="logdot"></span>
-        <span class="logsrc">${esc(r.src || "?")}</span>
+        <span class="logsrc" title="${esc(r.src || "")}">${esc(logSrcTH(r.src))}</span>
         <span class="logtime">${esc(fmtWhen(r.at))}</span>
         <span class="logms">${r.ms != null ? r.ms + " ms" : ""} ${esc(r.cache || "")} ${r.env && r.env !== "prod" ? "· " + esc(r.env) : ""}</span>
       </div>
@@ -317,7 +339,7 @@ async function loadLog() {
       const sel = $("#logSrc");
       const keep = sel.value;
       sel.innerHTML = `<option value="">ทุกแดชบอร์ด</option>` +
-        seen.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
+        seen.map((s) => `<option value="${esc(s)}">${esc(logSrcTH(s))}</option>`).join("");
       sel.value = keep;
     }
     $("#logMeta").textContent = `${items.length} รายการ` + (j.total > items.length ? ` (ทั้งหมด ${j.total})` : "");
