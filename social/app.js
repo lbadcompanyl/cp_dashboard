@@ -666,6 +666,44 @@
 
   /* ── แท็บภาพรวม ──────────────────────────────────────────────────── */
 
+  /* ── ข้อมูลของต้นทางมาช้ากว่าปัจจุบัน ───────────────────────────────
+   * 🔴 เจ้าของถาม 20 ส.ค. 2026 ว่า "ทำไม data ไม่ครบ เมื่อวานวันนี้ก็ไม่มี"
+   *    YouTube Analytics สรุปยอดรายวันช้ากว่าปัจจุบัน 2-3 วันเป็นปกติ
+   *    ไม่ใช่บั๊กของเรา และเร่งไม่ได้ — แต่ถ้าไม่เขียนบอก กราฟจะจบก่อนขอบขวาเฉยๆ
+   *    ซึ่งอ่านแล้วเหมือนระบบพัง (กฎเดิมของโปรเจกต์: "ไม่มี" ต้องบอกว่าไม่มี)
+   * ⚠️ ต้องเทียบกับ "วันสุดท้ายของช่วงที่เลือก" ไม่ใช่วันนี้เสมอ
+   *    เลือกช่วงที่จบไปแล้วในอดีต ข้อมูลครบอยู่แล้ว ขึ้นป้ายไปก็หลอกกันเปล่าๆ
+   * ⚠️ ต้องบอกด้วยว่ายอดรวมกับตัวเลขเทียบได้รับผลกระทบ —
+   *    ช่วง 30 วันที่ขาดท้ายไป 3 วัน ถูกเอาไปเทียบกับช่วงก่อนหน้าที่ครบ 30 วัน
+   */
+  function lagOf(pk, r) {
+    var rows = dailyIn(pk, r);
+    if (!rows.length) return null;
+    var today = key(midnight(new Date()));
+    var want = r.to < today ? r.to : today;
+    var last = rows[rows.length - 1].date;
+    var gap = Math.round((parseKey(want) - parseKey(last)) / 864e5);
+    return gap >= 1 ? { last: last, gap: gap } : null;
+  }
+
+  function lagNote(pks, r) {
+    var late = [];
+    pks.forEach(function (pk) {
+      var g = lagOf(pk, r);
+      if (g) late.push({ pk: pk, last: g.last, gap: g.gap });
+    });
+    if (!late.length) return "";
+
+    var most = late.reduce(function (m, x) { return x.gap > m.gap ? x : m; }, late[0]);
+    return '<div class="lagbar"><span class="lag-i">🕓</span><div><b>ข้อมูลล่าสุดถึง ' +
+      late.map(function (x) {
+        return esc(C.PLATFORMS[x.pk].label) + " " + esc(thaiShort(x.last));
+      }).join(" · ") + "</b>" +
+      "<div>ต้นทางสรุปยอดรายวันช้ากว่าปัจจุบัน " + most.gap + " วัน — " +
+      "<b>ไม่ใช่ว่าไม่มีคนดู</b> และเร่งไม่ได้ · " +
+      "ยอดรวมกับตัวเลขเทียบของช่วงนี้จึงยังไม่นับ " + most.gap + " วันล่าสุด</div></div></div>";
+  }
+
   function renderSummary() {
     var order = activeOrder();
     /* ⚠️ "ไม่มีช่องให้รวม" มีได้ 3 สาเหตุ ต้องแยกให้ออก ไม่งั้นเจ้าของไล่หาสาเหตุผิดทาง
@@ -697,7 +735,7 @@
     });
     if (!any) return empty("ไม่มีข้อมูลในช่วงที่เลือก", "ลองขยายช่วงเวลา หรือเลือกวันที่ใหม่");
 
-    var h = "";
+    var h = lagNote(order, r);
 
     // ① สรุปรวม 4 ใบ — นับจากช่องที่เปิดอยู่เท่านั้น
     var tf = 0, tv = 0, te = 0, pf = 0, pv = 0, pe = 0;
@@ -1491,7 +1529,7 @@
 
     if (!a) return empty("ไม่มีข้อมูลของ " + P.label + " ในช่วงที่เลือก", "ลองขยายช่วงเวลา หรือเลือกวันที่ใหม่");
 
-    var h = "";
+    var h = lagNote([pk], r);
 
     // ① สรุปของช่อง — รวม metric เฉพาะแพลตฟอร์มไว้ในกริดเดียวกัน
     // ⚠️ เดิมแยกเป็น 2 กริด ทำให้ TikTok เหลือใบ "ดูจนจบ" ลอยเดี่ยวท้ายแถว

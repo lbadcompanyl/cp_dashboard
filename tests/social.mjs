@@ -2710,6 +2710,60 @@ console.log("\n[61] 🔴 ตารางที่กางออกมา: ท�
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[62] 🔴 ต้นทางส่งข้อมูลช้า ต้องบอก ไม่ใช่ปล่อยกราฟจบก่อนขอบ");
+{
+  /* เจ้าของถาม 20 ส.ค. 2026 "ทำไม data ไม่ครบ เมื่อวานวันนี้ก็ไม่มี"
+     YouTube Analytics สรุปยอดรายวันช้ากว่าปัจจุบัน 2-3 วันเป็นปกติ เร่งไม่ได้
+     แต่ถ้าไม่เขียนบอก กราฟจะจบก่อนขอบขวาเฉยๆ ซึ่งอ่านแล้วเหมือนระบบพัง */
+  const day = (i) => new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+  const daily = [];
+  // ⚠️ จงใจให้ข้อมูลจบที่ 3 วันก่อน = จำลองความช้าของต้นทางจริง
+  for (let i = 39; i >= 3; i--) {
+    daily.push({ date: day(i), views: 5000, likes: 200, comments: 10, shares: 15,
+      watchTime: 250, avgViewDuration: 190, completionRate: 0.42, gained: 30, lost: 5 });
+  }
+  const followers = daily.map((d, i) => ({ date: d.date, value: 41000 - (daily.length - i) * 25, gained: d.gained, lost: d.lost }));
+
+  const pg = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  const errs = [];
+  pg.on("pageerror", (e) => errs.push(String(e)));
+  await pg.route("**/social/api/youtube", (r) => r.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ ok: true, status: "ok", need: [], message: "", at: 1, data: {
+      channel: { id: "UC1", title: "ช่อง", subs: 41000, subsApprox: true, views: 5200000, videos: 1100, url: "#" },
+      videos: [], analytics: { daily, followers, approxLevel: true, byVideo: {} } } }) }));
+  for (const k of ["tiktok", "facebook"]) {
+    await pg.route(`**/social/api/${k}`, (r) => r.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ ok: false, status: "not-configured", need: ["X"], message: "" }) }));
+  }
+  await pg.goto(BASE + "/social/", { waitUntil: "load" });
+  await pg.waitForSelector(".sc", { timeout: 5000 });
+
+  const bar = await pg.$eval(".lagbar", (e) => e.innerText).catch(() => "");
+  ok(/ข้อมูลล่าสุดถึง/.test(bar), `มีป้ายบอกว่าข้อมูลล่าสุดถึงวันไหน (${bar.replace(/\n/g, " · ")})`);
+  ok(/3 วัน/.test(bar), "บอกว่าช้ากี่วัน");
+  /* ⚠️ ต้องบอกว่า "ไม่ใช่ว่าไม่มีคนดู" — ตัวเลข 0 กับ "ยังไม่สรุป" หน้าตาเหมือนกัน */
+  ok(/ไม่ใช่ว่าไม่มีคนดู/.test(bar), "บอกว่าไม่ใช่ยอดเป็นศูนย์");
+  /* ⚠️ ต้องเตือนว่ายอดรวมกับตัวเลขเทียบได้รับผลกระทบด้วย
+     ช่วง 30 วันที่ขาดท้าย 3 วัน ถูกเอาไปเทียบกับช่วงก่อนหน้าที่ครบ 30 วัน */
+  ok(/ยอดรวม/.test(bar), "เตือนว่ายอดรวมยังไม่นับวันล่าสุด");
+
+  // แท็บรายช่องก็ต้องมี
+  await tabTo(pg, "YouTube");
+  ok(!!(await pg.$(".lagbar")), "แท็บรายช่องมีป้ายด้วย");
+
+  ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
+  await pg.close();
+
+  /* 🔴 ข้อมูลมาครบถึงวันนี้ = ห้ามขึ้นป้าย
+     ไม่งั้นป้ายขึ้นค้างตลอดเวลาแล้วกลายเป็นของที่ไม่มีใครอ่าน */
+  const full = await open();
+  ok(!(await full.pg.$(".lagbar")), "ข้อมูลครบถึงวันนี้ ไม่ขึ้นป้าย");
+  await tabTo(full.pg, "YouTube");
+  ok(!(await full.pg.$(".lagbar")), "แท็บรายช่องก็ไม่ขึ้น");
+  await full.pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);
