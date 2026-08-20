@@ -2544,6 +2544,81 @@ console.log("\n[58] 🔴 เซสชัน Cloudflare Access หมด ต้�
   await pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[59] 🔴 แท็บรายช่องต้องเลือก รายวัน/สัปดาห์/เดือน ได้");
+{
+  /* เจ้าของสั่ง 20 ส.ค. 2026 — เดิมมีแต่หน้าภาพรวม แท็บรายช่องบังคับรายวันอย่างเดียว
+     ช่วง 3 เดือนดูรายวันแล้วเส้นหยิกจนอ่านทิศทางไม่ออก */
+  const { pg, errs } = await open();
+  await setPeriod(pg, 90);
+  await closePeriod(pg);
+  await pg.waitForTimeout(400);
+
+  for (const t of ["YouTube", "TikTok", "Facebook"]) {
+    await tabTo(pg, t);
+    const g = await pg.$$eval(".seg.grain button", (n) => n.map((x) => x.textContent.trim()));
+    ok(g.join("/") === "รายวัน/รายสัปดาห์/รายเดือน", `${t}: มีตัวเลือกครบ 3 แบบ (${g.join(" ")})`);
+  }
+
+  await tabTo(pg, "YouTube");
+  const pts = (sel) => pg.$$eval(sel, (n) => n.length);
+  const dayN = await pg.$eval("svg.chart path", (e) => (e.getAttribute("d").match(/[ML]/g) || []).length);
+
+  await pg.click('.seg.grain [data-grain="week"]');
+  await pg.waitForTimeout(400);
+  const weekN = await pg.$eval("svg.chart path", (e) => (e.getAttribute("d").match(/[ML]/g) || []).length);
+  ok(weekN < dayN && weekN > 1, `รายสัปดาห์ยุบจุดลงจริง (${dayN} -> ${weekN})`);
+
+  /* ⚠️ หัวกราฟต้องเปลี่ยนตาม ไม่ใช่เขียน "รายวัน" ค้างไว้ — อ่านตัวเลขผิดทันที */
+  const heads = await pg.$$eval(".sec", (n) => n.map((x) => x.textContent).filter((x) => /ราย(วัน|สัปดาห์|เดือน)/.test(x)));
+  ok(heads.every((x) => !/รายวัน/.test(x)), "หัวกราฟเปลี่ยนเป็นรายสัปดาห์หมด ไม่มี 'รายวัน' ค้าง");
+
+  /* 🔴 ยอดรวมของกลุ่มต้องเป็นผลบวกของวันในกลุ่ม ไม่ใช่ค่าเฉลี่ย
+     ⚠️ ส่วน Retention เป็นค่าเฉลี่ยอยู่แล้ว บวกไม่ได้ — ต้องยังอยู่ในช่วง 0-100% */
+  const ret = await pg.$$eval(".chart .ax:not(.ax-r):not(.ax-x)", (n) =>
+    n.map((x) => x.textContent.trim()).filter((x) => /%$/.test(x)).map(parseFloat));
+  ok(ret.every((v) => v >= 0 && v <= 100), `แกน % ยังอยู่ในช่วง 0-100 (${ret.join(" ")})`);
+
+  await pg.click('.seg.grain [data-grain="month"]');
+  await pg.waitForTimeout(400);
+  const monN = await pg.$eval("svg.chart path", (e) => (e.getAttribute("d").match(/[ML]/g) || []).length);
+  ok(monN < weekN && monN > 1, `รายเดือนยุบลงอีก (${weekN} -> ${monN})`);
+
+  // เลือกที่แท็บรายช่องแล้ว กลับไปหน้าภาพรวมต้องเป็นมุมมองเดียวกัน
+  await tabTo(pg, "ภาพรวม");
+  ok(await pg.$eval('.seg.grain [data-grain="month"]', (e) => e.classList.contains("on")),
+     "หน้าภาพรวมใช้มุมมองเดียวกัน ไม่แยกกันคนละค่า");
+
+  ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
+  await pg.close();
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[60] 🔴 ช่องเดียว: กล่องที่เทียบข้ามช่องต้องไม่โผล่");
+{
+  /* เจ้าของเจอบน production 20 ส.ค. 2026 — เชื่อมแค่ YouTube แล้ว "สัดส่วนแยกช่อง"
+     ขึ้น 100% ทุกแถว ซึ่งไม่ได้บอกอะไรเลย · กฎเดียวกับกล่องสรุปที่เคยแก้ไปแล้ว */
+  const { pg, errs } = await open(undefined, "&off=tiktok,facebook");
+  await pg.waitForSelector(".tbl.perf");
+
+  const body = await pg.$eval("body", (e) => e.innerText);
+  ok(!/สัดส่วนแยกช่อง/.test(body), "ช่องเดียว: ไม่มีกล่องสัดส่วนแยกช่อง");
+  ok((await pg.$$(".sbars")).length === 0, "ไม่มีแท่งสัดส่วนเหลืออยู่");
+
+  /* ⚠️ ต้องซ่อนแค่กล่องนั้น ห้ามกลืนของที่อยู่ถัดไปหายตามไปด้วย */
+  ok(/Engagement rate สูงสุด/.test(body), "การ์ดคอนเทนต์เด่นยังอยู่");
+  ok((await pg.$$(".tbl.perf tbody tr")).length > 0, "ตารางผลงานยังอยู่");
+
+  // 2 ช่องขึ้นไปต้องกลับมา
+  const two = await open(undefined, "&off=facebook");
+  await two.pg.waitForSelector(".sbars");
+  ok(/สัดส่วนแยกช่อง/.test(await two.pg.$eval("body", (e) => e.innerText)), "2 ช่องขึ้นไป: กล่องกลับมา");
+  await two.pg.close();
+
+  ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);

@@ -1005,54 +1005,60 @@
       { key: "shares", label: "Shares", part: true },
     ];
 
-    h += sec("สัดส่วนแยกช่อง", null,
-      "แต่ละแถวคือตัวชี้วัดหนึ่งตัว แบ่ง 100% ตามช่อง · ประโยชน์อยู่ที่การเทียบข้ามแถว — " +
-      "ช่องที่กินยอดวิวเยอะแต่ได้คอมเมนต์น้อย แปลว่าคนดูผ่านตาแต่ไม่ได้คุยด้วย " +
-      "· หน่วย pt คือส่วนต่างของสัดส่วน เช่น จาก 40% เป็น 43% = +3 pt ไม่ใช่ +7.5%");
+    /* 🔴 ช่องเดียวแล้วทุกแถวเป็น 100% หมด — ไม่ได้บอกอะไรเลย (เจ้าของเจอ 20 ส.ค. 2026)
+       ประโยชน์ของกล่องนี้คือ "เทียบสัดส่วนข้ามช่อง" ซึ่งต้องมีอย่างน้อย 2 ช่อง
+       ⚠️ กฎเดียวกับกล่องสรุปที่เคยแก้ไปแล้ว — ของที่เทียบข้ามช่องต้องซ่อนเมื่อมีช่องเดียว */
+    if (order.length > 1) {
 
-    h += '<div class="panel compact"><div class="sbars">';
-    SHARE_ROWS.forEach(function (row) {
-      // ช่องที่ไม่นับตัวนี้ (YouTube ไม่มีแชร์) ต้องไม่ถูกนับเป็น 0 ในฐาน
-      var pks = order.filter(function (pk) {
-        if (!cur[pk]) return false;
-        if (!row.part) return true;
-        return C.PLATFORMS[pk].parts.some(function (x) { return x.key === row.key; });
-      });
-      var tot = 0, pTot = 0;
-      pks.forEach(function (pk) {
-        tot += cur[pk][row.key] || 0;
-        if (prev[pk]) pTot += prev[pk][row.key] || 0;
-      });
-      if (!tot) return;
+      h += sec("สัดส่วนแยกช่อง", null,
+        "แต่ละแถวคือตัวชี้วัดหนึ่งตัว แบ่ง 100% ตามช่อง · ประโยชน์อยู่ที่การเทียบข้ามแถว — " +
+        "ช่องที่กินยอดวิวเยอะแต่ได้คอมเมนต์น้อย แปลว่าคนดูผ่านตาแต่ไม่ได้คุยด้วย " +
+        "· หน่วย pt คือส่วนต่างของสัดส่วน เช่น จาก 40% เป็น 43% = +3 pt ไม่ใช่ +7.5%");
 
-      var segs = pks.map(function (pk) {
-        return { label: C.PLATFORMS[pk].label, value: cur[pk][row.key] || 0, color: C.PLATFORMS[pk].rawColor, pk: pk };
-      });
-      var missing = order.filter(function (pk) { return pks.indexOf(pk) < 0; });
+      h += '<div class="panel compact"><div class="sbars">';
+      SHARE_ROWS.forEach(function (row) {
+        // ช่องที่ไม่นับตัวนี้ (YouTube ไม่มีแชร์) ต้องไม่ถูกนับเป็น 0 ในฐาน
+        var pks = order.filter(function (pk) {
+          if (!cur[pk]) return false;
+          if (!row.part) return true;
+          return C.PLATFORMS[pk].parts.some(function (x) { return x.key === row.key; });
+        });
+        var tot = 0, pTot = 0;
+        pks.forEach(function (pk) {
+          tot += cur[pk][row.key] || 0;
+          if (prev[pk]) pTot += prev[pk][row.key] || 0;
+        });
+        if (!tot) return;
 
-      h += '<div class="sbar-r"><div class="sbar-l">' + esc(row.label) +
-        (missing.length
-          ? ' <span class="sbar-x" title="' + esc(missing.map(function (pk) { return C.PLATFORMS[pk].label; }).join(" · ")) +
-            ' ไม่เปิดเผยตัวเลขนี้ จึงไม่ได้นับในฐาน 100%">ไม่รวม ' +
-            esc(missing.map(function (pk) { return C.PLATFORMS[pk].short; }).join("/")) + "</span>"
-          : "") +
-        "</div>" + CH.share100(segs) + '<div class="sbar-v">';
-      segs.forEach(function (sg) {
-        var sh = sg.value / tot;
-        var pSh = cr && pTot && prev[sg.pk] ? (prev[sg.pk][row.key] || 0) / pTot : null;
-        h += '<span class="sbar-i"><span class="lg-d" style="background:' + sg.color + '"></span>' +
-          esc(pct(sh)) + (cr ? delta(sh, pSh, { pp: true }) : "") + "</span>";
-      });
-      h += "</div></div>";
-    });
-    h += "</div>";
+        var segs = pks.map(function (pk) {
+          return { label: C.PLATFORMS[pk].label, value: cur[pk][row.key] || 0, color: C.PLATFORMS[pk].rawColor, pk: pk };
+        });
+        var missing = order.filter(function (pk) { return pks.indexOf(pk) < 0; });
 
-    // ป้ายสีบอกว่าแท่งไหนคือช่องไหน — ประกาศครั้งเดียวใช้ได้ทุกแถว
-    h += '<div class="legend row">' + order.map(function (pk) {
-      var P = C.PLATFORMS[pk];
-      return '<div class="lg"><span class="lg-d" style="background:' + P.rawColor + '"></span>' +
-        '<span class="lg-n">' + esc(P.label) + "</span></div>";
-    }).join("") + "</div></div>";
+        h += '<div class="sbar-r"><div class="sbar-l">' + esc(row.label) +
+          (missing.length
+            ? ' <span class="sbar-x" title="' + esc(missing.map(function (pk) { return C.PLATFORMS[pk].label; }).join(" · ")) +
+              ' ไม่เปิดเผยตัวเลขนี้ จึงไม่ได้นับในฐาน 100%">ไม่รวม ' +
+              esc(missing.map(function (pk) { return C.PLATFORMS[pk].short; }).join("/")) + "</span>"
+            : "") +
+          "</div>" + CH.share100(segs) + '<div class="sbar-v">';
+        segs.forEach(function (sg) {
+          var sh = sg.value / tot;
+          var pSh = cr && pTot && prev[sg.pk] ? (prev[sg.pk][row.key] || 0) / pTot : null;
+          h += '<span class="sbar-i"><span class="lg-d" style="background:' + sg.color + '"></span>' +
+            esc(pct(sh)) + (cr ? delta(sh, pSh, { pp: true }) : "") + "</span>";
+        });
+        h += "</div></div>";
+      });
+      h += "</div>";
+
+      // ป้ายสีบอกว่าแท่งไหนคือช่องไหน — ประกาศครั้งเดียวใช้ได้ทุกแถว
+      h += '<div class="legend row">' + order.map(function (pk) {
+        var P = C.PLATFORMS[pk];
+        return '<div class="lg"><span class="lg-d" style="background:' + P.rawColor + '"></span>' +
+          '<span class="lg-n">' + esc(P.label) + "</span></div>";
+      }).join("") + "</div></div>";
+    }
 
     /* ⑥ คอนเทนต์เด่น — 2 อันดับวางคู่กัน: คนมีส่วนร่วมมากสุด / คนดูมากสุด
      * ⚠️ หยิบ "ที่ดีที่สุดของแต่ละช่อง" ไม่เอาทุกช่องมาเรียงรวมกัน
@@ -1304,15 +1310,62 @@
           '" data-tch="' + esc(x.key) + '"' + (x.color ? ' style="--pc:' + x.color + '"' : "") + ">" +
           (x.color ? '<span class="pdot"></span>' : "") + esc(x.label) + "</button>";
       }).join("") + "</div>" +
-      '<div class="seg grain">' + GRAINS.map(function (g) {
-        /* ⚠️ ช่วงสั้นๆ เลือก "รายเดือน" แล้วได้จุดเดียว วาดกราฟไม่ได้
-           ปิดปุ่มไปเลยพร้อมบอกเหตุผล ดีกว่าให้กดแล้วได้กราฟเปล่า */
-        var few = grainCount(r, g.key) < 2;
-        return '<button type="button" class="' + (state.grain === g.key && !few ? "on" : "") +
-          '" data-grain="' + g.key + '"' + (few ? ' disabled title="ช่วงที่เลือกสั้นเกินไปสำหรับมุมมองนี้"' : "") +
-          ">" + esc(g.label) + "</button>";
-      }).join("") + "</div></div>";
+      grainSeg(r) + "</div>";
     return h;
+  }
+
+  /* ปุ่มเลือก รายวัน/สัปดาห์/เดือน — ใช้ทั้งหน้าภาพรวมและแท็บรายช่อง
+     🔴 เจ้าของสั่งให้มีในแท็บรายช่องด้วย (20 ส.ค. 2026) — เดิมมีแต่หน้าภาพรวม
+     ⚠️ ใช้ state.grain ตัวเดียวกันโดยตั้งใจ เลือกที่ไหนก็เปลี่ยนเหมือนกันทั้งหน้า
+        แยก state แล้วผู้ใช้จะงงว่าทำไมกราฟ 2 ที่ไม่ตรงกัน */
+  function grainSeg(r) {
+    return '<div class="seg grain">' + GRAINS.map(function (g) {
+      /* ⚠️ ช่วงสั้นๆ เลือก "รายเดือน" แล้วได้จุดเดียว วาดกราฟไม่ได้
+         ปิดปุ่มไปเลยพร้อมบอกเหตุผล ดีกว่าให้กดแล้วได้กราฟเปล่า */
+      var few = grainCount(r, g.key) < 2;
+      return '<button type="button" class="' + (state.grain === g.key && !few ? "on" : "") +
+        '" data-grain="' + g.key + '"' + (few ? ' disabled title="ช่วงที่เลือกสั้นเกินไปสำหรับมุมมองนี้"' : "") +
+        ">" + esc(g.label) + "</button>";
+    }).join("") + "</div>";
+  }
+
+  /* ── ยุบข้อมูลรายวันเป็นราย สัปดาห์/เดือน ────────────────────────────
+   * ⚠️ ตัวไหนบวกได้ ตัวไหนบวกไม่ได้ ต้องแยกให้ถูก ไม่งั้นตัวเลขผิดแบบเงียบๆ
+   *    บวกได้: ยอดวิว · engagement · เวลาดูรวม · impressions · คลิก
+   *    บวกไม่ได้: Retention กับ "ดูเฉลี่ยต่อครั้ง" — เป็นค่าเฉลี่ยอยู่แล้ว
+   * ⚠️ อัตราส่วน (ER · View rate) ต้องคิดใหม่จากผลรวมของกลุ่ม
+   *    ห้ามเอาค่ารายวันมาเฉลี่ย วันที่ยอดน้อยจะถ่วงเท่าวันที่ยอดเยอะ
+   */
+  function bucketRows(pk, r, grain) {
+    var raw = dailyIn(pk, r);
+    if (grain === "day") return raw;
+
+    var P = C.PLATFORMS[pk], rk = P.reachKey, by = {};
+    raw.forEach(function (x) { by[x.date] = x; });
+
+    var SUM = ["likes", "comments", "shares", "views3s", "watchTime", "impressions", "viewClicks"];
+    var AVG = ["avgViewDuration", "completionRate"];
+
+    return bucketsOf(r, grain).map(function (bk) {
+      var o = { date: bk.days[0], label: bk.label };
+      o[rk] = 0;
+      SUM.forEach(function (k) { o[k] = 0; });
+      var n = {}, has = {};
+      AVG.forEach(function (k) { o[k] = 0; n[k] = 0; });
+
+      bk.days.forEach(function (dk) {
+        var x = by[dk];
+        if (!x) return;
+        o[rk] += x[rk] || 0;
+        SUM.forEach(function (k) { if (x[k] != null) { o[k] += x[k]; has[k] = true; } });
+        AVG.forEach(function (k) { if (x[k] != null) { o[k] += x[k]; n[k]++; } });
+      });
+
+      // ไม่มีวันไหนให้ตัวเลขนี้เลย = ไม่รู้ ต้องเป็น null ให้เส้นขาด ไม่ใช่ 0
+      SUM.forEach(function (k) { if (!has[k]) o[k] = null; });
+      AVG.forEach(function (k) { o[k] = n[k] ? o[k] / n[k] : null; });
+      return o;
+    });
   }
 
   /**
@@ -1408,8 +1461,20 @@
      *    ไม่งั้นแยกแล้วยิ่งอ่านยากกว่าเดิม
      * ⚠️ กราฟ ER ห้ามกดพื้นให้เป็น 0 — ความน่าสนใจอยู่ในช่วงแคบ (5–11%)
      *    ลากถึง 0 เมื่อไหร่เส้นจะแบนจนดูไม่ออกว่าวันไหนดีวันไหนแย่ */
-    var rows = dailyIn(pk, r);
-    var dayLabels = rows.map(function (x) { return thaiShort(x.date); });
+    /* 🔴 เจ้าของสั่งเพิ่มตัวเลือก รายวัน/สัปดาห์/เดือน ในแท็บรายช่อง (20 ส.ค. 2026)
+       ⚠️ ช่วงที่สั้นเกินไปสำหรับมุมมองที่เลือกอยู่ ให้ตกกลับเป็นรายวัน
+          (กฎเดียวกับหน้าภาพรวม ไม่งั้นกดจากหน้าโน้นมาแล้วได้กราฟจุดเดียว) */
+    var grain = state.grain;
+    if (grainCount(r, grain) < 2) grain = "day";
+
+    var rows = bucketRows(pk, r, grain);
+    var dayLabels = rows.map(function (x) { return x.label || thaiShort(x.date); });
+
+    h += '<div class="trendbar solo">' + grainSeg(r) + "</div>";
+
+    // ⚠️ หัวกราฟต้องบอกมุมมองที่ดูอยู่จริง เขียน "รายวัน" ค้างไว้ = อ่านตัวเลขผิด
+    var GRAIN_TH = { day: "รายวัน", week: "รายสัปดาห์", month: "รายเดือน" };
+    var per = GRAIN_TH[grain];
 
     function dailyPanel(title, tip, series, opt) {
       var out = sec(title, null, tip) + '<div class="panel">';
@@ -1422,7 +1487,7 @@
             unitLeft: opt.unit || "",
             aria: title,
           })
-        : empty("ไม่มีข้อมูลรายวันในช่วงนี้");
+        : empty("ไม่มีข้อมูลในช่วงนี้");
       return out + "</div>";
     }
 
@@ -1440,13 +1505,13 @@
     };
 
     h += '<div class="duo">' +
-      '<div class="duo-c">' + dailyPanel(P.reachLabel + " รายวัน",
+      '<div class="duo-c">' + dailyPanel(P.reachLabel + " " + per,
         "จำนวน " + P.reachLabel + " ที่เกิดขึ้นในแต่ละวัน · วันที่ไม่มีข้อมูลเส้นจะขาด ไม่ใช่ลากลงศูนย์",
-        sView, { id: "p-" + pk + "-v", baseZero: true, fmtYNum: num }) + "</div>" +
-      '<div class="duo-c">' + dailyPanel("Engagement rate รายวัน",
+        sView, { id: "p-" + pk + "-v-" + grain, baseZero: true, fmtYNum: num }) + "</div>" +
+      '<div class="duo-c">' + dailyPanel("Engagement rate " + per,
         P.erFormula + " · " + P.erNote +
         " · แกนไม่ได้เริ่มจาก 0 เพราะค่าจริงอยู่ในช่วงแคบ ให้ดูรูปทรงว่าวันไหนดีกว่าวันไหน ไม่ใช่ดูความสูงของเส้น",
-        sEr, { id: "p-" + pk + "-er", unit: "%" }) + "</div>" +
+        sEr, { id: "p-" + pk + "-er-" + grain, unit: "%" }) + "</div>" +
       "</div>";
 
     /* ②b คุณภาพการดู — Retention กับเวลาที่ดูเฉลี่ย
@@ -1471,7 +1536,7 @@
 
       h += '<div class="duo">';
       if (hasRet) {
-        h += '<div class="duo-c">' + dailyPanel("Retention รายวัน",
+        h += '<div class="duo-c">' + dailyPanel("Retention " + per,
           retWhat + " · เป็นตัวชี้วัดคุณภาพของคอนเทนต์ที่ตรงกว่ายอดวิว — " +
           "ยอดวิวบอกว่าคนกดเข้ามากี่คน (ปกดี) ส่วน retention บอกว่าเข้ามาแล้วอยู่ต่อไหม (เนื้อดี) " +
           "· แกนไม่ได้เริ่มจาก 0 เพราะค่าจริงอยู่ในช่วงแคบ ให้ดูรูปทรง ไม่ใช่ความสูงของเส้น",
@@ -1480,23 +1545,23 @@
               // ไม่มีค่า = ไม่รู้ ไม่ใช่ 0 → ส่ง null ให้เส้นขาด
               return { y: x.completionRate == null ? null : x.completionRate * 100 };
             }) },
-          { id: "p-" + pk + "-ret", unit: "%" }) + "</div>";
+          { id: "p-" + pk + "-ret-" + grain, unit: "%" }) + "</div>";
       }
       if (hasAvd) {
-        h += '<div class="duo-c">' + dailyPanel("เวลาที่ดูเฉลี่ยต่อครั้ง รายวัน",
+        h += '<div class="duo-c">' + dailyPanel("เวลาที่ดูเฉลี่ยต่อครั้ง " + per,
           "ดูนานเฉลี่ยกี่นาที:วินาทีต่อการดู 1 ครั้ง · คู่กับ Retention — " +
           "คลิปยาวที่ retention ต่ำ อาจมีเวลาดูจริงมากกว่าคลิปสั้นที่ retention สูง",
           { label: "ดูเฉลี่ยต่อครั้ง", color: "#0891b2", tipFmt: "dur",
             points: rows.map(function (x) {
               return { y: x.avgViewDuration == null ? null : x.avgViewDuration };
             }) },
-          { id: "p-" + pk + "-avd", fmtYSec: true }) + "</div>";
+          { id: "p-" + pk + "-avd-" + grain, fmtYSec: true }) + "</div>";
       }
       if (hasVr) {
         /* ⚠️ ชื่อบนหัวกราฟใช้ชื่อจริงของช่องนั้น (CTR / อัตราหยุดดู)
            ไม่ใช่ป้ายกลางๆ ของตารางรวม — ในแท็บของช่องเดียวไม่ต้องกลัวอ่านข้ามช่องผิด */
         var vrName = P.viewRateLabel || "View rate";
-        h += '<div class="duo-c">' + dailyPanel(vrName + " รายวัน",
+        h += '<div class="duo-c">' + dailyPanel(vrName + " " + per,
           (P.viewRateWhat || "") + " · คู่กับ Retention คนละครึ่งของเรื่องเดียวกัน — " +
           "ตัวนี้บอกว่าปกกับพาดหัวดีพอให้คนหยุดไหม ส่วน Retention บอกว่าหยุดแล้วอยู่ต่อไหม " +
           "· ถ้า Impressions เยอะแต่ตัวนี้ต่ำ แปลว่าระบบเอาไปโชว์ให้แล้วแต่คนไม่สนใจ " +
@@ -1506,7 +1571,7 @@
               // วันที่ไม่ถูกโชว์เลย = หารไม่ได้ ต้องเป็นเส้นขาด ไม่ใช่ 0%
               return { y: x.impressions > 0 ? ((x.viewClicks || 0) / x.impressions) * 100 : null };
             }) },
-          { id: "p-" + pk + "-vr", unit: "%" }) + "</div>";
+          { id: "p-" + pk + "-vr-" + grain, unit: "%" }) + "</div>";
       }
       h += "</div>";
     }

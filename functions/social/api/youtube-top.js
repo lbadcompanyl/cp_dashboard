@@ -10,10 +10,10 @@
 //    อันนี้     = เรียงตามยอดที่ "เกิดขึ้นจริงในช่วงที่เลือก"
 //                คลิปที่ลงเมื่อ 8 เดือนก่อนแต่เดือนนี้มีคนแชร์ต่อ ก็ขึ้นอันดับ 1 ได้
 
-import { ST, payload, cached, missingEnv } from "../_lib/store.js";
+import { ST, payload, cached, missingEnv, channelQuery, resolveChannelId } from "../_lib/store.js";
 
 // ⭐ บวกเลขนี้ทุกครั้งที่แก้โครงข้อมูลที่คืนออกไป
-const DATA_VER = "2";
+const DATA_VER = "3";
 
 const API = "https://www.googleapis.com/youtube/v3";
 const OAUTH_TOKEN = "https://oauth2.googleapis.com/token";
@@ -51,6 +51,8 @@ export async function onRequest(context) {
   }
 
   const need = missingEnv(env, ["YT_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YT_REFRESH_TOKEN"]);
+  const ch = channelQuery(env);
+  if (!ch) need.push("YT_CHANNEL_HANDLE");
   if (need.length) {
     return new Response(
       JSON.stringify(payload({
@@ -68,7 +70,7 @@ export async function onRequest(context) {
     ver: `${DATA_VER}-${from}-${to}`,
     edgeTtl: EDGE_TTL,
     kvFresh: KV_FRESH,
-    build: () => buildTop(env, from, to),
+    build: () => buildTop(env, ch, from, to),
   });
 }
 
@@ -92,7 +94,7 @@ async function accessToken(env) {
   return { token: j.access_token };
 }
 
-async function buildTop(env, from, to) {
+async function buildTop(env, ch, from, to) {
   const tk = await accessToken(env);
   if (tk.error) {
     return payload({
@@ -105,9 +107,16 @@ async function buildTop(env, from, to) {
 
   /* 🎯 หัวใจของแบบ A: ให้ Google เรียงให้เลยว่าในช่วงนี้คลิปไหนทำยอดสูงสุด
      ไม่ได้กรองด้วยวันที่ลงคลิป — คลิปเก่าที่ดังขึ้นมาใหม่จึงติดอันดับได้ */
-  const ask = async (metrics) => {
+  /* 🔴 บั๊กที่เจ้าของเจอ 20 ส.ค. 2026: การ์ด "คอนเทนต์เด่น" ว่างเปล่าทั้งที่ตัวเลขช่องมาครบ
+   *    ต้นเหตุคือไฟล์นี้ฮาร์ดโค้ด channel==MINE ไว้ ทั้งที่ youtube.js แก้ไปแล้วรอบหนึ่ง
+   *    บัญชี Google ที่กดอนุญาตไม่ได้เป็นเจ้าของช่องนี้ MINE จึงไปหยิบช่องเปล่าของบัญชีนั้น
+   *    → ตอบ 200 พร้อม rows ว่าง ไม่มี error อะไรเลย = การ์ดว่างโดยไม่มีคำอธิบาย
+   * ⚠️ ถามด้วยรหัสช่องก่อนเสมอ แล้วค่อยตกไปที่ MINE — ห้ามสลับลำดับ */
+  const chId = await resolveChannelId(env, ch);
+
+  const ask = async (ids, metrics) => {
     const u = ANALYTICS + "?" + new URLSearchParams({
-      ids: "channel==MINE",
+      ids,
       startDate: from,
       endDate: to,
       dimensions: "video",
@@ -119,9 +128,23 @@ async function buildTop(env, from, to) {
     return { rr, jj: await rr.json().catch(() => null) };
   };
 
-  let { rr: r, jj: j } = await ask(METRICS);
-  // ถอยเฉพาะ 400 — 401/403 เป็นเรื่องสิทธิ์ ถอย metric ไม่ช่วยและจะกลบสาเหตุจริง
-  if (!r.ok && r.status === 400) ({ rr: r, jj: j } = await ask(METRICS_LITE));
+  const askBoth = async (ids) => {
+    const out = await ask(ids, METRICS);
+    // ถอยเฉพาะ 400 — 401/403 เป็นเรื่องสิทธิ์ ถอย metric ไม่ช่วยและจะกลบสาเหตุจริง
+    if (out.rr.ok || out.rr.status !== 400) return out;
+    const lite = await ask(ids, METRICS_LITE);
+    return lite.rr.ok ? lite : out;
+  };
+
+  let { rr: r, jj: j } = chId ? await askBoth("channel==" + chId) : { rr: null, jj: null };
+  if (!r || !r.ok) {
+    const first = r;
+    ({ rr: r, jj: j } = await askBoth("channel==MINE"));
+    if (!r.ok && first && (first.status === 401 || first.status === 403)) {
+      return payload({ status: ST.AUTH_FAILED,
+        message: "บัญชี Google ที่กดอนุญาตไม่มีสิทธิ์อ่านสถิติของช่องนี้" });
+    }
+  }
   if (!r.ok || !j || !Array.isArray(j.rows)) {
     const why = (j && j.error && j.error.message) || `HTTP ${r.status}`;
     return payload({ status: r.status === 401 || r.status === 403 ? ST.AUTH_FAILED : ST.ERROR, message: why });
