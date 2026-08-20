@@ -8,8 +8,10 @@ const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++
 const FEEDS = { generatedAt: new Date().toISOString(), sources: {} };
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
 
-// ⚠️ อ่านเลขเวอร์ชันจาก index.html เอง — ของเดิมพิมพ์เลขไว้ในเทสต์ แล้วตกทุกครั้งที่ bump
-// (ตกด้วยเหตุผลที่ไม่ใช่บั๊ก = คนจะเริ่มไม่เชื่อเทสต์)
+// ⚠️ อ่านเลขเวอร์ชันจาก index.html เอง — ห้ามพิมพ์เลขค้างไว้ในเทสต์
+// สิ่งที่เทสต์นี้คุมจริงคือ **APP_VER ต้องอ่านจากหน้าเว็บ ไม่ใช่เลขที่ฮาร์ดโค้ดไว้ในโค้ด**
+// (เลขซ้ำ 2 ที่แล้วลืม bump คู่กัน = ต้นเหตุที่แถบ "มีเวอร์ชันใหม่" เคยเด้งไม่หยุด — ดู CLAUDE.md)
+// การพิมพ์เลขไว้ที่นี่ไม่ได้บังคับให้ใคร bump จริง แค่ทำให้เทสต์ตกทุกครั้งที่ bump ถูกต้อง
 import fs from "node:fs";
 const verOf = (page) => {
   const html = fs.readFileSync(new URL(`../${page}/index.html`, import.meta.url), "utf8");

@@ -17,7 +17,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "77"; // bump: ตัดหน้าอีเวนต์/นิทรรศการ
+const CACHE_VER = "78"; // bump: ด่านอ่านเนื้อข่าวของคอลัมน์ที่ไม่ใช่ CP ไม่เคยทำงาน
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -560,7 +560,11 @@ function articleBodyText(html) {
   return out.join("  ").replace(/<[^>]+>/g, " ").toLowerCase();
 }
 async function bodyHasKeep(cache, link, keep) {
-  if (!keep || !keep.length) return false;
+  // ⚠️ ไม่มีคำให้หา = **ตัดสินไม่ได้** ไม่ใช่ "ไม่เจอ" — ต้องคืน null ให้เก็บข่าวไว้
+  //    ของเดิมคืน false ซึ่งแปลว่า "อ่านแล้วไม่เจอ" ทั้งที่ยังไม่เคยเปิดอ่านเลยสักครั้ง
+  //    (เจอจริง 20 ส.ค. 2026: คอลัมน์ "หัวข้อที่จับตามอง" ส่งลิสต์คำว่างมาตลอด
+  //     ข่าวที่คำไม่อยู่ในพาดหัวจึงถูกตัดทิ้งยกชุด ทั้งที่คำอยู่ในเนื้อข่าวจริง)
+  if (!keep || !keep.length) return null;
   const vkey = new Request("https://verify.local/trend4?u=" + encodeURIComponent(link), { method: "GET" });
   let body = null;
   try { const hit = await cache.match(vkey); if (hit) body = (await hit.json()).b || ""; } catch {}
@@ -695,7 +699,7 @@ async function mapPoolResults(items, limit, fn) {
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch)
 const BODY_FETCH_MAX = 12; // เพดานยิงอ่านเนื้อข่าวต่อ 1 build — กันชนโควตา subrequest 50 ของ Cloudflare
-const VFY_VER = 2; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const VFY_VER = 3; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
 const AI_CP_MAX = 12; // เพดานใบที่ถาม AI ต่อ 1 build — คำตอบถูกจำไว้ ใบเดิมจึงถามครั้งเดียวตลอด
 
 // ถาม AI แล้ว "จำคำตอบไว้ 7 วัน" ต่อข่าว 1 ใบ — ไม่งั้นทุก build จะถามซ้ำทั้งคอลัมน์
@@ -800,7 +804,13 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
       // "โดยไม่ติดธง" รอบถัดไปค่อยตรวจต่อ จนกว่าจะหมด
       const toFetch = needBody.slice(0, BODY_FETCH_MAX);
       needBody.slice(BODY_FETCH_MAX).forEach((i) => { verdict[i].ok = true; });
-      const hits = await mapPoolResults(toFetch, 6, (i) => bodyHasKeep(cache, items[i].link, extra));
+      // ⚠️ **คำที่ใช้หาในเนื้อข่าว ต้องเป็นคำของคอลัมน์นั้นจริงๆ**
+      // คอลัมน์ CP มีลิสต์ชื่อเครือ (`extra`) แต่คอลัมน์อื่นไม่มีลิสต์ประจำคอลัมน์
+      // ต้องใช้ "คำที่ Google ไฮไลต์ไว้ในข่าวใบนั้น" แทน
+      // ของเดิมส่ง `extra` ไปทุกคอลัมน์ ซึ่งคอลัมน์อื่นเป็น [] → ด่านอ่านเนื้อข่าว
+      // ไม่เคยทำงานเลย ตัดทิ้งทุกใบที่คำไม่อยู่ในพาดหัว (เจอจริง 20 ส.ค. 2026)
+      const hits = await mapPoolResults(toFetch, 6, (i) =>
+        bodyHasKeep(cache, items[i].link, extra.length ? extra : verdict[i].terms));
       // อ่านไม่ได้ (null) = ไม่รู้ → เก็บไว้โดยไม่ติดธง · เจอคำ = เก็บ+ติดธง · อ่านแล้วไม่เจอ = ตัด
       toFetch.forEach((i, k) => { verdict[i].ok = hits[k] !== false; if (hits[k] === true) verdict[i].mark = true; });
       // ชั้น 4 — เฉพาะคอลัมน์ CP: ใบที่เปิดอ่านเนื้อไม่ได้ ให้ AI อ่านพาดหัวตัดสินแทนการปล่อยผ่าน

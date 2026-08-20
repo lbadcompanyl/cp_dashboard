@@ -1,0 +1,22 @@
+# Cloudflare Worker config — Comment Sentiment backend
+# deploy:  npx wrangler deploy
+# ตั้ง secret (อย่า commit ค่า key ลงไฟล์นี้):
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put YOUTUBE_API_KEY
+#   npx wrangler secret put SCRAPECREATORS_API_KEY
+
+name = "comment-sentiment"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+# โมเดล Claude ที่ใช้ตี sentiment
+#   claude-haiku-4-5 = ถูก เหมาะงานจำนวนมาก (ค่าเริ่มต้น)
+#   claude-opus-5    = แม่นสูงสุด แพงกว่า
+CLAUDE_MODEL = "claude-haiku-4-5"
+
+# จำกัด origin ที่เรียก Worker ได้ (ใส่โดเมนหน้าเว็บของคุณเพื่อความปลอดภัย)
+# เช่น "https://your-site.pages.dev" — ค่าเริ่มต้น "*" เปิดให้ทุกโดเมน (สะดวกตอนทดสอบ)
+ALLOW_ORIGIN = "*"
+
+# ค่า API key ตั้งผ่าน `wrangler secret put ...` เท่านั้น — ห้ามใส่ตรงนี้

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Issue Dashboard — กระแสความเห็น</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
+<meta name="page-ver" content="1" />
+<link rel="stylesheet" href="./styles.css?v=11" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" />
+<style>
+  /* หน้านี้โทนสว่างเหมือน "กระแสข่าว" (three.html) — ประกาศทับเฉพาะหน้านี้ ไม่แตะ styles.css */
+  body { background: #f6f7f9; color: #1f2937; }
+  .topbar, .pgtabs { background: #fff; }
+  .topbar h1, .brand h1 { color: #111827; }
+  .pgtab { color: #4b5563; }
+
+  /* ===== เครื่องมือ Sentiment — คลาสทั้งหมด prefix sc- กันชนกับ styles.css/app.js ===== */
+  .sc-wrap {
+    --sc-plane:#f6f7f9; --sc-surface:#ffffff; --sc-surface2:#eef1f5;
+    --sc-ink:#141619; --sc-ink2:#4a4e57; --sc-muted:#878b95; --sc-border:#e4e8f0;
+    --sc-accent:#2563eb; --sc-accent-soft:#eaf0fd;
+    --sc-pos:#2e9160; --sc-neu:#8a8f99; --sc-neg:#d94b4b;
+    --sc-neg-soft:#fbeaea; --sc-pos-soft:#e6f4ee; --sc-neu-soft:#eceef2;
+    max-width: 900px; margin: 0 auto; padding: 0 16px 44px;
+    font-family: "IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+    color: var(--sc-ink);
+  }
+  .sc-wrap * { box-sizing: border-box; }
+  .sc-card { background: var(--sc-surface); border: 1px solid var(--sc-border); border-radius: 12px; padding: 18px; margin-top: 14px; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+  .sc-card h2 { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: #111827; }
+  .sc-sub { margin: 0 0 14px; font-size: 12px; color: var(--sc-muted); }
+  .sc-inrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .sc-field { display: flex; flex-direction: column; gap: 5px; }
+  .sc-field.sc-grow { flex: 1 1 320px; }
+  .sc-field label { font-size: 10.5px; color: var(--sc-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .sc-wrap input[type=url], .sc-wrap input[type=number] {
+    font: inherit; font-size: 13.5px; color: var(--sc-ink); background: var(--sc-plane);
+    border: 1px solid #d1d5db; border-radius: 9px; padding: 9px 11px; width: 100%;
+  }
+  .sc-wrap input:focus-visible, .sc-btn:focus-visible, .sc-chip:focus-visible { outline: 2px solid var(--sc-accent); outline-offset: 1px; }
+  .sc-btn { border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-ink2); border-radius: 999px; padding: 9px 15px; font: inherit; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .sc-btn:hover { background: var(--sc-surface2); }
+  .sc-btn.sc-pri { background: var(--sc-accent); color: #fff; border-color: transparent; font-weight: 600; }
+  .sc-btn.sc-pri:disabled { opacity: .55; cursor: not-allowed; }
+  .sc-chiprow { display: flex; align-items: center; gap: 10px; margin-top: 13px; flex-wrap: wrap; }
+  .sc-badge { font-size: 11.5px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--sc-border); background: var(--sc-surface2); color: var(--sc-muted); }
+  .sc-badge.sc-on { color: var(--sc-ink); border-color: var(--sc-accent); }
+  .sc-chip { font-size: 11.5px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-ink2); cursor: pointer; font-family: inherit; }
+  .sc-chip:hover { background: var(--sc-surface2); }
+  .sc-chip .sc-low { color: var(--sc-neg); font-weight: 700; }
+  .sc-loading { display: none; align-items: center; gap: 9px; color: var(--sc-muted); font-size: 13px; margin-top: 14px; }
+  .sc-loading.sc-show { display: flex; }
+  .sc-spinner { width: 15px; height: 15px; border: 2px solid var(--sc-border); border-top-color: var(--sc-accent); border-radius: 50%; animation: scspin .8s linear infinite; }
+  @keyframes scspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .sc-spinner { animation-duration: 3s; } }
+  .sc-err { display: none; background: var(--sc-neg-soft); border: 1px solid var(--sc-border); border-radius: 10px; padding: 11px 13px; font-size: 13px; color: var(--sc-neg); margin-top: 14px; }
+  .sc-err.sc-show { display: block; }
+
+  #results { display: none; }
+  #results.sc-show { display: block; }
+  .sc-statrow { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); margin-top: 14px; }
+  .sc-stat { background: var(--sc-surface); border: 1px solid var(--sc-border); border-radius: 11px; padding: 14px 15px; }
+  .sc-stat .sc-k { font-size: 10.5px; color: var(--sc-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .sc-stat .sc-v { font-size: 22px; font-weight: 700; margin-top: 5px; }
+
+  .sc-senti { display: grid; grid-template-columns: 170px 1fr; gap: 24px; align-items: center; }
+  @media (max-width: 560px) { .sc-senti { grid-template-columns: 1fr; justify-items: center; } }
+  .sc-donut { width: 170px; height: 170px; border-radius: 50%; position: relative; display: grid; place-items: center; }
+  .sc-donut::after { content: ""; position: absolute; inset: 26px; border-radius: 50%; background: var(--sc-surface); }
+  .sc-donut .sc-mid { position: relative; z-index: 1; text-align: center; }
+  .sc-donut .sc-big { font-size: 27px; font-weight: 800; color: var(--sc-pos); line-height: 1; }
+  .sc-donut .sc-lab { font-size: 10.5px; color: var(--sc-muted); margin-top: 3px; }
+  .sc-legend { display: flex; flex-direction: column; gap: 11px; width: 100%; }
+  .sc-li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .sc-li .sc-swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  .sc-li .sc-nm { width: 80px; }
+  .sc-li .sc-bar { flex: 1; height: 8px; border-radius: 999px; background: var(--sc-surface2); overflow: hidden; }
+  .sc-li .sc-bar span { display: block; height: 100%; border-radius: 999px; }
+  .sc-li .sc-pct { width: 44px; text-align: right; font-weight: 700; }
+  .sc-li .sc-cnt { width: 46px; text-align: right; color: var(--sc-muted); }
+
+  .sc-posthead { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 14px; }
+  .sc-posthead .sc-thumb { width: 120px; height: 67px; object-fit: cover; border-radius: 8px; border: 1px solid var(--sc-border); flex: none; }
+  .sc-posthead .sc-ptitle { font-size: 13.5px; font-weight: 600; color: var(--sc-ink); line-height: 1.4; }
+  .sc-summary { background: var(--sc-plane); border: 1px solid var(--sc-border); border-radius: 10px; padding: 14px; font-size: 13.5px; color: var(--sc-ink2); }
+
+  .sc-kwlist { display: flex; flex-direction: column; gap: 8px; }
+  .sc-kwrow { display: grid; grid-template-columns: 128px 1fr 40px; gap: 10px; align-items: center; font-size: 12.5px; }
+  .sc-kwrow .sc-term { color: var(--sc-ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sc-kwrow .sc-track { height: 10px; background: var(--sc-surface2); border-radius: 999px; overflow: hidden; }
+  .sc-kwrow .sc-track span { display: block; height: 100%; background: var(--sc-accent); border-radius: 999px; }
+  .sc-kwrow .sc-num { text-align: right; color: var(--sc-muted); }
+
+  .sc-samples { display: flex; flex-direction: column; gap: 15px; }
+  .sc-sgroup { display: flex; flex-direction: column; gap: 7px; }
+  .sc-shead { font-size: 12.5px; font-weight: 700; }
+  .sc-shead .sc-scnt { color: var(--sc-muted); font-weight: 400; }
+  .sc-sample { border: 1px solid var(--sc-border); border-left-width: 3px; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: var(--sc-ink2); background: var(--sc-plane); }
+  .sc-sample.sc-pos { border-left-color: var(--sc-pos); }
+  .sc-sample.sc-neg { border-left-color: var(--sc-neg); }
+
+  .sc-bar-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .sc-auditbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+  .sc-afilter { display: flex; gap: 7px; flex-wrap: wrap; }
+  .sc-afbtn { border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-ink2); border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .sc-afbtn.sc-on { background: var(--sc-accent); color: #fff; border-color: transparent; }
+  .sc-alist { display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow: auto; }
+  .sc-arow { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; padding: 8px 11px; border: 1px solid var(--sc-border); border-radius: 8px; background: var(--sc-plane); }
+  .sc-atag { flex: none; font-size: 10px; font-weight: 700; border: 1px solid; border-radius: 999px; padding: 2px 9px; margin-top: 1px; }
+  .sc-atext { color: var(--sc-ink2); word-break: break-word; }
+
+  details.sc-card > summary { cursor: pointer; font-weight: 700; font-size: 14px; color: #111827; list-style: none; }
+  details.sc-card > summary::-webkit-details-marker { display: none; }
+
+  .sc-toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: #111827; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 13px; opacity: 0; transition: all .2s; pointer-events: none; z-index: 99; }
+  .sc-toast.sc-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🧭</span>
+      <div>
+        <h1>Issue Dashboard</h1>
+        <p class="sub">กระแสความเห็น — วิเคราะห์ sentiment ใต้โพส</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <a href="/" class="refresh" style="text-decoration:none" title="กลับหน้าหลัก">🏠 หน้าหลัก</a>
+    </div>
+  </header>
+  <div class="pgtabs">
+    <a class="pgtab" href="./">📰 ข่าวประเด็น</a>
+    <a class="pgtab" href="trends.html">📈 เทรนด์ (Trends)</a>
+    <a class="pgtab on" href="sentiment.html">💬 กระแสความเห็น</a>
+    <a class="pgtab" href="three.html">📊 กระแสข่าว</a>
+  </div>
+
+  <div class="sc-wrap">
+    <!-- INPUT -->
+    <div class="sc-card">
+      <h2>วิเคราะห์ความเห็นใต้โพส</h2>
+      <p class="sc-sub">วางลิงก์โพส → ดึงคอมเมนต์ → ตี sentiment ด้วย Claude → สรุปเป็น % · ใช้ภายใน · ไม่เก็บชื่อผู้คอมเมนต์</p>
+      <div class="sc-inrow">
+        <div class="sc-field sc-grow">
+          <label for="url">ลิงก์โพส (YouTube · Facebook · TikTok)</label>
+          <input type="url" id="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+        </div>
+        <div class="sc-field" style="width:128px">
+          <label for="limit">ดึงกี่คอมเมนต์</label>
+          <input type="number" id="limit" value="200" min="10" max="2000" step="10" />
+        </div>
+        <div class="sc-field">
+          <label aria-hidden="true">&nbsp;</label>
+          <button class="sc-btn sc-pri" id="analyzeBtn" type="button">🔎 วิเคราะห์</button>
+        </div>
+      </div>
+      <div class="sc-chiprow">
+        <span id="platformBadge" class="sc-badge">แพลตฟอร์ม: —</span>
+        <span class="sc-badge sc-on" title="ตัดชื่อผู้คอมเมนต์ออกเสมอ (PDPA)">🔒 ปกปิดชื่ออัตโนมัติ</span>
+        <button class="sc-chip" id="creditsChip" type="button" title="เครดิต ScrapeCreators คงเหลือ — กดเพื่อตรวจสอบ">💠 เครดิต: <span id="creditsChipVal">—</span></button>
+        <button class="sc-chip" id="claudeChip" type="button" title="Claude tokens ที่ใช้ในการวิเคราะห์ล่าสุด">🧠 tokens: <span id="claudeChipVal">—</span></button>
+      </div>
+      <div class="sc-loading" id="loading"><span class="sc-spinner"></span><span id="loadingText">กำลังดึงคอมเมนต์และวิเคราะห์…</span></div>
+      <div class="sc-err" id="err"></div>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="results">
+      <div class="sc-card">
+        <h2>ผลวิเคราะห์ Sentiment</h2>
+        <p class="sc-sub" id="resSub"></p>
+        <div class="sc-posthead" id="postHead" style="display:none"></div>
+        <div class="sc-senti">
+          <div class="sc-donut" id="donut"><div class="sc-mid"><div class="sc-big" id="donutBig">–</div><div class="sc-lab">เชิงบวก</div></div></div>
+          <div class="sc-legend" id="legend"></div>
+        </div>
+      </div>
+
+      <div class="sc-statrow" id="statRow"></div>
+
+      <div class="sc-card">
+        <h2>สรุปภาพรวม</h2>
+        <p class="sc-sub">สรุปโดย Claude จากคอมเมนต์ทั้งหมด</p>
+        <div class="sc-summary" id="summaryBox">—</div>
+      </div>
+
+      <div class="sc-card">
+        <h2>คำที่พูดถึงบ่อย</h2>
+        <p class="sc-sub">Top keywords / หัวข้อที่ถูกพูดถึง</p>
+        <div class="sc-kwlist" id="kwList"></div>
+      </div>
+
+      <div class="sc-card" id="sampleCard">
+        <h2>ตัวอย่างคอมเมนต์ (ถอดความ · ไม่ระบุตัวตน)</h2>
+        <p class="sc-sub">คัดเป็นตัวแทนแต่ละอารมณ์ พร้อม % ของหมวดนั้น</p>
+        <div class="sc-samples" id="sampleList"></div>
+      </div>
+
+      <div class="sc-card">
+        <h2>ส่งออกรายงานภาพรวม</h2>
+        <p class="sc-sub">รายงานเป็นรูป (ไม่มีข้อความรายคน)</p>
+        <div class="sc-bar-tools">
+          <button class="sc-btn sc-pri" id="pdfBtn" type="button">📄 PDF</button>
+          <button class="sc-btn" id="jpegBtn" type="button">🖼️ JPEG</button>
+        </div>
+      </div>
+
+      <details class="sc-card" id="auditCard">
+        <summary>🔍 ตรวจ sentiment รายคอมเมนต์ (audit) + ส่งออก Excel/CSV</summary>
+        <p class="sc-sub" style="margin:8px 0 0">ข้อความ + ผลที่ Claude ตี ไว้ตรวจว่าถูกต้องไหม (ตัดชื่อผู้คอมเมนต์ออกแล้ว)</p>
+        <div class="sc-auditbar">
+          <div class="sc-afilter" id="auditFilter"></div>
+          <div class="sc-bar-tools">
+            <button class="sc-btn" id="auditXlsxBtn" type="button">📊 Excel</button>
+            <button class="sc-btn" id="auditCsvBtn" type="button">📑 CSV</button>
+          </div>
+        </div>
+        <div class="sc-alist" id="auditList"></div>
+      </details>
+    </div>
+  </div>
+
+  <div class="sc-toast" id="toast"></div>
+
+<script>
+const WORKER = "https://comment-sentiment.s3445028.workers.dev";
+const DEMO = new URLSearchParams(location.search).has("demo");
+const el = id => document.getElementById(id);
+let lastResult = null;
+let auditRows = [];
+
+/* ---------------- platform detection ---------------- */
+function detectPlatform(url){
+  const u = (url||"").toLowerCase();
+  if (/youtube\.com|youtu\.be/.test(u)) return "youtube";
+  if (/tiktok\.com/.test(u)) return "tiktok";
+  if (/facebook\.com|fb\.watch|fb\.com/.test(u)) return "facebook";
+  return null;
+}
+const PLAT_LABEL = { youtube:"YouTube 🔴 (ฟรี)", tiktok:"TikTok ⚫", facebook:"Facebook 🔵" };
+function refreshPlatform(){
+  const p = detectPlatform(el("url").value);
+  const b = el("platformBadge");
+  b.textContent = "แพลตฟอร์ม: " + (p ? PLAT_LABEL[p] : "—");
+  b.classList.toggle("sc-on", !!p);
+}
+el("url").addEventListener("input", refreshPlatform);
+
+/* ---------------- credits / tokens ---------------- */
+function showCredits(n){
+  const low = n != null && n !== "" && Number(n) <= 100;
+  const c = el("creditsChipVal");
+  if (!c) return;
+  c.textContent = (n == null || n === "") ? "—" : Number(n).toLocaleString();
+  c.classList.toggle("sc-low", low);
+}
+async function checkCredits(){
+  el("creditsChip").disabled = true;
+  try {
+    const r = await fetch(WORKER.replace(/\/+$/,"") + "/credits");
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    showCredits(j.credits_remaining);
+    toast("อัปเดตเครดิตแล้ว ✓");
+  } catch(e){ showCredits(null); toast("ดึงเครดิตไม่ได้: " + (e.message||e)); }
+  finally { el("creditsChip").disabled = false; }
+}
+el("creditsChip").onclick = checkCredits;
+function showClaudeTokens(usage, rateRemaining){
+  const c = el("claudeChipVal");
+  if (!c) return;
+  if (!usage || usage.total == null){ c.textContent = "—"; return; }
+  c.textContent = Number(usage.total).toLocaleString();
+  el("claudeChip").title =
+    `Claude tokens ล่าสุด: input ${Number(usage.input||0).toLocaleString()} + output ${Number(usage.output||0).toLocaleString()} = ${Number(usage.total).toLocaleString()}` +
+    (rateRemaining != null ? `\nrate-limit เหลือ/นาที: ${Number(rateRemaining).toLocaleString()} tokens` : "");
+}
+
+/* ---------------- analyze ---------------- */
+el("analyzeBtn").onclick = analyze;
+el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
+
+async function analyze(){
+  const url = el("url").value.trim();
+  const platform = detectPlatform(url);
+  if (!url || !platform){ showErr("กรุณาวางลิงก์ YouTube / Facebook / TikTok ที่ถูกต้อง"); return; }
+  hideErr();
+  el("results").classList.remove("sc-show");
+  setLoading(true, "กำลังดึงคอมเมนต์และวิเคราะห์…");
+  el("analyzeBtn").disabled = true;
+
+  const opts = {
+    url, platform,
+    limit: Math.max(10, Math.min(2000, +el("limit").value || 200)),
+    anonymize: true, samples: true,
+  };
+  try {
+    const data = DEMO ? await demoResult(opts) : await callWorker(opts);
+    lastResult = data;
+    renderResult(data);
+  } catch (e){
+    showErr("วิเคราะห์ไม่สำเร็จ: " + (e && e.message ? e.message : e));
+  } finally {
+    setLoading(false);
+    el("analyzeBtn").disabled = false;
+  }
+}
+async function callWorker(opts){
+  const resp = await fetch(WORKER.replace(/\/+$/,"") + "/analyze", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts),
+  });
+  if (!resp.ok){
+    let msg = "HTTP " + resp.status;
+    try { const j = await resp.json(); if (j.error) msg = j.error; } catch(e){}
+    throw new Error(msg);
+  }
+  return await resp.json();
+}
+async function demoResult(opts){
+  await new Promise(r => setTimeout(r, 700));
+  const total = Math.min(opts.limit, 214);
+  const pos = Math.round(total*0.58), neg = Math.round(total*0.16), neu = total-pos-neg;
+  return {
+    platform: opts.platform, source_url: opts.url, demo: true,
+    post_title: "ตัวอย่าง: รีวิวร้านอาหารเปิดใหม่ อร่อยจริงหรือแค่กระแส?", post_thumb: "",
+    fetched_count: total, analyzed_count: total,
+    sentiment: { positive: pos, neutral: neu, negative: neg },
+    engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
+    time_range: { earliest: "2026-08-10", latest: "2026-08-19" },
+    keywords: [{term:"อร่อย",count:41},{term:"ราคา",count:33},{term:"บริการ",count:27},{term:"ส่งช้า",count:19},{term:"คุ้ม",count:17},{term:"แพ็คเกจ",count:14},{term:"รอนาน",count:12},{term:"ประทับใจ",count:11}],
+    summary: "คอมเมนต์ส่วนใหญ่เป็นเชิงบวก ชื่นชมรสชาติและความคุ้มค่า มีบางส่วนบ่นเรื่องการจัดส่งช้าและการรอคิว โดยรวมกระแสตอบรับดี",
+    claude_usage: { input: total*12, output: 240, total: total*12+240 }, claude_rate_remaining: 380000,
+    audit: [
+      {text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน",sentiment:"positive"},
+      {text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย",sentiment:"positive"},
+      {text:"ร้านนี้เด็ด ต้องมาลองสักครั้ง",sentiment:"positive"},
+      {text:"อร่อยใช้ได้ แต่แพงไปนิดนึง",sentiment:"neutral"},
+      {text:"รสชาติโอเค ตามราคา ไม่ได้หวือหวาอะไร",sentiment:"neutral"},
+      {text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย",sentiment:"negative"},
+      {text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก",sentiment:"negative"},
+      {text:"รอคิวนานมาก ไม่ค่อยประทับใจ",sentiment:"negative"},
+    ],
+    samples: [
+      {sentiment:"positive",text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน"},
+      {sentiment:"positive",text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย"},
+      {sentiment:"negative",text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย"},
+      {sentiment:"negative",text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก"},
+    ],
+  };
+}
+
+/* ---------------- render ---------------- */
+function pct(n, total){ return total ? Math.round(n/total*100) : 0; }
+function renderResult(d){
+  const s = d.sentiment || {positive:0,neutral:0,negative:0};
+  const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
+  const pp = pct(s.positive,total), pnu = pct(s.neutral,total), pn = 100-pp-pnu;
+
+  el("resSub").innerHTML =
+    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์`) +
+    (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
+  if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
+  showClaudeTokens(d.claude_usage, d.claude_rate_remaining);
+
+  const hasPost = d.post_title || d.post_thumb;
+  el("postHead").style.display = hasPost ? "" : "none";
+  el("postHead").innerHTML = hasPost
+    ? (d.post_thumb ? `<img class="sc-thumb" src="${d.post_thumb}" alt="ปกโพส">` : "") +
+      `<div class="sc-ptitle">${escapeHtml(d.post_title||"")}</div>`
+    : "";
+
+  const css = getComputedStyle(document.querySelector(".sc-wrap"));
+  const cPos = css.getPropertyValue("--sc-pos"), cNeu = css.getPropertyValue("--sc-neu"), cNeg = css.getPropertyValue("--sc-neg");
+  el("donut").style.background = `conic-gradient(${cPos} 0 ${pp}%, ${cNeu} ${pp}% ${pp+pnu}%, ${cNeg} ${pp+pnu}% 100%)`;
+  el("donutBig").textContent = pp + "%";
+
+  el("legend").innerHTML = [
+    ["เชิงบวก 😊","--sc-pos",pp,s.positive],
+    ["กลาง 😐","--sc-neu",pnu,s.neutral],
+    ["เชิงลบ 😞","--sc-neg",pn,s.negative],
+  ].map(([lab,c,p,n]) => `
+    <div class="sc-li">
+      <span class="sc-swatch" style="background:var(${c})"></span>
+      <span class="sc-nm">${lab}</span>
+      <span class="sc-bar"><span style="width:${p}%;background:var(${c})"></span></span>
+      <span class="sc-pct">${p}%</span>
+      <span class="sc-cnt">${n}</span>
+    </div>`).join("");
+
+  const eng = d.engagement || {};
+  const stats = [
+    ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
+    ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
+    ["จำนวน Reply", (eng.total_replies!=null? Number(eng.total_replies).toLocaleString() : "—")],
+    ["ผู้คอมเมนต์ (ไม่ซ้ำ)", (eng.unique_commenters!=null? Number(eng.unique_commenters).toLocaleString() : "—")],
+  ];
+  el("statRow").innerHTML = stats.map(([k,v]) => `<div class="sc-stat"><div class="sc-k">${k}</div><div class="sc-v">${v}</div></div>`).join("");
+
+  el("summaryBox").textContent = d.summary || "—";
+
+  const kws = d.keywords || [];
+  const maxN = kws.reduce((m,k)=>Math.max(m,k.count||0),0) || 1;
+  el("kwList").innerHTML = kws.length ? kws.map(k => `
+    <div class="sc-kwrow">
+      <span class="sc-term">${escapeHtml(k.term)}</span>
+      <span class="sc-track"><span style="width:${Math.round((k.count||0)/maxN*100)}%"></span></span>
+      <span class="sc-num">${k.count||0}</span>
+    </div>`).join("") : `<div style="color:var(--sc-muted);font-size:12.5px">— ไม่มีข้อมูลคำ —</div>`;
+
+  const samples = d.samples || [];
+  el("sampleCard").style.display = samples.length ? "" : "none";
+  const groups = [["positive","บวก 😊","--sc-pos","sc-pos",pp,s.positive],["negative","ลบ 😞","--sc-neg","sc-neg",pn,s.negative]];
+  el("sampleList").innerHTML = groups.map(([key,label,color,cls,gp,gc]) => {
+    const items = samples.filter(x => x.sentiment === key);
+    if (!items.length) return "";
+    return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>` +
+      items.map(x => `<div class="sc-sample ${cls}">${escapeHtml(x.text)}</div>`).join("") + `</div>`;
+  }).join("");
+
+  renderAudit(d);
+  el("results").classList.add("sc-show");
+  el("results").scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+/* ---------------- audit ---------------- */
+function renderAudit(d){
+  const audit = d.audit || [];
+  el("auditCard").style.display = audit.length ? "" : "none";
+  if (!audit.length) return;
+  const counts = { all: audit.length, positive:0, neutral:0, negative:0 };
+  audit.forEach(a => { if (counts[a.sentiment] != null) counts[a.sentiment]++; });
+  const filters = [["all","ทั้งหมด"],["positive","บวก"],["neutral","กลาง"],["negative","ลบ"]];
+  el("auditFilter").innerHTML = filters.map(([k,l]) => `<button class="sc-afbtn${k==="all"?" sc-on":""}" data-f="${k}" type="button">${l} (${counts[k]||0})</button>`).join("");
+  const tagL = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  const tagC = { positive:"--sc-pos", neutral:"--sc-neu", negative:"--sc-neg" };
+  function draw(f){
+    const rows = audit.filter(a => f==="all" || a.sentiment===f);
+    auditRows = rows;
+    el("auditList").innerHTML = rows.map(a =>
+      `<div class="sc-arow"><span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span><span class="sc-atext">${escapeHtml(a.text)}</span></div>`).join("");
+  }
+  el("auditFilter").querySelectorAll(".sc-afbtn").forEach(b => b.onclick = () => {
+    el("auditFilter").querySelectorAll(".sc-afbtn").forEach(x => x.classList.remove("sc-on"));
+    b.classList.add("sc-on"); draw(b.dataset.f);
+  });
+  draw("all");
+}
+function auditSheets(){
+  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  const sheets = lastResult ? buildSheets(lastResult) : {};
+  sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.text])];
+  return sheets;
+}
+el("auditXlsxBtn").onclick = async () => { if (auditRows.length && await writeXlsx(auditSheets(), "sentiment-audit.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
+el("auditCsvBtn").onclick = async () => { if (auditRows.length && await saveFile("sentiment-audit.csv", "﻿"+sheetsToCsv(auditSheets()), "text/csv")) toast("ดาวน์โหลด CSV แล้ว ✓"); };
+
+/* ---------------- export report (PDF/JPEG) ---------------- */
+el("jpegBtn").onclick = async () => { if (!lastResult) return; const r = await renderReport(lastResult); if (r.blob && await saveFile("comment-sentiment.jpg", r.blob, "image/jpeg")) toast("ดาวน์โหลด JPEG แล้ว ✓"); };
+el("pdfBtn").onclick = async () => { if (!lastResult) return; const r = await renderReport(lastResult); if (r.jpeg){ const pdf = buildPdf(r.jpeg, r.pw, r.ph, r.iw, r.ih); if (await saveFile("comment-sentiment.pdf", pdf, "application/pdf")) toast("ดาวน์โหลด PDF แล้ว ✓"); } };
+
+function buildSheets(d){
+  const s = d.sentiment||{}; const eng = d.engagement||{};
+  const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
+  const summary = [
+    ["รายการ","ค่า"],["แพลตฟอร์ม", d.platform||""],["ลิงก์", d.source_url||""],
+    ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],["คอมเมนต์ที่ดึงมา", d.fetched_count||""],
+    ["ยอดถูกใจ/รีแอกชัน", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
+    ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
+    ["สรุปภาพรวม", d.summary||""],
+  ];
+  const senti = [["Sentiment","จำนวน","เปอร์เซ็นต์"],["เชิงบวก", s.positive||0, pct(s.positive,total)+"%"],["กลาง", s.neutral||0, pct(s.neutral,total)+"%"],["เชิงลบ", s.negative||0, pct(s.negative,total)+"%"],["รวม", total, "100%"]];
+  const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term, k.count||0])];
+  const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
+  const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ" };
+  if ((d.samples||[]).length) sheets["ตัวอย่าง"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[sentTh[x.sentiment]||x.sentiment, x.text])];
+  return sheets;
+}
+function sheetsToCsv(sheets){ let out=""; for (const [name, rows] of Object.entries(sheets)){ out += "# "+name+"\n" + rows.map(r=>r.map(csvCell).join(",")).join("\n") + "\n\n"; } return out; }
+function csvCell(v){ v = v==null?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+
+/* ---------------- report image (canvas) → JPEG / PDF ---------------- */
+const RC = { bg:"#ffffff", ink:"#141619", ink2:"#4a4e57", muted:"#878b95", border:"#e3e6ea", pos:"#2e9160", neu:"#8a8f99", neg:"#d94b4b", accent:"#2563eb", track:"#eef1f5" };
+const FF = '"IBM Plex Sans Thai", system-ui, sans-serif';
+function setFont(ctx,w,s){ ctx.font = w + " " + s + 'px ' + FF; }
+function roundRect(ctx,x,y,w,h,r){ r=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function wrapLines(ctx,text,maxW){ const lines=[]; let line=""; for (const ch of String(text)){ if (ch==="\n"){ lines.push(line); line=""; continue; } const t=line+ch; if (ctx.measureText(t).width>maxW && line){ lines.push(line); line=ch; } else line=t; } if (line) lines.push(line); return lines; }
+async function ensureFont(){ try { if (document.fonts && document.fonts.load){ await Promise.all([document.fonts.load('700 27px "IBM Plex Sans Thai"'),document.fonts.load('600 15px "IBM Plex Sans Thai"'),document.fonts.load('400 14px "IBM Plex Sans Thai"')]); await document.fonts.ready; } } catch(e){} }
+function reportPass(ctx, d, draw, thumb){
+  const W=900, pad=44, cw=W-2*pad;
+  const s=d.sentiment||{}; const total=(s.positive||0)+(s.neutral||0)+(s.negative||0);
+  const pp=pct(s.positive,total), pnu=pct(s.neutral,total), pn=100-pp-pnu;
+  const eng=d.engagement||{}; let y=42;
+  if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,700,27); ctx.fillText("รายงานวิเคราะห์ความเห็น (Sentiment)", pad, y); }
+  y+=26;
+  if (draw){ ctx.fillStyle=RC.muted; setFont(ctx,400,13.5); ctx.fillText(`${PLAT_LABEL[d.platform]||d.platform} · วิเคราะห์ ${d.analyzed_count||total} คอมเมนต์${d.demo?" · Demo":""}`, pad, y); }
+  y+=20;
+  // รูปปก + หัวข้อโพส
+  if (d.post_title || thumb){
+    const tw=132, th=Math.round(tw*9/16); let tx=pad;
+    if (thumb){
+      if (draw){ ctx.save(); roundRect(ctx,pad,y,tw,th,8); ctx.clip(); const ir=thumb.width/thumb.height, tr=tw/th; let dw,dh; if(ir>tr){ dh=th; dw=th*ir; } else { dw=tw; dh=tw/ir; } ctx.drawImage(thumb, pad-(dw-tw)/2, y-(dh-th)/2, dw, dh); ctx.restore(); ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,tw,th,8); ctx.stroke(); }
+      tx = pad + tw + 14;
+    }
+    setFont(ctx,600,14);
+    const lines = d.post_title ? wrapLines(ctx, d.post_title, W-pad-tx).slice(0,3) : [];
+    if (draw){ ctx.fillStyle=RC.ink; let ty=y+13; for (const ln of lines){ ctx.fillText(ln, tx, ty); ty+=19; } }
+    y += Math.max(thumb?th:0, lines.length*19) + 16;
+  }
+  if (draw){ ctx.strokeStyle=RC.border; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke(); }
+  y+=26;
+  const R=62, cx=pad+R, cy=y+R;
+  if (draw){
+    let a=-Math.PI/2;
+    for (const [p,col] of [[pp,RC.pos],[pnu,RC.neu],[pn,RC.neg]]){ const ang=(p/100)*Math.PI*2; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R,a,a+ang); ctx.closePath(); ctx.fillStyle=col; ctx.fill(); a+=ang; }
+    ctx.beginPath(); ctx.arc(cx,cy,R*0.58,0,Math.PI*2); ctx.fillStyle=RC.bg; ctx.fill();
+    ctx.textAlign="center"; ctx.fillStyle=RC.pos; setFont(ctx,700,23); ctx.fillText(pp+"%", cx, cy+3);
+    ctx.fillStyle=RC.muted; setFont(ctx,400,11); ctx.fillText("เชิงบวก", cx, cy+19); ctx.textAlign="left";
+    const lx=pad+2*R+34; let ly=y+14;
+    for (const [lab,col,p,n] of [["เชิงบวก",RC.pos,pp,s.positive],["กลาง",RC.neu,pnu,s.neutral],["เชิงลบ",RC.neg,pn,s.negative]]){
+      ctx.fillStyle=col; roundRect(ctx,lx,ly-10,11,11,3); ctx.fill();
+      ctx.fillStyle=RC.ink2; setFont(ctx,400,14); ctx.fillText(lab, lx+20, ly);
+      ctx.fillStyle=RC.ink; setFont(ctx,600,14); ctx.fillText(p+"%", lx+120, ly);
+      ctx.fillStyle=RC.muted; setFont(ctx,400,13); ctx.fillText(n+" คอมเมนต์", lx+172, ly); ly+=30;
+    }
+  }
+  y+=2*R+20;
+  const boxes=[["คอมเมนต์ที่วิเคราะห์", String(d.analyzed_count||total)],["ยอดถูกใจ/รีแอกชัน", eng.total_likes!=null?Number(eng.total_likes).toLocaleString():"—"],["จำนวน Reply", eng.total_replies!=null?Number(eng.total_replies).toLocaleString():"—"],["ผู้คอมเมนต์ (ไม่ซ้ำ)", eng.unique_commenters!=null?Number(eng.unique_commenters).toLocaleString():"—"]];
+  const gap=12, bw=(cw-3*gap)/4, bh=60;
+  if (draw){ boxes.forEach((b,i)=>{ const bx=pad+i*(bw+gap); ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,bx,y,bw,bh,10); ctx.stroke(); ctx.fillStyle=RC.muted; setFont(ctx,400,11); ctx.fillText(b[0], bx+12, y+21, bw-20); ctx.fillStyle=RC.ink; setFont(ctx,600,19); ctx.fillText(b[1], bx+12, y+46); }); }
+  y+=bh+28;
+  const kws=(d.keywords||[]).slice(0,8);
+  if (kws.length){
+    if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("คำที่พูดถึงบ่อย", pad, y); }
+    y+=22;
+    const maxN=kws.reduce((m,k)=>Math.max(m,k.count||0),0)||1;
+    const termW=150, barX=pad+termW+10, barW=cw-termW-10-46;
+    for (const k of kws){ if (draw){ ctx.fillStyle=RC.ink2; setFont(ctx,400,13); ctx.fillText(String(k.term).slice(0,22), pad, y+11, termW); ctx.fillStyle=RC.track; roundRect(ctx,barX,y+2,barW,10,5); ctx.fill(); ctx.fillStyle=RC.accent; roundRect(ctx,barX,y+2,Math.max(3,barW*(k.count||0)/maxN),10,5); ctx.fill(); ctx.fillStyle=RC.muted; setFont(ctx,400,12); ctx.textAlign="right"; ctx.fillText(String(k.count||0), W-pad, y+11); ctx.textAlign="left"; } y+=22; }
+    y+=16;
+  }
+  if (d.summary){ if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("สรุปภาพรวม", pad, y); } y+=22; setFont(ctx,400,14); for (const ln of wrapLines(ctx,d.summary,cw)){ if (draw){ ctx.fillStyle=RC.ink2; ctx.fillText(ln, pad, y+12); } y+=21; } y+=16; }
+  const samples=d.samples||[];
+  if (samples.length){
+    if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("ตัวอย่างคอมเมนต์ (ถอดความ)", pad, y); }
+    y+=24;
+    for (const [key,lab,col,gp,gc] of [["positive","บวก",RC.pos,pp,s.positive],["negative","ลบ",RC.neg,pn,s.negative]]){
+      const items=samples.filter(x=>x.sentiment===key); if (!items.length) continue;
+      if (draw){ ctx.fillStyle=col; setFont(ctx,600,13); ctx.fillText(`${lab} · ${gp}%  (${gc} คอมเมนต์)`, pad, y+10); }
+      y+=22; setFont(ctx,400,13);
+      for (const it of items){ const lines=wrapLines(ctx,"“"+it.text+"”",cw-18); const boxH=lines.length*19+14; if (draw){ ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,pad,y,cw,boxH,8); ctx.stroke(); ctx.fillStyle=col; ctx.fillRect(pad,y,3,boxH); ctx.fillStyle=RC.ink2; let ty=y+18; for (const ln of lines){ ctx.fillText(ln, pad+14, ty); ty+=19; } } y+=boxH+8; }
+      y+=6;
+    }
+  }
+  y+=4;
+  if (draw){ ctx.strokeStyle=RC.border; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-pad,y); ctx.stroke(); ctx.fillStyle=RC.muted; setFont(ctx,400,11); ctx.fillText("ปกปิดชื่ออัตโนมัติ · aggregate เท่านั้น · Issue Dashboard", pad, y+18); ctx.textAlign="right"; ctx.fillText(String((d.time_range||{}).latest||""), W-pad, y+18); ctx.textAlign="left"; }
+  y+=28;
+  return { W, H: Math.ceil(y) };
+}
+function drawReportCanvas(d, scale, thumb){
+  const scratch=document.createElement("canvas").getContext("2d");
+  const { W, H } = reportPass(scratch, d, false, thumb);
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(W*scale); canvas.height=Math.round(H*scale);
+  canvas._W=W; canvas._H=H;
+  const ctx=canvas.getContext("2d"); ctx.scale(scale,scale);
+  ctx.fillStyle=RC.bg; ctx.fillRect(0,0,W,H); ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  reportPass(ctx, d, true, thumb); return canvas;
+}
+function loadImg(src){ return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; }); }
+async function renderReport(d){
+  await ensureFont();
+  const thumb = d.post_thumb ? await loadImg(d.post_thumb) : null;
+  const canvas=drawReportCanvas(d, 2, thumb);
+  const blob=await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.92));
+  const jpeg=blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+  return { blob, jpeg, pw:canvas._W, ph:canvas._H, iw:canvas.width, ih:canvas.height };
+}
+function buildPdf(jpeg, pageW, pageH, imgW, imgH){
+  const encb = s => new TextEncoder().encode(s);
+  const parts=[]; let len=0; const off=[];
+  const push = b => { parts.push(b); len += b.length; };
+  const put = (n, str) => { off[n]=len; push(encb(str)); };
+  push(encb("%PDF-1.3\n"));
+  put(1, "1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n");
+  put(2, "2 0 obj\n<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n");
+  put(3, `3 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${pageW} ${pageH}]/Resources<</XObject<</Im0 4 0 R>>>>/Contents 5 0 R>>\nendobj\n`);
+  off[4]=len; push(encb(`4 0 obj\n<</Type/XObject/Subtype/Image/Width ${imgW}/Height ${imgH}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/DCTDecode/Length ${jpeg.length}>>\nstream\n`));
+  push(jpeg); push(encb("\nendstream\nendobj\n"));
+  const content = `q ${pageW} 0 0 ${pageH} 0 0 cm /Im0 Do Q`;
+  put(5, `5 0 obj\n<</Length ${content.length}>>\nstream\n${content}\nendstream\nendobj\n`);
+  const xrefAt=len; let xref="xref\n0 6\n0000000000 65535 f \n";
+  for (let i=1;i<=5;i++) xref += String(off[i]).padStart(10,"0")+" 00000 n \n";
+  push(encb(xref)); push(encb(`trailer\n<</Size 6/Root 1 0 R>>\nstartxref\n${xrefAt}\n%%EOF`));
+  let total=0; for (const p of parts) total+=p.length;
+  const out=new Uint8Array(total); let o=0; for (const p of parts){ out.set(p,o); o+=p.length; } return out;
+}
+
+/* ---------------- download + self-contained xlsx ---------------- */
+async function saveFile(name, content, type){
+  const blob = new Blob([content], { type });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  return true;
+}
+const CRC_TABLE = (() => { const t=[]; for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320 ^ (c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(bytes){ let c=0xFFFFFFFF; for(let i=0;i<bytes.length;i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c>>>8); return (c ^ 0xFFFFFFFF)>>>0; }
+const encx = s => new TextEncoder().encode(s);
+const u16 = n => [n&0xFF,(n>>>8)&0xFF];
+const u32 = n => [n&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF];
+function zip(files){
+  const chunks=[], central=[]; let offset=0;
+  for (const f of files){
+    const nameB=encx(f.name), crc=crc32(f.data), sz=f.data.length;
+    const head=new Uint8Array([].concat(u32(0x04034b50),u16(20),u16(0),u16(0),u16(0),u16(0),u32(crc),u32(sz),u32(sz),u16(nameB.length),u16(0)));
+    chunks.push(head,nameB,f.data); central.push({nameB,crc,sz,offset}); offset += head.length+nameB.length+f.data.length;
+  }
+  const cen=[]; let cenSize=0;
+  for (const c of central){ const head=new Uint8Array([].concat(u32(0x02014b50),u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),u32(c.crc),u32(c.sz),u32(c.sz),u16(c.nameB.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(c.offset))); cen.push(head,c.nameB); cenSize += head.length+c.nameB.length; }
+  const end=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),u16(central.length),u16(central.length),u32(cenSize),u32(offset),u16(0)));
+  const all=[...chunks,...cen,end]; let total=0; for (const a of all) total+=a.length;
+  const out=new Uint8Array(total); let p=0; for (const a of all){ out.set(a,p); p+=a.length; } return out;
+}
+function xmlEsc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function colRef(n){ let s=""; n+=1; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+function sheetXml(rows){
+  let x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+  rows.forEach((row,r) => { x+=`<row r="${r+1}">`; row.forEach((cell,c) => { if (cell==null || cell==="") return; const ref=colRef(c)+(r+1); if (typeof cell==="number" && isFinite(cell)) x+=`<c r="${ref}"><v>${cell}</v></c>`; else x+=`<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(cell)}</t></is></c>`; }); x+="</row>"; });
+  return x+"</sheetData></worksheet>";
+}
+async function writeXlsx(sheets, filename){
+  const names = Object.keys(sheets); const files = [];
+  files.push({ name:"[Content_Types].xml", data: encx('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+names.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")+'</Types>') });
+  files.push({ name:"_rels/.rels", data: encx('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>') });
+  files.push({ name:"xl/workbook.xml", data: encx('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+names.map((nm,i)=>`<sheet name="${xmlEsc(nm).slice(0,31)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")+'</sheets></workbook>') });
+  files.push({ name:"xl/_rels/workbook.xml.rels", data: encx('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+names.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")+'</Relationships>') });
+  names.forEach((nm,i) => files.push({ name:`xl/worksheets/sheet${i+1}.xml`, data: encx(sheetXml(sheets[nm])) }));
+  return await saveFile(filename, zip(files), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+/* ---------------- helpers ---------------- */
+const escapeHtml = s => String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function setLoading(on, text){ el("loading").classList.toggle("sc-show", on); if (text) el("loadingText").textContent = text; }
+function showErr(m){ const e = el("err"); e.textContent = "⚠️ " + m; e.classList.add("sc-show"); }
+function hideErr(){ el("err").classList.remove("sc-show"); }
+function toast(msg){ const t = el("toast"); t.textContent = msg; t.classList.add("sc-show"); setTimeout(()=>t.classList.remove("sc-show"),1800); }
+
+/* ---------------- boot ---------------- */
+refreshPlatform();
+if (!DEMO) { fetch(WORKER.replace(/\/+$/,"") + "/credits").then(r=>r.json()).then(j=>{ if (j && j.credits_remaining!=null) showCredits(j.credits_remaining); }).catch(()=>{}); }
+</script>
+</body>
+</html>

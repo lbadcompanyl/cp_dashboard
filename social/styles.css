@@ -1,0 +1,715 @@
+/* Social Dashboard — สถิติช่องของเราเอง
+   โหมดสว่าง ใช้ชุดสีเดียวกับ /trend/ /ir/ /issue/ (เจ้าของสั่งเปลี่ยน 17 ส.ค. 2026)
+
+   📌 ค่าสีพื้นฐาน 5 ตัวล่างนี้ก๊อปมาจาก trend/ir/issue ตรงๆ ห้ามคิดเอง
+      แก้ชุดสีของตระกูลนี้เมื่อไหร่ ต้องแก้ให้ครบทุกหน้า ไม่งั้นสลับหน้าแล้วสีเพี้ยน
+   ⚠️ CLAUDE.md เคยเขียนว่า 3 หน้านั้น "เป็นโหมดมืดล้วน" ซึ่งไม่จริง — แก้ในเอกสารแล้ว
+
+   เขียนแบบ mobile-first: กฎพื้นฐานคือของจอแคบ แล้วค่อยขยายด้วย min-width */
+
+:root {
+  color-scheme: light;
+  /* ↓ ตรงกับ trend/ir/issue */
+  --plane:#f4f6fb; --surface:#ffffff; --border:#e4e8f0;
+  --ink:#1f2937; --muted:#6b7280;
+  /* ↓ เฉพาะหน้านี้ */
+  --surface-2:#eef1f7; --ink-2:#4b5563; --accent:#2563eb;
+  /* ⚠️ สีช่องต้องอ่านออกบนพื้นสว่าง — สีเดิม (#25f4ee ฟ้าอ่อน) จางจนมองไม่เห็นเส้นกราฟ */
+  --yt:#dc2626; --fb:#2563eb; --tt:#0d9488;
+  --warn:#b45309; --bad:#dc2626; --good:#15803d; --radius:14px;
+}
+
+* { box-sizing:border-box; }
+
+body {
+  margin:0; min-height:100vh; background:var(--plane); color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI","Sarabun","Noto Sans Thai",Roboto,sans-serif;
+  line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+
+.wrap { max-width:1280px; margin:0 auto; padding:0 14px 56px; }
+
+/* แถบเตือนข้อมูลจำลอง — ค้างบนจอเสมอ ไม่มีปุ่มปิดโดยตั้งใจ */
+#mockbar {
+  position:sticky; top:0; z-index:60; background:#fbbf24; color:#3b2600;
+  font-weight:700; text-align:center; padding:8px 12px; font-size:.82rem;
+}
+
+/* เซสชันของ Cloudflare Access หมด — สีแดงเพื่อไม่ให้สับสนกับแถบข้อมูลจำลอง */
+#sobar {
+  position:sticky; top:0; z-index:61; background:#dc2626; color:#fff;
+  font-weight:700; text-align:center; padding:8px 12px; font-size:.82rem;
+  display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap;
+}
+#sobar button {
+  border:0; border-radius:999px; padding:5px 14px; cursor:pointer;
+  background:#fff; color:#b91c1c; font:inherit; font-weight:700; font-size:.78rem;
+}
+
+/* ── แถบบน ───────────────────────────────────────────────────────── */
+.appbar {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:12px 0; border-bottom:1px solid var(--border); flex-wrap:wrap;
+}
+.logo { display:flex; align-items:center; gap:8px; font-weight:650; font-size:1rem; }
+.bar-right { display:flex; align-items:center; gap:8px; }
+.btn {
+  border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  border-radius:999px; padding:7px 13px; font-size:.8rem; cursor:pointer;
+  text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-family:inherit;
+}
+.btn:hover { background:var(--surface-2); color:var(--ink); }
+#vtag { color:var(--muted); font-size:.72rem; }
+
+/* ── แผงเลือกช่วงเวลา (ขวาบน) ─────────────────────────────────────
+   ปุ่มบอกช่วงที่เลือกอยู่ + ช่วงวันที่จริงบรรทัดล่าง กดแล้วกางแผงตัวเลือก */
+.sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+#periodbox { position:relative; }
+.periodbtn {
+  display:grid; grid-template-columns:auto 1fr auto; grid-template-rows:auto auto auto;
+  align-items:center; gap:0 8px; cursor:pointer; font-family:inherit; text-align:left;
+  background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:6px 11px;
+}
+.periodbtn:hover, .periodbtn.on { border-color:var(--accent); }
+.pb-ic { grid-row:1 / span 3; font-size:1rem; opacity:.7; }
+.pb-t { font-size:.82rem; font-weight:650; color:var(--ink); white-space:nowrap; }
+.pb-sub { grid-column:2; font-size:.68rem; color:var(--muted); white-space:nowrap; }
+.pb-caret { grid-row:1 / span 3; color:var(--muted); font-size:.7rem; }
+/* 🔴 ตัวเลข ▲▼ ทั้งหน้าเทียบกับช่วงนี้ — ตัวเลือกซ่อนอยู่ในแผงที่ต้องกดเปิด
+   ถ้าปุ่มไม่บอก จะไม่มีอะไรบนหน้าบอกเลยว่ากำลังเทียบกับอะไร */
+.pb-cmp { grid-column:2; font-size:.66rem; color:var(--accent); white-space:nowrap; }
+
+.periodpanel {
+  position:absolute; right:0; top:calc(100% + 6px); z-index:70;
+  width:min(560px, calc(100vw - 24px));
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  box-shadow:0 10px 30px rgba(16,24,40,.16); overflow:hidden;
+  /* ⚠️ ต้องเตี้ยกว่าจอเสมอ — หัวกับท้ายตรึงไว้ ส่วนกลางเลื่อนเอา
+     ไม่งั้นตัวเลือกล่างๆ (โหมดเทียบ / ปุ่มเสร็จ) กดไม่ถึงบนจอเตี้ย */
+  display:flex; flex-direction:column; max-height:min(80vh, 560px);
+}
+.pp-head, .pp-foot { flex:none; }
+.pp-scroll { flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.pp-head {
+  padding:9px 12px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+}
+/* ⚠️ ต้องพิมพ์วันที่เองได้ด้วย — ช่วงที่ย้อนไปหลายปี กดปฏิทินทีละเดือนไม่ไหว */
+.pp-dt {
+  background:var(--surface); border:1px solid var(--border); color:var(--ink);
+  border-radius:8px; padding:4px 7px; font-family:inherit; font-size:.74rem; min-width:0;
+}
+.pp-dt:focus { outline:2px solid var(--accent); outline-offset:1px; }
+.pp-dash { color:var(--muted); }
+.pp-days { color:var(--muted); font-weight:400; font-size:.74rem; margin-left:auto; }
+
+/* จอแคบ: รายการสำเร็จรูปอยู่บน ปฏิทินอยู่ล่าง · จอกว้าง: อยู่ซ้าย-ขวาแบบ GA4 */
+.pp-body { display:flex; flex-direction:column; }
+.pp-list { display:flex; flex-direction:column; max-height:min(38vh, 260px); overflow-y:auto; padding:5px; }
+.pp-i {
+  display:flex; flex-direction:column; gap:0; align-items:flex-start; text-align:left;
+  border:0; background:transparent; font-family:inherit; cursor:pointer; border-radius:7px; padding:5px 9px;
+}
+.pp-i:hover { background:var(--surface-2); }
+.pp-i.on { background:var(--accent); }
+.pp-n { font-size:.76rem; color:var(--ink); }
+.pp-r { font-size:.64rem; color:var(--muted); }
+.pp-i.on .pp-n, .pp-i.on .pp-r { color:#fff; }
+.pp-i.on .pp-r { opacity:.85; }
+
+/* ── ปฏิทินเลือกช่วง ──────────────────────────────────────────────
+   ⚠️ วันในอนาคตต้อง disabled จริง ไม่ใช่แค่ทำให้จาง — เราไม่มีข้อมูลของวันพรุ่งนี้ */
+.pp-cal2 { border-top:1px solid var(--border); padding:9px 11px 11px; }
+.cal-nav { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.cal-t { font-size:.74rem; font-weight:600; color:var(--ink-2); }
+.cal-b {
+  border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  width:26px; height:26px; border-radius:8px; cursor:pointer; font-family:inherit; line-height:1;
+}
+.cal-b:hover:not(:disabled) { background:var(--surface-2); color:var(--ink); }
+.cal-b:disabled { opacity:.35; cursor:not-allowed; }
+
+.cal-ms { display:grid; grid-template-columns:1fr; gap:12px; }
+/* จอแคบโชว์เดือนเดียว (เดือนขวา = เดือนที่ช่วงจบอยู่) ไม่งั้นช่องวันเล็กจนกดไม่โดน */
+.cal-ms > .cal-m:first-child { display:none; }
+.cal-mh { font-size:.7rem; color:var(--muted); font-weight:600; text-align:center; margin-bottom:3px; }
+.cal-g { display:grid; grid-template-columns:repeat(7,1fr); gap:1px 0; }
+.cal-w { font-size:.6rem; color:var(--muted); text-align:center; padding:1px 0; }
+.cal-x { height:27px; }
+.cal-d {
+  height:27px; border:0; background:transparent; font-family:inherit; font-size:.71rem;
+  color:var(--ink); cursor:pointer; border-radius:0;
+  font-variant-numeric:tabular-nums;
+}
+.cal-d:hover:not(:disabled) { background:var(--surface-2); }
+.cal-d:disabled { color:var(--border); cursor:not-allowed; }
+.cal-d.today { font-weight:700; text-decoration:underline; text-underline-offset:2px; }
+/* ช่วงที่เลือก: หัวกับท้ายเป็นวงกลมทึบ ตรงกลางเป็นแถบจาง — ต่อกันเป็นแถบเดียว */
+.cal-d.in { background:var(--surface-2); }
+.cal-d.s, .cal-d.e { background:var(--accent); color:#fff; font-weight:650; }
+.cal-d.s { border-radius:8px 0 0 8px; }
+.cal-d.e { border-radius:0 8px 8px 0; }
+.cal-d.s.e { border-radius:8px; }
+
+/* ── เทียบกับช่วงอื่น — อยู่ในแผงเดียวกับช่วงเวลา (แบบ GA4) ───────── */
+.pp-cmp { border-top:1px solid var(--border); padding:9px 11px; }
+.pp-sw {
+  display:flex; align-items:center; gap:8px; width:100%; border:0; background:transparent;
+  font-family:inherit; font-size:.77rem; color:var(--ink); cursor:pointer; padding:3px 2px;
+}
+.pp-sw-t {
+  width:32px; height:18px; border-radius:999px; background:var(--border); flex:none; position:relative;
+  transition:background .15s ease;
+}
+.pp-sw-t::after {
+  content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 2px rgba(16,24,40,.3); transition:transform .15s ease;
+}
+.pp-sw.on .pp-sw-t { background:var(--accent); }
+.pp-sw.on .pp-sw-t::after { transform:translateX(14px); }
+.pp-cmp-l { display:flex; flex-direction:column; gap:2px; margin-top:5px; }
+.pp-c {
+  display:flex; flex-direction:column; gap:0; align-items:flex-start; text-align:left;
+  border:0; background:transparent; font-family:inherit; cursor:pointer; border-radius:7px; padding:4px 9px;
+}
+.pp-c:hover { background:var(--surface-2); }
+.pp-c.on { background:var(--surface-2); }
+.pp-c.on .pp-n { font-weight:650; color:var(--accent); }
+
+.pp-note { margin:7px 0 0; font-size:.68rem; color:var(--muted); }
+
+.pp-foot {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  border-top:1px solid var(--border); padding:8px 12px; background:var(--surface-2);
+}
+.pp-cur { font-size:.72rem; color:var(--muted); }
+.pp-done {
+  border:0; background:var(--accent); color:#fff; font-family:inherit; font-weight:600;
+  font-size:.76rem; border-radius:999px; padding:6px 15px; cursor:pointer;
+}
+.ctrl-lb { font-size:.76rem; color:var(--muted); }
+
+/* ── แถบควบคุมกลาง ────────────────────────────────────────────────
+   ⚠️ ติดบนสุดไว้ตลอด เพราะทุกตัวเลขบนหน้าอ่านค่าจากตรงนี้ */
+.sticky {
+  position:sticky; top:0; z-index:50; background:var(--plane);
+  border-bottom:1px solid var(--border); padding-bottom:8px;
+}
+#mockbar ~ .wrap .sticky, #sobar ~ .wrap .sticky { top:36px; }
+
+.ctrl-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding-top:10px; }
+.seg { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:3px; gap:2px; }
+.seg button {
+  border:0; background:transparent; color:var(--ink-2); font-family:inherit; font-size:.78rem;
+  padding:6px 11px; border-radius:999px; cursor:pointer; white-space:nowrap;
+}
+.seg button:hover { color:var(--ink); }
+.seg button.on { background:var(--accent); color:#fff; font-weight:600; }
+
+/* ชิพเลือกช่อง — ปิดแล้วหน้าภาพรวมต้องคิดใหม่ทั้งหน้า */
+.chips { display:flex; gap:6px; flex-wrap:wrap; }
+.ch {
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-family:inherit;
+  border:1px solid var(--border); background:var(--surface); color:var(--muted);
+  border-radius:999px; padding:6px 12px; font-size:.78rem;
+}
+.ch .pdot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none; }
+.ch.on { color:var(--ink); border-color:var(--pc); background:var(--surface-2); font-weight:600; }
+.ch.on .pdot { background:var(--pc); }
+/* ช่องที่ยังไม่ได้เชื่อม — จางลงและกดไม่ได้ แต่ยังอยู่ในแถว
+   ⚠️ ห้ามซ่อนทิ้ง ไม่งั้นจะไม่มีใครรู้ว่ามีช่องที่หายไปจากยอดรวม */
+.ch.off { opacity:.55; cursor:not-allowed; border-style:dashed; }
+.ch.off .pdot { background:transparent; border:1px dashed var(--muted); }
+.ch:not(.on) { text-decoration:line-through; text-decoration-color:var(--muted); }
+
+.dates label { font-size:.78rem; color:var(--muted); display:inline-flex; align-items:center; gap:6px; }
+.dates input {
+  background:var(--surface); border:1px solid var(--border); color:var(--ink);
+  border-radius:8px; padding:6px 9px; font-family:inherit; font-size:.8rem;
+}
+
+/* จอแคบ: บีบแถบติดขอบให้เตี้ยลง — มันกินพื้นที่อ่านข้อมูลไปตลอดเวลาที่เลื่อน */
+@media (max-width:639px) {
+  .ctrl-row { padding-top:8px; gap:6px; }
+  .seg button { padding:5px 9px; font-size:.74rem; }
+  .ch { padding:5px 10px; font-size:.74rem; }
+  .stickyhead { gap:6px; padding-top:6px; }
+  /* ⚠️ ย่อตัวอักษรได้ แต่ช่องวันบนมือถือต้องไม่เล็กลง ไม่งั้นนิ้วกดพลาด */
+  .cal-d, .cal-x { height:32px; }
+  .cal-d { font-size:.76rem; }
+  .tab { padding:9px 13px 8px; font-size:.82rem; }
+  .ctrl-lb { display:none; }
+}
+
+/* ── แท็บ ─────────────────────────────────────────────────────────
+   หน้าตาเป็นแท็บจริง (เส้นใต้) ไม่ใช่เม็ดยา — อยู่บนสุดของเนื้อหา
+   ⚠️ เลื่อนแนวนอนได้บนจอแคบ เพิ่มแท็บใหม่ (เช่น โฆษณา) แล้วต้องไม่ดันหน้าพัง */
+/* แถวบนของแถบติดขอบ: แท็บ + ตัวเลือกช่วงเวลา
+   ⚠️ จอแคบวางซ้อนกัน (ช่วงเวลาอยู่บน) เพราะเรียงแถวเดียวแล้วแท็บถูกบีบจนเลื่อนหายาก
+      ส่วนจอกว้างอยู่แถวเดียวกัน แท็บชิดซ้าย ช่วงเวลาชิดขวา */
+.stickyhead { display:flex; flex-direction:column; gap:8px; padding-top:8px; }
+.stickyhead #periodbox { order:-1; }
+
+.tabs {
+  display:flex; gap:2px; overflow-x:auto; scrollbar-width:none;
+  -webkit-overflow-scrolling:touch; border-bottom:1px solid var(--border);
+}
+/* จอแคบ: แท็บกินเต็มความกว้าง เส้นใต้จึงลากยาวเป็นฐานของแถบทั้งแถว */
+.stickyhead .tabs { flex:1; min-width:0; }
+.tabs::-webkit-scrollbar { display:none; }
+.tab {
+  flex:none; border:0; border-bottom:2px solid transparent; background:transparent;
+  color:var(--muted); padding:11px 15px 9px; font-size:.86rem; font-family:inherit;
+  cursor:pointer; display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+  margin-bottom:-1px;
+}
+.tab:hover { color:var(--ink); background:rgba(37,99,235,.05); }
+.tab.on { color:var(--accent); border-bottom-color:var(--accent); font-weight:650; }
+.tab .ti { font-size:.9em; opacity:.8; }
+
+/* ── หัวข้อ / กล่อง ──────────────────────────────────────────────── */
+.sec { font-size:.95rem; font-weight:650; margin:24px 0 10px; display:flex; flex-wrap:wrap; gap:7px; align-items:baseline; }
+.sec .sub { font-size:.76rem; color:var(--muted); font-weight:400; }
+.panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; }
+.panel.compact { padding:12px 14px; }
+.formula { font-size:.75rem; color:var(--muted); margin:22px 0 0; padding:11px 13px;
+           background:var(--surface); border:1px solid var(--border); border-radius:10px; line-height:1.6; }
+.formula b { color:var(--ink-2); }
+
+/* คำอธิบายย้ายมาอยู่ใน tooltip ของ ⓘ — หน้าจอจะได้ไม่รกด้วยย่อหน้าใต้ทุกการ์ด */
+.tipi {
+  border:0; background:transparent; color:var(--muted); cursor:pointer; font-family:inherit;
+  font-size:.9em; padding:0 2px; line-height:1; vertical-align:baseline;
+}
+.tipi:hover, .tipi[data-open="1"] { color:var(--accent); }
+.tipbox {
+  flex-basis:100%; margin-top:6px; font-size:.74rem; color:var(--ink-2); font-weight:400;
+  background:var(--surface-2); border:1px solid var(--border); border-left:3px solid var(--accent);
+  border-radius:8px; padding:9px 11px; line-height:1.6;
+}
+
+/* ── การ์ดตัวเลข ─────────────────────────────────────────────────── */
+.grid4 { display:grid; grid-template-columns:repeat(2,1fr); gap:9px; }
+
+/* กริดของแท็บรายช่อง — จำนวนใบไม่เท่ากันในแต่ละช่อง (4 / 5 / 6)
+   ⚠️ จำนวนคอลัมน์มาจาก --n ที่ JS ใส่ให้ตามจำนวนใบจริง
+      เดิมแยกเป็น 2 กริดแล้วใบสุดท้ายของ TikTok ลอยเดี่ยวท้ายแถว */
+.scgrid { display:grid; grid-template-columns:repeat(2,1fr); gap:9px; }
+/* จำนวนใบเป็นเลขคี่บนจอ 2 คอลัมน์ → ใบสุดท้ายกินเต็มแถว ไม่ปล่อยให้ลอยเดี่ยว */
+.scgrid > .sc:last-child:nth-child(odd) { grid-column:1 / -1; }
+
+.sc { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:11px 12px;
+      display:flex; flex-direction:column; flex-wrap:wrap; }
+.sc-l { font-size:.73rem; color:var(--muted); display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
+.sc-v { font-size:1.3rem; font-weight:700; letter-spacing:-.02em; margin-top:2px; }
+.sc.na .sc-v { color:var(--muted); font-size:1.05rem; font-weight:600; }
+.sc-d { margin-top:3px; min-height:17px; display:flex; align-items:baseline; gap:5px; flex-wrap:wrap; }
+/* ⚠️ "▲ 0.1%" ลอยๆ ไม่มีทางรู้ว่าเทียบกับอะไร — ตัวเลือกอยู่ในแผงช่วงเวลาซึ่งคนละที่กับการ์ด */
+.sc-vs { font-size:.66rem; color:var(--muted); }
+
+/* ── กล่องสรุปให้อ่าน (Insights) ───────────────────────────────────
+   ⚠️ เป็นข้อความที่มาจากกฎตายตัว ไม่ใช่คำเตือนของระบบ — จึงใช้พื้นเรียบ
+      ไม่ใช้แดง/เหลืองทั้งกล่อง ไม่งั้นจะดูเหมือนมีอะไรพัง */
+.insight { margin-top:12px; background:var(--surface); border:1px solid var(--border);
+           border-radius:12px; padding:11px 12px; }
+.insight-h { font-size:.73rem; color:var(--muted); font-weight:600; margin-bottom:6px; }
+.insight-l { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+.insight-l li { display:grid; grid-template-columns:16px 1fr; gap:6px; align-items:start;
+                font-size:.79rem; line-height:1.45; }
+.ins-i { font-size:.68rem; line-height:1.7; text-align:center; }
+.ins-up .ins-i { color:var(--good); }
+.ins-down .ins-i { color:var(--bad); }
+.ins-flat .ins-i { color:var(--muted); }
+
+/* แถวรายช่องใต้ยอดรวม — โผล่เมื่อกด "แยกช่อง"
+   ⚠️ อ่านจากช่องที่เปิดอยู่ชุดเดียวกับยอดรวม ปิดช่องไหนต้องหายทั้งคู่
+      ไม่งั้นรายช่องบวกกันแล้วไม่เท่ายอดรวม จะดูเหมือนคำนวณผิด */
+.bd { margin-top:9px; padding-top:8px; border-top:1px dashed var(--border); display:flex; flex-direction:column; gap:5px; }
+/* จุดสี · ชื่อย่อ · สัดส่วน · ตัวเลข · delta */
+.bd-r { display:grid; grid-template-columns:auto auto auto 1fr auto; gap:5px; align-items:baseline; font-size:.72rem; min-width:0; }
+.bd-r > * { min-width:0; }
+/* ⚠️ สัดส่วนต้องดูออกว่าเป็นคนละชั้นกับตัวเลขจริง ไม่งั้นอ่านปนกันเป็นเลขเดียว */
+.bd-s { color:var(--muted); font-size:.66rem; font-variant-numeric:tabular-nums; }
+.bd-d { width:7px; height:7px; border-radius:2px; align-self:center; }
+.bd-n { color:var(--muted); }
+.bd-v { font-weight:650; text-align:right; font-variant-numeric:tabular-nums; }
+.bd .dlt { font-size:.66rem; }
+
+/* ป้ายเทียบกับช่วงก่อน */
+.dlt { font-size:.72rem; font-weight:650; display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
+.dlt.up { color:var(--good); }
+.dlt.down { color:var(--bad); }
+.dlt.flat { color:var(--muted); }
+.dlt.none { color:var(--muted); font-weight:400; font-size:.68rem; }
+
+/* ── ตารางเทียบรายช่อง (แทนการ์ด 3 ใบของเดิม) ─────────────────────── */
+/* ── ตารางผลงานรายช่อง — หนึ่งแถวคือหนึ่งช่อง ─────────────────────
+   ⚠️ 2 แท็บมีคอลัมน์ไม่เท่ากันโดยตั้งใจ ยัดรวมกันแล้วตารางกว้างจนต้องเลื่อนตลอด */
+.perftabs { display:flex; gap:3px; margin-bottom:9px; }
+.ptab {
+  border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  border-radius:999px; padding:5px 13px; font-size:.76rem; font-family:inherit; cursor:pointer;
+}
+.ptab:hover { color:var(--ink); }
+.ptab.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:650; }
+
+.tbl.perf th[scope="row"] { white-space:nowrap; }
+.tbl.perf .drill {
+  background:none; border:0; padding:0; margin:0; font:inherit; color:var(--ink);
+  cursor:pointer; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; font-weight:600;
+}
+.tbl.perf .drill:hover, .tbl.perf .drill:focus-visible { color:var(--accent); }
+.tbl.perf .drill:hover .drill-a { transform:translateX(2px); }
+.tbl.perf .pdot { width:9px; height:9px; border-radius:50%; flex:none; }
+.tbl.perf td.na { color:var(--muted); }
+.tbl.perf .cv { display:block; font-weight:600; font-size:.86rem; }
+.tbl.perf td.strong .cv { font-weight:700; font-size:.95rem; }
+.tbl.perf .cd { display:block; margin-top:1px; }
+.tbl.perf thead th .tipi { vertical-align:baseline; }
+
+/* แถวช่องกางดูคอนเทนต์ที่ทำยอดนั้นได้
+   ⚠️ ปุ่มกาง กับ ปุ่มไปแท็บของช่อง เป็นคนละปุ่ม — ปุ่มเดียวทำ 2 อย่างแล้วเดาไม่ถูกว่าจะเกิดอะไร */
+/* 🔴 ห้ามใส่ display:flex บน <th> โดยตรง — ช่องตารางจะหลุดออกจากการจัดแถว
+   เส้นขอบล่างจะสั้นกว่าช่องอื่นและความสูงแถวไม่เท่ากัน (เจ้าของเห็น 19 ส.ค. 2026)
+   จัดเรียงที่ div ข้างในแทน ช่องตารางยังเป็น table-cell ตามปกติ */
+.rowhead { display:flex; align-items:center; gap:2px; }
+.rowtog {
+  background:none; border:0; margin:0; font:inherit; color:var(--ink);
+  cursor:pointer; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; font-weight:600;
+  /* ⚠️ พื้นที่กดต้องใหญ่พอสำหรับนิ้ว — ปุ่มกางเดิมเล็กเกินไป */
+  padding:7px 8px 7px 4px; border-radius:8px; min-height:34px;
+}
+.rowtog:hover { color:var(--accent); background:var(--surface-2); }
+/* 🔴 ปุ่มกางต้องเด่นพอให้รู้ว่ากดได้ (เจ้าของแจ้ง 2 รอบ 19 ส.ค. 2026)
+   เดิมเป็นลูกศรสีจางบนพื้นขาว กลืนไปกับข้อความจนไม่มีใครรู้ว่ากดได้
+   ตอนนี้เป็นปุ่มสีน้ำเงินทึบ — สีเดียวกับปุ่มอื่นที่กดได้ทั้งหน้า */
+.caret {
+  color:#fff; font-size:.78rem; width:22px; height:22px; flex:none;
+  display:inline-flex; align-items:center; justify-content:center;
+  border:0; border-radius:6px; background:var(--accent);
+  box-shadow:0 1px 2px rgba(16,24,40,.18);
+}
+.rowtog:hover .caret { background:#1d4ed8; }
+/* กางอยู่ = สลับเป็นโทนเข้ม ให้ต่างจากแถวที่ยังไม่ได้กาง */
+.perf-r.open .caret { background:var(--ink); }
+.tbl.perf .drill { padding:7px 8px; color:var(--muted); font-size:1.05rem; line-height:1; min-height:34px; }
+.tbl.perf .drill:hover { color:var(--accent); }
+.perf-r.open { background:var(--surface-2); }
+
+.perf-sub td { background:var(--surface-2); font-size:.75rem; padding-top:6px; padding-bottom:6px; }
+.perf-sub .sub-t { max-width:280px; }
+.perf-sub .sub-t a { color:var(--ink-2); text-decoration:none; }
+.perf-sub .sub-t a:hover { color:var(--accent); text-decoration:underline; }
+.sub-d { display:block; color:var(--muted); font-size:.68rem; margin-top:1px; }
+.sub-none { color:var(--muted); font-size:.78rem; }
+.sub-note { color:var(--muted); font-size:.72rem; font-style:normal; }
+
+/* ป้ายอันดับบนการ์ดคอนเทนต์ — มีมากกว่า 1 ใบต่อกล่องแล้ว ต้องรู้ว่าใบไหนมาก่อน */
+.post { position:relative; }
+.rk {
+  position:absolute; top:6px; left:6px; z-index:1;
+  min-width:17px; height:17px; border-radius:5px; background:var(--ink); color:#fff;
+  font-size:.66rem; font-weight:700; display:flex; align-items:center; justify-content:center;
+}
+
+.tbl.cmp th[scope="row"] { color:var(--ink-2); font-weight:500; font-size:.78rem; white-space:nowrap; }
+.tbl.cmp thead th { white-space:nowrap; }
+.tbl.cmp thead .pdot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+/* หัวคอลัมน์กดได้ = ทางลัดไปแท็บของช่องนั้น
+   ⚠️ ต้องดูออกว่ากดได้ ไม่งั้นไม่มีใครรู้ว่ามีทางลัด (ลูกศร › + เปลี่ยนสีตอนชี้) */
+.tbl.cmp thead .drill {
+  background:none; border:0; padding:0; margin:0; font:inherit; color:inherit;
+  cursor:pointer; display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+}
+.tbl.cmp thead .drill:hover, .tbl.cmp thead .drill:focus-visible { color:var(--ink); }
+.tbl.cmp thead .drill:hover .drill-a { transform:translateX(2px); }
+.drill-a { color:var(--muted); transition:transform .12s ease; }
+.tbl.cmp td.na { color:var(--muted); }
+.tbl.cmp .cv { display:block; font-weight:650; font-size:.92rem; }
+.tbl.cmp .cd { display:block; margin-top:1px; }
+
+/* ── กราฟคู่ ซ้าย-ขวา ────────────────────────────────────────────
+   จอแคบยุบเป็นบน-ล่าง · หัวข้อของแต่ละฝั่งอยู่ในคอลัมน์ตัวเอง
+   ⚠️ ใช้ align-items:start ไม่งั้นฝั่งที่เตี้ยกว่าจะถูกยืดจนกล่องสูงไม่เท่าเนื้อหา */
+.duo { display:grid; grid-template-columns:1fr; gap:0 18px; align-items:start; }
+.duo-c { min-width:0; }
+.duo-c .sec { margin-top:24px; }
+
+/* ชิพสลับ metric บนกราฟ — ยุบกราฟหลายอันเหลืออันเดียว */
+/* ── แถวควบคุมเหนือกราฟแนวโน้ม ────────────────────────────────────
+   แท็บเลือกช่อง (วาดทีละเส้น) + ความละเอียดแกนเวลา
+   ⚠️ จอแคบวางซ้อนกัน — เรียงแถวเดียวแล้วแท็บช่องถูกบีบจนอ่านไม่ออก */
+.trendbar { display:flex; flex-direction:column; gap:7px; margin:9px 0 4px; }
+.chtabs { display:flex; gap:3px; overflow-x:auto; scrollbar-width:none; }
+.chtabs::-webkit-scrollbar { display:none; }
+.chtab {
+  flex:none; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+  border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  border-radius:999px; padding:5px 11px; font-size:.75rem; font-family:inherit; cursor:pointer;
+}
+.chtab .pdot { width:7px; height:7px; border-radius:50%; background:var(--pc, var(--muted)); flex:none; }
+.chtab:hover { color:var(--ink); }
+.chtab.on { border-color:var(--pc, var(--ink)); background:var(--surface-2); color:var(--ink); font-weight:650; }
+.seg.grain { align-self:flex-start; }
+.seg.grain button:disabled { opacity:.4; cursor:not-allowed; }
+
+@media (min-width:520px) {
+  .trendbar { flex-direction:row; align-items:center; justify-content:space-between; }
+  .chtabs { min-width:0; }
+}
+
+.mchips { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px; }
+.mchip {
+  border:1px solid var(--border); background:var(--surface); color:var(--muted);
+  border-radius:999px; padding:5px 11px; font-size:.75rem; font-family:inherit; cursor:pointer;
+}
+.mchip:hover { color:var(--ink); }
+.mchip.on { background:var(--ink); color:#fff; border-color:var(--ink); font-weight:600; }
+
+/* ── กราฟ ────────────────────────────────────────────────────────── */
+.chart { width:100%; height:auto; display:block; overflow:visible; }
+.chart .grid { stroke:#e4e8f0; stroke-width:1; vector-effect:non-scaling-stroke; }
+.chart .zero { stroke:#9aa3b2; stroke-width:1; vector-effect:non-scaling-stroke; }
+.chart .ax { fill:var(--muted); font-size:10px; font-family:system-ui,sans-serif; }
+.chart .ax-r { fill:var(--ink-2); }
+
+/* ── แท่งแนวนอน แถวละหนึ่งประเภท ─────────────────────────────────
+   🔴 มาแทนแท่งซ้อน 100% ที่อ่านไม่ได้เมื่อสัดส่วนต่างกันมาก
+   ⚠️ ความยาวแท่งเทียบกับตัวที่มากสุด ไม่ใช่ผลรวม — ตัวที่มากสุดจึงยาวเต็มแถวเสมอ
+      ส่วน % ที่โชว์เป็นสัดส่วนของผลรวม (คนละอย่างกัน จงใจ) */
+.hb { display:flex; flex-direction:column; gap:9px; }
+.hb-r { display:grid; grid-template-columns:96px 1fr auto; gap:4px 10px; align-items:center; }
+.hb-n { font-size:.8rem; color:var(--ink-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+.hb-d { width:9px; height:9px; border-radius:3px; flex:none; }
+.hb-t { background:var(--surface-2); border-radius:6px; height:18px; overflow:hidden; }
+.hb-b { display:block; height:100%; border-radius:6px; min-width:2px; }
+.hb-v { font-size:.86rem; font-weight:650; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hb-p { color:var(--muted); font-weight:400; font-size:.72rem; margin-left:6px; }
+/* delta วางบรรทัดล่างของคอลัมน์ตัวเลข ไม่แย่งที่แท่ง */
+.hb-x { grid-column:3; text-align:right; margin-top:-3px; }
+
+@media (max-width:520px) {
+  .hb-r { grid-template-columns:78px 1fr auto; gap:3px 8px; }
+  .hb-n { font-size:.74rem; }
+}
+
+/* ── สัดส่วนแยกช่อง: แท่ง 100% หลายแถว เส้นละตัวชี้วัด ──────────────
+   🔴 เดิมมีแท่งเดียว บอกได้แค่ "ช่องไหนใหญ่" ซึ่งดูจากตารางก็รู้
+      ประโยชน์อยู่ที่เทียบข้ามแถว — ช่องที่กินยอดวิวเยอะแต่ได้คอมเมนต์น้อย
+      แปลว่าคนดูผ่านตาแต่ไม่ได้คุยด้วย */
+.sbars { display:flex; flex-direction:column; gap:11px; }
+.sbar-r { display:grid; grid-template-columns:1fr; gap:4px; }
+.sbar-l { font-size:.75rem; color:var(--ink-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+/* ป้ายบอกว่าแถวนี้ไม่ได้นับช่องไหน — ไม่บอกจะอ่านว่า "ช่องนั้นได้ 0" ซึ่งไม่จริง */
+.sbar-x { font-size:.64rem; font-weight:400; color:var(--muted); border:1px dashed var(--border);
+          border-radius:5px; padding:1px 6px; cursor:help; }
+.sbar-v { display:flex; flex-wrap:wrap; gap:3px 14px; font-size:.7rem; color:var(--ink-2); }
+.sbar-i { display:inline-flex; align-items:center; gap:4px; font-variant-numeric:tabular-nums; }
+.sbar-i .lg-d { width:8px; height:8px; border-radius:2px; flex:none; }
+.sbar-r .share { height:22px; }
+
+@media (min-width:640px) {
+  .sbar-r { grid-template-columns:132px 1fr; align-items:center; gap:3px 12px; }
+  .sbar-v { grid-column:2; }
+}
+
+.legend { display:flex; flex-direction:column; gap:7px; width:100%; }
+.legend.row { flex-direction:row; flex-wrap:wrap; gap:12px; margin-top:10px; }
+.lg { display:flex; align-items:center; gap:7px; font-size:.78rem; }
+/* ป้ายใต้กราฟกดเพื่อซ่อน/แสดงเส้นได้ — ปิดแล้วต้องยังเห็นปุ่ม (แค่จาง) ไม่งั้นกดกลับไม่ได้ */
+.lg-btn { border:1px solid transparent; background:transparent; font-family:inherit; cursor:pointer;
+          border-radius:999px; padding:3px 9px 3px 6px; color:inherit; }
+.lg-btn:hover { border-color:var(--border); background:var(--surface-2); }
+.lg-btn.off { opacity:.45; }
+.lg-btn.off .lg-n { text-decoration:line-through; }
+
+/* กล่องอ่านค่าตอนเอาเมาส์ชี้ */
+.chartbox { position:relative; }
+.chart .crosshair { stroke:var(--muted); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke; }
+.ctip {
+  position:absolute; z-index:5; pointer-events:none; min-width:120px;
+  background:var(--surface); border:1px solid var(--border); border-radius:9px;
+  box-shadow:0 4px 14px rgba(16,24,40,.12); padding:7px 9px; font-size:.74rem; line-height:1.5;
+}
+.ctip b { display:block; color:var(--ink); }
+.ctip .ct-r { display:flex; align-items:center; gap:6px; color:var(--ink-2); margin-top:2px; }
+.ctip .ct-r i { width:8px; height:8px; border-radius:2px; flex:none; }
+.ctip .ct-r b { margin-left:auto; display:inline; font-variant-numeric:tabular-nums; }
+.lg-d { width:9px; height:9px; border-radius:2px; flex:none; }
+.lg-n { color:var(--ink-2); }
+.lg-n em { color:var(--muted); font-style:normal; font-size:.9em; }
+.lg-v { font-weight:650; }
+.lg-s { color:var(--muted); font-size:.72rem; }
+
+/* แท่งเดียว 100% (แทนโดนัท — สูงไม่ถึงครึ่งของเดิม) */
+.share { display:flex; height:30px; border-radius:8px; overflow:hidden; background:var(--surface-2); }
+.share-s { display:flex; align-items:center; justify-content:center; min-width:2px; }
+.share-s b { font-size:.72rem; font-weight:700; color:#fff; }
+
+/* ── diverging bar: หายไปทางซ้าย เพิ่มมาทางขวา ───────────────────── */
+.dv { display:flex; flex-direction:column; }
+.dv-row { display:grid; grid-template-columns:1fr auto; gap:4px 10px; align-items:center;
+          padding:10px 0; border-bottom:1px solid var(--border); }
+.dv-row:last-child { border-bottom:0; }
+.dv-name { font-size:.82rem; font-weight:600; }
+.dv-net { font-size:.95rem; font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+.dv-net.up { color:var(--good); }
+.dv-net.down { color:var(--bad); }
+
+.dv-track { grid-column:1 / -1; position:relative; height:22px; display:flex; align-items:center; }
+/* เส้นศูนย์กลางร่วมกันทุกแถว — จุดอ้างอิงที่ทำให้เทียบซ้าย/ขวาได้ */
+.dv-axis { position:absolute; left:50%; top:0; bottom:0; width:1px; background:#9aa3b2; }
+.dv-neg, .dv-pos { position:absolute; top:4px; height:14px; }
+.dv-neg { right:50%; background:var(--bad); opacity:.8; border-radius:4px 0 0 4px; }
+.dv-pos { left:50%; background:var(--good); opacity:.8; border-radius:0 4px 4px 0; }
+/* 🔴 ตัวเลขต้องอยู่ "นอกแท่ง" ไม่ใช่ทับบนแท่ง
+   เดิมวางไว้ติดเส้นกลาง = ตัวเลขสีแดงไปทับแท่งสีแดง / เขียวทับเขียว อ่านไม่ออก
+   ย้ายมาชิดขอบซ้าย-ขวาของราง ซึ่งเป็นพื้นอ่อนเสมอ ไม่ว่าแท่งจะยาวแค่ไหน */
+.dv-lbl { position:absolute; font-size:.7rem; font-style:normal; font-weight:700; font-variant-numeric:tabular-nums; }
+.dv-lbl.neg { left:0; color:var(--bad); }
+.dv-lbl.pos { right:0; color:var(--good); }
+/* เว้นที่ให้ป้ายทั้งสองข้าง แท่งจะได้ไม่วิ่งไปทับ */
+.dv-track { padding:0 46px; }
+.dv-neg, .dv-pos { max-width:calc(50% - 46px); }
+
+/* ── คอนเทนต์ ────────────────────────────────────────────────────── */
+.posts { display:flex; flex-direction:column; gap:8px; }
+.post { display:flex; gap:10px; text-decoration:none; color:inherit;
+        background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 9px; }
+.post:hover { border-color:var(--accent); }
+.post img { width:70px; height:44px; object-fit:cover; border-radius:6px; flex:none; background:var(--surface-2); }
+.post-b { min-width:0; }
+.post-t { font-size:.83rem; line-height:1.35; margin-bottom:3px;
+          display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+/* ⚠️ บรรทัดตัวเลขใต้ชื่อคอนเทนต์ เคยเล็กจนอ่านไม่ออก (เจ้าของแจ้ง 19 ส.ค. 2026)
+   เป็นตัวเลขที่ต้องอ่านจริง ไม่ใช่ข้อความประกอบ จึงต้องใหญ่พอๆ กับตัวเลขที่อื่น */
+/* ⚠️ บรรทัดตัวเลขใต้ชื่อคอนเทนต์ — เจ้าของแจ้งว่าเล็กไป 2 รอบ (19 ส.ค. 2026)
+   เป็นตัวเลขที่ต้องอ่านจริง ไม่ใช่ข้อความประกอบ · ตัวเลขเน้นหนา ป้ายกำกับจาง */
+.post-m { font-size:.84rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:3px 12px; align-items:center; }
+.post-m span { white-space:nowrap; }
+.post-m b { color:var(--ink); font-weight:650; font-variant-numeric:tabular-nums; }
+.post-d { font-size:.78rem; }
+.chip { border:1px solid var(--border); border-radius:999px; padding:0 7px; font-size:.68rem; }
+.badge { font-size:.65rem; border-radius:999px; padding:1px 7px; margin-left:6px; vertical-align:middle; }
+.badge.new { background:var(--accent); color:#fff; }
+
+/* กล่องคอนเทนต์เด่นรายช่อง — แยกช่องละกล่อง ไม่เอามาเรียงรวมกัน */
+.tcard { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.tcard-h { display:flex; align-items:center; gap:8px; padding:10px 13px; font-weight:650; font-size:.86rem;
+           border-bottom:1px solid var(--border); background:var(--surface-2); }
+.tcard-h .pdot { width:9px; height:9px; border-radius:50%; background:var(--pc); flex:none; }
+.tcard-b { padding:10px 11px 12px; }
+.tcard .post { background:var(--surface); }
+.tcards { display:flex; flex-direction:column; gap:9px; }
+.tcard-none { font-size:.79rem; color:var(--muted); padding:4px 2px; }
+
+/* ลูกศรบอกว่ากดแล้วเปิดโพสต์จริง · การ์ดที่ไม่มีลิงก์ต้องไม่ทำท่าว่ากดได้ */
+.post .ext { color:var(--accent); font-size:.8em; }
+.post.nolink { cursor:default; }
+.post.nolink:hover { border-color:var(--border); }
+
+/* ── ตาราง ───────────────────────────────────────────────────────── */
+/* ⚠️ ตารางกว้างต้องเลื่อนในกล่องตัวเอง ห้ามดันให้ทั้งหน้าเลื่อนแนวนอน */
+.tblwrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.tbl { width:100%; border-collapse:collapse; font-size:.79rem; min-width:420px; }
+.tbl th, .tbl td { padding:8px 9px; text-align:left; border-bottom:1px solid var(--border); }
+.tbl thead th { color:var(--muted); font-weight:600; font-size:.74rem; background:var(--surface); }
+.tbl .num { text-align:right; font-variant-numeric:tabular-nums; }
+.tbl .sortable { cursor:pointer; user-select:none; }
+.tbl .sortable:hover { color:var(--ink); }
+.tbl tbody tr:hover { background:var(--surface-2); }
+.tbl:not(.cmp) td:first-child { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ── ไม่มีข้อมูล ─────────────────────────────────────────────────── */
+/* ⚠️ ไม่มีข้อมูล ต้องบอกว่าไม่มี — ห้ามลากกราฟเป็น 0 หรือขึ้น "—" ลอยๆ */
+/* ── กำลังโหลด ───────────────────────────────────────────────────
+   ⚠️ ไอคอนหมุนแปลว่า "กำลังมา" เท่านั้น โหลดเสร็จแล้วไม่มีข้อมูลต้องบอกว่าไม่มี ห้ามหมุนค้าง */
+.loading { display:flex; align-items:center; gap:9px; padding:40px 4px; color:var(--muted); font-size:.88rem; }
+.spin {
+  width:15px; height:15px; border-radius:50%; flex:none;
+  border:2px solid var(--border); border-top-color:var(--accent);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .spin { animation-duration:2.4s; } }
+
+/* ── เชื่อมแล้วแต่ได้ข้อมูลไม่ครบ ─────────────────────────────────
+   🔴 ต้องดูออกว่า "ยังไม่ครบ" ไม่ใช่ "พัง" — ใช้สีเตือนอ่อนๆ ไม่ใช่สีแดง
+      และต้องบอกด้วยว่าส่วนไหนเป็นของจริงแล้ว ไม่งั้นดูเหมือนทั้งหน้าใช้ไม่ได้ */
+.partial {
+  margin-top:14px; background:var(--surface); border:1px solid var(--border);
+  border-left:3px solid var(--warn); border-radius:12px; padding:14px 16px;
+}
+.partial-h { font-weight:650; font-size:.92rem; }
+.partial-p { margin:5px 0 0; font-size:.81rem; color:var(--ink-2); line-height:1.55; }
+.partial-now { margin-top:10px; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:baseline; font-size:.82rem; }
+.partial-lb { font-size:.72rem; color:var(--muted); width:100%; }
+.partial-sep { color:var(--border); }
+
+/* ── ช่องที่ยังไม่ได้เชื่อมต่อ ─────────────────────────────────────
+   ⚠️ ต้องดูเหมือน "ขั้นตอนที่ยังไม่ได้ทำ" ไม่ใช่ "ระบบพัง"
+      จึงไม่ใช้สีแดงและไม่มีไอคอนเตือน — แค่บอกว่าต้องทำอะไรต่อ */
+.setups { display:flex; flex-direction:column; gap:10px; margin-top:14px; }
+.setup {
+  display:flex; gap:12px; align-items:flex-start; margin-top:14px;
+  background:var(--surface); border:1px dashed var(--border); border-radius:12px; padding:16px;
+}
+.setup-i {
+  width:34px; height:34px; border-radius:9px; flex:none; color:#fff;
+  display:flex; align-items:center; justify-content:center; font-weight:700; opacity:.85;
+}
+/* สิทธิ์หมดอายุ = ของที่เคยใช้ได้แล้วพัง ต้องเด่นกว่า "ยังไม่ได้ตั้งค่า" ซึ่งเป็นเรื่องปกติ */
+.setup.warn { border-style:solid; border-left:3px solid var(--warn); }
+.setup-b { min-width:0; }
+.setup-t { font-weight:650; font-size:.95rem; }
+.setup-p { margin:5px 0 0; font-size:.81rem; color:var(--ink-2); line-height:1.55; }
+.setup-p b { font-weight:650; }
+.setup-p.sm { font-size:.73rem; color:var(--muted); }
+.setup-n { margin-top:9px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.setup-nl { font-size:.73rem; color:var(--muted); }
+.setup-n code {
+  font-size:.72rem; background:var(--surface-2); border:1px solid var(--border);
+  border-radius:6px; padding:2px 7px; color:var(--ink-2);
+}
+
+/* แถบบอกว่ายอดรวมยังไม่ได้นับช่องไหน — วางใต้ตัวเลขรวมบนหน้าภาพรวม */
+.offnote { margin-top:10px; font-size:.76rem; color:var(--muted); }
+.offlink {
+  border:0; background:none; padding:0; font:inherit; color:var(--accent);
+  cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+
+.empty { display:flex; gap:11px; align-items:flex-start; padding:20px 4px; color:var(--muted); font-size:.83rem; }
+.empty-i { font-size:1.3rem; line-height:1; opacity:.6; }
+.empty b { color:var(--ink-2); display:block; font-size:.88rem; }
+
+/* ── จอกว้างขึ้น ─────────────────────────────────────────────────── */
+@media (min-width:640px) {
+  .stickyhead { flex-direction:row; align-items:flex-end; gap:12px; }
+  /* จอกว้าง: รายการสำเร็จรูปซ้าย ปฏิทิน 2 เดือนขวา แบบ GA4 */
+  .pp-body { flex-direction:row; }
+  .pp-list { width:176px; flex:none; max-height:none; border-right:1px solid var(--border); }
+  /* ให้ 2 ฝั่งสูงเท่ากัน แล้วเลื่อนทั้งก้อนพร้อมกัน — ไม่มีกล่องซ้อนกล่องที่เลื่อนคนละที */
+  .pp-body { align-items:stretch; }
+  .pp-cal2 { border-top:0; flex:1; min-width:0; }
+  .cal-ms { grid-template-columns:1fr 1fr; }
+  .cal-ms > .cal-m:first-child { display:block; }
+  .stickyhead #periodbox { order:0; padding-bottom:5px; }
+  .wrap { padding:0 18px 64px; }
+  .grid4 { grid-template-columns:repeat(4,1fr); }
+  .legend { width:auto; flex:1; }
+  .dv-row { grid-template-columns:118px 1fr 76px; }
+  .dv-track { grid-column:auto; }
+  .share { height:34px; }
+}
+
+@media (min-width:900px) {
+  .duo { grid-template-columns:1fr 1fr; }
+  /* หัวข้อของกราฟคู่อยู่ระดับเดียวกัน ไม่งั้นฝั่งซ้าย-ขวาเหลื่อมกันดูเลอะ */
+  .duo-c .sec { margin-top:26px; }
+
+  /* ⚠️ จำนวนคอลัมน์ = จำนวนใบจริง ทุกใบจึงอยู่แถวเดียวกันหมด ไม่มีใบลอยท้ายแถว */
+  .scgrid { grid-template-columns:repeat(var(--n,4),1fr); }
+  .scgrid > .sc:last-child:nth-child(odd) { grid-column:auto; }
+  .sec { margin-top:28px; }
+}

@@ -16,7 +16,7 @@ import {
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "71"; // bump: ตัดหน้าอีเวนต์/นิทรรศการ
+const CACHE_VER = "72"; // bump: ด่านอ่านเนื้อข่าวของคอลัมน์ที่ไม่ใช่ CP ไม่เคยทำงาน
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -585,7 +585,10 @@ function articleBodyText(html) {
 }
 // เช็คว่า "เนื้อข่าวจริง" มีคำเฉพาะโดเมน (keep) ไหม — cache เนื้อที่ดึงได้ต่อลิงก์ 24 ชม. (ไม่ fetch ซ้ำ)
 async function bodyHasKeep(cache, link, keep) {
-  if (!keep || !keep.length) return false;
+  // ⚠️ ไม่มีคำให้หา = **ตัดสินไม่ได้** ไม่ใช่ "ไม่เจอ" — ต้องคืน null ให้เก็บข่าวไว้
+  //    ของเดิมคืน false ซึ่งแปลว่า "อ่านแล้วไม่เจอ" ทั้งที่ยังไม่เคยเปิดอ่านเลยสักครั้ง
+  //    (แก้พร้อมกับฝั่ง trend — ดู trend/feeds.js)
+  if (!keep || !keep.length) return null;
   const vkey = new Request("https://verify.local/ir5?u=" + encodeURIComponent(link), { method: "GET" });
   let body = null;
   try { const hit = await cache.match(vkey); if (hit) body = (await hit.json()).b || ""; } catch {}
@@ -622,7 +625,7 @@ async function mapPoolResults(items, limit, fn) {
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch) → cold ใช้พาดหัวอย่างเดียว (ตัด) แล้ว background ค่อยกู้คืนถ้าเนื้อจริงมีคำโดเมน
 const BODY_FETCH_MAX = 12; // เพดานยิงอ่านเนื้อข่าวต่อ 1 build — กันชนโควตา subrequest 50 ของ Cloudflare
-const VFY_VER = 2; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const VFY_VER = 3; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
 const AI_CP_MAX = 12; // เพดานใบที่ถาม AI ต่อ 1 build — คำตอบถูกจำไว้ ใบเดิมจึงถามครั้งเดียวตลอด
 
 // ถาม AI แล้ว "จำคำตอบไว้ 7 วัน" ต่อข่าว 1 ใบ — ไม่งั้นทุก build จะถามซ้ำทั้งคอลัมน์
@@ -724,7 +727,10 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
       // "โดยไม่ติดธง" รอบถัดไปค่อยตรวจต่อ จนกว่าจะหมด
       const toFetch = needBody.slice(0, BODY_FETCH_MAX);
       needBody.slice(BODY_FETCH_MAX).forEach((i) => { verdict[i].ok = true; });
-      const hits = await mapPoolResults(toFetch, 6, (i) => bodyHasKeep(cache, items[i].link, extra));
+      // ⚠️ คำที่ใช้หาในเนื้อข่าวต้องเป็นคำของคอลัมน์นั้นจริงๆ — คอลัมน์ที่ไม่มีลิสต์ประจำคอลัมน์
+      // ให้ใช้ "คำที่ Google ไฮไลต์ไว้ในข่าวใบนั้น" แทน (ดูคำอธิบายเต็มใน trend/feeds.js)
+      const hits = await mapPoolResults(toFetch, 6, (i) =>
+        bodyHasKeep(cache, items[i].link, extra.length ? extra : verdict[i].terms));
       // อ่านไม่ได้ (null) = ไม่รู้ → เก็บไว้โดยไม่ติดธง · เจอคำ = เก็บ+ติดธง · อ่านแล้วไม่เจอ = ตัด
       toFetch.forEach((i, k) => { verdict[i].ok = hits[k] !== false; if (hits[k] === true) verdict[i].mark = true; });
       // ชั้น 4 — เฉพาะคอลัมน์ CP: ใบที่เปิดอ่านเนื้อไม่ได้ ให้ AI อ่านพาดหัวตัดสินแทนการปล่อยผ่าน
