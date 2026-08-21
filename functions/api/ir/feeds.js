@@ -367,6 +367,10 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   // ⚠️ ตัวกันเขียน log ซ้ำอยู่ระดับโมดูล — Workers ใช้โมดูลเดิมข้าม request
   //    ไม่รีเซ็ตแล้ว build รอบที่ 2 ในเครื่องเดิมจะไม่บันทึกอะไรเลย (เงียบหาย)
   resetLog();
+  // ⏱ **จับเวลาตั้งแต่บรรทัดแรกของ build** — ของเดิมสร้าง startLog() ไว้ท้ายฟังก์ชัน
+  //    เลยวัดได้แต่เวลาของบล็อกเขียน log เอง ผลออกมาเป็น "0 ms" ทุกแถว
+  //    ซึ่งทำให้เครื่องมือที่ใช้จับ "รอบไหนช้าผิดปกติ" ใช้ไม่ได้เลย (เจ้าของทัก 21 ส.ค. 2026)
+  const L = startLog("ir/feeds");
   // ⚠️ ต้องตั้งใหม่ทุกครั้งที่ build — Workers ใช้โมดูลเดิมซ้ำข้าม request
   // cpEx = ตัวอย่างสอน AI จากที่เจ้าของกด ↩/⚑ — ได้จาก blob เดียวกัน ไม่มี KV read เพิ่ม
   let cpEx = [];
@@ -533,12 +537,16 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   //    ห้ามย้ายไปไว้ใน onRequest เด็ดขาด จะกลายเป็นเขียนทุกครั้งที่มีคนเปิดหน้าเว็บ
   //    แล้วโควตา KV (1,000 ครั้ง/วัน ใช้ร่วมทั้งโปรเจกต์) จะหมดเอง
   try {
-    const L = startLog("ir/feeds");
     L.cache = allowAI ? "build+ai" : "build";
     for (const e of errors || []) L.fail(e.label || e.id || "?", e.message || "");
     for (const k of Object.keys(sources)) L.count(k, ((sources[k] || {}).items || []).length);
-    for (const d of (alertVerify && alertVerify.dropped) || []) L.drop(d.why || "?", 1);
-    for (const d of (swept && swept.dropped) || []) L.drop(d.why || "?", 1);
+    // ⚠️ เก็บ **รายชิ้น** ไม่ใช่แค่จำนวน — "ตัดทิ้ง 4" ตอบคำถาม "ทำไมข่าวชิ้นนี้ไม่ขึ้น" ไม่ได้
+    //    ทั้งที่ระบบรู้คำตอบอยู่แล้ว (เจ้าของทัก 21 ส.ค. 2026)
+    for (const d of (alertVerify && alertVerify.dropped) || []) { L.drop(d.why || "?", 1); L.item(d.why, d.title, d.link, d.src); }
+    for (const d of (swept && swept.dropped) || []) { L.drop(d.why || "?", 1); L.item(d.why, d.title, d.link, d.src); }
+    for (const k of ["alert1", "alert2"]) {
+      for (const d of (pruned && pruned[k]) || []) { L.drop("pruned", 1); L.item("pruned", d.title, d.link, k); }
+    }
     L.count("pruned", ((pruned && pruned.alert1) || []).length + ((pruned && pruned.alert2) || []).length);
     L.kvWrites = arDiag && arDiag.saved ? 1 : 0;
     await finishLog(env, L, { built: true, err: (arDiag && arDiag.err) || "" });
