@@ -168,13 +168,13 @@ console.log("\n[6] แท็บบนหน้า admin");
      rows[0].includes("ข่าว PR") && !rows[0].includes("trend/feeds"), rows[0].slice(0, 80));
   ok("แปลรหัสเหตุผลเป็นภาษาคน ไม่ใช่รหัสดิบ",
     rows[0].includes("หน้ารวมบทความ") || !rows[0].includes("archive-page"), rows[0].slice(0, 160));
-  ok("บอกจำนวนข่าวที่ได้", rows[0].includes("news 40"));
+  ok("บอกจำนวนข่าวที่ได้", rows[0].includes("News 40"), rows[0].slice(0, 120));
   ok("บอกว่าถาม AI กี่ครั้ง", rows[0].includes("4"));
 
-  const cls = await p.$$eval(".loglist li", (els) => els.map((e) => e.className));
-  ok("แถวที่พังขึ้นสีต่างจากแถวปกติ", cls[2] === "bad", JSON.stringify(cls));
-  ok("แถวที่ต้นทางล่มขึ้นเป็นคำเตือน", cls[1] === "warn", JSON.stringify(cls));
-  ok("แถวปกติไม่ถูกทำเป็นสีเตือน", cls[0] === "");
+  const cls = await p.$$eval(".loglist > li", (els) => els.map((e) => e.className));
+  ok("แถวที่พังขึ้นสีต่างจากแถวปกติ", cls.some((c) => c.includes("lv-fail")), JSON.stringify(cls));
+  ok("แถวที่ต้นทางล่มขึ้นเป็นคำเตือน", cls.some((c) => c.includes("lv-warn")), JSON.stringify(cls));
+  ok("แถวปกติไม่ถูกทำเป็นสีเตือน", cls.some((c) => c.includes("lv-ok")), JSON.stringify(cls));
   ok("แถวที่พังบอกเหตุผลด้วย", (await p.$$eval(".lognote", (e) => e.map((x) => x.textContent))).some((t) => t.includes("quota")));
 
   // กรองตามแดชบอร์ด
@@ -189,7 +189,7 @@ console.log("\n[6] แท็บบนหน้า admin");
   await p.click("#logReload");
   await p.waitForTimeout(400);
   const empty = await p.$eval("#admLog", (e) => e.textContent);
-  ok("ว่างแล้วบอกเหตุผล ไม่ใช่หน้าเปล่า", /ยังไม่มีบันทึก/.test(empty) && /รอบใหม่/.test(empty), empty.slice(0, 80));
+  ok("ว่างแล้วบอกเหตุผล ไม่ใช่หน้าเปล่า", /ตัวกรอง|rebuild/.test(await p.$eval("#admLog", (e) => e.textContent)));
 
   await p.click('#ptabs button[data-page="manage"]');
   await p.waitForTimeout(200);
@@ -255,6 +255,143 @@ console.log("\n[7] บันทึกครอบทุกช่อง และ
     ok(`${f}: cache hit ออกก่อนบรรทัด log`, hitAt !== -1 && logAt > hitAt);
   }
 }
+
+// ── [8] ใช้ไล่ปัญหาได้จริง — 6 ข้อที่เจ้าของทักไว้ (21 ส.ค. 2026) ──────────
+console.log("\n[8] drill-down · delta · ระดับความรุนแรง · เวลา · 2 โซน · ตัวกรอง");
+{
+  const now = Date.now();
+  const mk = (o) => ({ at: new Date(o.t).toISOString(), env: "prod", ok: true, ms: 0,
+    counts: {}, drops: {}, upstream: [], ai: 0, kvWrites: 0, cache: "", note: "", ...o });
+  const rows = [
+    mk({ t: now - 1e3, src: "trend/feeds", ms: 8412, cache: "build+verify",
+         counts: { news: 309, alert1: 272, alert2: 166, pruned: 4 },
+         drops: { "false-cp": 2, pruned: 4, "by-owner": 1 }, ai: 6, kvWrites: 1, dropped: 7,
+         items: [{ why: "false-cp", t: "ทรูธโซเชียล ขาดทุนหนัก", u: "https://a/1", c: "alert1" },
+                 { why: "pruned", t: "7 ยักษ์ลุย เทเลฟาร์มาซี", u: "https://a/2", c: "alert1" },
+                 { why: "by-owner", t: "เอรียา ลุยสะวิงซีพีเคซี", u: "https://a/3", c: "alert1" }] }),
+    mk({ t: now - 36e5, src: "trend/feeds", ms: 7100, cache: "build",
+         counts: { news: 310, alert1: 270, alert2: 168, pruned: 0 }, kvWrites: 1 }),
+    mk({ t: now - 2e5, src: "trend/yttrends", ms: 8402, counts: { items: 0 },
+         upstream: [{ host: "invidious.io", err: "timeout" }],
+         note: "ต้นทางล่มทั้งหมด — เสิร์ฟของเก่าที่เก็บไว้" }),
+    mk({ t: now - 3e5, src: "ir/feeds", ok: false, ms: 4200, counts: { news: 0 },
+         note: "KV put failed: quota exceeded" }),
+    mk({ t: now - 40 * 864e5, src: "trend/feeds", ms: 5000, counts: { news: 300 },
+         drops: { pruned: 9 }, trimmed: true }),
+  ];
+
+  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  await ctx.route("**/api/log*", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: rows, total: rows.length }) }));
+  // ปลอม API อื่นที่หน้า admin เรียกด้วย — sandbox ยิงเน็ตออกไม่ได้
+  await ctx.route("**/api/**", (r) => {
+    if (/\/api\/log/.test(r.request().url())) return r.fallback();
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sources: {}, alertVerify: {}, swept: {}, items: [] }) });
+  });
+  const p = await ctx.newPage();
+  const errs = [];
+  p.on("pageerror", (e) => errs.push(String(e)));
+  await p.goto(`${BASE}/admin/`, { waitUntil: "load" });
+  await p.click('#ptabs button[data-page="log"]');
+  await p.waitForTimeout(500);
+  await p.selectOption("#logDays", "0");
+  await p.waitForTimeout(250);
+
+  // [1] drill-down — จำนวนอย่างเดียว audit ไม่ได้ ต้องกดดูได้ว่าข่าวชิ้นไหน
+  ok("มีปุ่มกดดูรายการ", (await p.$$(".logmore")).length > 0);
+  await p.click(".loglist > li:first-child .logmore");
+  await p.waitForTimeout(200);
+  const drill = await p.$$eval("#drill0 li", (els) => els.filter((e) => !e.hidden).map((e) => e.textContent.replace(/\s+/g, " ").trim()));
+  ok("กางแล้วเห็นพาดหัวข่าวที่ถูกตัดจริง", drill.length === 3 && drill.some((t) => t.includes("ทรูธโซเชียล")), JSON.stringify(drill));
+  ok("มีลิงก์ให้กดไปดูข่าวต้นทาง", (await p.$$("#drill0 a[href]")).length === 3);
+  // กดที่ป้ายเหตุผล = เห็นเฉพาะข่าวที่ถูกตัดด้วยเหตุผลนั้น
+  await p.click(".loglist > li:first-child .logchip.cut");
+  await p.waitForTimeout(200);
+  const one = await p.$$eval("#drill0 li", (els) => els.filter((e) => !e.hidden).length);
+  ok("กดป้ายเหตุผลแล้วกรองเหลือเฉพาะเหตุผลนั้น", one === 1, String(one));
+
+  // [2] delta — ยอดสะสมล้วนๆ ทำให้ "ข่าวหายไป 5 ชิ้น" จมอยู่ในความปกติ
+  const nums = await p.$eval(".loglist > li .logbody.nums", (e) => e.textContent.replace(/\s+/g, " ").trim());
+  ok("แสดงส่วนต่างจากรอบก่อน", /\(-1\)/.test(nums) && /\(\+2\)/.test(nums), nums);
+  ok("ส่วนต่างมีวงเล็บ ไม่ให้อ่านติดกับยอดสะสม", !/309-1/.test(nums), nums);
+
+  // [3] 3 ระดับ — จุดเขียวทุกแถวแปลว่าไม่มีทางรู้ว่ารอบไหนพัง
+  const lv = await p.$$eval(".loglist > li", (els) => els.map((e) => e.className));
+  ok("รอบที่ error = ล้มเหลว", lv.filter((c) => c.includes("lv-fail")).length === 1, JSON.stringify(lv));
+  ok("รอบที่ต้นทางล่ม/ได้ 0 รายการ = ผิดสังเกต", lv.filter((c) => c.includes("lv-warn")).length === 1, JSON.stringify(lv));
+  ok("รอบปกติไม่ถูกทำเป็นสีเตือน", lv.filter((c) => c.includes("lv-ok")).length === 3, JSON.stringify(lv));
+  ok("สรุปด้านบนบอกจำนวนรอบที่มีปัญหา",
+     /ล้มเหลว 1/.test(await p.$eval("#logMeta", (e) => e.textContent)) &&
+     /ผิดสังเกต 1/.test(await p.$eval("#logMeta", (e) => e.textContent)));
+  ok("รอบที่ล้มเหลวเก็บรายละเอียด error ไว้ด้วย",
+     (await p.$$eval(".lognote", (e) => e.map((x) => x.textContent))).some((t) => t.includes("quota")));
+
+  // [4] เวลา — 0 ms ไม่มีทางเป็นเวลาจริงของงาน build
+  const ms = await p.$$eval(".logms", (els) => els.map((e) => e.textContent.trim()));
+  ok("แสดงเวลาที่วัดได้จริง ไม่ใช่ 0 ms", ms.every((t) => !/\b0 ms/.test(t)), JSON.stringify(ms));
+  ok("เวลานานๆ อ่านเป็นวินาที", ms.some((t) => t.includes("8.4 วิ")), JSON.stringify(ms));
+
+  // [5] แยกโซนตัวเลขกับโซนเหตุผล
+  const first = await p.$eval(".loglist > li", (e) => ({
+    nums: e.querySelector(".logbody.nums")?.textContent || "",
+    whys: e.querySelector(".logbody.whys")?.textContent || "",
+  }));
+  ok("โซนตัวเลขกับโซนเหตุผลแยกคนละบรรทัด", !!first.nums && !!first.whys);
+  ok("ตัวเลข pipeline ไม่ปนอยู่ในโซนเหตุผล", !first.whys.includes("News"), first.whys.slice(0, 60));
+  ok("เหตุผลไม่ปนอยู่ในโซนตัวเลข", !first.nums.includes("✂"), first.nums.slice(0, 60));
+  // ⚠️ เหตุผลต้องเป็นภาษาคน ไม่ใช่รหัสดิบ (กฎเดียวกับ WHY_TH)
+  ok("แปลเหตุผลเป็นภาษาคนครบ รวม pruned", !first.whys.includes("pruned"), first.whys.slice(0, 80));
+
+  // [6] ตัวกรอง — log โตเป็นร้อยแถวภายในเดือนเดียว
+  await p.fill("#logQ", "เทเลฟาร์มาซี");
+  await p.waitForTimeout(250);
+  ok("ค้นหาถึงพาดหัวข่าวที่อยู่ในรายละเอียด", (await p.$$(".loglist > li")).length === 1);
+  await p.fill("#logQ", "");
+  await p.selectOption("#logWhy", "pruned");
+  await p.waitForTimeout(250);
+  ok("กรองตามเหตุผลการตัดได้", (await p.$$(".loglist > li")).length === 2);
+  await p.selectOption("#logWhy", "");
+  await p.selectOption("#logDays", "7");
+  await p.waitForTimeout(250);
+  ok("กรองตามช่วงวันที่ได้", (await p.$$(".loglist > li")).length === 4);
+  await p.selectOption("#logSrc", "trend/feeds");
+  await p.waitForTimeout(250);
+  ok("กรองตามช่องได้ (ใช้ร่วมกับตัวกรองอื่น)", (await p.$$(".loglist > li")).length === 2);
+
+  // นโยบายเก็บ: แถวเก่าไม่มีรายละเอียดแล้ว ต้องบอกว่าทำไม ไม่ใช่กางแล้วเจอว่าง
+  await p.selectOption("#logSrc", "");
+  await p.selectOption("#logDays", "0");
+  await p.waitForTimeout(250);
+  await p.click(".loglist > li:nth-child(5) .logmore");
+  await p.waitForTimeout(200);
+  ok("แถวเก่าที่ถอดรายละเอียดออกแล้ว บอกเหตุผลให้ผู้ใช้รู้",
+     /เก่าเกิน 30 วัน/.test(await p.$eval("#drill4", (e) => e.textContent)));
+
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" | "));
+  await browser.close();
+}
+
+// ── [9] นโยบายเก็บฝั่งเซิร์ฟเวอร์ ─────────────────────────────────────────
+console.log("\n[9] สรุปเก็บยาว รายละเอียดเก็บสั้น");
+{
+  const kv = fakeKV();
+  const detail = () => ({ items: [{ why: "pr", t: "x", u: "https://a", c: "alert1" }], dropped: 1 });
+  for (let i = 0; i < 60; i++) { resetLog(); await writeLog(envOf(kv), { src: "s", ...detail() }); }
+  const saved = await readLog(envOf(kv));
+  const withItems = saved.filter((r) => r.items).length;
+  ok("แถวใหม่ๆ ยังมีรายละเอียดรายชิ้น", withItems > 0 && withItems <= 40, String(withItems));
+  ok("แถวเก่าถูกถอดรายละเอียดออก แต่แถวสรุปยังอยู่", saved.length === 60 && saved.some((r) => r.trimmed));
+  ok("แถวที่ถูกถอดยังมีตัวเลขสรุปครบ", saved.filter((r) => r.trimmed).every((r) => r.src === "s"));
+
+  // เพดานรายชิ้นต่อแถว — กันไม่ให้ blob โตจนอ่าน/เขียนช้า
+  resetLog();
+  const L = startLog("s");
+  for (let i = 0; i < 40; i++) L.item("pr", "หัวข้อ " + i, "https://a/" + i, "alert1");
+  ok("เก็บรายชิ้นไม่เกินเพดานต่อแถว", L.items.length === 15, String(L.items.length));
+  ok("แต่ยังนับของที่เกินเพดานไว้ บอกได้ว่า 'แสดง 15 จาก 40'", L.dropped === 40, String(L.dropped));
+}
+
 
 console.log("\n" + (fail ? "❌ ตก" : "✅ ผ่านหมด") + " — ผ่าน " + pass + " · ตก " + fail + "\n");
 process.exit(fail ? 1 : 0);

@@ -67,6 +67,8 @@ const WHY_TH = {
   "ไม่มีชื่อเครือ CP ในพาดหัว": "อ่านเนื้อข่าวแล้วไม่มีชื่อเครือ CP",
   "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป": "ไม่มีชื่อเครือ CP ในพาดหัว/สรุป", // ของเก่าที่ยังค้างใน KV
   "ไม่อยู่ในพาดหัว/เนื้อ": "คำที่ match ไม่ได้อยู่ในพาดหัวหรือเนื้อข่าว",
+  // ⚠️ ไม่ได้มาจาก noiseReason() แต่มาจาก pruneStaleMerged() — ก็ต้องแปลเหมือนกัน
+  pruned: "เคยดึงมาจากคอลัมน์ข่าว แต่ตอนนี้ไม่ตรงคำค้นแล้ว",
 };
 const DROP_DAYS = 3; // โชว์เฉพาะข่าว 3 วันล่าสุดในรายการที่ถูกตัด (เจ้าของสั่ง — ของเก่าทำให้รก)
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -285,6 +287,36 @@ const SRC_TH = {
 };
 const logSrcTH = (s) => SRC_TH[s] || s || "?";
 
+// ลำดับตัวเลข pipeline — **ตายตัวทุกแถว** ต่อให้ค่าเป็น 0 ก็ยังแสดง
+// เจ้าของทัก (21 ส.ค. 2026): ถ้าสลับตำแหน่งไปมาตามที่มีค่า จะกวาดตาเทียบระหว่างแถวไม่ได้เลย
+const PIPE = [
+  ["news", "News"],
+  ["alert1", "CP"],
+  ["alert2", "จับตามอง"],
+  ["items", "รายการ"],
+  ["trends", "เทรนด์"],
+  ["articles", "บทความ"],
+  ["pruned", "ตัดออก"],
+];
+
+// ตัดทิ้งเกินกี่ % ของที่ดึงมา ถึงถือว่า "ผิดสังเกต" แม้จะไม่มี error
+const DROP_ALERT = 0.4;
+
+// ⚠️ 3 ระดับ ไม่ใช่ 2 — จุดเขียวทุกแถวแปลว่าไม่มีทางรู้ว่ารอบไหนพัง (เจ้าของทัก 21 ส.ค. 2026)
+//   fail = ล้มเหลว · warn = ทำงานจบแต่ผิดสังเกต · ok = ปกติ
+function logLevel(r) {
+  if (!r.ok) return { k: "fail", label: "ล้มเหลว" };
+  const why = [];
+  if ((r.upstream || []).length) why.push("ต้นทางล่ม " + r.upstream.length);
+  const got = Object.entries(r.counts || {}).filter(([k]) => k !== "pruned");
+  const total = got.reduce((a, [, n]) => a + n, 0);
+  if (got.length && total === 0) why.push("ดึงมาได้ 0 รายการ");
+  const cut = Object.values(r.drops || {}).reduce((a, n) => a + n, 0);
+  if (total > 0 && cut / (total + cut) > DROP_ALERT) why.push(`ตัดทิ้ง ${Math.round((cut / (total + cut)) * 100)}%`);
+  if (r.note && !r.upstream?.length) why.push(r.note);
+  return why.length ? { k: "warn", label: "ผิดสังเกต", why } : { k: "ok", label: "ปกติ" };
+}
+
 const fmtWhen = (iso) => {
   const d = new Date(iso);
   if (isNaN(d)) return iso || "-";
@@ -292,62 +324,164 @@ const fmtWhen = (iso) => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+// ⚠️ 0 ms ไม่มีทางเป็นเวลาจริงของงาน build — แสดง "–" แทน อย่าโกหกว่าเร็ว
+// (เวลาที่วัดได้จริงคือเครื่องมือจับ "รอบไหนช้าผิดปกติ = มีอะไรค้าง")
+const fmtMs = (ms) => (!Number.isFinite(ms) || ms <= 0 ? "–" : ms >= 1000 ? (ms / 1000).toFixed(1) + " วิ" : ms + " ms");
+
+// ส่วนต่างจากรอบก่อนของ "ช่องเดียวกัน" — ยอดสะสมล้วนๆ ต้องนั่งลบเลขเองถึงจะเห็นความผิดปกติ
+function withDelta(list) {
+  const prev = new Map();
+  // ไล่จากเก่าไปใหม่ เพื่อให้แต่ละแถวรู้ค่าของรอบก่อนหน้าตัวเอง
+  for (let i = list.length - 1; i >= 0; i--) {
+    const r = list[i];
+    const before = prev.get(r.src);
+    r._d = {};
+    for (const [k, n] of Object.entries(r.counts || {})) {
+      if (before && Number.isFinite(before[k])) r._d[k] = n - before[k];
+    }
+    prev.set(r.src, { ...(r.counts || {}) });
+  }
+  return list;
+}
+
+// ⚠️ ใส่วงเล็บเสมอ — "309-1" อ่านเป็นเลขเดียวได้ ต้องเป็น "309 (-1)"
+const dTag = (d) => (d == null ? "" : d === 0
+  ? `<i class="dz">(±0)</i>`
+  : `<i class="${d > 0 ? "dup" : "ddn"}">(${d > 0 ? "+" : ""}${d})</i>`);
+
 function renderLog(items) {
   const box = $("#admLog");
   if (!items.length) {
     // ⚠️ ว่างมีได้ 2 ความหมาย ต้องบอกให้ชัดว่าอันไหน ไม่งั้นเข้าใจว่าระบบพัง
-    box.innerHTML = `<p class="logempty"><b>ยังไม่มีบันทึก — ปกติ ไม่ใช่ระบบพัง</b><br>
-      ที่นี่บันทึก 2 อย่างเท่านั้น: <b>ตอนดึงข่าวรอบใหม่</b> (ชั่วโมงละครั้งต่อแดชบอร์ด)
-      กับ <b>ตอนมีอะไรผิดปกติ</b> (ต้นทางล่ม · ดึงไม่ได้ · บันทึกไม่สำเร็จ)<br>
-      ช่องอื่นที่ทำงานราบรื่นจะไม่เขียนอะไรเลย เพราะโควตาการเขียนมีจำกัดและใช้ร่วมกันทั้งเว็บ<br>
+    box.innerHTML = `<p class="logempty"><b>ไม่มีรายการที่ตรงกับตัวกรอง</b><br>
+      ถ้ายังไม่เคยมีบันทึกเลย: ที่นี่บันทึก <b>ตอนดึงข่าวรอบใหม่</b> (ชั่วโมงละครั้งต่อแดชบอร์ด)
+      กับ <b>ตอนมีอะไรผิดปกติ</b> เท่านั้น — ช่องที่ทำงานราบรื่นจะเงียบ
+      เพราะโควตาการเขียนมีจำกัดและใช้ร่วมกันทั้งเว็บ<br>
       อยากเห็นเดี๋ยวนี้ ให้กด <code>?rebuild</code> ที่ท้าย URL ของ API เพื่อสั่งดึงรอบใหม่</p>`;
     return;
   }
-  box.innerHTML = `<ul class="loglist">` + items.map((r) => {
-    const cuts = Object.entries(r.drops || {}).sort((a, b) => b[1] - a[1]);
-    const cls = !r.ok ? "bad" : (r.upstream || []).length ? "warn" : "";
-    const chips = [
-      ...Object.entries(r.counts || {}).map(([k, n]) => `<span class="logchip">${esc(k)} ${n}</span>`),
-      ...cuts.map(([w, n]) => `<span class="logchip cut">✂ ${esc(logWhy(w))} ${n}</span>`),
-      ...(r.upstream || []).map((u) => `<span class="logchip err">⚠ ${esc(u.host)}</span>`),
-      r.ai ? `<span class="logchip">🤖 ถาม AI ${r.ai}</span>` : "",
-      r.kvWrites ? `<span class="logchip">💾 เขียน ${r.kvWrites}</span>` : "",
+  box.innerHTML = `<ul class="loglist">` + items.map((r, i) => {
+    const lv = logLevel(r);
+    const cuts = Object.entries(r.drops || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+
+    // ── บรรทัดบน: ตัวเลข pipeline (ตายตัว เทียบระหว่างแถวได้) ──
+    const nums = PIPE.filter(([k]) => r.counts && r.counts[k] != null)
+      .map(([k, label]) => `<span class="logchip num"><b>${esc(label)}</b> ${r.counts[k]}${dTag(r._d && r._d[k])}</span>`).join("");
+    const extra = [
+      r.ai ? `<span class="logchip num">🤖 AI ${r.ai}</span>` : "",
+      r.kvWrites ? `<span class="logchip num">💾 เขียน ${r.kvWrites}</span>` : "",
     ].filter(Boolean).join("");
-    return `<li class="${cls}">
+
+    // ── บรรทัดล่าง: เหตุผลการคัด (เฉพาะที่ > 0) + ต้นทางที่ล่ม ──
+    const cutChips = cuts.map(([w, n]) =>
+      `<button type="button" class="logchip cut" data-drill="${i}" data-why="${esc(w)}">✂ ${esc(logWhy(w))} ${n}</button>`).join("");
+    const upChips = (r.upstream || []).map((u) =>
+      `<span class="logchip err" title="${esc(u.err || "")}">⚠ ${esc(u.host)}</span>`).join("");
+
+    // ── รายชิ้น (กดแล้วกาง) ──
+    const list = r.items || [];
+    let drill = "";
+    if (list.length) {
+      const more = (r.dropped || list.length) - list.length;
+      drill = `<div class="logdrill" id="drill${i}" hidden>
+        <ul>${list.map((it) => `<li data-why="${esc(it.why)}">
+          <span class="dwhy">${esc(logWhy(it.why))}</span>
+          ${it.c ? `<span class="dcol">${esc(it.c === "alert1" ? "CP" : it.c === "alert2" ? "จับตามอง" : it.c)}</span>` : ""}
+          ${it.u ? `<a href="${esc(it.u)}" target="_blank" rel="noopener">${esc(it.t || it.u)}</a>` : `<span>${esc(it.t)}</span>`}
+        </li>`).join("")}</ul>
+        ${more > 0 ? `<p class="dmore">แสดง ${list.length} จาก ${r.dropped} — ที่เหลือไม่ได้เก็บรายละเอียดไว้ (กันไม่ให้บันทึกโตเกินไป)</p>` : ""}
+      </div>`;
+    } else if (r.trimmed) {
+      drill = `<div class="logdrill trimmed" id="drill${i}" hidden><p class="dmore">รอบนี้เก่าเกิน 30 วัน — เก็บไว้แต่ตัวเลขสรุป ไม่มีรายการข่าวให้กดดูแล้ว</p></div>`;
+    }
+
+    return `<li class="lv-${lv.k}">
       <div class="logtop">
-        <span class="logdot"></span>
+        <span class="logdot" title="${esc(lv.label)}"></span>
         <span class="logsrc" title="${esc(r.src || "")}">${esc(logSrcTH(r.src))}</span>
+        <span class="loglv ${lv.k}">${esc(lv.label)}</span>
         <span class="logtime">${esc(fmtWhen(r.at))}</span>
-        <span class="logms">${r.ms != null ? r.ms + " ms" : ""} ${esc(r.cache || "")} ${r.env && r.env !== "prod" ? "· " + esc(r.env) : ""}</span>
+        <span class="logms">${esc(fmtMs(r.ms))}${r.cache ? " · " + esc(r.cache) : ""}${r.env && r.env !== "prod" ? " · " + esc(r.env) : ""}</span>
+        ${(list.length || r.trimmed) ? `<button type="button" class="logmore" data-drill="${i}">ดูรายการ</button>` : ""}
       </div>
-      <div class="logbody">${chips}</div>
-      ${r.note ? `<div class="lognote">${esc(r.note)}</div>` : ""}
+      ${nums || extra ? `<div class="logbody nums">${nums}${extra}</div>` : ""}
+      ${cutChips || upChips ? `<div class="logbody whys">${cutChips}${upChips}</div>` : ""}
+      ${lv.k !== "ok" && (r.note || lv.why) ? `<div class="lognote">${esc(r.note || (lv.why || []).join(" · "))}</div>` : ""}
+      ${drill}
     </li>`;
   }).join("") + `</ul>`;
+}
+
+// ---- ตัวกรอง ----
+// ⚠️ ดึงมาทั้งก้อนครั้งเดียวแล้วกรองในเบราว์เซอร์ ไม่ได้ยิง API ใหม่ทุกครั้งที่เปลี่ยนตัวกรอง
+//    (ถ้ากรองที่เซิร์ฟเวอร์ การคำนวณ "ส่วนต่างจากรอบก่อน" จะผิด เพราะรอบก่อนถูกกรองทิ้งไป)
+let LOG_ALL = [];
+
+function applyLogFilters() {
+  const src = $("#logSrc").value;
+  const days = +$("#logDays").value || 0;
+  const why = $("#logWhy").value;
+  const q = $("#logQ").value.trim().toLowerCase();
+  const cutoff = days ? Date.now() - days * 86400000 : 0;
+
+  const out = LOG_ALL.filter((r) => {
+    if (src && r.src !== src) return false;
+    if (cutoff) { const t = Date.parse(r.at || ""); if (Number.isFinite(t) && t < cutoff) return false; }
+    if (why && !(r.drops && r.drops[why] > 0)) return false;
+    if (q) {
+      const hay = [logSrcTH(r.src), r.src, r.note, ...(r.upstream || []).map((u) => u.host),
+                   ...Object.keys(r.drops || {}).map(logWhy),
+                   ...(r.items || []).map((it) => it.t)].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const bad = out.filter((r) => logLevel(r).k === "fail").length;
+  const warn = out.filter((r) => logLevel(r).k === "warn").length;
+  $("#logMeta").innerHTML = `${out.length} รอบ` +
+    (bad ? ` · <b class="mbad">ล้มเหลว ${bad}</b>` : "") +
+    (warn ? ` · <b class="mwarn">ผิดสังเกต ${warn}</b>` : "") +
+    (!bad && !warn ? " · ปกติทั้งหมด" : "");
+  renderLog(out);
 }
 
 async function loadLog() {
   const box = $("#admLog");
   box.innerHTML = `<p class="logempty">${WAIT_LOG}</p>`;
-  const src = $("#logSrc").value;
   try {
-    const j = await fetch("/api/log" + (src ? "?src=" + encodeURIComponent(src) : "")).then((r) => r.json());
-    const items = j.items || [];
+    const j = await fetch("/api/log?limit=300").then((r) => r.json());
+    LOG_ALL = withDelta(j.items || []);
+
     // ตัวเลือกในกล่องกรองสร้างจากของที่มีอยู่จริง ไม่ได้เขียนรายการไว้ตายตัว
-    if (!src) {
-      const seen = [...new Set(items.map((x) => x.src).filter(Boolean))].sort();
-      const sel = $("#logSrc");
+    const fill = (sel, values, all, label) => {
       const keep = sel.value;
-      sel.innerHTML = `<option value="">ทุกแดชบอร์ด</option>` +
-        seen.map((s) => `<option value="${esc(s)}">${esc(logSrcTH(s))}</option>`).join("");
-      sel.value = keep;
-    }
-    $("#logMeta").textContent = `${items.length} รายการ` + (j.total > items.length ? ` (ทั้งหมด ${j.total})` : "");
-    renderLog(items);
+      sel.innerHTML = `<option value="">${all}</option>` +
+        values.map((v) => `<option value="${esc(v)}">${esc(label(v))}</option>`).join("");
+      sel.value = values.includes(keep) ? keep : "";
+    };
+    fill($("#logSrc"), [...new Set(LOG_ALL.map((x) => x.src).filter(Boolean))].sort(), "ทุกช่อง", logSrcTH);
+    const whys = [...new Set(LOG_ALL.flatMap((x) => Object.keys(x.drops || {})))].sort();
+    fill($("#logWhy"), whys, "ทุกเหตุผล", logWhy);
+
+    applyLogFilters();
   } catch (e) {
     box.innerHTML = `<p class="logempty">โหลดบันทึกไม่สำเร็จ: ${esc(String(e.message || e))}</p>`;
   }
 }
+
+// กด "ดูรายการ" หรือกดที่ป้ายเหตุผล → กางรายชิ้น (กดที่ป้ายจะไฮไลต์เฉพาะเหตุผลนั้น)
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-drill]");
+  if (!btn) return;
+  const d = $("#drill" + btn.dataset.drill);
+  if (!d) return;
+  const why = btn.dataset.why || "";
+  const open = d.hidden || d.dataset.why !== why;
+  d.hidden = !open;
+  d.dataset.why = open ? why : "";
+  $$("li", d).forEach((li) => { li.hidden = open && why ? li.dataset.why !== why : false; });
+});
 
 function showPage(page) {
   const isLog = page === "log";
@@ -363,4 +497,6 @@ $("#ptabs").addEventListener("click", (e) => {
   if (b) showPage(b.dataset.page);
 });
 $("#logReload").addEventListener("click", loadLog);
-$("#logSrc").addEventListener("change", loadLog);
+// ⚠️ เปลี่ยนตัวกรอง = กรองของที่โหลดมาแล้ว ไม่ยิง API ใหม่ (กดโหลดใหม่ถึงจะยิง)
+for (const id of ["#logSrc", "#logDays", "#logWhy"]) $(id).addEventListener("change", applyLogFilters);
+$("#logQ").addEventListener("input", applyLogFilters);
