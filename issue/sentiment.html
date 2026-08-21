@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="2" />
+<meta name="page-ver" content="3" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -86,6 +86,17 @@
   .sc-posthead .sc-thumb { width: 140px; height: auto; max-height: 120px; object-fit: contain; border-radius: 8px; border: 1px solid var(--sc-border); background: var(--sc-surface2); flex: none; }
   .sc-posthead .sc-ptitle { font-size: 13.5px; font-weight: 600; color: var(--sc-ink); line-height: 1.4; }
   .sc-summary { background: var(--sc-plane); border: 1px solid var(--sc-border); border-radius: 10px; padding: 14px; font-size: 13.5px; color: var(--sc-ink2); }
+
+  /* แถบ IO — สีส้ม (เตือน) ไม่ใช่แดง เพราะเป็น "สัญญาณน่าสงสัย" ไม่ใช่ข้อสรุป */
+  .sc-iobar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 10px 13px; margin: 0 0 12px; font-size: 12.5px; color: #9a3412; }
+  .sc-iobar b { color: #7c2d12; }
+  .sc-iotoggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; font-weight: 600; }
+  .sc-iotoggle input { accent-color: #ea580c; }
+  .sc-ionote { font-size: 11.5px; color: var(--sc-muted); margin: 0 0 10px; }
+  .sc-iotag { flex: none; font-size: 10px; font-weight: 700; border: 1px solid #fdba74; background: #fff7ed;
+    color: #9a3412; border-radius: 999px; padding: 2px 8px; margin-top: 1px; }
+  .sc-arow.sc-isio { background: #fffbf5; }
 
   .sc-kwlist { display: flex; flex-direction: column; gap: 8px; }
   .sc-kwrow { display: grid; grid-template-columns: 128px 1fr 40px; gap: 10px; align-items: center; font-size: 12.5px; }
@@ -182,6 +193,10 @@
         <h2>ผลวิเคราะห์ Sentiment</h2>
         <p class="sc-sub" id="resSub"></p>
         <div class="sc-posthead" id="postHead" style="display:none"></div>
+        <div class="sc-iobar" id="ioBar" style="display:none">
+          <span class="sc-ioinfo">🕵️ <b id="ioCount">0</b> คอมเมนต์มีสัญญาณว่าอาจเป็น <b>IO</b> (จัดตั้ง) — <span id="ioPct">0%</span></span>
+          <label class="sc-iotoggle"><input type="checkbox" id="ioExclude" /> ตัดออกจากผลวิเคราะห์</label>
+        </div>
         <p class="sc-sub" id="donutCap" style="margin:0 0 10px"></p>
         <div class="sc-senti">
           <div class="sc-donut" id="donut"><div class="sc-mid"><div class="sc-big" id="donutBig">–</div><div class="sc-lab">เชิงบวก</div></div></div>
@@ -302,6 +317,7 @@ async function analyze(){
   try {
     const data = DEMO ? await demoResult(opts) : await callWorker(opts);
     lastResult = data;
+    excludeIO = false; el("ioExclude").checked = false;   // เริ่มใหม่ทุกครั้งที่วิเคราะห์
     renderResult(data);
   } catch (e){
     showErr(friendlyError(e && e.message ? e.message : String(e)));
@@ -321,6 +337,27 @@ async function callWorker(opts){
   }
   return await resp.json();
 }
+/* สร้าง audit ตัวอย่างให้จำนวนตรงกับ sentiment ที่โชว์ (เฉพาะโหมด demo) */
+function buildDemoAudit(counts){
+  const T = {
+    positive: ["รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน","บริการประทับใจ พนักงานน่ารัก แนะนำเลย","ชื่นชมทีมงานที่ลงพื้นที่ช่วยจริงจัง"],
+    neutral:  ["รสชาติโอเค ตามราคา ไม่ได้หวือหวาอะไร","บริษัทออกแถลงการณ์ชี้แจงแล้วนะครับ","เรื่องนี้เกี่ยวข้องกันยังไงเหรอครับ"],
+    negative: ["ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย","แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก","ต้องออกมารับผิดชอบกับสิ่งที่เกิดขึ้น"],
+    not_related: ["ปลาหมอคางดำระบาดหนักมากในพื้นที่","รัฐควรเร่งแก้ปัญหานี้โดยด่วน","สงสารชาวประมงที่ได้รับผลกระทบ"],
+  };
+  const rows = [];
+  for (const [k, n] of Object.entries(counts)) {
+    for (let i = 0; i < (n||0); i++) rows.push({ text: T[k][i % T[k].length], sentiment: k });
+  }
+  // ติดธง IO ให้ 3 ใบแรกที่พอมี เพื่อให้เห็นฟีเจอร์
+  const whys = ["ข้อความซ้ำกับอีก 4 คอมเมนต์","ข้อความซ้ำกับอีก 4 คอมเมนต์","คนเดียวคอมเมนต์ 5 ครั้ง"];
+  let count = 0;
+  for (let i = 0; i < rows.length && count < 3; i += Math.max(1, Math.floor(rows.length/3))) {
+    rows[i].io = true; rows[i].io_why = whys[count++];
+  }
+  return { rows, count };
+}
+
 async function demoResult(opts){
   await new Promise(r => setTimeout(r, 700));
   const fetched = Math.min(opts.limit, 214);
@@ -328,6 +365,8 @@ async function demoResult(opts){
   const notRel = isCP ? Math.round(fetched*0.72) : 0;   // ส่วนใหญ่ไม่ได้พูดถึง CP
   const total = fetched - notRel;
   const pos = Math.round(total*0.58), neg = Math.round(total*0.16), neu = total-pos-neg;
+  // สร้าง audit ให้ตรงกับจำนวนจริง ไม่งั้นกดตัด IO แล้วตัวเลขกระโดด (เฉพาะโหมด demo)
+  const ioAudit = buildDemoAudit({ positive:pos, neutral:neu, negative:neg, not_related:notRel });
   return {
     platform: opts.platform, source_url: opts.url, demo: true,
     target: opts.target, not_related: notRel,
@@ -339,16 +378,9 @@ async function demoResult(opts){
     keywords: [{term:"อร่อย",count:41},{term:"ราคา",count:33},{term:"บริการ",count:27},{term:"ส่งช้า",count:19},{term:"คุ้ม",count:17},{term:"แพ็คเกจ",count:14},{term:"รอนาน",count:12},{term:"ประทับใจ",count:11}],
     summary: "คอมเมนต์ส่วนใหญ่เป็นเชิงบวก ชื่นชมรสชาติและความคุ้มค่า มีบางส่วนบ่นเรื่องการจัดส่งช้าและการรอคิว โดยรวมกระแสตอบรับดี",
     claude_usage: { input: total*12, output: 240, total: total*12+240 }, claude_rate_remaining: 380000,
-    audit: [
-      {text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน",sentiment:"positive"},
-      {text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย",sentiment:"positive"},
-      {text:"ร้านนี้เด็ด ต้องมาลองสักครั้ง",sentiment:"positive"},
-      {text:"อร่อยใช้ได้ แต่แพงไปนิดนึง",sentiment:"neutral"},
-      {text:"รสชาติโอเค ตามราคา ไม่ได้หวือหวาอะไร",sentiment:"neutral"},
-      {text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย",sentiment:"negative"},
-      {text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก",sentiment:"negative"},
-      {text:"รอคิวนานมาก ไม่ค่อยประทับใจ",sentiment:"negative"},
-    ],
+    io_count: ioAudit.count,
+    io_signals: { duplicate: 2, repeat_author: 1, burst: 0, short_spam: 0 },
+    audit: ioAudit.rows,
     samples: [
       {sentiment:"positive",text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน"},
       {sentiment:"positive",text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย"},
@@ -357,6 +389,25 @@ async function demoResult(opts){
     ],
   };
 }
+
+/* ---------------- IO (คอมเมนต์จัดตั้ง) ----------------
+   ตัดออกแล้วคำนวณใหม่ในเครื่องเลย — ไม่เรียก API ซ้ำ ไม่เสียเครดิต/โทเคน
+   ⚠️ สรุป/keyword มาจาก AI ตอนวิเคราะห์ครั้งแรก (ยังคิดจากชุดเต็ม) จึงบอกไว้บนจอ */
+let excludeIO = false;
+function ioFiltered(d){
+  if (!d) return d;
+  const audit = d.audit || [];
+  if (!excludeIO || !audit.some(a => a.io)) return d;
+  const kept = audit.filter(a => !a.io);
+  const sentiment = { positive:0, neutral:0, negative:0 };
+  let not_related = 0;
+  kept.forEach(a => { if (a.sentiment === "not_related") not_related++; else if (sentiment[a.sentiment] != null) sentiment[a.sentiment]++; });
+  return { ...d, sentiment, not_related, audit: kept, analyzed_count: kept.length, io_excluded: true };
+}
+el("ioExclude").onchange = e => {
+  excludeIO = e.target.checked;
+  if (lastResult) renderResult(ioFiltered(lastResult));
+};
 
 /* ---------------- render ---------------- */
 function pct(n, total){ return total ? Math.round(n/total*100) : 0; }
@@ -370,7 +421,19 @@ function renderResult(d){
     escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ดึงมา ${d.analyzed_count||total} คอมเมนต์`) +
     (isCP ? ` · <b>พูดถึง CP ${total} คอมเมนต์</b> (ไม่เกี่ยว ${d.not_related||0})` : "") +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
-  el("donutCap").textContent = isCP ? "% ของคอมเมนต์ที่พูดถึงเครือ CP เท่านั้น" : "";
+  // แถบ IO — ตัวเลขอ้างจากผลดิบเสมอ (lastResult) ไม่ใช่ชุดที่ถูกกรองแล้ว
+  const raw = lastResult || d;
+  const rawAudit = raw.audit || [];
+  const ioN = raw.io_count != null ? raw.io_count : rawAudit.filter(a => a.io).length;
+  const ioBase = rawAudit.length || raw.analyzed_count || 0;
+  el("ioBar").style.display = ioN ? "" : "none";
+  if (ioN) {
+    el("ioCount").textContent = ioN;
+    el("ioPct").textContent = pct(ioN, ioBase) + "% ของคอมเมนต์ทั้งหมด";
+  }
+  el("donutCap").innerHTML =
+    (isCP ? "% ของคอมเมนต์ที่พูดถึงเครือ CP เท่านั้น" : "") +
+    (d.io_excluded ? `${isCP ? " · " : ""}<b>ตัดคอมเมนต์ที่น่าสงสัยว่าเป็น IO ออกแล้ว</b> (สรุป/keyword ด้านล่างยังคิดจากชุดเต็ม)` : "");
   if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
 
   const hasPost = d.post_title || d.post_thumb;
@@ -447,16 +510,23 @@ function renderAudit(d){
   if (!audit.length) return;
   const counts = { all: audit.length, positive:0, neutral:0, negative:0, not_related:0 };
   audit.forEach(a => { if (counts[a.sentiment] != null) counts[a.sentiment]++; });
+  const ioN = audit.filter(a => a.io).length;
   const filters = [["all","ทั้งหมด"],["positive","บวก"],["neutral","กลาง"],["negative","ลบ"]];
   if (counts.not_related) filters.push(["not_related","ไม่เกี่ยวกับ CP"]);
+  if (ioN) { filters.push(["io","🕵️ น่าสงสัย IO"]); counts.io = ioN; }
   el("auditFilter").innerHTML = filters.map(([k,l]) => `<button class="sc-afbtn${k==="all"?" sc-on":""}" data-f="${k}" type="button">${l} (${counts[k]||0})</button>`).join("");
   const tagL = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยว" };
   const tagC = { positive:"--sc-pos", neutral:"--sc-neu", negative:"--sc-neg", not_related:"--sc-muted" };
   function draw(f){
-    const rows = audit.filter(a => f==="all" || a.sentiment===f);
+    const rows = audit.filter(a => f==="all" ? true : f==="io" ? a.io : a.sentiment===f);
     auditRows = rows;
     el("auditList").innerHTML = rows.map(a =>
-      `<div class="sc-arow"><span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span><span class="sc-atext">${escapeHtml(a.text)}</span></div>`).join("");
+      `<div class="sc-arow${a.io ? " sc-isio" : ""}">` +
+      `<span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span>` +
+      (a.io ? `<span class="sc-iotag" title="${escapeHtml(a.io_why||"")}">🕵️ IO?</span>` : "") +
+      `<span class="sc-atext">${escapeHtml(a.text)}` +
+      (a.io && a.io_why ? `<br><span style="color:var(--sc-muted);font-size:11.5px">↳ ${escapeHtml(a.io_why)}</span>` : "") +
+      `</span></div>`).join("");
   }
   el("auditFilter").querySelectorAll(".sc-afbtn").forEach(b => b.onclick = () => {
     el("auditFilter").querySelectorAll(".sc-afbtn").forEach(x => x.classList.remove("sc-on"));
@@ -467,7 +537,8 @@ function renderAudit(d){
 function auditSheets(){
   const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };
   const sheets = lastResult ? buildSheets(lastResult) : {};
-  sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.text])];
+  sheets["รายคอมเมนต์"] = [["ผล sentiment","น่าสงสัย IO","เหตุผล IO","ข้อความ"],
+    ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.io ? "ใช่" : "", a.io_why || "", a.text])];
   return sheets;
 }
 el("auditXlsxBtn").onclick = async () => { if (auditRows.length && await writeXlsx(auditSheets(), "sentiment-audit.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
@@ -486,6 +557,8 @@ function buildSheets(d){
     ["วัดท่าทีต่อ", d.target==="cp" ? "เครือ CP" : "อารมณ์รวม"],
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],["คอมเมนต์ที่ดึงมา", d.fetched_count||""],
     ...(d.target==="cp" ? [["พูดถึงเครือ CP", total],["ไม่เกี่ยวกับ CP", d.not_related||0]] : []),
+    ["น่าสงสัยว่าเป็น IO", (lastResult&&lastResult.io_count)||0],
+    ["ตัด IO ออกจากผลนี้แล้ว", d.io_excluded ? "ใช่" : "ไม่"],
     ["ยอดถูกใจ/รีแอกชัน", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
     ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
     ["สรุปภาพรวม", d.summary||""],

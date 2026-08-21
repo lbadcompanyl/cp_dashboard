@@ -46,6 +46,115 @@ const CP_EXAMPLES = [
   { t: "😡😡😡", a: "not_related" },                                        // ไม่มีเนื้อหา
 ];
 
+/* ============================================================
+ * 🕵️ ตัวจับสัญญาณ IO (ปฏิบัติการข่าวสาร / คอมเมนต์จัดตั้ง)
+ * ------------------------------------------------------------
+ * ⚠️ นี่คือ "สัญญาณน่าสงสัย" ไม่ใช่ข้อพิสูจน์ — คนจริงก็พิมพ์ซ้ำกันได้
+ *    (แฟนคลับ · กระแสไวรัล · คำให้กำลังใจสั้นๆ) จึงต้องบอกเหตุผลทุกครั้ง
+ *    ให้คนตรวจเองได้ และไม่ตัดออกให้เองโดยอัตโนมัติ
+ *
+ * ใช้กฎตายตัว (ไม่เรียก AI) เพราะ: อธิบายได้ · ผลนิ่ง · ไม่มีค่าโทเคนเพิ่ม
+ * ⚠️ ไม่ส่งชื่อผู้คอมเมนต์กลับ — คำนวณในนี้แล้วคืนแค่ธง+เหตุผล
+ * ============================================================ */
+const IO_THRESHOLD = 50;       // คะแนนตั้งแต่นี้ = ติดธงน่าสงสัย
+const IO_MIN_LEN = 15;         // ข้อความสั้นกว่านี้ที่ซ้ำกัน ถือเป็นสัญญาณอ่อน (คนจริงพิมพ์ "สู้ๆ" ซ้ำได้)
+
+/** ยุบข้อความให้เทียบกันได้: ตัดอิโมจิ/วรรคตอน/ช่องว่าง + ยุบตัวซ้ำ (มากกกก → มาก) */
+function ioNorm(s) {
+  return String(s || "").toLowerCase()
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .replace(/(.)\1+/gu, "$1")
+    .trim();
+  // ⚠️ ยุบอักษรซ้ำเหลือ "ตัวเดียว" ไม่ใช่สองตัว — ไม่งั้น "มากกกกก" (→มากก) จะไม่ตรงกับ "มาก"
+  //    ซึ่งเป็นวิธีเลี่ยงการจับซ้ำที่เจอบ่อย (เติมตัวซ้ำ/อิโมจิให้ข้อความต่างกันเล็กน้อย)
+  //    ใช้เทียบความเหมือนเท่านั้น ไม่ได้เอาไปแสดงผล จึงยุบแรงได้ไม่มีผลเสีย
+}
+
+/** parse เวลาแบบยืดหยุ่น (ISO / unix วินาที / unix มิลลิวินาที) — คืน ms หรือ null */
+function ioTime(t) {
+  if (t == null || t === "") return null;
+  if (typeof t === "number" || /^\d+$/.test(String(t))) {
+    const n = +t;
+    if (!isFinite(n) || n <= 0) return null;
+    return n < 1e12 ? n * 1000 : n;   // วินาที → มิลลิวินาที
+  }
+  const p = Date.parse(String(t));
+  return isFinite(p) ? p : null;
+}
+
+/**
+ * ให้คะแนนความน่าสงสัยรายคอมเมนต์
+ * @returns {{flags: boolean[], reasons: string[], count: number, signals: object}}
+ */
+function detectIO(comments) {
+  const n = comments.length;
+  const norms = comments.map(c => ioNorm(c.text));
+
+  // 1) นับข้อความซ้ำ
+  const dupCount = new Map();
+  for (const k of norms) if (k) dupCount.set(k, (dupCount.get(k) || 0) + 1);
+
+  // 2) นับจำนวนคอมเมนต์ต่อผู้เขียน 1 คน (ชื่อไม่ออกจากฟังก์ชันนี้)
+  const authorCount = new Map();
+  for (const c of comments) {
+    const a = String(c.author || "").trim().toLowerCase();
+    if (a) authorCount.set(a, (authorCount.get(a) || 0) + 1);
+  }
+
+  // 3) หา "ระเบิดเวลา" — นาทีที่มีคอมเมนต์หนาผิดปกติ
+  const minuteCount = new Map();
+  const mins = comments.map(c => {
+    const ms = ioTime(c.time);
+    if (ms == null) return null;
+    const m = Math.floor(ms / 60000);
+    minuteCount.set(m, (minuteCount.get(m) || 0) + 1);
+    return m;
+  });
+  const timed = mins.filter(m => m != null).length;
+  const avgPerMin = timed && minuteCount.size ? timed / minuteCount.size : 0;
+  const burstMin = Math.max(5, Math.ceil(avgPerMin * 4));   // หนากว่าค่าเฉลี่ย 4 เท่า
+
+  const flags = [], reasons = [];
+  const signals = { duplicate: 0, repeat_author: 0, burst: 0, short_spam: 0 };
+
+  for (let i = 0; i < n; i++) {
+    let score = 0;
+    const why = [];
+    const k = norms[i];
+    const dup = k ? (dupCount.get(k) || 0) : 0;
+    const long = k.length >= IO_MIN_LEN;
+
+    if (dup >= 2 && long) {
+      score += dup >= 3 ? 70 : 50;
+      why.push(`ข้อความซ้ำกับอีก ${dup - 1} คอมเมนต์`);
+      signals.duplicate++;
+    } else if (dup >= 5 && !long) {
+      score += 20;
+      why.push(`ข้อความสั้นซ้ำ ${dup} ครั้ง`);
+      signals.short_spam++;
+    }
+
+    const a = String(comments[i].author || "").trim().toLowerCase();
+    const ac = a ? (authorCount.get(a) || 0) : 0;
+    if (ac >= 5) { score += 50; why.push(`คนเดียวคอมเมนต์ ${ac} ครั้ง`); signals.repeat_author++; }
+    else if (ac >= 3) { score += 30; why.push(`คนเดียวคอมเมนต์ ${ac} ครั้ง`); signals.repeat_author++; }
+
+    const m = mins[i];
+    if (m != null && (minuteCount.get(m) || 0) >= burstMin) {
+      score += 20;
+      why.push(`ช่วงเวลาถี่ผิดปกติ (${minuteCount.get(m)} คอมเมนต์ในนาทีเดียว)`);
+      signals.burst++;
+    }
+
+    const on = score >= IO_THRESHOLD;
+    flags.push(on);
+    reasons.push(on ? why.join(" · ") : "");
+  }
+
+  return { flags, reasons, count: flags.filter(Boolean).length, signals };
+}
+
 export default {
   async fetch(request, env) {
     const origin = env.ALLOW_ORIGIN || "*";
@@ -107,7 +216,13 @@ async function analyze(opts, env) {
   logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ`);
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
-  const texts = comments.map(c => c.text).filter(Boolean);
+  const kept = comments.filter(c => c.text);
+  const texts = kept.map(c => c.text);
+
+  // 1.5) จับสัญญาณ IO (คอมเมนต์จัดตั้ง) — กฎตายตัว ไม่เรียก AI ไม่คืนชื่อผู้คอมเมนต์
+  const io = detectIO(kept);
+  logLine(`สัญญาณ IO: น่าสงสัย ${io.count}/${kept.length} คอมเมนต์` +
+    ` (ซ้ำ ${io.signals.duplicate} · คนเดิม ${io.signals.repeat_author} · ถี่ผิดปกติ ${io.signals.burst})`);
 
   // ตัวสะสมการใช้ token ของ Claude
   const tokens = { input: 0, output: 0, rate_remaining: null };
@@ -122,7 +237,12 @@ async function analyze(opts, env) {
     (target === "cp" ? ` · ไม่เกี่ยวกับ CP ${not_related}` : ""));
 
   // audit รายคอมเมนต์ (ข้อความ + ผล) สำหรับตรวจความถูกต้องบนจอ — ไม่รวมชื่อผู้คอมเมนต์
-  const audit = texts.map((t, i) => ({ text: String(t).replace(/\s+/g, " ").slice(0, 220), sentiment: labels[i] }));
+  const audit = texts.map((t, i) => ({
+    text: String(t).replace(/\s+/g, " ").slice(0, 220),
+    sentiment: labels[i],
+    io: io.flags[i] || false,
+    io_why: io.reasons[i] || "",
+  }));
 
   // 3) สรุป + keyword + ตัวอย่าง (ถอดความ)
   // โหมด CP: สรุปจากเฉพาะคอมเมนต์ที่เกี่ยวกับ CP (ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ)
@@ -150,6 +270,8 @@ async function analyze(opts, env) {
     analyzed_count: labels.length,
     target,
     not_related,
+    io_count: io.count,
+    io_signals: io.signals,
     sentiment,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
