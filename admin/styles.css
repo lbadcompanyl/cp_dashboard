@@ -216,24 +216,69 @@ body {
 }
 .mini:hover, .logbar select:hover { border-color: #2a78d6; }
 
+.logbar input[type="search"] {
+  border: 1px solid rgba(150, 150, 150, .3); background: transparent; color: inherit;
+  border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; min-width: 170px; flex: 1 1 170px;
+}
+.logbar input[type="search"]:focus { outline: none; border-color: #2a78d6; }
+#logMeta .mbad { color: #ff8b87; }
+#logMeta .mwarn { color: #e6a935; }
+
 .loglist { margin: 0; padding: 0; list-style: none; }
 .loglist li {
-  padding: 9px 0; border-top: 1px solid rgba(150, 150, 150, .12); font-size: 13px;
+  padding: 9px 0 9px 10px; border-top: 1px solid rgba(150, 150, 150, .12); font-size: 13px;
+  border-left: 3px solid transparent;
 }
+/* ⚠️ 3 ระดับ ไม่ใช่ 2 — แถบซ้ายทำให้กวาดตาหาแถวที่มีปัญหาได้โดยไม่ต้องอ่านทุกบรรทัด */
+.loglist li.lv-fail { border-left-color: #d9534f; background: rgba(217, 83, 79, .05); }
+.loglist li.lv-warn { border-left-color: #e6a935; background: rgba(230, 169, 53, .04); }
 .logtop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .logsrc { font-weight: 600; }
 .logtime { opacity: .6; font-size: 12px; font-variant-numeric: tabular-nums; }
-.logms { opacity: .5; font-size: 11px; }
-/* ⚠️ ต้องเห็นทันทีว่าแถวไหนมีปัญหา — ไม่งั้นต้องไล่อ่านทีละบรรทัด */
+.logms { opacity: .5; font-size: 11px; font-variant-numeric: tabular-nums; }
 .logdot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #2e7d4f; }
-.loglist li.bad .logdot { background: #d9534f; }
-.loglist li.warn .logdot { background: #e6a935; }
+.loglist li.lv-fail .logdot { background: #d9534f; }
+.loglist li.lv-warn .logdot { background: #e6a935; }
+.loglv { font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid; }
+.loglv.ok { display: none; }              /* ปกติไม่ต้องติดป้าย ไม่งั้นรกจนของสำคัญจม */
+.loglv.warn { color: #e6a935; border-color: rgba(230, 169, 53, .4); }
+.loglv.fail { color: #ff8b87; border-color: rgba(217, 83, 79, .5); }
+.logmore {
+  margin-left: auto; border: 1px solid rgba(150, 150, 150, .3); background: transparent;
+  color: inherit; border-radius: 8px; padding: 2px 9px; font: inherit; font-size: 11px; cursor: pointer;
+}
+.logmore:hover { border-color: #2a78d6; }
+
+/* ⚠️ 2 โซนแยกกัน — บรรทัดบน "ตัวเลข pipeline" คงที่ทุกรอบ · บรรทัดล่าง "เหตุผลการคัด"
+   ของเดิมปนกันในแถวเดียว กวาดตาเทียบระหว่างรอบไม่ได้ (เจ้าของทัก 21 ส.ค. 2026) */
 .logbody { margin-top: 5px; display: flex; gap: 6px; flex-wrap: wrap; }
+.logbody.whys { margin-top: 4px; }
 .logchip {
   border: 1px solid rgba(150, 150, 150, .22); border-radius: 999px;
-  padding: 2px 9px; font-size: 11px; opacity: .85;
+  padding: 2px 9px; font-size: 11px; opacity: .85; font-variant-numeric: tabular-nums;
 }
+.logchip.num b { font-weight: 600; opacity: .65; margin-right: 3px; }
+.logchip i { font-style: normal; margin-left: 5px; font-size: 10px; }
+.logchip .dup { color: #57b97e; }
+.logchip .ddn { color: #ff8b87; }
+.logchip .dz { opacity: .35; }
+button.logchip { color: inherit; font-family: inherit; cursor: pointer; }
 .logchip.cut { color: #e6a935; border-color: rgba(230, 169, 53, .35); }
+button.logchip.cut:hover { background: rgba(230, 169, 53, .12); }
 .logchip.err { color: #ff8b87; border-color: rgba(217, 83, 79, .4); }
-.lognote { margin-top: 5px; font-size: 12px; color: #ff8b87; }
+.lognote { margin-top: 5px; font-size: 12px; color: #e6a935; }
+.loglist li.lv-fail .lognote { color: #ff8b87; }
+
+/* รายชิ้นที่ถูกตัดในรอบนั้น — ตอบคำถาม "ทำไมข่าวชิ้นนี้ไม่ขึ้น" ได้จริง */
+.logdrill { margin: 7px 0 2px; padding: 8px 10px; border-radius: 8px; background: rgba(150, 150, 150, .08); }
+.logdrill ul { margin: 0; padding: 0; list-style: none; }
+.logdrill li {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  padding: 4px 0; border: 0; font-size: 12px; line-height: 1.45;
+}
+.logdrill li + li { border-top: 1px solid rgba(150, 150, 150, .1); }
+.logdrill .dwhy { color: #e6a935; font-size: 11px; flex: none; }
+.logdrill .dcol { opacity: .55; font-size: 11px; flex: none; }
+.logdrill a { color: inherit; }
+.logdrill .dmore { margin: 6px 0 0; font-size: 11px; opacity: .6; }
 .logempty { font-size: 13px; opacity: .7; line-height: 1.6; }

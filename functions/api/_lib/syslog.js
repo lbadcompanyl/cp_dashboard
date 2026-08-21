@@ -29,8 +29,16 @@
 
 export const LOG_KEY = "log:events";
 
-const MAX_ENTRIES = 300;      // เก็บย้อนหลังเท่านี้พอ — หน้า admin ดูไม่เกินนี้อยู่แล้ว
-const MAX_BYTES = 180 * 1024; // กันไม่ให้ blob โตจนอ่าน/เขียนช้า (เพดานจริงของ KV คือ 25 MB)
+// 📏 นโยบายเก็บ 2 ชั้น — "สรุปเก็บยาว รายละเอียดเก็บสั้น"
+// log ที่บอกแค่จำนวน ("ตัดทิ้ง 4") ใช้ไล่ปัญหาไม่ได้จริง ต้องกดดูได้ว่า **ข่าวชิ้นไหน**
+// แต่ถ้าเก็บรายชิ้นไว้ทุกแถวตลอดกาล blob จะโตจนอ่าน/เขียนช้า
+// → แถวใหม่ๆ เก็บรายชิ้นไว้ด้วย · แถวเก่าถอดรายชิ้นออก เหลือแต่ตัวเลขสรุป
+const MAX_ENTRIES = 300;        // จำนวนแถวสรุปที่เก็บย้อนหลัง
+const MAX_BYTES = 256 * 1024;   // กันไม่ให้ blob โตจนอ่าน/เขียนช้า (เพดานจริงของ KV คือ 25 MB)
+const MAX_DETAIL = 15;          // รายชิ้นต่อ 1 แถว — เกินนี้บอกจำนวนที่เหลือแทน
+const DETAIL_ENTRIES = 40;      // เก็บรายชิ้นไว้กี่แถวล่าสุด
+const DETAIL_DAYS = 30;         // และไม่เกินกี่วัน (เจ้าของสั่ง: รายละเอียดรายชิ้น 30–90 วันพอ)
+const TITLE_MAX = 110;
 
 const prefix = (env) => (env && env.APP_ENV ? String(env.APP_ENV) + ":" : "");
 
@@ -53,7 +61,7 @@ export async function readLog(env) {
 // ---------- เขียน ----------
 /**
  * บันทึก 1 บรรทัด — เรียกได้ครั้งเดียวต่อ request
- * @param entry {{src, ok, ms, note, counts, drops, upstream, ai, kvWrites, cache}}
+ * @param entry {{src, ok, ms, note, counts, drops, upstream, ai, kvWrites, cache, items}}
  * คืน true ถ้าเขียนจริง · false ถ้าถูกกันไว้ (เรียกซ้ำ / ไม่มี KV / ไม่มีอะไรต้องบันทึก)
  */
 export async function writeLog(env, entry) {
@@ -70,7 +78,7 @@ export async function writeLog(env, entry) {
   try {
     const list = await readLog(env);
     list.unshift(row);                    // ใหม่สุดอยู่บนสุด (หน้า admin อ่านจากบนลงล่าง)
-    let out = list.slice(0, MAX_ENTRIES);
+    let out = trimDetail(list.slice(0, MAX_ENTRIES));
     // ตัดตามขนาดจริงด้วย ไม่ใช่ตามจำนวนอย่างเดียว — บาง entry ยาวกว่าเพื่อนมาก
     let s = JSON.stringify(out);
     while (s.length > MAX_BYTES && out.length > 10) {
@@ -82,6 +90,22 @@ export async function writeLog(env, entry) {
   } catch {
     return false;                          // log พังห้ามทำให้ API พัง
   }
+}
+
+// ถอด "รายชิ้น" ออกจากแถวเก่า เหลือไว้แต่ตัวเลขสรุป
+// ⚠️ ไม่ได้ลบทั้งแถว — แถวสรุปยังอยู่ครบ 300 แถว แค่ไม่มีพาดหัวให้กดดูแล้ว
+// (ติดธง `trimmed` ไว้ให้หน้า admin บอกผู้ใช้ได้ว่า "เก่าเกินไป ไม่มีรายละเอียดแล้ว"
+//  ไม่ใช่ปล่อยให้กดแล้วเจอว่างๆ แล้วนึกว่าระบบพัง)
+function trimDetail(list) {
+  const cutoff = Date.now() - DETAIL_DAYS * 86400000;
+  return list.map((r, i) => {
+    if (!r || !r.items) return r;
+    const at = Date.parse(r.at || "");
+    const keep = i < DETAIL_ENTRIES && (!Number.isFinite(at) || at >= cutoff);
+    if (keep) return r;
+    const { items, ...rest } = r;
+    return { ...rest, trimmed: true };
+  });
 }
 
 // ---------- กันเขียนซ้ำเรื่องเดิมรัวๆ ----------
@@ -110,6 +134,9 @@ export function startLog(src) {
   const t0 = Date.now();
   return {
     src,
+    _t0: t0,
+    items: [],      // รายชิ้นที่ถูกตัดในรอบนี้ — ไว้กดดูว่า "ข่าวชิ้นไหน" ไม่ใช่แค่ "กี่ชิ้น"
+    dropped: 0,     // นับทั้งหมด แม้เกินเพดานรายชิ้นแล้ว
     upstream: [],   // ต้นทางที่ล่ม: [{host, err}]
     counts: {},     // ตัวเลขที่อยากเห็น: {fetched, kept, dropped, ...}
     drops: {},      // ตัดเพราะอะไรกี่ใบ: {"archive-page": 3, ...}
@@ -121,6 +148,18 @@ export function startLog(src) {
     fail(host, err) { this.upstream.push({ host: String(host).slice(0, 60), err: String(err).slice(0, 120) }); },
     count(k, n) { this.counts[k] = (this.counts[k] || 0) + (n || 0); },
     drop(why, n) { this.drops[why] = (this.drops[why] || 0) + (n || 1); },
+    // บันทึกรายชิ้น — ⚠️ ต้องเรียกคู่กับ drop() เสมอ ไม่งั้นตัวเลขกับรายการจะไม่ตรงกัน
+    // เกินเพดานแล้วยังนับต่อ (`dropped`) เพื่อบอกได้ว่า "แสดง 15 จาก 22"
+    item(why, title, link, col) {
+      this.dropped++;
+      if (this.items.length >= MAX_DETAIL) return;
+      this.items.push({
+        why: String(why || "?").slice(0, 60),
+        t: String(title || "").replace(/\[\[\/?hl\]\]/g, "").slice(0, TITLE_MAX),
+        u: String(link || "").slice(0, 300),
+        c: String(col || ""),
+      });
+    },
     // "ไม่ได้พัง แต่ผิดปกติ" — เช่นดึงสำเร็จแต่ได้ 0 รายการ, ตกไปใช้ต้นทางสำรอง
     warn(msg) { this.note = String(msg).slice(0, 200); this.flagged = true; },
     ms() { return Date.now() - t0; },
@@ -156,5 +195,6 @@ export async function finishLog(env, L, { built = false, err = "" } = {}) {
     ai: L.ai,
     kvWrites: L.kvWrites,
     cache: L.cache,
+    ...(L.items && L.items.length ? { items: L.items, dropped: L.dropped } : {}),
   });
 }
