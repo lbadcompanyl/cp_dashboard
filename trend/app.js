@@ -88,7 +88,19 @@ function withinRecency(iso, hours) {
 //   kwcheck  : ไม่มีข้อมูลอัตโนมัติเลย รอผู้ใช้พิมพ์คำ
 // ⚠️ ถ้าเหวี่ยง skeleton/error ใส่ทุกคอลัมน์ สองอันนี้จะขึ้น "ดึงข้อมูลไม่สำเร็จ"
 // ทั้งที่ตัวเองไม่ได้พังและยังกดใช้ได้ตามปกติ
-const SELF_LOADING = new Set(["yttrends", "kwcheck"]);
+// ⚠️ เพิ่ม trends + xtrends เข้ามา (21 ส.ค. 2026) — ตอนนี้ทั้งคู่โหลดเองแบบ lazy
+// ตอนคอลัมน์เลื่อนเข้าจอ ไม่ได้ถูกดึงมาพร้อมข่าวใน load() อีกแล้ว
+const SELF_LOADING = new Set(["yttrends", "kwcheck", "trends", "xtrends"]);
+
+// คอลัมน์ที่ "โหลดเมื่อเลื่อนถึง" — map ชื่อคอลัมน์ → ฟังก์ชันดึงข้อมูลของมัน
+// ⚠️ เพิ่มคอลัมน์ที่มี endpoint ของตัวเองเมื่อไหร่ ต้องมาใส่ตรงนี้ด้วย
+//    ไม่งั้นมันจะไม่ถูกโหลดเลย (ค้างเป็นไอคอนหมุน) เพราะ load() ไม่ดึงให้แล้ว
+let firstLoad = true;   // รอบแรกไม่ต้องรีเฟรชคอลัมน์ lazy ซ้ำ (ตัว lazy ดึงเองแล้ว)
+const LAZY_COLS = {
+  trends: (o) => reloadTrends(o),
+  xtrends: (o) => reloadXTrends(o),
+  yttrends: (o) => reloadYTTrends(o),
+};
 const feedPanels = () => $$(".panel").filter((p) => !SELF_LOADING.has(p.dataset.source));
 
 async function load(opts = {}) {
@@ -103,17 +115,23 @@ async function load(opts = {}) {
   }
 
   try {
-    const [feeds, trends, xtrends] = await Promise.all([
-      fetch("/api/trend/feeds").then((r) => r.json()),
-      fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat),
-      fetchXTrends(state.xGeo).catch((e) => ({ label: "X Trends", items: [], error: e.message })),
-    ]);
-    feeds.sources.trends = trends;
-    feeds.sources.xtrends = xtrends;
-    // คอลัมน์ YouTube อ่านจาก instance สาธารณะที่ล่มบ่อย จึงโหลดแยก ไม่รวมใน Promise.all
-    // ข้างบน — ถ้ารวมแล้วต้นทางอืด ทั้งบอร์ดจะค้างรอตามไปด้วย
-    reloadYTTrends({ silent }).catch(() => {}); // ไม่ await และไม่ให้ error หลุดออกมาล้มคอลัมน์อื่น
-    state.data = feeds;
+    // ⚡ ยิงแค่คำขอเดียว — คอลัมน์ Google Trends / X / YouTube มี endpoint ของตัวเอง
+    // และจะถูกดึงตอน "เลื่อนถึงคอลัมน์นั้น" แทน (ดู LAZY_COLS + setupLazyColumns)
+    // บนมือถือที่เห็นทีละคอลัมน์ นี่คือส่วนที่ทำให้คอลัมน์แรกขึ้นเร็วขึ้นชัดเจน
+    const feeds = await fetch("/api/trend/feeds").then((r) => r.json());
+    // ⚠️ **ห้ามเขียนทับ state.data ทั้งก้อน** — คอลัมน์ที่โหลดแยกเขียนผลของตัวเอง
+    // ลงใน state.data.sources ตอนไหนก็ได้ ถ้าแทนที่ทั้งก้อนจะลบของที่มันเพิ่งเขียนทิ้ง
+    // (เจอจริงตอนวัด: เดสก์ท็อปยิง /trending สำเร็จแล้ว แต่คอลัมน์ยังขึ้นไอคอนหมุน
+    //  เพราะ load() เสร็จทีหลังแล้วทับ — ผลต่างกันทุกครั้งตามว่าใครเสร็จก่อน)
+    // อ่าน state.data.sources **ตรงนี้** ไม่ใช่จำค่าไว้ก่อน await ไม่งั้นยังชนอยู่ดี
+    // ⚠️ **ห้ามสร้าง sources ก้อนใหม่** — เขียนทับทีละคีย์แทน
+    //    คอลัมน์ที่โหลดแยกอาจกำลังรอผลอยู่และถือ reference ของก้อนนี้ค้างไว้
+    //    ถ้าสลับก้อน ผลที่มันได้มาจะไปตกในก้อนเก่าที่ไม่มีใครอ่านแล้ว
+    if (!state.data) state.data = { sources: {} };
+    if (!state.data.sources) state.data.sources = {};
+    const src = state.data.sources;
+    for (const k of Object.keys(feeds.sources || {})) src[k] = feeds.sources[k];
+    Object.assign(state.data, feeds, { sources: src });
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
     // จำตำแหน่ง scroll ของแต่ละคอลัมน์ + หน้า แล้วคืนหลัง render (กัน auto-refresh กระโดด)
@@ -121,6 +139,17 @@ async function load(opts = {}) {
     const wy = silent ? window.scrollY : 0;
     renderAll();
     applyKeywords(); // sync ปุ่ม 🔤 จาก query สดของฟีด (ถ้าครบ)
+    // ⚠️ รีเฟรชซ้ำ **เฉพาะคอลัมน์ที่ผู้ใช้เคยเปิดดูแล้ว**
+    // คอลัมน์ที่ยังไม่เคยปัดไปถึง ไม่มีเหตุผลให้ไปกวนต้นทางทุก 3 นาที
+    //
+    // ⚠️ และ **ข้ามรอบแรกเสมอ** — ตอนเปิดหน้า ตัว lazy เพิ่งสั่งดึงคอลัมน์ที่อยู่ในจอไปแล้ว
+    //    ถ้าไม่ข้าม จะกลายเป็นยิงซ้ำอีกรอบทันที (วัดได้จริงบนเดสก์ท็อป: ยิงคอลัมน์ละ 2 ครั้ง)
+    if (!firstLoad) {
+      for (const k of Object.keys(LAZY_COLS)) {
+        if (window.LazyCol && LazyCol.seen(k)) LAZY_COLS[k]({ silent }).catch(() => {});
+      }
+    }
+    firstLoad = false;
     if (silent) {
       $$(".panel [data-list]").forEach((el, i) => { if (sp[i] != null) el.scrollTop = sp[i]; });
       window.scrollTo(0, wy);
@@ -169,15 +198,28 @@ async function fetchXTrends(geo) {
   };
 }
 
-async function reloadXTrends() {
+async function reloadXTrends(opts = {}) {
   const panel = $('.panel[data-source="xtrends"]');
-  $("[data-list]", panel).innerHTML = `<div class="state waiting"><span class="spin"></span>กำลังดึงเทรนด์…</div>`;
+  if (!panel) return;
+  const list = $("[data-list]", panel);
+  const keepScroll = opts.silent ? list.scrollTop : null; // auto-refresh ห้ามดีดตำแหน่ง scroll
+  if (!opts.silent) list.innerHTML = `<div class="state waiting"><span class="spin"></span>กำลังดึงเทรนด์…</div>`;
+  // 🐞 **ต้องรับค่าใส่ตัวแปรก่อน แล้วค่อยเขียนลง state** — ห้ามเขียน
+  //    `state.data.sources.X = await ...` ตรงๆ เพราะ JS หา object ปลายทาง
+  //    (`state.data.sources`) **ก่อน** await ถ้าระหว่างรอ load() สร้าง sources ก้อนใหม่
+  //    ค่าที่ได้จะไปตกในก้อนเก่าที่ไม่มีใครใช้แล้ว → คอลัมน์ค้างเป็นไอคอนหมุนทั้งที่ยิงสำเร็จ
+  //    (วัดเจอจริงตอนทำ lazy loading · reloadYTTrends เขียนถูกอยู่แล้วจึงไม่เคยพัง)
+  let bucket;
   try {
-    state.data.sources.xtrends = await fetchXTrends(state.xGeo);
+    bucket = await fetchXTrends(state.xGeo);
   } catch (e) {
-    state.data.sources.xtrends = { label: "X Trends", items: [], error: e.message, loaded: true };
+    bucket = { label: "X Trends", items: [], error: e.message, loaded: true };
   }
+  if (!state.data) state.data = { sources: {} };
+  if (!state.data.sources) state.data.sources = {};
+  state.data.sources.xtrends = bucket;
   renderPanel(panel);
+  if (keepScroll != null) list.scrollTop = keepScroll;
 }
 
 // ปุ่ม ข่าว/ทั่วไป อยู่ใน index.html แบบตายตัว — render รอบใหม่ไม่ได้เขียนทับให้
@@ -546,15 +588,28 @@ function renderYTTrends(panel) {
     .join("");
 }
 
-async function reloadTrends() {
+async function reloadTrends(opts = {}) {
   const panel = $('.panel[data-source="trends"]');
-  $("[data-list]", panel).innerHTML = `<div class="state waiting"><span class="spin"></span>กำลังดึงเทรนด์…</div>`;
+  if (!panel) return;
+  const list = $("[data-list]", panel);
+  const keepScroll = opts.silent ? list.scrollTop : null; // auto-refresh ห้ามดีดตำแหน่ง scroll
+  if (!opts.silent) list.innerHTML = `<div class="state waiting"><span class="spin"></span>กำลังดึงเทรนด์…</div>`;
+  // 🐞 **ต้องรับค่าใส่ตัวแปรก่อน แล้วค่อยเขียนลง state** — ห้ามเขียน
+  //    `state.data.sources.X = await ...` ตรงๆ เพราะ JS หา object ปลายทาง
+  //    (`state.data.sources`) **ก่อน** await ถ้าระหว่างรอ load() สร้าง sources ก้อนใหม่
+  //    ค่าที่ได้จะไปตกในก้อนเก่าที่ไม่มีใครใช้แล้ว → คอลัมน์ค้างเป็นไอคอนหมุนทั้งที่ยิงสำเร็จ
+  //    (วัดเจอจริงตอนทำ lazy loading · reloadYTTrends เขียนถูกอยู่แล้วจึงไม่เคยพัง)
+  let bucket;
   try {
-    state.data.sources.trends = await fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat);
+    bucket = await fetchTrends(state.trendsGeo, state.trendsHours, state.trendsCat);
   } catch (e) {
-    state.data.sources.trends = { label: "Google Trends", items: [], error: e.message, loaded: true };
+    bucket = { label: "Google Trends", items: [], error: e.message, loaded: true };
   }
+  if (!state.data) state.data = { sources: {} };
+  if (!state.data.sources) state.data.sources = {};
+  state.data.sources.trends = bucket;
   renderPanel(panel);
+  if (keepScroll != null) list.scrollTop = keepScroll;
 }
 
 // ---------- คำที่เกี่ยวข้อง (breakdown จาก Trending Now — เชื่อถือได้บน edge) ----------
@@ -657,8 +712,14 @@ function wireRelTf(box, query) {
 }
 
 // ---------- render ----------
+// ⚠️ **วาดเฉพาะคอลัมน์ที่ผู้ใช้เปิดดูแล้ว** — บนมือถือเห็นทีละคอลัมน์
+// การสร้าง HTML ของข่าวหลายร้อยใบให้คอลัมน์ที่ยังปัดไปไม่ถึง เป็นงานที่เสียเปล่า
+// และหนักที่สุดบนเครื่องช้า · คอลัมน์ที่ยังไม่เปิดจะถูกวาดตอนเลื่อนไปถึงแทน
+// (ไม่มี LazyCol = วาดหมดเหมือนเดิม)
+const shouldRender = (p) => !window.LazyCol || LazyCol.seen(p.dataset.source);
+
 function renderAll() {
-  $$(".panel").forEach(renderPanel);
+  $$(".panel").forEach((p) => { if (shouldRender(p)) renderPanel(p); });
   if (window.Flags) Flags.refresh();
 }
 
@@ -1246,6 +1307,7 @@ function wire() {
   if (gs) gs.addEventListener("input", (e) => { state.gkw = e.target.value; renderAll(); });
   $("#refresh").addEventListener("click", load);
   setupSwipeDots();
+  setupLazyColumns();
   setupScrollCue();
 }
 
@@ -1265,6 +1327,35 @@ function setupScrollCue() {
   update();
   addEventListener("scroll", update, { passive: true });
   addEventListener("resize", update);
+}
+
+// ---------- โหลดทีละคอลัมน์ (lazy) ----------
+// บนมือถือแดชบอร์ดเป็น carousel เห็นทีละคอลัมน์ — คอลัมน์ที่ยังปัดไปไม่ถึง
+// ไม่มีเหตุผลต้องยิงเน็ตแข่งกับคอลัมน์ที่ผู้ใช้กำลังดูอยู่
+//
+// ⚠️ คอลัมน์ที่โหลดเองต้อง **วาดสถานะรอเองตั้งแต่แรก** — load() ไม่แตะคอลัมน์พวกนี้แล้ว
+//    (อยู่ใน SELF_LOADING) ถ้าไม่วาด จะเห็นเป็นช่องว่างเปล่าจนกว่าจะปัดไปถึง
+function setupLazyColumns() {
+  for (const k of Object.keys(LAZY_COLS)) {
+    const panel = $(`.panel[data-source="${k}"]`);
+    const list = panel && $("[data-list]", panel);
+    if (list && !list.innerHTML.trim()) list.innerHTML = WAITING;
+  }
+  if (!window.LazyCol) {
+    // ไม่มีไฟล์ช่วย = โหลดทุกคอลัมน์เลย ดีกว่าหน้าค้าง
+    for (const k of Object.keys(LAZY_COLS)) LAZY_COLS[k]({}).catch(() => {});
+    return;
+  }
+  LazyCol.init({
+    panels: $$(".panel"),
+    onReveal: (source, panel) => {
+      const fn = LAZY_COLS[source];
+      if (fn) { fn({}).catch(() => {}); return; }  // ตัวมันเรียก renderPanel ให้เองอยู่แล้ว
+      // ⚠️ วาดได้ต่อเมื่อข้อมูลมาถึงแล้ว — ถ้าวาดตอน state.data ยังว่าง
+      //    ไอคอนหมุนจะถูกแทนที่ด้วย "ไม่มีรายการ" ทั้งที่ข้อมูลกำลังเดินทางมา
+      if (panel && state.data) renderPanel(panel);
+    },
+  });
 }
 
 // จุดบอกตำแหน่ง carousel มือถือ — คลิกเลื่อนไปคอลัมน์นั้น + ไฮไลต์ตามที่ปัด
