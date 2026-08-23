@@ -133,8 +133,14 @@ async function load(opts = {}) {
 }
 
 // ---------- render ----------
+// ⚠️ **วาดเฉพาะคอลัมน์ที่ผู้ใช้เปิดดูแล้ว** — บนมือถือเห็นทีละคอลัมน์
+// การสร้าง HTML ของข่าวหลายร้อยใบให้คอลัมน์ที่ยังปัดไปไม่ถึง เป็นงานที่เสียเปล่า
+// และหนักที่สุดบนเครื่องช้า · คอลัมน์ที่ยังไม่เปิดจะถูกวาดตอนเลื่อนไปถึงแทน
+// (ไม่มี LazyCol = วาดหมดเหมือนเดิม)
+const shouldRender = (p) => !window.LazyCol || LazyCol.seen(p.dataset.source);
+
 function renderAll() {
-  $$(".panel").forEach(renderPanel);
+  $$(".panel").forEach((p) => { if (shouldRender(p)) renderPanel(p); });
   if (window.Flags) Flags.refresh();
 }
 
@@ -252,9 +258,25 @@ function wire() {
   if (gs) gs.addEventListener("input", (e) => { state.gkw = e.target.value; renderAll(); });
   $("#refresh").addEventListener("click", load);
   setupSwipeDots();
+  setupLazyColumns();
 }
 
 // จุดบอกตำแหน่ง carousel มือถือ — คลิกเลื่อนไปคอลัมน์นั้น + ไฮไลต์ตามที่ปัด
+// ---------- โหลดทีละคอลัมน์ (lazy) ----------
+// หน้านี้ทุกคอลัมน์มาจากคำขอเดียว (/api/ir/feeds) จึงประหยัดเน็ตไม่ได้
+// แต่ยัง**ประหยัดแรงวาด**ได้ — คอลัมน์ที่ยังปัดไปไม่ถึงไม่ต้องสร้าง HTML ของข่าวทั้งกอง
+// ⚠️ วันไหนหน้านี้มีคอลัมน์ที่มี endpoint ของตัวเอง ให้ทำแบบ trend/app.js (LAZY_COLS)
+function setupLazyColumns() {
+  if (!window.LazyCol) return;   // ไม่มีไฟล์ช่วย = วาดหมดเหมือนเดิม (ดู shouldRender)
+  LazyCol.init({
+    panels: $$(".panel"),
+    onReveal: (source, panel) => {
+      // วาดได้ต่อเมื่อข้อมูลมาถึงแล้ว ไม่งั้นไอคอนหมุนจะกลายเป็น "ไม่มีรายการ"
+      if (panel && state.data) renderPanel(panel);
+    },
+  });
+}
+
 function setupSwipeDots() {
   const dotsEl = $("#swipeDots");
   const board = $("#board");
