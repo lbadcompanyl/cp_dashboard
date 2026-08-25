@@ -7,7 +7,7 @@ import { parseGeneric, parseTrends, unwrapRedirect } from "./_lib/parser.js";
 import { readDecisions } from "../allow.js";
 import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 import {
-  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
+  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -18,7 +18,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 3 * 60 * 1000; // ถ้าของใน cache เก่ากว่านี้ (3 นาที) → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "79"; // bump: `CP` เดี่ยวๆ นับเป็นหลักฐานอ่อน (ให้ AI ตัดสิน) แทนที่จะมองว่าไม่เจอชื่อเครือ
+const CACHE_VER = "80"; // bump: ตัดสรุปที่เป็นบล็อก "ข่าวที่เกี่ยวข้อง" ของเว็บ (โผล่ซ้ำหลายข่าว)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -312,6 +312,13 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   const a2terms = [...new Set([...parseAlertTerms(a2q), ...(CONFIG_EXTRA.alert2 || [])])];
   const a2excl = parseAlertExcludes(a2q);
 
+  // ⚠️ **ต้องมาก่อน mergeNewsIntoAlert** — สรุปที่เป็นบล็อก "ข่าวที่เกี่ยวข้อง" ของเว็บ
+  // ทำให้ข่าวคนละเรื่องถูกดูดเข้าคอลัมน์ (alert2 เทียบคำที่ "พาดหัว + สรุป")
+  // เจอจริง 21 ส.ค. 2026: ข่าว ฮ.บินไล่ยิง / ปิดทางรถไฟนราธิวาส ของ Workpoint
+  // ถูกดึงเข้าคอลัมน์หัวข้อที่จับตามอง เพราะสรุปเป็นบล็อกข่าวปลาหมอคางดำของเว็บ
+  const shared = {};
+  dropSharedSnippets(sources, shared);
+
   // ไฮบริด: บวกข่าว Google News ที่ match keyword ของคอลัมน์เข้ามา (เสถียรขึ้น ไม่พึ่ง Google Alert อย่างเดียว)
   mergeNewsIntoAlert(sources, "alert1", ["news"], CP_BRANDS);
   mergeNewsIntoAlert(sources, "alert2", ["news"], a2terms, a2excl);
@@ -364,6 +371,12 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   // กวาดประกาศงาน/อสังหา/หน้าขายของที่ค้างอยู่ใน KV ออกด้วย (verify ทำงานก่อน archive)
   const swept = {};
   try { dropNoiseAfterArchive(sources, swept); } catch (e) { swept.err = String((e && e.message) || e).slice(0, 120); }
+
+  // ⚠️ **กวาดรอบสองหลังดึงของเก่าจากคลัง** — ของที่เก็บไว้ตั้งแต่ยังไม่มีกฎนี้
+  // ยังพกสรุปปลอมติดมาด้วย ถ้าไม่กวาด ต้องรอ 90 วันกว่าคลังจะหมดอายุไปเอง
+  // (เหตุผลเดียวกับที่ dropNoiseAfterArchive ต้องมี — verify ทำงานก่อน mergeArchives)
+  // · รอบนี้ข้อมูลเยอะกว่าเดิม การจับ "สรุปก้อนเดียวกันหลายใบ" จึงแม่นขึ้นด้วย
+  try { dropSharedSnippets(sources, shared); } catch {}
 
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   const pruned = {};
@@ -432,11 +445,12 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
       for (const d of (pruned && pruned[k]) || []) { L.drop("pruned", 1); L.item("pruned", d.title, d.link, k); }
     }
     L.count("pruned", ((pruned && pruned.alert1) || []).length + ((pruned && pruned.alert2) || []).length);
+    if (shared.sharedSnippets) L.count("สรุปซ้ำ", shared.sharedSnippets);
     L.kvWrites = archive && archive.saved ? 1 : 0;
     await finishLog(env, L, { built: true, err: (archive && archive.err) || "" });
   } catch {}
 
-  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, titles, swept, archive, pruned, dateFix, cats: catDiag });
+  const body = JSON.stringify({ generatedAt: new Date().toISOString(), sources, errors, alertVerify, titles, swept, archive, pruned, dateFix, shared, cats: catDiag });
   const resp = new Response(body, {
     headers: {
       "content-type": "application/json; charset=utf-8",
