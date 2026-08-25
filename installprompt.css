@@ -25,7 +25,7 @@
 @keyframes ib-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
 #installbar.ib-out { opacity: 0; transition: opacity .18s ease-in; }
 
-.ib-in { display: flex; align-items: center; gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
+.ib-in { display: flex; align-items: center; gap: 12px; padding: 12px 40px 12px 14px; flex-wrap: wrap; }
 .ib-txt { flex: 1 1 240px; min-width: 0; }
 .ib-txt b { display: block; font-size: 14px; margin-bottom: 2px; }
 .ib-txt span { display: block; font-size: 12.5px; color: #6b7280; }
@@ -38,10 +38,21 @@
 }
 .ib-yes { border: 0; background: #2563eb; color: #fff; }
 .ib-yes:hover { background: #1d4ed8; }
-.ib-no { border: 1px solid #e4e8f0; background: transparent; color: #6b7280; }
-.ib-no:hover { border-color: #c7cddb; color: #1f2937; }
 
-/* จอแคบ: ปุ่มลงมาอยู่แถวล่าง เต็มความกว้าง กดง่ายด้วยนิ้วโป้ง */
+/* ✕ ปิด — เผื่อคนที่อยากปิดเดี๋ยวนี้ ไม่ใช่ทางเดียวที่จะทำให้แถบหายไป
+   (แถบหายเองเมื่อครบเวลา — เจ้าของสั่ง 25 ส.ค. 2026 ว่าห้ามบังคับให้กด)
+   ⚠️ วางลอยมุมขวาบน ไม่กินที่ในแถว และ .ib-in เผื่อ padding-right ไว้ให้แล้ว
+      พื้นที่กดต้องไม่เล็กกว่า 32px ไม่งั้นนิ้วโป้งกดพลาด */
+.ib-x {
+  position: absolute; top: 6px; right: 6px;
+  width: 32px; height: 32px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 999px; background: transparent;
+  color: #9aa2b1; font-size: 15px; cursor: pointer; padding: 0;
+}
+.ib-x:hover { background: rgba(120, 130, 150, .12); color: #1f2937; }
+
+/* จอแคบ: ปุ่มติดตั้งลงมาอยู่แถวล่าง เต็มความกว้าง กดง่ายด้วยนิ้วโป้ง */
 @media (max-width: 460px) {
   .ib-act { width: 100%; margin-left: 0; }
   .ib-act button { flex: 1; padding: 10px 12px; }
@@ -50,6 +61,5 @@
 @media (prefers-color-scheme: dark) {
   #installbar { background: #1b1e24; color: #e8eaf0; border-color: rgba(150, 150, 150, .22); }
   .ib-txt span { color: #9aa2b1; }
-  .ib-no { border-color: rgba(150, 150, 150, .3); color: #9aa2b1; }
-  .ib-no:hover { color: #e8eaf0; }
+  .ib-x:hover { background: rgba(200, 210, 230, .14); color: #e8eaf0; }
 }

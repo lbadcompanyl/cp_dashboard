@@ -55,7 +55,9 @@ console.log("\n[1] Chrome/Edge — กดแล้วต้องเรียก
   ok("แถบขึ้นบนเดสก์ท็อป", !!txt, txt.slice(0, 40));
   ok("ถามเป็นภาษาคน ไม่ใช่ศัพท์เทคนิค", txt.includes("ติดตั้งเป็นแอป") && !/PWA|manifest/i.test(txt), txt.slice(0, 60));
   ok("มีปุ่มติดตั้ง", !!(await p.$(".ib-yes")));
-  ok("มีทางปฏิเสธ", !!(await p.$(".ib-no")));
+  // ⏱ ห้ามบังคับให้กด — ต้องมี ✕ ให้ปิดเดี๋ยวนี้ได้ และต้องหายเองด้วย
+  ok("มี ✕ ให้ปิดเดี๋ยวนี้", !!(await p.$(".ib-x")));
+  ok("🚫 ไม่มีปุ่มที่ต้องกดเพื่อรับทราบ", (await p.$(".ib-no")) === null);
   ok("ไม่ทำให้หน้าล้นแนวนอน", await p.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth));
 
   await p.click(".ib-yes");
@@ -78,9 +80,13 @@ console.log("\n[2] iOS — ไม่มี event ให้เรียก ต้
   // ⚠️ ห้ามมีปุ่ม "ติดตั้ง" บน iOS — กดแล้วไม่มีอะไรเกิดขึ้น ผู้ใช้จะนึกว่าเว็บพัง
   ok("ไม่มีปุ่มติดตั้งปลอมให้กด", (await p.$(".ib-yes")) === null);
   ok("ไม่ทำให้หน้าล้นแนวนอน", await p.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth));
-  await p.click(".ib-no");
+  await p.click(".ib-x");
   await p.waitForTimeout(400);
-  ok("บอกวิธีไปแล้ว = ไม่ต้องบอกซ้ำอีก", (await p.evaluate(() => localStorage.getItem("installPromptDone"))) === "1");
+  ok("กด ✕ แล้วแถบหายไป", (await p.$("#installbar")) === null);
+  // ⚠️ ปิดแถบ ≠ ไม่เอาถาวร — เขาอาจแค่ปัดออกไปก่อน ยังไม่ทันอ่านจบด้วยซ้ำ
+  ok("ปิดแถบไม่นับว่าไม่เอาถาวร (เงียบตามรอบ 30 วันพอ)",
+     (await p.evaluate(() => localStorage.getItem("installPromptDone"))) === null);
+  ok("จำว่าถามไปแล้วรอบหนึ่ง", !!(await p.evaluate(() => localStorage.getItem("installPromptAt"))));
   ok("ไม่มี JS error", errs.length === 0, errs.join(" | "));
   await ctx.close();
 }
@@ -102,6 +108,7 @@ console.log("\n[2b] เปิดจากในแอปแชต — ติด�
     // 🚫 ห้ามบอกวิธีของ Safari ทั้งที่อยู่ในไลน์ — ปุ่มนั้นไม่มีให้กด
     ok(`ไลน์/${label} ไม่บอกวิธีที่ทำตามไม่ได้`, !/เพิ่มไปยังหน้าจอโฮม/.test(txt), txt.slice(0, 90));
     ok(`ไลน์/${label} ไม่มีปุ่มติดตั้งปลอม`, (await p.$(".ib-yes")) === null);
+    ok(`ไลน์/${label} ไม่มีปุ่มที่ต้องกดเพื่อรับทราบ`, (await p.$(".ib-no")) === null);
     ok(`ไลน์/${label} ไม่มี JS error`, errs.length === 0, errs.join(" | "));
     await ctx.close();
   }
@@ -135,6 +142,34 @@ console.log("\n[2c] iOS — บอกตำแหน่งปุ่มแชร�
   }
 }
 
+console.log("\n[2d] ⏱ ต้องหายเอง ไม่ต้องให้ใครกด");
+{
+  // 🎯 เจ้าของสั่ง 25 ส.ค. 2026: "[เข้าใจแล้ว] ต้องกด? ไม่เอา bad user experience"
+  //    แถบนี้มาบอกข้อมูล ไม่ใช่มาถามคำถาม จึงห้ามค้างรอจนกว่าจะมีคนกด
+  const { ctx, p, errs } = await open({ ua: IOS_UA });
+  await p.waitForTimeout(WAIT);
+  ok("ตอนแรกแถบขึ้นอยู่", !!(await p.$("#installbar")));
+  // ⏱ เจ้าของกำหนด 6 วินาที — ห้ามวูบหายก่อนหน้านั้น และห้ามค้างเกิน
+  await p.waitForTimeout(3000);
+  ok("ผ่านไป 3 วิ ยังอยู่ (ห้ามวูบหาย)", !!(await p.$("#installbar")));
+  await p.waitForTimeout(4500);
+  ok("ครบ 6 วิ หายเอง โดยไม่มีใครกดอะไรเลย", (await p.$("#installbar")) === null);
+  ok("หายเองไม่นับว่าไม่เอาถาวร (เขาอาจยังไม่ทันอ่าน)",
+     (await p.evaluate(() => localStorage.getItem("installPromptDone"))) === null);
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" | "));
+  await ctx.close();
+
+  // ฝั่งที่มีปุ่มติดตั้งให้กด ก็ต้องหายเองเหมือนกัน
+  const d = await open({ vp: { width: 1400, height: 900 } });
+  await d.p.waitForTimeout(300);
+  await fire(d.p);
+  await d.p.waitForTimeout(WAIT);
+  ok("เดสก์ท็อป: ตอนแรกแถบขึ้นอยู่", !!(await d.p.$("#installbar")));
+  await d.p.waitForTimeout(6500); // นับจากตอนแถบโผล่ ไม่ใช่ตอนเปิดหน้า
+  ok("เดสก์ท็อป: หายเองใน 6 วิเหมือนกัน", (await d.p.$("#installbar")) === null);
+  await d.ctx.close();
+}
+
 console.log("\n[3] ห้ามกวน");
 {
   // ติดตั้งไปแล้ว (เปิดจากไอคอนบนหน้าจอ) ต้องไม่ชวนอีก
@@ -153,7 +188,7 @@ console.log("\n[3] ห้ามกวน");
   const s = await open({});
   await fire(s.p, "dismissed");
   await s.p.waitForTimeout(WAIT);
-  await s.p.click(".ib-no");
+  await s.p.click(".ib-x");
   await s.p.waitForTimeout(300);
   await s.p.goto(BASE + "/ir/", { waitUntil: "load" });
   await fire(s.p, "dismissed");
@@ -173,6 +208,7 @@ console.log("\n[4] ครบทุกหน้า + ไม่ชนกับแ�
   // ⚠️ แถบ "มีเวอร์ชันใหม่" (#updbar) สำคัญกว่า — ห้ามขึ้นทับกัน
   const js = fs.readFileSync(new URL("../installprompt.js", import.meta.url), "utf8");
   ok("หลบแถบ 'มีเวอร์ชันใหม่'", /getElementById\("updbar"\)/.test(js));
+  ok("ตั้งเวลาหายเองไว้ 6 วินาทีตามที่เจ้าของกำหนด", /AUTO_HIDE_MS\s*=\s*6000/.test(js));
   const css = fs.readFileSync(new URL("../installprompt.css", import.meta.url), "utf8");
   ok("z-index ต่ำกว่า #updbar (9999)", /z-index:\s*9998/.test(css));
   ok("เว้นขอบล่างเผื่อ safe-area ของ iPhone", /safe-area-inset-bottom/.test(css));

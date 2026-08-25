@@ -20,8 +20,14 @@
 
   var KEY = "installPromptAt";     // เวลาที่ถามครั้งล่าสุด
   var DONE = "installPromptDone";  // ติดตั้งแล้ว / ไม่เอาถาวร
-  var SNOOZE_DAYS = 30;            // กด "ไว้ก่อน" แล้วเงียบกี่วัน
+  var SNOOZE_DAYS = 30;            // ถามไปแล้วรอบหนึ่ง เงียบกี่วัน
   var DELAY_MS = 3500;             // รอให้หน้าโหลดเสร็จก่อน อย่าเด้งทับตอนกำลังดึงข้อมูล
+  // ⏱ **หายเอง ไม่ต้องให้ใครกด** (เจ้าของสั่ง 25 ส.ค. 2026: "ต้องกด? ไม่เอา bad user experience")
+  //    ของเดิมมีปุ่ม [เข้าใจแล้ว] เป็นทางเดียวที่จะทำให้แถบหายไป = บังคับให้กดทั้งที่
+  //    แค่มาบอกข้อมูลเฉยๆ · ตอนนี้แถบหายเองเมื่อครบเวลา ปุ่ม × มีไว้เผื่อคนอยากปิดเดี๋ยวนี้
+  //    ⚠️ **6 วินาที เจ้าของกำหนดเอง** (สั่งเพิ่ม 25 ส.ค. 2026) ใช้เท่ากันทุกแบบ
+  //       ห้ามยืดเองโดยไม่ถาม แม้ข้อความบอกวิธีจะยาวกว่า
+  var AUTO_HIDE_MS = 6000;
 
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 
@@ -100,24 +106,30 @@
     box.id = "installbar";
     box.setAttribute("role", "dialog");
     box.setAttribute("aria-label", "ติดตั้งเป็นแอป");
+    // ⏱ ไม่มีปุ่ม "รับทราบ" ให้ต้องกด — มีแต่ × สำหรับคนที่อยากปิดเดี๋ยวนี้
+    //    ปุ่มที่เหลือคือ "ติดตั้ง" ซึ่งกดแล้วได้อะไรจริงๆ เท่านั้น
     box.innerHTML =
       '<div class="ib-in">' +
         '<div class="ib-txt"><b>' + head + "</b><span>" + how + "</span></div>" +
-        '<div class="ib-act">' +
-          (canInstall ? '<button type="button" class="ib-yes">ติดตั้ง</button>' : "") +
-          '<button type="button" class="ib-no">' + (canInstall ? "ไว้ก่อน" : "เข้าใจแล้ว") + "</button>" +
-        "</div>" +
+        (canInstall ? '<div class="ib-act"><button type="button" class="ib-yes">ติดตั้ง</button></div>' : "") +
+        '<button type="button" class="ib-x" aria-label="ปิด" title="ปิด">✕</button>' +
       "</div>";
     document.body.appendChild(box);
 
+    var gone = false;
     var close = function (forever) {
+      if (gone) return;
+      gone = true;
+      clearTimeout(autoHide);
       if (forever) store(DONE, "1");
       box.classList.add("ib-out");
       setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 200);
     };
-    var no = box.querySelector(".ib-no");
-    // บอกวิธีไปแล้ว = ไม่ต้องบอกซ้ำ · ส่วน "ไว้ก่อน" ของฝั่งที่กดติดตั้งได้ ให้เงียบตามรอบปกติ
-    if (no) no.onclick = function () { close(!canInstall); };
+    // ⚠️ หายเองแล้ว **ห้ามถือว่าไม่เอาถาวร** — เขาอาจยังไม่ทันอ่าน
+    //    ให้เงียบตามรอบปกติ (30 วัน) เท่านั้น · "ถาวร" เก็บไว้ให้ตอนติดตั้งสำเร็จจริง
+    var autoHide = setTimeout(function () { close(false); }, AUTO_HIDE_MS);
+    var x = box.querySelector(".ib-x");
+    if (x) x.onclick = function () { close(false); };
     var yes = box.querySelector(".ib-yes");
     if (yes) yes.onclick = function () {
       close(false);
