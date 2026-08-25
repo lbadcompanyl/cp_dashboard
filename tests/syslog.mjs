@@ -8,7 +8,7 @@
  *    ซึ่งเป็นอาการเดียวกับที่มันมีไว้ตรวจ — กลายเป็นต้นเหตุเสียเอง
  */
 import fs from "node:fs";
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 import { startLog, finishLog, resetLog, writeLog, readLog, LOG_KEY } from "../functions/api/_lib/syslog.js";
 
 const BASE = process.env.BASE || "http://127.0.0.1:8899";
@@ -120,7 +120,7 @@ console.log("\n[5] /api/log");
 // ── [6] หน้า /admin/ ───────────────────────────────────────────────────
 console.log("\n[6] แท็บบนหน้า admin");
 {
-  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
 
   const LOG = [
@@ -280,7 +280,7 @@ console.log("\n[8] drill-down · delta · ระดับความรุน�
          drops: { pruned: 9 }, trimmed: true }),
   ];
 
-  const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
   await ctx.route("**/api/log*", (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: rows, total: rows.length }) }));

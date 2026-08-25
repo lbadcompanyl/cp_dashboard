@@ -1,6 +1,6 @@
 // Google Trends widget: ต้องทยอยโหลด · นอกจอไม่โหลด · มีปุ่มโหลดใหม่รายกล่อง
 // (embed จริงยิงไม่ได้จาก sandbox — ปลอม window.trends แล้วนับว่า "ถูกเรียกกี่ครั้ง เมื่อไหร่")
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
@@ -10,7 +10,7 @@ const PAGES = [
   { name: "sd", url: "http://127.0.0.1:8899/sd.html", tab: null, boxes: ["w-ts", "w-geo", "w-rq"] },
 ];
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 
 // ปลอม embed_loader ของ Google — บันทึกทุกครั้งที่หน้าเว็บสั่งวาด widget
 const STUB = `

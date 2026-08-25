@@ -1,5 +1,5 @@
 // ตรวจหน้า /admin/ + ตรวจว่าปุ่มลอย 🚩/➕ หายไปจากแดชบอร์ดแล้วจริง
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log("  ✅ " + m)) : (fail++, console.log("  ❌ " + m)); };
@@ -35,7 +35,7 @@ const EMPTY_FEEDS = {
   },
 };
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 
 async function newPage(ctx) {
   const page = await ctx.newPage();

@@ -16,7 +16,7 @@
  *   [9] เลือกวันที่ย้อนไปปีเก่า → โหลดปีนั้นให้เอง
  *  [10] มือถือ: กล่องตัวกรองซ้อนแนวตั้ง ไม่ล้นจอ
  */
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 import { mockTable, buildRows, packYear } from "../tools/build-archives.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:8899";
@@ -57,10 +57,7 @@ const ok = (name, cond, extra = "") => {
   else { fail++; console.log("  ❌", name, extra); }
 };
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium",
-  args: ["--no-sandbox"],
-});
+const browser = await launch();
 
 async function open(ctx, qs = "") {
   const page = await ctx.newPage();

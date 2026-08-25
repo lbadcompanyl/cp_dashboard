@@ -1,6 +1,6 @@
 // หน้าต่าง 🔤 ดู keyword ต้องมีครบทุกคอลัมน์ Alert ของทุกแดชบอร์ด
 // และต้องโชว์คำชุดปัจจุบันจริง (ยึด query สดของฟีดถ้าได้คำมากกว่าที่ฝังไว้ในโค้ด)
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (c, m, x = "") => { c ? (pass++, console.log("  ✅ " + m)) : (fail++, console.log("  ❌ " + m + (x ? " → " + x : ""))); };
@@ -15,7 +15,7 @@ const FEEDS = { generatedAt: new Date().toISOString(), errors: [], sources: {
   news: S(), gnews: S(), newsth: S(), newsintl: S(),
   alert1: S([], LIVE_A1), alert2: S([], LIVE_A2), trends: { label: "t", items: [] } } };
 
-const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const b = await launch();
 for (const [name, path] of [["trend", "/trend/"], ["ir", "/ir/"], ["issue", "/issue/"]]) {
   console.log(`\n--- ${name} ---`);
   const ctx = await b.newContext({ viewport: { width: 1500, height: 950 } });

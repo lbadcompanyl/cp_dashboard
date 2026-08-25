@@ -11,10 +11,9 @@
  *    ต้องให้เจ้าของเปิดบนเครื่องยืนยันเอง
  */
 import fs from "node:fs";
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:8899";
-const CHROME = "/opt/pw-browsers/chromium";
 const IOS_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
 
 let pass = 0, fail = 0;
@@ -23,7 +22,7 @@ const ok = (name, cond, extra = "") => {
   else { fail++; console.log("  ❌ " + name + (extra ? " → " + extra : "")); }
 };
 
-const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });
+const browser = await launch();
 async function open(o = {}) {
   const ctx = await browser.newContext({ viewport: o.vp || { width: 390, height: 780 }, userAgent: o.ua });
   await ctx.route("**/api/**", (r) => r.fulfill({ status: 200, contentType: "application/json",

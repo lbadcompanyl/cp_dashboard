@@ -11,10 +11,9 @@
  *    ผิดที่เดียวในไฟล์ HTML จะทำให้ทั้งหน้าขึ้น "ดึงข้อมูลไม่สำเร็จ" โดยไม่เคยลองยิงเอง
  */
 import fs from "node:fs";
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:8899";
-const CHROME = "/opt/pw-browsers/chromium";
 const MOBILE = { width: 390, height: 780 };
 
 let pass = 0, fail = 0;
@@ -38,7 +37,7 @@ const body = (extra = {}) => JSON.stringify({
   items: [], trends: [], generatedAt: Date.now(), ...extra,
 });
 
-const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });
+const browser = await launch();
 
 /** เปิดหน้าแล้วคืนลำดับคำขอ /api/ ที่วัดได้จริงจาก Performance API */
 async function timeline(path, o = {}) {
