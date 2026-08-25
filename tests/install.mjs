@@ -31,7 +31,7 @@ async function open(o = {}) {
   const p = await ctx.newPage();
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e)));
-  await p.goto(BASE + (o.path || "/trend/"), { waitUntil: "load" });
+  await p.goto(BASE + (o.path || "/"), { waitUntil: "load" });
   return { ctx, p, errs };
 }
 // headless ไม่ยิง beforeinstallprompt ให้ ต้องยิงเอง
@@ -190,13 +190,13 @@ console.log("\n[3] ห้ามกวน");
   await s.p.waitForTimeout(WAIT);
   await s.p.click(".ib-x");
   await s.p.waitForTimeout(300);
-  await s.p.goto(BASE + "/ir/", { waitUntil: "load" });
+  await s.p.goto(BASE + "/?x=1", { waitUntil: "load" }); // เปิดหน้าแรกอีกครั้ง
   await fire(s.p, "dismissed");
   await s.p.waitForTimeout(WAIT);
   ok("ปิดไปแล้วแต่ยังไม่ได้ติดตั้ง → เปิดหน้าใหม่ต้องขึ้นอีก", (await s.p.$("#installbar")) !== null);
   // แต่ถ้าติดตั้งสำเร็จแล้ว ต้องไม่ขึ้นอีกเลย
   await s.p.evaluate(() => localStorage.setItem("installPromptDone", "1"));
-  await s.p.goto(BASE + "/trend/", { waitUntil: "load" });
+  await s.p.goto(BASE + "/?x=2", { waitUntil: "load" });
   await fire(s.p, "accepted");
   await s.p.waitForTimeout(WAIT);
   ok("ติดตั้งสำเร็จแล้ว = ไม่ขึ้นอีกเลย", (await s.p.$("#installbar")) === null);
@@ -205,11 +205,17 @@ console.log("\n[3] ห้ามกวน");
 
 console.log("\n[4] ครบทุกหน้า + ไม่ชนกับแถบ 'มีเวอร์ชันใหม่'");
 {
-  // ⚠️ เพิ่มหน้าใหม่เมื่อไหร่ ต้องมาเติมที่นี่ด้วย · ไม่รวม /admin/ (เครื่องมือเจ้าของ) และ /social/ (session อื่นดูแล)
-  for (const f of ["index.html", "trend/index.html", "ir/index.html", "issue/index.html",
+  // 🎯 **เจ้าของสั่ง 25 ส.ค. 2026: "พวก install เกะกะตอนดูข่าว ให้แสดงเฉพาะหน้าแรกพอ"**
+  //    หน้าข่าวคือที่ที่ผู้ใช้กำลังอ่านอยู่ แถบลอยขึ้นมาบังคือรบกวนโดยตรง
+  //    ส่วนหน้าแรกเป็นหน้าเลือกเมนู ไม่มีอะไรให้อ่าน แถบจึงไม่เกะกะ
+  const ONLY = "index.html";
+  const html = fs.readFileSync(new URL("../" + ONLY, import.meta.url), "utf8");
+  ok(`${ONLY} โหลด installprompt`, /installprompt\.js/.test(html) && /installprompt\.css/.test(html));
+  // 🚫 หน้าข่าวทุกหน้าต้องไม่มี — ใส่กลับเมื่อไหร่ เทสต์ตกทันที
+  for (const f of ["trend/index.html", "ir/index.html", "issue/index.html",
                    "issue/trends.html", "issue/three.html", "archives/index.html", "sd.html"]) {
-    const html = fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
-    ok(`${f} โหลด installprompt`, /installprompt\.js/.test(html) && /installprompt\.css/.test(html));
+    const h = fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
+    ok(`🚫 ${f} ต้องไม่มีแถบชวนติดตั้ง (เกะกะตอนอ่านข่าว)`, !/installprompt\.(js|css)/.test(h));
   }
   // ⚠️ แถบ "มีเวอร์ชันใหม่" (#updbar) สำคัญกว่า — ห้ามขึ้นทับกัน
   const js = fs.readFileSync(new URL("../installprompt.js", import.meta.url), "utf8");
