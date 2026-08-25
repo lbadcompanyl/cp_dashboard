@@ -7,7 +7,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 import { readDecisions } from "../allow.js";
 import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 import {
-  noiseReason, dropNoiseAfterArchive, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
+  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -17,7 +17,7 @@ import {
 const EDGE_TTL = 3600;
 const FRESH_MS = 3 * 60 * 1000; // ของใน cache เก่ากว่า 3 นาที → รีเฟรชเบื้องหลัง
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "73"; // bump: `CP` เดี่ยวๆ นับเป็นหลักฐานอ่อน (ให้ AI ตัดสิน) แทนที่จะมองว่าไม่เจอชื่อเครือ
+const CACHE_VER = "74"; // bump: ตัดสรุปที่เป็นบล็อก "ข่าวที่เกี่ยวข้อง" ของเว็บ (โผล่ซ้ำหลายข่าว)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -442,6 +442,11 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   }
 
   // ไฮบริด: บวกข่าวจาก News (ในปท.+ตปท.) ที่ match keyword ของคอลัมน์ (เสถียรขึ้น ไม่พึ่ง Google Alert อย่างเดียว)
+  // ⚠️ ต้องมาก่อน mergeNewsIntoAlert — สรุปที่เป็นบล็อก "ข่าวที่เกี่ยวข้อง" ของเว็บ
+  // ทำให้ข่าวคนละเรื่องถูกดูดเข้าคอลัมน์ (ดูเหตุผลเต็มใน _lib/noise.js)
+  const shared = {};
+  dropSharedSnippets(sources, shared);
+
   mergeNewsIntoAlert(sources, "alert1", ["newsth", "newsintl"], CP_BRANDS);
   mergeNewsIntoAlert(sources, "alert2", ["newsth", "newsintl"], ALERT2_KEEP);
 
@@ -510,6 +515,12 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   const swept = {};
   try { dropNoiseAfterArchive(sources, swept); } catch (e) { swept.err = String((e && e.message) || e).slice(0, 120); }
 
+  // ⚠️ **กวาดรอบสองหลังดึงของเก่าจากคลัง** — ของที่เก็บไว้ตั้งแต่ยังไม่มีกฎนี้
+  // ยังพกสรุปปลอมติดมาด้วย ถ้าไม่กวาด ต้องรอ 90 วันกว่าคลังจะหมดอายุไปเอง
+  // (เหตุผลเดียวกับที่ dropNoiseAfterArchive ต้องมี — verify ทำงานก่อน mergeArchives)
+  // · รอบนี้ข้อมูลเยอะกว่าเดิม การจับ "สรุปก้อนเดียวกันหลายใบ" จึงแม่นขึ้นด้วย
+  try { dropSharedSnippets(sources, shared); } catch {}
+
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   const pruned = {};
   try {
@@ -548,6 +559,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
       for (const d of (pruned && pruned[k]) || []) { L.drop("pruned", 1); L.item("pruned", d.title, d.link, k); }
     }
     L.count("pruned", ((pruned && pruned.alert1) || []).length + ((pruned && pruned.alert2) || []).length);
+    if (shared.sharedSnippets) L.count("สรุปซ้ำ", shared.sharedSnippets);
     L.kvWrites = arDiag && arDiag.saved ? 1 : 0;
     await finishLog(env, L, { built: true, err: (arDiag && arDiag.err) || "" });
   } catch {}
