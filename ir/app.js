@@ -1,6 +1,31 @@
 // IR News Monitor — frontend logic (vanilla JS)
 // 3 คอลัมน์: News · Alert 1 · Alert 2  (ดึงจาก /api/ir/feeds)
 
+// 🚀 **ยิงคำขอของคอลัมน์แรกเป็นอย่างแรกสุด** (เจ้าของสั่ง 25 ส.ค. 2026 — บนมือถือ
+//    เห็นทีละคอลัมน์ คอลัมน์แรกจึงต้องมาก่อนทุกอย่าง)
+//
+// ⚠️ **ต้องอยู่บรรทัดบนสุดของไฟล์ ห้ามย้ายลงไปไว้ใน load() หรือใน wire()**
+//    วัดจริงบนมือถือ: เดิมคำขอนี้เริ่มที่ 99 ms เพราะต้องรอ parse ทั้งไฟล์ +
+//    Flags.init() + wire() ให้จบก่อน · ย้ายขึ้นมาบนสุดแล้วเริ่มที่ ~16 ms
+//    (ตัวเลขวัดด้วย Performance API ไม่ใช่ประมาณเอา — เทสต์ `firstcol.mjs` คุมไว้)
+//
+// ⚠️ ใช้ได้ครั้งเดียว — auto-refresh/กดปุ่ม 🔄 ต้องยิงใหม่ (ดู takeBootFeeds)
+const FEEDS_EP = "/api/ir/feeds";
+// รับคำขอที่ index.html ยิงไว้ตั้งแต่ใน <head> · ไม่มีก็ยิงเองตรงนี้ (ยังเร็วกว่ารอ wire())
+let bootFeeds = null;
+try { bootFeeds = window.__bootFeeds || fetch(FEEDS_EP).then((r) => r.json()); } catch (e) { bootFeeds = null; }
+// ต้องมี catch ติดไว้ตั้งแต่แรก ไม่งั้นถ้าเน็ตล่มจะกลายเป็น unhandled rejection
+if (bootFeeds) bootFeeds.catch(() => {});
+function takeBootFeeds() { const p = bootFeeds; bootFeeds = null; return p; }
+// ⚠️ คำขอที่ยิงไว้ล่วงหน้าใน <head> **ล้มเหลวได้** (ออฟไลน์ชั่วขณะ หรือ URL ใน HTML
+//    ไม่ตรงกับที่นี่หลังเปลี่ยนชื่อ endpoint) ต้องยิงใหม่ให้เสมอ ห้ามรายงานว่าโหลดไม่สำเร็จ
+//    ทั้งที่ยังไม่เคยลองด้วยตัวเอง — พิมพ์ URL ผิดที่เดียวจะทำให้ทั้งหน้าพังเงียบๆ
+async function fetchFeeds() {
+  const boot = takeBootFeeds();
+  if (boot) { try { return await boot; } catch (e) { /* ตกลงมายิงใหม่ข้างล่าง */ } }
+  return fetch(FEEDS_EP).then((r) => r.json());
+}
+
 const state = {
   data: null,     // { sources: { news, alert1, alert2 }, errors, generatedAt }
   filters: {},    // per-source { kw, rc }
@@ -106,7 +131,8 @@ async function load(opts = {}) {
   }
 
   try {
-    const feeds = await fetch("/api/ir/feeds").then((r) => r.json());
+    // รอบแรกใช้คำขอที่ยิงไว้ตั้งแต่บรรทัดบนสุดของไฟล์ (ไม่ยิงซ้ำ)
+    const feeds = await fetchFeeds();
     state.data = feeds;
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
@@ -373,7 +399,8 @@ function applyKeywords() {
   Flags.setKeywords(map);
 }
 if (window.Flags) {
-  Flags.init({ onChange: renderAll, cats: CATS, ui: "kw" }); // เหลือแต่ปุ่ม ➕ เพิ่ม keyword · 🚩 คำแนะนำตัดข่าว ย้ายไป /admin/
+  // after: รอให้คำขอของคอลัมน์แรกออกตัวไปก่อน — ปุ่ม ⚑/🗂 ไม่ใช่ของที่ผู้ใช้นั่งรอ
+  Flags.init({ onChange: renderAll, cats: CATS, ui: "kw", after: bootFeeds }); // เหลือแต่ปุ่ม ➕ เพิ่ม keyword · 🚩 คำแนะนำตัดข่าว ย้ายไป /admin/
   Flags.setKeywords(HARD_KW); // แสดงทันทีก่อนโหลด
 }
 wire();
