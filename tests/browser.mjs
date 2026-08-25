@@ -42,8 +42,15 @@ export const isWebKit = ENGINE === "webkit";
 //
 //    ⚠️ ทำให้เทสต์ 10 ชุดตกบน WebKit ทั้งที่เว็บไม่ได้พัง — กันด้วยการปิด sw เฉพาะฝั่ง WebKit
 //    🚫 **ห้ามปิดฝั่ง Chromium ด้วย** — จะเสียการคุม sw ไปเลย (emptycat.mjs ใช้ sw จริง)
+// ⚠️ **ต้อง "ลบทิ้ง" ไม่ใช่ "ทำให้เป็น undefined"**
+//    รอบแรกเขียนเป็น Object.defineProperty(... get: () => undefined) แล้วพังหนักกว่าเดิม
+//    (เทสต์ตกจาก 10 ชุดเป็น 14 ชุด) เพราะโค้ดหน้าเว็บเช็คด้วย `"serviceWorker" in navigator`
+//    ซึ่งยัง **จริง** อยู่ (property ยังมี แค่คืน undefined) → ผ่านด่านเข้าไปแล้วไปตายที่
+//    `navigator.serviceWorker.controller` · ลบออกจาก prototype ถึงจะได้สภาพเดียวกับ
+//    Safari โหมดส่วนตัว ซึ่งเป็นสภาพที่โค้ดหน้าเว็บรองรับอยู่แล้ว
 const BLOCK_SW_INIT = () => {
-  try { Object.defineProperty(navigator, "serviceWorker", { get: () => undefined }); } catch (e) {}
+  try { delete Navigator.prototype.serviceWorker; } catch (e) {}
+  try { if ("serviceWorker" in navigator) delete navigator.serviceWorker; } catch (e) {}
 };
 
 /** เปิดเบราว์เซอร์ตามเอนจินที่เลือก — ทำงานได้ทั้งในเครื่องนี้และบน CI */
