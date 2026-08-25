@@ -21,6 +21,35 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const CHUNK = 40;            // จำนวนคอมเมนต์ต่อ 1 คำขอ Claude (ตี sentiment)
 const SYNTH_SAMPLE = 120;    // จำนวนคอมเมนต์ที่ส่งให้ Claude สรุป/หา keyword
 
+/* ============================================================
+ * 🎓 ตัวอย่างสอน AI สำหรับโหมด "วัดต่อ CP" (few-shot)
+ * ------------------------------------------------------------
+ * เกณฑ์เต็มอยู่ที่ RUBRIC-CP.md — ตรงนี้คือตัวอย่างที่ส่งให้ AI ดูทุกครั้ง
+ *
+ * ✏️ วิธีเพิ่ม: label คอมเมนต์จริงใน Excel (ปุ่ม audit) แล้วเอาเคสที่ AI เคยตอบผิด
+ *    มาใส่ที่นี่ — เน้นเคสยาก (ประชด/ชื่อลวง/ด่าปลาไม่ได้ด่า CP) ไม่ต้องใส่เคสง่าย
+ * ⚠️ ควรคละป้ายให้ครบทั้ง 4 แบบ ถ้าใส่แต่ negative โมเดลจะเอนไปตอบ negative รัว
+ * ⚠️ อย่าใส่เยอะเกิน ~40 อัน (เปลืองโทเคนทุก batch) — เอาเฉพาะที่สอนอะไรใหม่จริงๆ
+ * ============================================================ */
+const CP_EXAMPLES = [
+  { t: "ขอบคุณ CP มากที่เอาปลามาแจกให้ทั้งประเทศ 🙏😂", a: "negative" },   // ประชด
+  { t: "ปลาหมอคางดำมันร้ายมาก ต้องเร่งกำจัดให้หมด", a: "not_related" },    // ด่าปลา ไม่ได้ด่า CP
+  { t: "รัฐทำงานช้ามาก ปล่อยให้ลามขนาดนี้", a: "not_related" },            // ด่ารัฐ
+  { t: "CP ต้องออกมารับผิดชอบกับสิ่งที่ทำ", a: "negative" },
+  { t: "โทษเขาไม่ได้หรอก ปลามันเข้ามาหลายทาง", a: "positive" },            // ปกป้อง
+  { t: "CP ออกแถลงการณ์ชี้แจงแล้วนะครับ", a: "neutral" },                  // ข้อเท็จจริง
+  { t: "CP เกี่ยวข้องยังไงเหรอครับ ใครพอทราบบ้าง", a: "neutral" },          // ถาม
+  { t: "เลิกซื้อของเซเว่นกันเถอะ", a: "negative" },                        // แบรนด์ในเครือ
+  { t: "ชื่นชมทีมที่ลงพื้นที่ช่วยชาวบ้านจริงจัง ขอบคุณ CP", a: "positive" },
+  { t: "เมื่อวานไปเดินซีพีเอ็นมา คนเยอะมาก", a: "not_related" },            // ชื่อลวง (Central)
+  { t: "สงสารชาวบ้านมาก เดือดร้อนกันทั้งชุมชน", a: "not_related" },
+  { t: "😡😡😡", a: "not_related" },                                        // ไม่มีเนื้อหา
+  // ── ข้อที่เจ้าของเคาะ 24 ส.ค. 2026 (ดู RUBRIC-CP.md ข้อ 8) ──
+  { t: "ควรตรวจสอบให้ชัดเจนว่า CP เกี่ยวข้องจริงไหม", a: "negative" },       // ตั้งข้อสงสัย = ลบ
+  { t: "ไก่ CP อร่อยดีนะ ซื้อประจำ", a: "positive" },                       // ชมสินค้า = บวก
+  { t: "เจ้าสัวรวยขึ้นทุกปี แต่ชาวบ้านรับกรรม", a: "negative" },             // ไม่เอ่ยชื่อ แต่บริบทชี้ชัด
+];
+
 export default {
   async fetch(request, env) {
     const origin = env.ALLOW_ORIGIN || "*";
@@ -33,6 +62,12 @@ export default {
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
     }
+    /* 🚫 เคยมี `/debugmeta` ตรงนี้ — ถอดออกทั้งเส้นทางและฟังก์ชันแล้ว (เจ้าของสั่ง 20 ส.ค. 2026)
+       ตอนนั้นทำไว้ไล่ปัญหาเรื่อง map field รูปปก ซึ่งแก้จบไปแล้ว
+       ⚠️ ห้ามเอากลับมาแบบเปิดค้างไว้ ไม่ว่ากรณีใด — ไม่มีการตรวจสิทธิ์เลย
+          ใครรู้ URL ก็ยิงได้ แล้วมัน **เผาเครดิต ScrapeCreators ที่จ่ายเงิน** ทีละครั้ง
+          พร้อมคืน response ดิบของต้นทางออกมาทั้งก้อน (กฎเหล็กข้อ 2 ใน CLAUDE.md)
+       ✅ ต้องไล่ปัญหาแบบนั้นอีก ให้เขียนขึ้นใหม่ตอนรันในเครื่อง แล้วอย่า commit */
     if (request.method !== "POST" || url.pathname !== "/analyze") {
       return cors(json({ error: "ไม่พบ endpoint (ใช้ POST /analyze)" }, 404), origin);
     }
@@ -53,6 +88,7 @@ async function analyze(opts, env) {
   const limit = Math.max(10, Math.min(2000, +opts.limit || 200));
   const anonymize = opts.anonymize !== false;
   const wantSamples = opts.samples !== false;
+  const target = opts.target === "cp" ? "cp" : "general";   // "cp" = วัดท่าทีต่อเครือ CP
 
   if (!url || !platform) throw new Error("ลิงก์ไม่ถูกต้อง หรือไม่รองรับแพลตฟอร์มนี้");
   if (!env.ANTHROPIC_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY");
@@ -81,17 +117,26 @@ async function analyze(opts, env) {
   const tokens = { input: 0, output: 0, rate_remaining: null };
 
   // 2) ตี sentiment ทีละ chunk ด้วย Claude
-  logLine(`ตี sentiment ด้วย ${env.CLAUDE_MODEL || DEFAULT_MODEL} · ${Math.ceil(texts.length / CHUNK)} batch (batch ละ ${CHUNK})`);
-  const labels = await classifySentiment(texts, env, tokens, logLine);
+  logLine(`ตี sentiment (${target === "cp" ? "ท่าทีต่อเครือ CP" : "อารมณ์รวม"}) ด้วย ${env.CLAUDE_MODEL || DEFAULT_MODEL} · ${Math.ceil(texts.length / CHUNK)} batch (batch ละ ${CHUNK})`);
+  const labels = await classifySentiment(texts, env, tokens, logLine, target);
   const sentiment = { positive: 0, neutral: 0, negative: 0 };
-  for (const l of labels) if (sentiment[l] != null) sentiment[l]++;
-  logLine(`รวมผล → บวก ${sentiment.positive} · กลาง ${sentiment.neutral} · ลบ ${sentiment.negative}`);
+  let not_related = 0;
+  for (const l of labels) { if (l === "not_related") not_related++; else if (sentiment[l] != null) sentiment[l]++; }
+  logLine(`รวมผล → บวก ${sentiment.positive} · กลาง ${sentiment.neutral} · ลบ ${sentiment.negative}` +
+    (target === "cp" ? ` · ไม่เกี่ยวกับ CP ${not_related}` : ""));
 
   // audit รายคอมเมนต์ (ข้อความ + ผล) สำหรับตรวจความถูกต้องบนจอ — ไม่รวมชื่อผู้คอมเมนต์
   const audit = texts.map((t, i) => ({ text: String(t).replace(/\s+/g, " ").slice(0, 220), sentiment: labels[i] }));
 
   // 3) สรุป + keyword + ตัวอย่าง (ถอดความ)
-  const synth = await synthesize(texts.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens);
+  // โหมด CP: สรุปจากเฉพาะคอมเมนต์ที่เกี่ยวกับ CP (ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ)
+  const synthPool = target === "cp"
+    ? texts.filter((_, i) => labels[i] !== "not_related")
+    : texts;
+  if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่เกี่ยวกับ CP ${synthPool.length} รายการ`);
+  const synth = synthPool.length
+    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target)
+    : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
 
@@ -107,6 +152,8 @@ async function analyze(opts, env) {
     post_thumb: collected.post_thumb || "",
     fetched_count: comments.length,
     analyzed_count: labels.length,
+    target,
+    not_related,
     sentiment,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
@@ -136,8 +183,8 @@ async function creditBalance(env) {
 /** หาเลขเครดิตจาก response ของ ScrapeCreators ไม่ว่าจะใช้ชื่อ field แบบไหน */
 function findCredits(obj) {
   if (obj == null || typeof obj !== "object") return null;
-  const keys = ["credits_remaining", "creditsRemaining", "credits", "credit", "credit_balance",
-    "creditBalance", "balance", "remaining", "available", "credits_left", "creditsLeft"];
+  const keys = ["credits_remaining", "creditsRemaining", "creditCount", "credit_count", "credits", "credit",
+    "credit_balance", "creditBalance", "balance", "remaining", "available", "credits_left", "creditsLeft"];
   for (const k of keys) if (typeof obj[k] === "number") return obj[k];
   for (const v of Object.values(obj)) if (v && typeof v === "object") { const n = findCredits(v); if (n != null) return n; }
   for (const v of Object.values(obj)) if (typeof v === "number") return v; // เผื่อ response เป็น {something: N} ล้วน
@@ -280,7 +327,59 @@ async function fetchScrapeCreators(kind, url, limit, env) {
     cursor = data.cursor || data.next_cursor || data.nextCursor || data.next_page_id || "";
     if (!cursor) break;
   }
-  return { comments: out, credits_remaining };
+
+  // หัวข้อ + รูปปกของโพส (best-effort, +1 credit) — เผื่อ field ต่างกันจึงค้นแบบยืดหยุ่น
+  let post_title = "", post_thumb = "";
+  try {
+    const metaEp = kind === "facebook"
+      ? "https://api.scrapecreators.com/v1/facebook/post"
+      : "https://api.scrapecreators.com/v2/tiktok/video";
+    const mApi = new URL(metaEp);
+    mApi.searchParams.set("url", url);
+    const mr = await fetch(mApi.toString(), { headers: { "x-api-key": env.SCRAPECREATORS_API_KEY } });
+    if (mr.ok) {
+      const md = await mr.json();
+      const c2 = findCredits(md); if (c2 != null) credits_remaining = c2;
+      post_title = String(deepFindStr(md, ["desc", "message", "title", "caption", "text", "content", "description"]) || "").slice(0, 300);
+      const turl = deepFindUrl(md, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "picture", "photo", "image", "display_url"]);
+      if (turl) {
+        const ir = await fetch(turl);
+        if (ir.ok) {
+          const buf = new Uint8Array(await ir.arrayBuffer());
+          if (buf.length < 3_000_000) post_thumb = "data:" + (ir.headers.get("content-type") || "image/jpeg") + ";base64," + toB64(buf);
+        }
+      }
+    }
+  } catch (e) { /* meta ไม่มาก็ไม่เป็นไร */ }
+
+  return { comments: out, credits_remaining, post_title, post_thumb };
+}
+
+/** ค้นหาสตริง (หัวข้อ) จาก response ที่ไม่รู้โครงสร้างแน่ชัด */
+function deepFindStr(obj, names, depth = 0) {
+  if (obj == null || depth > 6 || typeof obj !== "object") return "";
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string" && v.trim().length > 3 && names.includes(k.toLowerCase())) return v;
+  }
+  for (const v of Object.values(obj)) { if (v && typeof v === "object") { const r = deepFindStr(v, names, depth + 1); if (r) return r; } }
+  return "";
+}
+/** ค้นหา URL รูปจาก field ที่ชื่อเข้าเค้า (รองรับ url_list array แบบ TikTok) */
+function deepFindUrl(obj, hints, depth = 0) {
+  if (obj == null || depth > 6 || typeof obj !== "object") return "";
+  for (const [k, v] of Object.entries(obj)) {
+    if (hints.some(h => k.toLowerCase().includes(h))) {
+      if (typeof v === "string" && /^https?:\/\//.test(v)) return v;
+      if (Array.isArray(v)) { const u = v.find(x => typeof x === "string" && /^https?:\/\//.test(x)); if (u) return u; }
+      if (v && typeof v === "object") {
+        if (Array.isArray(v.url_list)) { const u = v.url_list.find(x => typeof x === "string" && /^https?:\/\//.test(x)); if (u) return u; }
+        if (typeof v.url === "string" && /^https?:\/\//.test(v.url)) return v.url;
+        if (typeof v.uri === "string" && /^https?:\/\//.test(v.uri)) return v.uri;
+      }
+    }
+  }
+  for (const v of Object.values(obj)) { if (v && typeof v === "object") { const r = deepFindUrl(v, hints, depth + 1); if (r) return r; } }
+  return "";
 }
 
 function pickField(obj, keys) {
@@ -351,35 +450,84 @@ function extractJson(s) {
   return JSON.parse(s);
 }
 
-async function classifySentiment(texts, env, acc, logLine) {
+/** system prompt สำหรับโหมด "อารมณ์รวม" (ค่าเริ่มต้น) */
+function systemGeneral() {
+  return "คุณเป็นตัวจำแนกอารมณ์ (sentiment) ของคอมเมนต์โซเชียลภาษาไทย/อังกฤษ " +
+    "จำแนกแต่ละคอมเมนต์เป็น positive, neutral หรือ negative โดยพิจารณาบริบท ประชด และภาษาวิบัติ " +
+    'ตอบกลับเป็น JSON array ของสตริงเท่านั้น เช่น ["positive","negative",...] ' +
+    "ความยาว array ต้องเท่ากับจำนวนคอมเมนต์ ห้ามมีข้อความอื่น";
+}
+
+/** system prompt สำหรับโหมด "ท่าทีต่อเครือ CP" (aspect-based) — อิง RUBRIC-CP.md */
+function systemCP() {
+  const ex = CP_EXAMPLES.map(e => `"${e.t}" → ${e.a}`).join("\n");
+  return [
+    "คุณเป็นนักวิเคราะห์ social listening ภาษาไทย หน้าที่คือตัดสิน **ท่าทีของผู้เขียนที่มีต่อเครือเจริญโภคภัณฑ์ (CP)** เท่านั้น",
+    "⚠️ ไม่ใช่อารมณ์รวมของคอมเมนต์ — ให้ดูเฉพาะว่าเขารู้สึกอย่างไรกับ CP",
+    "",
+    "ป้ายที่ใช้ได้ 4 แบบ:",
+    "- positive = ชื่นชม สนับสนุน ปกป้อง เห็นใจ CP หรือชมสินค้า/บริการในเครือ",
+    "- neutral = เอ่ยถึง CP แบบข้อเท็จจริง หรือถามข้อมูล ไม่แสดงท่าที",
+    "- negative = ตำหนิ กล่าวหา ประชด เรียกร้องให้ CP รับผิดชอบ ตั้งข้อสงสัยว่า CP เกี่ยวข้อง หรือชวนแบน/ฟ้อง",
+    "- not_related = ไม่ได้พูดถึง CP เลย (พูดถึงปลา รัฐ ชาวบ้าน เรื่องอื่น) หรือไม่มีเนื้อหา",
+    "",
+    "นับเป็น CP: ซีพี, CP, เจริญโภคภัณฑ์, Charoen Pokphand, เจียรวนนท์, ซีพีเอฟ/CPF, ซีพี ออลล์, ซีพีแรม, ซีพี แอ็กซ์ตร้า, เซเว่น/7-11, แม็คโคร, โลตัส, ทรู",
+    "ไม่นับ (ชื่อลวง): บีแอลซีพี/BLCP, ซีพีเอ็น/CPN (Central Pattana), บีซีพีจี/บีซีพี (บางจาก), ทรูดิจิทัล พาร์ค, ทรูธโซเชียล/Truth Social",
+    "",
+    "กฎสำคัญ:",
+    "1. ประชด/แดกดันให้ตอบตามเจตนา ไม่ใช่ตามคำ (เช่น ขอบคุณเกินจริง + 😂🙏 ในบริบทวิกฤต = negative)",
+    "2. ด่าปลา ด่ารัฐ หรือให้กำลังใจชาวบ้าน โดยไม่เอ่ยถึง CP = not_related",
+    "3. พูดถึงบริษัทในเครือ (เซเว่น แม็คโคร โลตัส ทรู) ถือว่าพูดถึง CP",
+    "4. ถ้าคอมเมนต์มีทั้งบวกและลบต่อ CP ให้ยึดท่าทีที่เด่นกว่า ถ้าพอกันให้ตอบ neutral",
+    "5. ไม่แน่ใจว่าเป็นลบหรือไม่ ให้ตอบ neutral (อย่าเดาเป็น negative)",
+    "6. โพสนี้เป็นข่าวที่เกี่ยวกับ CP อยู่แล้ว ดังนั้นคำเรียกแทนอย่าง \"เจ้าสัว\" \"นายทุนใหญ่\" \"บริษัทยักษ์ใหญ่ที่นำเข้ามา\" ให้ถือว่าหมายถึง CP",
+    "",
+    "ตัวอย่างที่ตัดสินไว้แล้ว (ใช้เป็นแนวทาง):",
+    ex,
+    "",
+    'ตอบกลับเป็น JSON array ของสตริงเท่านั้น เช่น ["negative","not_related",...] ' +
+    "ความยาว array ต้องเท่ากับจำนวนคอมเมนต์ ห้ามมีข้อความอื่น",
+  ].join("\n");
+}
+
+function normLabel(v, target) {
+  const s = String(v || "").toLowerCase();
+  if (target === "cp" && (s.includes("not_related") || s.includes("unrelated") || s === "none")) return "not_related";
+  if (s.startsWith("pos")) return "positive";
+  if (s.startsWith("neg")) return "negative";
+  return "neutral";
+}
+
+async function classifySentiment(texts, env, acc, logLine, target) {
+  const isCP = target === "cp";
   const labels = [];
   const nBatch = Math.ceil(texts.length / CHUNK);
+  const system = isCP ? systemCP() : systemGeneral();
   for (let i = 0; i < texts.length; i += CHUNK) {
     const batch = texts.slice(i, i + CHUNK);
     const numbered = batch.map((t, j) => `${j + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`).join("\n");
-    const system =
-      "คุณเป็นตัวจำแนกอารมณ์ (sentiment) ของคอมเมนต์โซเชียลภาษาไทย/อังกฤษ " +
-      "จำแนกแต่ละคอมเมนต์เป็น positive, neutral หรือ negative โดยพิจารณาบริบท ประชด และภาษาวิบัติ " +
-      'ตอบกลับเป็น JSON array ของสตริงเท่านั้น เช่น ["positive","negative",...] ' +
-      "ความยาว array ต้องเท่ากับจำนวนคอมเมนต์ ห้ามมีข้อความอื่น";
     const out = await callClaude(env, system, "คอมเมนต์:\n" + numbered, 1500, acc);
     let arr;
     try { arr = extractJson(out); } catch (e) { arr = []; }
-    const b = { positive: 0, neutral: 0, negative: 0 };
+    const b = { positive: 0, neutral: 0, negative: 0, not_related: 0 };
     for (let j = 0; j < batch.length; j++) {
-      const v = String(arr[j] || "neutral").toLowerCase();
-      const label = v.startsWith("pos") ? "positive" : v.startsWith("neg") ? "negative" : "neutral";
+      const label = normLabel(arr[j], target);
       labels.push(label); b[label]++;
     }
-    if (logLine) logLine(`  batch ${i / CHUNK + 1}/${nBatch}: บวก ${b.positive} · กลาง ${b.neutral} · ลบ ${b.negative} (${batch.length} คอมเมนต์)`);
+    if (logLine) logLine(`  batch ${i / CHUNK + 1}/${nBatch}: บวก ${b.positive} · กลาง ${b.neutral} · ลบ ${b.negative}` +
+      (isCP ? ` · ไม่เกี่ยว ${b.not_related}` : "") + ` (${batch.length} คอมเมนต์)`);
   }
   return labels;
 }
 
-async function synthesize(sampleTexts, wantSamples, env, acc) {
+async function synthesize(sampleTexts, wantSamples, env, acc, target) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
+  const focus = target === "cp"
+    ? "คอมเมนต์เหล่านี้คัดมาเฉพาะที่พูดถึงเครือเจริญโภคภัณฑ์ (CP) — ให้สรุปและหา keyword โดยโฟกัสที่ **ท่าทีและประเด็นที่คนพูดถึง CP** เท่านั้น "
+    : "";
   const system =
     "คุณเป็นนักวิเคราะห์ social listening ภาษาไทย วิเคราะห์คอมเมนต์ที่ให้มาแล้วตอบเป็น JSON object เท่านั้น " +
+    focus +
     "โครงสร้าง: {" +
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
     '"keywords": [{"term":"คำ/หัวข้อ","count":จำนวนโดยประมาณ}], (8-12 รายการ เรียงจากมากไปน้อย) ' +
