@@ -85,6 +85,56 @@ console.log("\n[2] iOS — ไม่มี event ให้เรียก ต้
   await ctx.close();
 }
 
+console.log("\n[2b] เปิดจากในแอปแชต — ติดตั้งไม่ได้ ต้องบอกให้ออกไปเบราว์เซอร์ก่อน");
+{
+  // ⚠️ เจ้าของถาม 25 ส.ค. 2026: "เปิดผ่านไลน์ก็ไม่ได้ซิ เพราะต้องกด open on browser อีกที"
+  //    ถูกต้อง — และของเดิมยังบอกให้ "แตะปุ่มแชร์ด้านล่างของ Safari" ทั้งที่ผู้ใช้อยู่ในไลน์
+  //    ปุ่มนั้นไม่มีอยู่จริงในนั้น = สั่งให้ทำสิ่งที่ทำไม่ได้
+  const LINE_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Line/14.5.0/IAB";
+  const LINE_AND = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 Line/14.5.0/IAB";
+  for (const [label, ua] of [["iPhone", LINE_IOS], ["Android", LINE_AND]]) {
+    const { ctx, p, errs } = await open({ ua });
+    await p.waitForTimeout(WAIT);
+    const txt = await p.$eval("#installbar", (e) => e.textContent.replace(/\s+/g, " ")).catch(() => "");
+    ok(`ไลน์/${label} ขึ้นแถบบอกทาง`, !!txt, txt.slice(0, 50));
+    ok(`ไลน์/${label} บอกให้เปิดในเบราว์เซอร์ก่อน`, /เปิดในเบราว์เซอร์/.test(txt), txt.slice(0, 90));
+    ok(`ไลน์/${label} เรียกชื่อแอปถูก`, txt.includes("ไลน์"), txt.slice(0, 90));
+    // 🚫 ห้ามบอกวิธีของ Safari ทั้งที่อยู่ในไลน์ — ปุ่มนั้นไม่มีให้กด
+    ok(`ไลน์/${label} ไม่บอกวิธีที่ทำตามไม่ได้`, !/เพิ่มไปยังหน้าจอโฮม/.test(txt), txt.slice(0, 90));
+    ok(`ไลน์/${label} ไม่มีปุ่มติดตั้งปลอม`, (await p.$(".ib-yes")) === null);
+    ok(`ไลน์/${label} ไม่มี JS error`, errs.length === 0, errs.join(" | "));
+    await ctx.close();
+  }
+  // ⚠️ ถ้าเบราว์เซอร์ในแอปดันติดตั้งได้จริง (ยิง event มา) ต้องขึ้นปุ่มติดตั้ง ไม่ใช่ไล่ออกไปข้างนอก
+  const { ctx, p } = await open({ ua: LINE_AND });
+  await p.waitForTimeout(300);
+  await fire(p);
+  await p.waitForTimeout(WAIT);
+  const txt = await p.$eval("#installbar", (e) => e.textContent.replace(/\s+/g, " ")).catch(() => "");
+  ok("ในแอปที่ติดตั้งได้จริง → ขึ้นปุ่มติดตั้ง ไม่ใช่ไล่ออกไปเบราว์เซอร์",
+     !!(await p.$(".ib-yes")) && !/เปิดในเบราว์เซอร์/.test(txt), txt.slice(0, 80));
+  await ctx.close();
+}
+
+console.log("\n[2c] iOS — บอกตำแหน่งปุ่มแชร์ให้ตรงเครื่อง");
+{
+  const IPAD = "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+  const CRIOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0 Mobile/15E148 Safari/604.1";
+  const cases = [
+    ["iPhone + Safari", IOS_UA, /ด้านล่างของ Safari/],
+    ["iPad + Safari",   IPAD,   /ด้านบนของ Safari/],   // iPad ปุ่มแชร์อยู่ด้านบน บอกล่างคือหาไม่เจอ
+    ["iPhone + Chrome", CRIOS,  /ของเบราว์เซอร์/],      // ไม่ใช่ Safari ห้ามเรียกว่า Safari
+  ];
+  for (const [label, ua, want] of cases) {
+    const { ctx, p } = await open({ ua });
+    await p.waitForTimeout(WAIT);
+    const txt = await p.$eval("#installbar", (e) => e.textContent.replace(/\s+/g, " ")).catch(() => "");
+    ok(`${label} บอกตำแหน่งถูก`, want.test(txt), txt.slice(0, 90));
+    ok(`${label} ยังบอกปลายทางว่าเพิ่มไปหน้าจอโฮม`, /เพิ่มไปยังหน้าจอโฮม/.test(txt), txt.slice(0, 90));
+    await ctx.close();
+  }
+}
+
 console.log("\n[3] ห้ามกวน");
 {
   // ติดตั้งไปแล้ว (เปิดจากไอคอนบนหน้าจอ) ต้องไม่ชวนอีก
@@ -127,6 +177,31 @@ console.log("\n[4] ครบทุกหน้า + ไม่ชนกับแ�
   ok("z-index ต่ำกว่า #updbar (9999)", /z-index:\s*9998/.test(css));
   ok("เว้นขอบล่างเผื่อ safe-area ของ iPhone", /safe-area-inset-bottom/.test(css));
   ok("มีสีของตัวเองทั้งโหมดสว่างและมืด", /prefers-color-scheme:\s*dark/.test(css));
+}
+
+console.log("\n[5] 🔑 service worker — ไม่มี fetch handler = Chrome/Edge ไม่ให้ติดตั้งเลย");
+{
+  // เจ้าของแจ้ง 25 ส.ค. 2026: "desktop ไม่ขึ้นอะไรเลย"
+  // Chrome/Edge ไม่ยิง beforeinstallprompt ถ้า service worker ไม่มีตัวดัก fetch
+  // → แถบของเราไม่มีวันขึ้นบนเดสก์ท็อป/Android ทั้งที่โค้ดฝั่งหน้าเว็บถูกหมด
+  const sw = fs.readFileSync(new URL("../sw.js", import.meta.url), "utf8");
+  const code = sw.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  ok("sw.js มี fetch handler (เงื่อนไขที่เบราว์เซอร์บังคับ)", /addEventListener\(\s*["']fetch["']/.test(code));
+  // 🚫 กฎข้อ 0 ของ sw.js — ดักแล้ว respondWith เคยทำให้ทั้งหน้าเปิดไม่ขึ้น (ERR_FAILED)
+  ok("🚫 sw.js ห้ามเรียก respondWith เด็ดขาด", !/respondWith/.test(code), "เจอ respondWith ใน sw.js");
+  const ver = (code.match(/SW_VERSION\s*=\s*(\d+)/) || [])[1];
+  ok("bump SW_VERSION แล้ว (ไม่งั้นเบราว์เซอร์ไม่ติดตั้งตัวใหม่)", Number(ver) >= 6, "SW_VERSION=" + ver);
+
+  // manifest ต้องครบตามที่เบราว์เซอร์บังคับ ไม่งั้นก็ไม่ให้ติดตั้งเหมือนกัน
+  const mf = JSON.parse(fs.readFileSync(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
+  ok("manifest: มี name + start_url + display standalone",
+     !!mf.name && !!mf.start_url && /standalone|fullscreen|minimal-ui/.test(mf.display || ""));
+  for (const size of ["192x192", "512x512"]) {
+    ok(`manifest: มีไอคอน ${size}`, (mf.icons || []).some((i) => (i.sizes || "").includes(size)));
+  }
+  for (const f of ["icon-192.png", "icon-512.png", "apple-touch-icon.png"]) {
+    ok(`มีไฟล์ ${f} จริง`, fs.existsSync(new URL("../" + f, import.meta.url)));
+  }
 }
 
 console.log("\n" + (fail ? "❌ ตก" : "✅ ผ่านหมด") + " — ผ่าน " + pass + " · ตก " + fail + "\n");
