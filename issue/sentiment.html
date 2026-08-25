@@ -87,12 +87,6 @@
   .sc-posthead .sc-ptitle { font-size: 13.5px; font-weight: 600; color: var(--sc-ink); line-height: 1.4; }
   .sc-summary { background: var(--sc-plane); border: 1px solid var(--sc-border); border-radius: 10px; padding: 14px; font-size: 13.5px; color: var(--sc-ink2); }
 
-  /* ธง "ลบรุนแรง" — ยังนับเป็นลบ แต่เตือนว่ากระแสยกระดับเป็นเรียกร้องลงโทษ */
-  .sc-severe { margin-top: 4px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 9px;
-    padding: 9px 12px; font-size: 12px; color: #991b1b; line-height: 1.5; }
-  .sc-severe b { color: #7f1d1d; }
-  .sc-svtag { flex: none; font-size: 10px; font-weight: 700; border: 1px solid #fca5a5; background: #fef2f2;
-    color: #991b1b; border-radius: 999px; padding: 2px 8px; margin-top: 1px; }
 
   .sc-kwlist { display: flex; flex-direction: column; gap: 8px; }
   .sc-kwrow { display: grid; grid-template-columns: 128px 1fr 40px; gap: 10px; align-items: center; font-size: 12.5px; }
@@ -355,9 +349,7 @@ async function demoResult(opts){
       {text:"ส่งช้ามาก รอเกินเวลาที่แจ้งไว้ ผิดหวังนิดหน่อย",sentiment:"negative"},
       {text:"แพงไปนิดเมื่อเทียบกับปริมาณ ครั้งหน้าคงคิดหนัก",sentiment:"negative"},
       {text:"รอคิวนานมาก ไม่ค่อยประทับใจ",sentiment:"negative"},
-      {text:"ต้องฟ้องดำเนินคดีให้ถึงที่สุด แบนสินค้าในเครือเลย",sentiment:"negative",severe:true},
     ],
-    severe_count: 1,
     samples: [
       {sentiment:"positive",text:"รสชาติดีมาก คุ้มราคา จะกลับมาอุดหนุนอีกแน่นอน"},
       {sentiment:"positive",text:"บริการประทับใจ พนักงานน่ารัก แนะนำเลย"},
@@ -394,7 +386,6 @@ function renderResult(d){
   el("donut").style.background = `conic-gradient(${cPos} 0 ${pp}%, ${cNeu} ${pp}% ${pp+pnu}%, ${cNeg} ${pp+pnu}% 100%)`;
   el("donutBig").textContent = pp + "%";
 
-  const severeN = d.severe_count || (d.audit||[]).filter(a => a.severe).length;
   el("legend").innerHTML = [
     ["เชิงบวก 😊","--sc-pos",pp,s.positive],
     ["กลาง 😐","--sc-neu",pnu,s.neutral],
@@ -406,8 +397,7 @@ function renderResult(d){
       <span class="sc-bar"><span style="width:${p}%;background:var(${c})"></span></span>
       <span class="sc-pct">${p}%</span>
       <span class="sc-cnt">${n}</span>
-    </div>`).join("") +
-    (severeN ? `<div class="sc-severe">🚩 ในคอมเมนต์เชิงลบ มี <b>${severeN}</b> ใบที่เรียกร้องให้ลงโทษ (แบน/ฟ้อง/ปิดกิจการ) — สัญญาณว่ากระแสกำลังยกระดับ</div>` : "");
+    </div>`).join("");
 
   const eng = d.engagement || {};
   const stats = isCP ? [
@@ -458,21 +448,16 @@ function renderAudit(d){
   if (!audit.length) return;
   const counts = { all: audit.length, positive:0, neutral:0, negative:0, not_related:0 };
   audit.forEach(a => { if (counts[a.sentiment] != null) counts[a.sentiment]++; });
-  const severeN = audit.filter(a => a.severe).length;
   const filters = [["all","ทั้งหมด"],["positive","บวก"],["neutral","กลาง"],["negative","ลบ"]];
-  if (severeN) { filters.push(["severe","🚩 ลบรุนแรง"]); counts.severe = severeN; }
   if (counts.not_related) filters.push(["not_related","ไม่เกี่ยวกับ CP"]);
   el("auditFilter").innerHTML = filters.map(([k,l]) => `<button class="sc-afbtn${k==="all"?" sc-on":""}" data-f="${k}" type="button">${l} (${counts[k]||0})</button>`).join("");
   const tagL = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยว" };
   const tagC = { positive:"--sc-pos", neutral:"--sc-neu", negative:"--sc-neg", not_related:"--sc-muted" };
   function draw(f){
-    const rows = audit.filter(a => f==="all" ? true : f==="severe" ? a.severe : a.sentiment===f);
+    const rows = audit.filter(a => f==="all" || a.sentiment===f);
     auditRows = rows;
     el("auditList").innerHTML = rows.map(a =>
-      `<div class="sc-arow">` +
-      `<span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span>` +
-      (a.severe ? `<span class="sc-svtag" title="เรียกร้องให้ลงโทษ (แบน/ฟ้อง/ปิดกิจการ)">🚩 รุนแรง</span>` : "") +
-      `<span class="sc-atext">${escapeHtml(a.text)}</span></div>`).join("");
+      `<div class="sc-arow"><span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span><span class="sc-atext">${escapeHtml(a.text)}</span></div>`).join("");
   }
   el("auditFilter").querySelectorAll(".sc-afbtn").forEach(b => b.onclick = () => {
     el("auditFilter").querySelectorAll(".sc-afbtn").forEach(x => x.classList.remove("sc-on"));
@@ -483,8 +468,7 @@ function renderAudit(d){
 function auditSheets(){
   const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };
   const sheets = lastResult ? buildSheets(lastResult) : {};
-  sheets["รายคอมเมนต์"] = [["ผล sentiment","ลบรุนแรง","ข้อความ"],
-    ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.severe ? "🚩 ใช่" : "", a.text])];
+  sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.text])];
   return sheets;
 }
 el("auditXlsxBtn").onclick = async () => { if (auditRows.length && await writeXlsx(auditSheets(), "sentiment-audit.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
@@ -503,7 +487,6 @@ function buildSheets(d){
     ["วัดท่าทีต่อ", d.target==="cp" ? "เครือ CP" : "อารมณ์รวม"],
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],["คอมเมนต์ที่ดึงมา", d.fetched_count||""],
     ...(d.target==="cp" ? [["พูดถึงเครือ CP", total],["ไม่เกี่ยวกับ CP", d.not_related||0]] : []),
-    ["ในนั้นเป็นลบรุนแรง (เรียกร้องลงโทษ)", d.severe_count || (d.audit||[]).filter(a=>a.severe).length],
     ["ยอดถูกใจ/รีแอกชัน", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
     ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
     ["สรุปภาพรวม", d.summary||""],
