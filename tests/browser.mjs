@@ -28,13 +28,44 @@ const LOCAL_CHROMIUM = "/opt/pw-browsers/chromium";
 export const ENGINE = (process.env.TEST_BROWSER || "chromium").toLowerCase();
 export const isWebKit = ENGINE === "webkit";
 
+// 🐞 **ข้อจำกัดของ Playwright+WebKit ที่ต้องกันไว้ — ไม่ใช่บั๊กของเว็บ**
+//
+//    วัดด้วยตัวตรวจบน CI (25 ส.ค. 2026) ได้ผลชี้ชัด:
+//      sw ทำงาน + ตัวดักคำขอ (page.route)  → fetch("/api/…") พัง
+//                                            SyntaxError: The string did not match the expected pattern.
+//      ปิด sw   + ตัวดักคำขอ                → ✅ ผ่าน
+//      sw ทำงาน + ไม่ดักคำขอ                → ✅ ผ่าน
+//
+//    = พังเฉพาะตอน 2 อย่างมาเจอกัน · **Safari ของจริงไม่เป็น** ยืนยันแล้ว 2 ทาง:
+//    รอบ 3 ของตัวตรวจ (ยิงเน็ตจริง) และ /selftest/ บน iPhone ของเจ้าของ (iOS 18.7)
+//    ซึ่งยิง fetch("/api/trend/feeds") ลิงก์แบบสั้นตัวเดียวกันเป๊ะแล้วผ่าน
+//
+//    ⚠️ ทำให้เทสต์ 10 ชุดตกบน WebKit ทั้งที่เว็บไม่ได้พัง — กันด้วยการปิด sw เฉพาะฝั่ง WebKit
+//    🚫 **ห้ามปิดฝั่ง Chromium ด้วย** — จะเสียการคุม sw ไปเลย (emptycat.mjs ใช้ sw จริง)
+const BLOCK_SW_INIT = () => {
+  try { Object.defineProperty(navigator, "serviceWorker", { get: () => undefined }); } catch (e) {}
+};
+
 /** เปิดเบราว์เซอร์ตามเอนจินที่เลือก — ทำงานได้ทั้งในเครื่องนี้และบน CI */
 export async function launch(opts = {}) {
-  if (isWebKit) return webkit.launch(opts); // WebKit ไม่รับ --no-sandbox
-  const o = { args: ["--no-sandbox"], ...opts };
-  // ใส่ executablePath เฉพาะตอนที่ไฟล์มีจริง ไม่งั้น Playwright จะพังทั้งที่มีเบราว์เซอร์ของตัวเอง
-  if (fs.existsSync(LOCAL_CHROMIUM)) o.executablePath = LOCAL_CHROMIUM;
-  return chromium.launch(o);
+  let browser;
+  if (isWebKit) browser = await webkit.launch(opts); // WebKit ไม่รับ --no-sandbox
+  else {
+    const o = { args: ["--no-sandbox"], ...opts };
+    // ใส่ executablePath เฉพาะตอนที่ไฟล์มีจริง ไม่งั้น Playwright จะพังทั้งที่มีเบราว์เซอร์ของตัวเอง
+    if (fs.existsSync(LOCAL_CHROMIUM)) o.executablePath = LOCAL_CHROMIUM;
+    browser = await chromium.launch(o);
+  }
+  if (isWebKit) {
+    // ทุก context ที่เทสต์สร้าง ให้ปิด sw ให้อัตโนมัติ — เทสต์ไม่ต้องรู้เรื่องนี้เอง
+    const orig = browser.newContext.bind(browser);
+    browser.newContext = async (o) => {
+      const ctx = await orig(o);
+      await ctx.addInitScript(BLOCK_SW_INIT);
+      return ctx;
+    };
+  }
+  return browser;
 }
 
 /** โปรไฟล์เครื่อง iPhone/iPad ของ Playwright — ใช้คู่กับ WebKit ถึงจะใกล้ของจริงที่สุด */
