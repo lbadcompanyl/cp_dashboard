@@ -1,5 +1,5 @@
 // วัดเลย์เอาต์มือถือของจริงด้วย Chromium — ไม่เดาจาก CSS
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 const PAGES = ["/trend/", "/ir/", "/issue/"];
 const VIEWPORTS = [
@@ -8,7 +8,7 @@ const VIEWPORTS = [
   { name: "iPhone SE (360×667)", width: 360, height: 667 },
 ];
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 let fail = 0, pass = 0;
 const ok = (n, c, x = "") => { if (c) { pass++; console.log("    ✅ " + n); } else { fail++; console.log("    ❌ " + n + (x ? "  → " + x : "")); } };
 

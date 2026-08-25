@@ -7,13 +7,13 @@
 // ⚠️ ยิงเน็ตออกนอกไม่ได้ — หน้านี้ใช้ข้อมูลจำลองในตัว ไม่ต้องปลอม API
 // ต้องมีเซิร์ฟเวอร์ static ที่พอร์ต 8899:  python3 -m http.server 8899 --directory ..
 
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 const BASE = "http://127.0.0.1:8899";
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? (pass++, console.log("  ✅ " + m)) : (fail++, console.log("  ❌ " + m)); };
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 
 /* ⚠️ ต้องเปิดด้วย ?mock=1 — ตอนนี้หน้าเว็บยิง /social/api/* ของจริงเป็นค่าปริยาย
    เซิร์ฟเวอร์ static ของเทสต์ไม่มี endpoint พวกนั้น จะได้สถานะ "ยังไม่ได้เชื่อมต่อ" ทั้งหมด

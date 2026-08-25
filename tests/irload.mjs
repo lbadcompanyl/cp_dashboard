@@ -1,7 +1,7 @@
 // IR ต้องโหลดเหมือน PR/Issue — เปิดหน้ามาขึ้นไอคอนหมุน ไม่ใช่โชว์ข่าวเก่าจากรอบที่แล้ว
 // (เจ้าของแจ้ง 14 ส.ค. 2026: "IR แสดง feed เก่า ไม่มีโหลดแบบ PR")
 import fs from "node:fs";
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
@@ -27,7 +27,7 @@ const FEEDS = (label) => ({
   }])),
 });
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 
 for (const [name, url] of [["ir", "http://127.0.0.1:8899/ir/"],
                            ["trend", "http://127.0.0.1:8899/trend/"],

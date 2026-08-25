@@ -1,5 +1,5 @@
 // กล่องตั้งค่ากลุ่มคำ ต้องเป็นแบบ "กดแล้วค่อยเปิด" — ทั้ง /issue/trends.html และ /sd.html
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
@@ -9,7 +9,7 @@ const PAGES = [
   { name: "sd", url: "http://127.0.0.1:8899/sd.html", tab: null },
 ];
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 
 for (const P of PAGES) {
   console.log(`\n──────── ${P.name} ────────`);
