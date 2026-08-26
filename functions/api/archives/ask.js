@@ -45,9 +45,11 @@ export async function onRequest(context) {
 async function handlePlan(url, env) {
   const q = (url.searchParams.get("q") || "").trim().slice(0, MAX_Q);
   if (!q) return json({ error: "ยังไม่ได้ถามอะไรมา" }, 400, 0);
+  // รอบสอง: คำชุดแรกไม่เจออะไรเลย → ขอคำที่ "กว้างขึ้น" · cache แยกจากรอบแรก
+  const broad = url.searchParams.get("broad") === "1";
 
   const cache = caches.default;
-  const key = new Request(`${url.origin}/api/archives/ask?q=${encodeURIComponent(q)}&_v=${CACHE_VER}`, { method: "GET" });
+  const key = new Request(`${url.origin}/api/archives/ask?q=${encodeURIComponent(q)}&b=${broad ? 1 : 0}&_v=${CACHE_VER}`, { method: "GET" });
   const hit = await cache.match(key);
   // ⚠️ cache hit ต้องออกก่อนถึงบรรทัด startLog เสมอ (กฎของ syslog.js)
   if (hit) return browserCopy(hit);
@@ -59,7 +61,7 @@ async function handlePlan(url, env) {
   let err = "";
   let why = hasAI(env) ? "" : "ยังไม่ได้ต่อ AI";
   try {
-    const r = await askPlan(env, q);
+    const r = await askPlan(env, q, broad);
     plan = r.plan;
     why = why || r.why;
   } catch (e) {
@@ -83,7 +85,7 @@ async function handlePlan(url, env) {
 }
 
 // ให้ AI แยกว่าอะไร "ค้นด้วยตัวอักษรได้" กับอะไร "ต้องอ่านแล้วตีความ"
-async function askPlan(env, q) {
+async function askPlan(env, q, broad = false) {
   if (!hasAI(env)) return { plan: null, why: "ยังไม่ได้ต่อ AI" };
   // ⚠️ **คำสั่งเป็นภาษาอังกฤษ แต่เนื้อหาเป็นไทย** — วัดจากของจริงแล้วโมเดลเล็กทำตามรูปแบบ
   //    ได้ดีกว่ามากเมื่อคำสั่งเป็นอังกฤษ (รอบแรกสั่งเป็นไทยล้วน แล้วได้ "ตอบมาแต่แกะไม่ได้")
@@ -91,8 +93,16 @@ async function askPlan(env, q) {
     "Convert the Thai search question into JSON. Output JSON only, no explanation.\n" +
     'Format: {"terms":["…"],"from":"","to":"","judge":""}\n' +
     "terms = words that literally appear in a Thai news headline (things, places, companies). Keep Thai text as-is.\n" +
+    // ⚠️ **สำคัญ** — คำค้นถูกเอาไปหาแบบ "ต้องเจอตัวอักษรตรงกันเป๊ะ" และต้องเจอครบทุกคำ
+    //    คำประสมยาวๆ อย่าง "เผาข้าวโพด" แทบไม่มีทางโผล่ในพาดหัวจริง (พาดหัวเขียน "เผาไร่ข้าวโพด")
+    //    แยกเป็นคำสั้นหลายคำจึงแม่นกว่ามาก — เจอจริง 26 ส.ค. 2026: ถามแล้วได้ 0 ข่าว
+    "  Split compound phrases into SHORT separate words. Never output one long compound.\n" +
+    "  Each term must be a word that can stand alone in a headline.\n" +
     "  Do NOT include question words such as หาข่าว, ข่าว, ของ, เกี่ยวกับ, ทั้งหมด, ล่าสุด.\n" +
     "  Do NOT include opinion words (ดี, ร้าย, บวก, ลบ) — those go in judge.\n" +
+    (broad
+      ? "The previous keywords matched NOTHING. Give only ONE or TWO of the most general words this time.\n"
+      : "") +
     "from/to = YYYY-MM-DD, empty string if the question has no date range.\n" +
     'judge = a condition that requires reading the headline, e.g. "เป็นข่าวเชิงบวก". Empty string if none.\n\n' +
     // ⚠️ **ต้องบอกวันนี้ให้มันรู้** — ไม่งั้น "เดือนที่แล้ว" / "ปีนี้" / "สัปดาห์ก่อน"
@@ -101,6 +111,8 @@ async function askPlan(env, q) {
     `Example: last month = ${monthRangeTH(-1).from} to ${monthRangeTH(-1).to}\n\n` +
     'Q: หาข่าวด้านดีของปลาหมอคางดำทั้งหมด\n{"terms":["ปลาหมอคางดำ"],"from":"","to":"","judge":"เป็นข่าวเชิงบวก"}\n' +
     'Q: หาข่าว dna ของ ปลาหมอคางดำ\n{"terms":["ปลาหมอคางดำ","dna"],"from":"","to":"","judge":""}\n' +
+    // เคสจริงที่พลาด 26 ส.ค. 2026 — ตอบ ["เผาข้าวโพด"] คำเดียวแล้วได้ 0 ข่าว
+    'Q: หาข่าวเผาข้าวโพดทั้งหมด\n{"terms":["เผา","ข้าวโพด"],"from":"","to":"","judge":""}\n' +
     `Q: ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว\n{"terms":["PM 2.5","เชียงใหม่"],"from":"${monthRangeTH(-1).from}","to":"${monthRangeTH(-1).to}","judge":""}\n\n` +
     "Q: " + q;
 

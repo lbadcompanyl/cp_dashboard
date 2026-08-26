@@ -229,6 +229,17 @@ const JUDGE_MAX = 200; // ส่งให้ AI อ่านมากสุด�
 // คำที่มีช่องว่างอยู่ข้างในต้องครอบเครื่องหมายคำพูด ไม่งั้นช่องค้นหาจะแยกเป็นคนละคำ
 const quoteTerm = (t) => (/\s/.test(t) ? `"${t}"` : t);
 
+/** ขอให้เซิร์ฟเวอร์ตีความคำถาม · broad = รอบสอง ขอคำที่กว้างขึ้น */
+async function fetchPlan(question, broad) {
+  try {
+    const r = await fetch(`${ASK_EP}?q=${encodeURIComponent(question)}${broad ? "&broad=1" : ""}`);
+    // ⚠️ ต้องเช็คชนิดของคำตอบก่อนแกะ — ถ้าวันหนึ่งมี Cloudflare Access คลุม /api/
+    //    มันจะตอบหน้าล็อกอินเป็น HTML แล้ว .json() จะพัง แล้วรายงานผิดเรื่อง
+    if (r.ok && (r.headers.get("content-type") || "").includes("json")) return await r.json();
+  } catch (e) { /* คืน null ให้ผู้เรียกจัดการ */ }
+  return null;
+}
+
 async function runAsk() {
   const question = $("#q").value.trim();
   if (!question || judgeBusy) return;
@@ -238,13 +249,7 @@ async function runAsk() {
   state.ask = question;
   renderAskBar();
 
-  let plan = null;
-  try {
-    const r = await fetch(`${ASK_EP}?q=${encodeURIComponent(question)}`);
-    // ⚠️ ต้องเช็คชนิดของคำตอบก่อนแกะ — ถ้าวันหนึ่งมี Cloudflare Access คลุม /api/
-    //    มันจะตอบหน้าล็อกอินเป็น HTML แล้ว .json() จะพัง แล้วรายงานผิดเรื่อง
-    if (r.ok && (r.headers.get("content-type") || "").includes("json")) plan = await r.json();
-  } catch (e) { /* ตกไปทางถอยข้างล่าง */ }
+  const plan = await fetchPlan(question, false);
 
   // ⚠️ **ทางถอยห้ามขาด** — ถามไม่ผ่านก็ต้องยังค้นได้ ไม่ใช่หน้าค้าง
   //    เอาคำถามไปค้นตรงๆ = พฤติกรรมเดิมของหน้านี้เป๊ะ
@@ -277,6 +282,28 @@ async function runAsk() {
 
   applyFilters();
   relaxNote = relaxIfEmpty();     // ไม่เจอเลย → ผ่อนให้ก่อนที่ผู้ใช้จะเห็นหน้าว่าง
+
+  // 🧠 ยังไม่เจออีก → **ขอคำที่กว้างขึ้นอีกรอบเดียว**
+  // ⚠️ ภาษาไทยไม่มีช่องว่างคั่นคำ ฝั่งหน้าเว็บจึงแยก "เผาข้าวโพด" เป็น "เผา"+"ข้าวโพด" เองไม่ได้
+  //    ต้องให้ AI แยกให้ (เจอจริง 26 ส.ค. 2026: ได้คำประสมคำเดียวแล้วเหลือ 0 ข่าว)
+  //    ยิงเพิ่มแค่ตอนไม่เจอเท่านั้น และ cache แยก จึงไม่เปลืองในการใช้งานปกติ
+  if (!filtered.length && plan.ai) {
+    const wide = await fetchPlan(question, true);
+    const wideTerms = wide && Array.isArray(wide.terms) ? wide.terms.filter(Boolean) : [];
+    if (wideTerms.length) {
+      const before = state.q;
+      state.q = wideTerms.map(quoteTerm).join(" ");
+      applyFilters();
+      if (filtered.length) relaxNote = `ไม่เจอด้วยคำว่า “${before.replace(/"/g, "")}” — ลองคำที่กว้างขึ้นให้แล้ว`;
+      else { state.q = before; applyFilters(); }
+    }
+  }
+  // ⚠️ ยังไม่เจอจริงๆ = **บอกตรงๆ ว่าไม่มีในคลัง** ไม่ใช่ปล่อยให้เจอข้อความ "ลองลดตัวกรองลง"
+  //    ซึ่งผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย อ่านแล้วงงว่าจะให้ลดอะไร
+  if (!filtered.length && !relaxNote) {
+    relaxNote = `ไม่มีข่าวที่มีคำว่า “${state.q.replace(/"/g, "")}” อยู่ในคลังเลย`;
+  }
+
   syncURL(true);
   render();                       // วาดผลของคำค้นก่อน ผู้ใช้จะได้เห็นอะไรทันที
   await judgePass();              // แล้วค่อยคัดตามเงื่อนไข

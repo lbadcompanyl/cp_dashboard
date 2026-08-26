@@ -12,6 +12,8 @@
  *   [5] 🔴 คัดไม่สำเร็จ = **แสดงทุกใบ ไม่ใช่ซ่อนทุกใบ** (ซ่อน = ข่าวหายเงียบ)
  *   [6] "เลิกคัด" = ทิ้งเงื่อนไข แต่เก็บคำค้นไว้
  *   [7] ระดับโค้ด: ไม่เขียน KV เลย · Enter สั่งถามได้แต่ห้ามยิงระหว่างพิมพ์ · ห้ามตัดทิ้งเมื่อ AI ใช้ไม่ได้
+ *   [9c] 🔴 คำค้นคำเดียวแล้วไม่เจอ = ขอคำที่กว้างขึ้นอีกรอบ (ไทยไม่มีช่องว่าง แยกเองไม่ได้)
+ *   [9d] ไม่มีในคลังจริงๆ = บอกตรงๆ ห้ามปล่อยให้เจอข้อความ "ลองลดตัวกรองลง"
  *   [9] 🧠 ไม่เจอเลย = ผ่อนเงื่อนไขให้เอง (ตัดช่วงวันที่ → ตัดคำ) และต้องบอกว่าผ่อนอะไร
  *   [8] 🔴 ทางถอยเมื่อ AI ตอบไม่ได้ — ต้องตัดคำถามทิ้งก่อนค้น (ไม่งั้นได้ 0 ข่าว)
  *       และต้องแกะคำตอบที่โมเดลเล็กตอบมาแบบเลอะๆ ได้
@@ -274,6 +276,55 @@ console.log("\n[9b] ช่วงวันที่ที่ AI เดาพล�
   const bar = await page.$eval("#askbar", (e) => e.textContent);
   ok("บอกว่าตัดช่วงวันที่ออก", /ตัดช่วงวันที่ออกให้แล้ว/.test(bar), bar);
   ok("คำค้นยังอยู่ครบ", (await page.inputValue("#q")) === "ข่าวอะไรก็ได้เดือนที่แล้ว");
+  await ctx.close();
+}
+
+/* ─────────── [9c] คำเดียวแล้วไม่เจอ — ขอคำที่กว้างขึ้น แล้วถ้ายังไม่มีก็บอกตรงๆ ─────────── */
+console.log("\n[9c] 🔴 คำค้นคำเดียวแล้วไม่เจอ — ห้ามเงียบ (เจ้าของเจอจริง: 'เผาข้าวโพด' ได้ 0 ข่าว)");
+{
+  // รอบแรกได้คำประสมคำเดียวที่ไม่มีในพาดหัวไหนเลย → รอบสอง (broad=1) ให้คำที่กว้างขึ้น
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  let calls = 0;
+  await ctx.route("**/archives/data/*.json", (route) => {
+    const name = route.request().url().split("/").pop().split("?")[0];
+    route.fulfill({ status: 200, contentType: "application/json", body: FIX[name] || "{}" });
+  });
+  await ctx.route("**/api/archives/ask*", (route) => {
+    if (route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: '{"keep":[]}' });
+    calls++;
+    const wide = new URL(route.request().url()).searchParams.get("broad") === "1";
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify(wide
+        ? { terms: ["ก"], from: "", to: "", judge: "", ai: true }                       // คำกว้าง — เจอ
+        : { terms: ["ไม่มีคำนี้ในพาดหัวไหนแน่ๆ"], from: "", to: "", judge: "", ai: true }), // คำแรก — ไม่เจอ
+    });
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE + "/archives/", { waitUntil: "networkidle" });
+  await page.fill("#q", "หาข่าวเผาข้าวโพดทั้งหมด");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  ok("ยิงขอคำที่กว้างขึ้นอีกรอบ", calls === 2, `ยิงไป ${calls} ครั้ง`);
+  ok("แล้วเจอข่าว ไม่ปล่อยให้เป็น 0", (await count(page)) > 0, `เหลือ ${await count(page)}`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าเปลี่ยนไปใช้คำที่กว้างขึ้น", /กว้างขึ้น/.test(bar), bar);
+  await ctx.close();
+}
+
+console.log("\n[9d] ไม่มีในคลังจริงๆ — ต้องบอกว่าไม่มี ไม่ใช่ 'ลองลดตัวกรองลง'");
+{
+  const { ctx, page } = await open({
+    plan: { terms: ["ไม่มีคำนี้ในพาดหัวไหนแน่ๆ"], from: "", to: "", judge: "", ai: true },
+  });
+  await page.fill("#q", "หาข่าวที่ไม่มีอยู่จริง");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  // ⚠️ ผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย ข้อความ "ลองลดตัวกรองลง" จึงอ่านแล้วงง
+  ok("บอกตรงๆ ว่าไม่มีคำนี้ในคลัง", /ไม่มีข่าวที่มีคำว่า/.test(bar), bar);
   await ctx.close();
 }
 
