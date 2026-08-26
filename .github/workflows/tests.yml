@@ -81,7 +81,15 @@ jobs:
             echo "══════════ รายละเอียดข้อที่ตก ══════════"
             for f in $fails; do
               echo "── $f"
-              grep -n -B2 '❌' "/tmp/testlogs/$f.log" | tail -60
+              # ⚠️ **ไม่มี ❌ ไม่ได้แปลว่าไม่มีอะไรผิด** — แปลว่าไฟล์นั้น "พังกลางทาง"
+              #    (โยน error / หมดเวลา) ไม่ใช่ข้อทดสอบตก จึงไม่มีบรรทัด ❌ ให้ grep เจอ
+              #    รอบแรกที่ทำตัวสรุปนี้ พิมพ์แต่ชื่อไฟล์เปล่าๆ เพราะลืมกรณีนี้
+              if grep -q '❌' "/tmp/testlogs/$f.log"; then
+                grep -n -B2 '❌' "/tmp/testlogs/$f.log" | tail -60
+              else
+                echo "   (ไม่มีข้อที่ตก = พังกลางทาง — ท้าย log ของไฟล์นี้:)"
+                tail -40 "/tmp/testlogs/$f.log"
+              fi
             done
             echo
             echo "❌ ตก:$fails"; exit 1
