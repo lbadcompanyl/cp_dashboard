@@ -22,7 +22,6 @@ import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 // 🚫 **POST ตรงนี้ไม่ได้เขียนอะไรลง KV** จึงไม่ชนกฎ "ห้ามเปิดให้ POST เข้ามาเขียน log"
 //    แต่ยังเปลือง **โควตา AI** ได้ถ้าโดนยิงรัวๆ → จำกัดขนาดคำขอ + cache ตามเนื้อคำขอ
 
-const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct"; // ตัวเดียวกับที่จัดหมวดข่าวใช้อยู่
 const CACHE_VER = "1";
 const EDGE_TTL = 24 * 3600; // คำถามเดิมได้คำตอบเดิม — ข้อมูลไม่ได้เปลี่ยนรายชั่วโมง
 
@@ -86,40 +85,88 @@ async function handlePlan(url, env) {
 // ให้ AI แยกว่าอะไร "ค้นด้วยตัวอักษรได้" กับอะไร "ต้องอ่านแล้วตีความ"
 async function askPlan(env, q) {
   if (!env || !env.AI) return { plan: null, why: "ยังไม่ได้ต่อ AI" };
+  // ⚠️ **คำสั่งเป็นภาษาอังกฤษ แต่เนื้อหาเป็นไทย** — วัดจากของจริงแล้วโมเดลเล็กทำตามรูปแบบ
+  //    ได้ดีกว่ามากเมื่อคำสั่งเป็นอังกฤษ (รอบแรกสั่งเป็นไทยล้วน แล้วได้ "ตอบมาแต่แกะไม่ได้")
   const prompt =
-    "คุณคือตัวช่วยค้นข่าวภาษาไทย แปลงคำถามเป็น JSON เท่านั้น ห้ามอธิบาย\n" +
-    'รูปแบบ: {"terms":["คำ"],"from":"","to":"","judge":""}\n' +
-    "- terms = คำที่ต้องปรากฏในพาดหัวข่าวจริงๆ (ชื่อสิ่งของ/สถานที่/บริษัท) ใส่ได้หลายคำ ทุกคำต้องเจอพร้อมกัน\n" +
-    "- from/to = วันที่แบบ YYYY-MM-DD ถ้าคำถามไม่ได้ระบุช่วงเวลาให้เป็นค่าว่าง\n" +
-    '- judge = เงื่อนไขที่ต้องอ่านพาดหัวแล้วตีความ เช่น "เป็นข่าวเชิงบวก" ถ้าไม่มีให้เป็นค่าว่าง\n' +
-    "ห้ามใส่คำบอกทัศนคติ (ดี ร้าย บวก ลบ) ลงใน terms เด็ดขาด — พวกนั้นไปอยู่ใน judge\n" +
-    'ตัวอย่าง: "หาข่าวด้านดีของปลาหมอคางดำทั้งหมด"\n' +
-    '{"terms":["ปลาหมอคางดำ"],"from":"","to":"","judge":"เป็นข่าวเชิงบวก"}\n\n' +
-    "คำถาม: " + q;
+    "Convert the Thai search question into JSON. Output JSON only, no explanation.\n" +
+    'Format: {"terms":["…"],"from":"","to":"","judge":""}\n' +
+    "terms = words that literally appear in a Thai news headline (things, places, companies). Keep Thai text as-is.\n" +
+    "  Do NOT include question words such as หาข่าว, ข่าว, ของ, เกี่ยวกับ, ทั้งหมด, ล่าสุด.\n" +
+    "  Do NOT include opinion words (ดี, ร้าย, บวก, ลบ) — those go in judge.\n" +
+    "from/to = YYYY-MM-DD, empty string if the question has no date range.\n" +
+    'judge = a condition that requires reading the headline, e.g. "เป็นข่าวเชิงบวก". Empty string if none.\n\n' +
+    'Q: หาข่าวด้านดีของปลาหมอคางดำทั้งหมด\n{"terms":["ปลาหมอคางดำ"],"from":"","to":"","judge":"เป็นข่าวเชิงบวก"}\n' +
+    'Q: หาข่าว dna ของ ปลาหมอคางดำ\n{"terms":["ปลาหมอคางดำ","dna"],"from":"","to":"","judge":""}\n' +
+    'Q: ข่าว PM 2.5 เชียงใหม่\n{"terms":["PM 2.5","เชียงใหม่"],"from":"","to":"","judge":""}\n\n' +
+    "Q: " + q;
 
-  const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 200 });
-  const raw = (out && (out.response || out.result || "")) || "";
-  const obj = parseJSON(raw);
-  if (!obj) return { plan: null, why: raw ? "ตอบมาแต่แกะไม่ได้" : "ตอบมาว่างเปล่า" };
+  const r = await runAI(env, prompt, 200, PLAN_MODELS);
+  if (!r.obj) return { plan: null, why: r.why };
 
-  const terms = clean(obj.terms).slice(0, 6);
+  const terms = clean(r.obj.terms).slice(0, 6);
   // ⚠️ AI ตอบมาไม่มีคำค้นเลย = ตีความไม่ออก ห้ามคืนผลว่าง (จะกลายเป็น "ค้นทั้งคลัง")
   if (!terms.length) return { plan: null, why: "แยกคำค้นออกมาไม่ได้" };
 
   return {
     plan: {
       terms,
-      from: isDate(obj.from) ? obj.from : "",
-      to: isDate(obj.to) ? obj.to : "",
-      judge: String(obj.judge || "").trim().slice(0, 120),
+      from: isDate(r.obj.from) ? r.obj.from : "",
+      to: isDate(r.obj.to) ? r.obj.to : "",
+      judge: String(r.obj.judge || "").trim().slice(0, 120),
     },
     why: "",
   };
 }
 
-// AI ใช้ไม่ได้ → ทำตัวเหมือนช่องค้นหาเดิมทุกประการ (แยกคำตามช่องว่าง)
-function fallbackPlan(q) {
-  return { terms: q.split(/\s+/).filter(Boolean).slice(0, 6), from: "", to: "", judge: "" };
+/* ⚠️ **ไล่โมเดลจากใหญ่ไปเล็ก** — รอบแรกใช้ตัวเล็กตัวเดียว (llama-3.2-3b) แล้วเจ้าของเจอจริง
+   บน production ว่า "ตอบมาแต่แกะไม่ได้" ตัวเล็กทำตามรูปแบบ JSON ภาษาไทยไม่ไหว
+   · ชื่อโมเดลที่ Cloudflare ไม่รู้จักจะโยน error → ตกไปตัวถัดไปเอง (ไม่ต้องมาไล่แก้ทีละครั้ง)
+   · คำตอบถูก cache 24 ชม.ต่อคำถาม ตัวใหญ่จึงถูกเรียกไม่บ่อย */
+const PLAN_MODELS = [
+  "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "@cf/meta/llama-3.1-8b-instruct",
+  "@cf/meta/llama-3.2-3b-instruct",
+];
+// การคัดพาดหัวยิงเยอะกว่ามาก (200 ใบ = 10 ครั้ง) จึงเริ่มที่ตัวกลาง ไม่ใช่ตัวใหญ่สุด
+const JUDGE_MODELS = ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.2-3b-instruct"];
+
+/** เรียก AI ไล่ทีละโมเดลจนกว่าจะได้ JSON ที่แกะได้ · คืนเหตุผลกลับไปด้วยเสมอ */
+async function runAI(env, prompt, maxTokens, models) {
+  let why = "ไม่มีโมเดลที่ใช้ได้";
+  for (const model of models) {
+    let raw = "";
+    try {
+      const out = await env.AI.run(model, { messages: [{ role: "user", content: prompt }], max_tokens: maxTokens });
+      raw = (out && (out.response || out.result || "")) || "";
+    } catch (e) {
+      why = `${short(model)}: ${String((e && e.message) || e).slice(0, 50)}`;
+      continue;                       // โมเดลนี้ใช้ไม่ได้ ลองตัวถัดไป
+    }
+    const obj = parseJSON(raw);
+    if (obj) return { obj, raw, model, why: "" };
+    // ⚠️ บอกด้วยว่ามันตอบว่าอะไร — ไม่งั้นไล่ปัญหาต่อไม่ได้เลย (บทเรียนจากรอบที่แล้ว)
+    why = raw ? `${short(model)} ตอบมาแต่แกะไม่ได้: ${raw.replace(/\s+/g, " ").slice(0, 60)}` : `${short(model)} ตอบมาว่างเปล่า`;
+  }
+  return { obj: null, raw: "", model: "", why };
+}
+
+const short = (m) => String(m).split("/").pop().replace("-instruct", "").replace("-fp8-fast", "");
+
+/* AI ใช้ไม่ได้ → ค้นด้วยคำที่พิมพ์มา
+   ⚠️ **ต้องตัดคำถามทิ้งก่อน** — เจ้าของเจอจริง: ถาม "หาข่าว dna ของ ปลาหมอคางดำ"
+      แล้วได้ 0 ข่าว เพราะเอาทั้งประโยครวม "หาข่าว" กับ "ของ" ไปหาในพาดหัว
+      (หน้านี้ใช้กฎ "ต้องมีครบทุกคำ" ซึ่งไม่มีพาดหัวไหนมีคำพวกนี้อยู่จริง) */
+const STOP_WORDS = new Set([
+  "หาข่าว", "หา", "ข่าว", "ของ", "เกี่ยวกับ", "ทั้งหมด", "ล่าสุด", "เรื่อง", "ที่", "ใน",
+  "จาก", "และ", "กับ", "ช่วง", "แบบ", "ขอ", "ดู", "อยาก", "ช่วย", "หน่อย", "ครับ", "ค่ะ",
+  "news", "about", "all", "the", "of", "find", "search",
+]);
+// export ไว้ให้เทสต์เรียกตรงๆ — ตรรกะตัดคำถามทิ้งพลาดแล้วผู้ใช้เจอ '0 ข่าว' ทันที
+export function fallbackPlan(q) {
+  const words = q.split(/\s+/).filter(Boolean);
+  const kept = words.filter((w) => !STOP_WORDS.has(w.toLowerCase()));
+  // ⚠️ ตัดจนไม่เหลืออะไรเลย = ใช้ของเดิมทั้งประโยค ดีกว่าค้นด้วยคำว่าง (จะได้ทั้งคลัง)
+  return { terms: (kept.length ? kept : words).slice(0, 6), from: "", to: "", judge: "" };
 }
 
 /* ─────────── POST — อ่านพาดหัวแล้วคัดตามเงื่อนไข ─────────── */
@@ -180,26 +227,29 @@ async function handleJudge(request, url, env) {
 
 async function askJudge(env, judge, titles) {
   const list = titles.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  // คำสั่งเป็นอังกฤษ เนื้อหาเป็นไทย — เหตุผลเดียวกับ askPlan
   const prompt =
-    "อ่านพาดหัวข่าวภาษาไทยข้างล่าง แล้วบอกว่าใบไหนเข้าเงื่อนไขนี้: " + judge + "\n" +
-    'ตอบเป็น JSON เท่านั้น: {"yes":[หมายเลขที่เข้าเงื่อนไข]} ห้ามอธิบาย\n' +
-    "ถ้าไม่มีใบไหนเข้าเลยให้ตอบ {\"yes\":[]}\n\n" + list;
+    "Read the Thai news headlines below. Which ones match this condition: " + judge + "\n" +
+    'Answer with JSON only, no explanation: {"yes":[numbers]}\n' +
+    'If none match, answer {"yes":[]}\n\n' + list;
 
-  const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 120 });
-  const obj = parseJSON(out && (out.response || out.result || ""));
-  if (!obj || !Array.isArray(obj.yes)) return null;
-  return obj.yes.map((n) => Number(n) - 1).filter((n) => Number.isInteger(n));
+  const r = await runAI(env, prompt, 120, JUDGE_MODELS);
+  if (!r.obj || !Array.isArray(r.obj.yes)) return null;
+  return r.obj.yes.map((n) => Number(n) - 1).filter((n) => Number.isInteger(n));
 }
 
 /* ─────────── ตัวช่วย ─────────── */
 
-// โมเดลเล็กชอบพ่วงข้อความก่อน/หลัง JSON — เฉือนเอาเฉพาะก้อนวงเล็บปีกกา
-function parseJSON(text) {
-  const s = String(text || "");
+// โมเดลเล็กชอบพ่วงข้อความก่อน/หลัง JSON และชอบครอบด้วย ```json — เฉือนให้เหลือแต่ก้อนจริง
+export function parseJSON(text) {
+  let s = String(text || "").replace(/```[a-z]*\s*/gi, "").replace(/```/g, "");
   const a = s.indexOf("{");
   const b = s.lastIndexOf("}");
   if (a < 0 || b <= a) return null;
-  try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }
+  s = s.slice(a, b + 1);
+  try { return JSON.parse(s); } catch (e) { /* ลองซ่อมข้างล่าง */ }
+  // ⚠️ เจอบ่อย: มีจุลภาคเกินก่อนวงเล็บปิด — ซ่อมให้ ดีกว่าทิ้งคำตอบทั้งก้อน
+  try { return JSON.parse(s.replace(/,\s*([}\]])/g, "$1")); } catch (e) { return null; }
 }
 
 const clean = (arr) =>
