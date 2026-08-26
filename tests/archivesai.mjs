@@ -12,6 +12,7 @@
  *   [5] 🔴 คัดไม่สำเร็จ = **แสดงทุกใบ ไม่ใช่ซ่อนทุกใบ** (ซ่อน = ข่าวหายเงียบ)
  *   [6] "เลิกคัด" = ทิ้งเงื่อนไข แต่เก็บคำค้นไว้
  *   [7] ระดับโค้ด: ไม่เขียน KV เลย · Enter สั่งถามได้แต่ห้ามยิงระหว่างพิมพ์ · ห้ามตัดทิ้งเมื่อ AI ใช้ไม่ได้
+ *   [9] 🧠 ไม่เจอเลย = ผ่อนเงื่อนไขให้เอง (ตัดช่วงวันที่ → ตัดคำ) และต้องบอกว่าผ่อนอะไร
  *   [8] 🔴 ทางถอยเมื่อ AI ตอบไม่ได้ — ต้องตัดคำถามทิ้งก่อนค้น (ไม่งั้นได้ 0 ข่าว)
  *       และต้องแกะคำตอบที่โมเดลเล็กตอบมาแบบเลอะๆ ได้
  *
@@ -242,6 +243,40 @@ console.log("\n[7] กฎที่ต้องคุมระดับโค้�
   ok("ยังใช้ includes() ค้นเหมือนเดิม", /\.n\.includes\(/.test(app));
 }
 
+/* ─────────── [9] 🧠 ไม่เจอเลย = ผ่อนเงื่อนไขให้ แล้วบอกว่าผ่อนอะไร ─────────── */
+console.log("\n[9] 🧠 ไม่เจอเลย — ผ่อนเงื่อนไขให้เอง และต้องบอกว่าผ่อนอะไร");
+{
+  // AI แต่งคำที่ไม่มีในพาดหัวไหนเลยมาเกิน 1 คำ → ถ้าไม่ผ่อน ผู้ใช้เจอ "พบ 0 ข่าว"
+  const { ctx, page, errs } = await open({
+    plan: { terms: ["ก", "ไม่มีทางมีคำนี้อยู่จริงหรอกนะจ๊ะ"], from: "", to: "", judge: "", ai: true },
+  });
+  await page.fill("#q", "หาข่าวอะไรสักอย่าง");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  ok("ไม่ปล่อยให้เหลือ 0 ข่าว", (await count(page)) > 0, `เหลือ ${await count(page)}`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าตัดคำไหนออก ไม่ผ่อนเงียบๆ", /ตัดคำว่า/.test(bar) && bar.includes("ไม่มีทางมีคำนี้"), bar);
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
+  await ctx.close();
+}
+
+console.log("\n[9b] ช่วงวันที่ที่ AI เดาพลาด — ตัดช่วงวันที่ออกให้ก่อนตัดคำ");
+{
+  const { ctx, page } = await open({
+    plan: { terms: ["ก"], from: "1990-01-01", to: "1990-12-31", judge: "", ai: true },
+  });
+  await page.fill("#q", "ข่าวอะไรก็ได้เดือนที่แล้ว");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  ok("ไม่ปล่อยให้เหลือ 0 ข่าว", (await count(page)) > 0, `เหลือ ${await count(page)}`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าตัดช่วงวันที่ออก", /ตัดช่วงวันที่ออกให้แล้ว/.test(bar), bar);
+  ok("คำค้นยังอยู่ครบ", (await page.inputValue("#q")) === "ข่าวอะไรก็ได้เดือนที่แล้ว");
+  await ctx.close();
+}
+
 /* ─────────── [8] ตรรกะฝั่งเซิร์ฟเวอร์ที่พลาดแล้วเจ็บทันที ─────────── */
 console.log("\n[8] ทางถอยเมื่อ AI ตอบไม่ได้ + การแกะคำตอบของโมเดล");
 {
@@ -264,6 +299,20 @@ console.log("\n[8] ทางถอยเมื่อ AI ตอบไม่ได
   ok("แกะ JSON ที่มีจุลภาคเกินได้", M.parseJSON('{"terms":["ก",],}')?.terms?.[0] === "ก");
   ok("แกะ JSON ที่มีข้อความพ่วงหน้า-หลังได้", M.parseJSON('นี่คือคำตอบ {"terms":["ปลา"]} ครับ')?.terms?.[0] === "ปลา");
   ok("ไม่มี JSON เลย = ยอมแพ้ ไม่เดา", M.parseJSON("ขอโทษครับ ผมไม่เข้าใจ") === null);
+
+  // 🐞 เจ้าของเจอจริง: "raw.replace is not a function" — คำตอบไม่ได้เป็นสตริงเสมอไป
+  //    แล้ว error หลุดออกไปทั้งฟังก์ชัน = โมเดลสำรองไม่มีวันได้ลอง
+  ok("คำตอบเป็นสตริง", M.aiText({ response: "hi" }) === "hi");
+  ok("คำตอบเป็น object = แปลงเป็น JSON ให้ ไม่ใช่พัง", M.aiText({ response: { terms: ["ปลา"] } }).includes("ปลา"));
+  ok("คำตอบห่อใน result อีกชั้น", M.aiText({ result: { response: "ok" } }) === "ok");
+  ok("ไม่มีอะไรเลยก็ไม่พัง", M.aiText(null) === "" && M.aiText({}) === "");
+
+  // ⏰ ต้องบอกวันนี้ให้โมเดลรู้ ไม่งั้น "เดือนที่แล้ว" แปลงเป็นวันที่ไม่ได้
+  ok("วันที่ไทยเป็นรูปแบบ YYYY-MM-DD", /^\d{4}-\d{2}-\d{2}$/.test(M.todayTH()));
+  const jan = M.monthRangeTH(-1, Date.parse("2026-01-15T10:00:00Z"));
+  ok("ถอยเดือนข้ามปีได้", jan.from === "2025-12-01" && jan.to === "2025-12-31", JSON.stringify(jan));
+  const feb = M.monthRangeTH(0, Date.parse("2024-02-10T10:00:00Z"));
+  ok("รู้ว่าปีอธิกสุรทินเดือนกุมภามี 29 วัน", feb.to === "2024-02-29", feb.to);
 }
 
 console.log(`\n${fail === 0 ? "✅ ผ่านหมด" : "❌ ตก"} — ผ่าน ${pass} · ตก ${fail}`);

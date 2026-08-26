@@ -31,6 +31,7 @@ const state = {
 let judgeKeep = null;   // null = ยังไม่ได้คัด · Set = คัดแล้ว
 let judgeBusy = false;
 let judgeNote = "";     // ข้อความบอกผู้ใช้ว่าเกิดอะไรขึ้น (คัดไม่ได้ / คัดไม่ครบ)
+let relaxNote = "";     // บอกว่า "ไม่เจอเลย เลยผ่อนเงื่อนไขให้แล้ว" — ต้องบอกเสมอ ห้ามผ่อนเงียบๆ
 
 let INDEX = null;         // data/index.json
 const loaded = new Set(); // ปีที่โหลดแล้ว
@@ -233,6 +234,7 @@ async function runAsk() {
   if (!question || judgeBusy) return;
 
   judgeBusy = true;
+  relaxNote = "";
   state.ask = question;
   renderAskBar();
 
@@ -273,6 +275,8 @@ async function runAsk() {
   const need = yearsNeededByDate();
   if (need.length) await withBusy(() => Promise.all(need.map(loadYear)));
 
+  applyFilters();
+  relaxNote = relaxIfEmpty();     // ไม่เจอเลย → ผ่อนให้ก่อนที่ผู้ใช้จะเห็นหน้าว่าง
   syncURL(true);
   render();                       // วาดผลของคำค้นก่อน ผู้ใช้จะได้เห็นอะไรทันที
   await judgePass();              // แล้วค่อยคัดตามเงื่อนไข
@@ -310,13 +314,66 @@ async function judgePass() {
 
 function clearAsk() {
   state.judge = ""; state.ask = "";
-  judgeKeep = null; judgeNote = "";
+  judgeKeep = null; judgeNote = ""; relaxNote = "";
+}
+
+/* 🧠 **ไม่เจอเลย = ผ่อนเงื่อนไขให้เอง แล้วบอกว่าผ่อนอะไรไป**
+ *
+ * หน้านี้ใช้กฎ "ต้องมีครบทุกคำ" → มีคำเดียวที่ไม่ตรงก็เหลือ 0 ทันที
+ * และ AI เดาช่วงเวลาพลาดก็ทำให้เหลือ 0 ได้เหมือนกัน
+ * ปล่อยให้ผู้ใช้เจอ "พบ 0 ข่าว" แล้วไปนั่งเดาเองว่าคำไหนผิด = แย่กว่าไม่มี AI
+ *
+ * ⚠️ **ห้ามผ่อนเงียบๆ** — ต้องบอกทุกครั้งว่าตัดอะไรออก ไม่งั้นผู้ใช้จะนึกว่าผลที่เห็นตรงกับที่ถาม
+ * ⚠️ ผ่อนตามลำดับ "ตัวที่น่าจะรัดเกินไปก่อน": ช่วงวันที่ → คำที่สั้นที่สุด (เจาะจงน้อยสุด)
+ */
+function relaxIfEmpty() {
+  if (filtered.length) return "";
+
+  // 1) ช่วงวันที่ — AI เดาเดือนพลาดเจอบ่อยที่สุด และตัดออกแล้วผู้ใช้ยังได้ของที่ถามอยู่
+  if (state.from || state.to) {
+    const f = state.from, t = state.to;
+    state.from = ""; state.to = "";
+    applyFilters();
+    if (filtered.length) return `ไม่เจอข่าวในช่วง ${f || "…"} ถึง ${t || "…"} เลย — ตัดช่วงวันที่ออกให้แล้ว`;
+    state.from = f; state.to = t;   // ไม่ช่วย → คืนค่าเดิม
+  }
+
+  // 2) ตัดคำออกทีละคำ
+  // ⚠️ **ต้องลองตัดทีละคำแล้วดูว่าคำไหนคือตัวที่ทำให้ไม่เจอ** ไม่ใช่ตัดตามความยาว
+  //    (เดาว่า "คำสั้น = ไม่สำคัญ" แล้วพลาด — คำที่ผิดมักเป็นคำยาวที่ AI แต่งขึ้นมาเอง)
+  //    คำมากสุด 6 คำ การไล่ทุกแบบจึงถูกมาก
+  const saveQ = state.q, saveFrom = state.from, saveTo = state.to;
+  let keep = parseTerms(state.q);
+  if (keep.length < 2) return "";
+  const dropped = [];
+  while (keep.length > 1) {
+    let best = null;
+    for (let i = 0; i < keep.length; i++) {
+      const trial = keep.filter((_, k) => k !== i);
+      state.q = trial.map(quoteTerm).join(" ");
+      applyFilters();
+      if (filtered.length && (!best || filtered.length > best.n)) best = { i, n: filtered.length, trial };
+    }
+    if (best) {
+      dropped.push(keep[best.i]);
+      state.q = best.trial.map(quoteTerm).join(" ");
+      applyFilters();
+      return `ไม่เจอข่าวที่มีครบทุกคำ — ตัดคำว่า “${dropped.join("”, “")}” ออกให้แล้ว`;
+    }
+    // ตัดคำเดียวยังไม่พอ → ตัดคำที่สั้นสุดทิ้งแล้ววนหาต่อ
+    keep = [...keep].sort((a, b) => b.length - a.length);
+    dropped.push(keep.pop());
+  }
+  // ตัดจนเหลือคำเดียวแล้วยังไม่เจอ = ไม่มีจริงๆ คืนของเดิมไป ไม่ต้องหลอกว่าผ่อนแล้ว
+  state.q = saveQ; state.from = saveFrom; state.to = saveTo;
+  applyFilters();
+  return "";
 }
 
 function renderAskBar(judging) {
   const bar = $("#askbar");
   if (!bar) return;
-  if (!state.ask && !state.judge && !judgeNote) { bar.hidden = true; bar.innerHTML = ""; return; }
+  if (!state.ask && !state.judge && !judgeNote && !relaxNote) { bar.hidden = true; bar.innerHTML = ""; return; }
   bar.hidden = false;
 
   if (judgeBusy) {
@@ -330,6 +387,7 @@ function renderAskBar(judging) {
   if (state.judge) bits.push(`คัดเฉพาะที่ <b>${esc(state.judge)}</b>`);
   bar.innerHTML =
     `<span class="askwhy">${bits.join(" · ")}</span>` +
+    (relaxNote ? `<span class="asknote">🔎 ${esc(relaxNote)}</span>` : "") +
     (judgeNote ? `<span class="asknote">⚠️ ${esc(judgeNote)}</span>` : "") +
     `<button type="button" class="btn sm" data-askclear>เลิกคัด</button>`;
 }

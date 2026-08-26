@@ -95,9 +95,13 @@ async function askPlan(env, q) {
     "  Do NOT include opinion words (ดี, ร้าย, บวก, ลบ) — those go in judge.\n" +
     "from/to = YYYY-MM-DD, empty string if the question has no date range.\n" +
     'judge = a condition that requires reading the headline, e.g. "เป็นข่าวเชิงบวก". Empty string if none.\n\n' +
+    // ⚠️ **ต้องบอกวันนี้ให้มันรู้** — ไม่งั้น "เดือนที่แล้ว" / "ปีนี้" / "สัปดาห์ก่อน"
+    //    แปลงเป็นวันที่ไม่ได้เลย (โมเดลไม่รู้ว่าวันนี้วันอะไร) · ใช้เวลาไทย
+    `Today is ${todayTH()} (Thailand time). Resolve relative dates against it.\n` +
+    `Example: last month = ${monthRangeTH(-1).from} to ${monthRangeTH(-1).to}\n\n` +
     'Q: หาข่าวด้านดีของปลาหมอคางดำทั้งหมด\n{"terms":["ปลาหมอคางดำ"],"from":"","to":"","judge":"เป็นข่าวเชิงบวก"}\n' +
     'Q: หาข่าว dna ของ ปลาหมอคางดำ\n{"terms":["ปลาหมอคางดำ","dna"],"from":"","to":"","judge":""}\n' +
-    'Q: ข่าว PM 2.5 เชียงใหม่\n{"terms":["PM 2.5","เชียงใหม่"],"from":"","to":"","judge":""}\n\n' +
+    `Q: ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว\n{"terms":["PM 2.5","เชียงใหม่"],"from":"${monthRangeTH(-1).from}","to":"${monthRangeTH(-1).to}","judge":""}\n\n` +
     "Q: " + q;
 
   const r = await runAI(env, prompt, 200, PLAN_MODELS);
@@ -130,27 +134,61 @@ const PLAN_MODELS = [
 // การคัดพาดหัวยิงเยอะกว่ามาก (200 ใบ = 10 ครั้ง) จึงเริ่มที่ตัวกลาง ไม่ใช่ตัวใหญ่สุด
 const JUDGE_MODELS = ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.2-3b-instruct"];
 
-/** เรียก AI ไล่ทีละโมเดลจนกว่าจะได้ JSON ที่แกะได้ · คืนเหตุผลกลับไปด้วยเสมอ */
+/** เรียก AI ไล่ทีละโมเดลจนกว่าจะได้ JSON ที่แกะได้ · คืนเหตุผลกลับไปด้วยเสมอ
+ *
+ * ⚠️ **ทั้งรอบต้องอยู่ใน try** — ไม่ใช่แค่ตอนเรียก AI
+ *    เจอจริง (เจ้าของแจ้ง 26 ส.ค. 2026): บรรทัดสร้างข้อความ error เองพัง
+ *    (`raw.replace is not a function`) แล้ว **error หลุดออกไปทั้งฟังก์ชัน**
+ *    = โมเดลตัวที่ 2 กับ 3 ไม่มีวันได้ลองเลย · ตัวที่ควรกันพลาดกลับกลายเป็นตัวที่พัง
+ */
 async function runAI(env, prompt, maxTokens, models) {
   let why = "ไม่มีโมเดลที่ใช้ได้";
   for (const model of models) {
-    let raw = "";
     try {
       const out = await env.AI.run(model, { messages: [{ role: "user", content: prompt }], max_tokens: maxTokens });
-      raw = (out && (out.response || out.result || "")) || "";
+      const raw = aiText(out);
+      const obj = parseJSON(raw);
+      if (obj) return { obj, raw, model, why: "" };
+      // ⚠️ บอกด้วยว่ามันตอบว่าอะไร — ไม่งั้นไล่ปัญหาต่อไม่ได้เลย
+      why = raw ? `${short(model)} แกะไม่ได้: ${raw.replace(/\s+/g, " ").slice(0, 60)}` : `${short(model)} ตอบมาว่างเปล่า`;
     } catch (e) {
-      why = `${short(model)}: ${String((e && e.message) || e).slice(0, 50)}`;
-      continue;                       // โมเดลนี้ใช้ไม่ได้ ลองตัวถัดไป
+      why = `${short(model)}: ${String((e && e.message) || e).slice(0, 60)}`;
     }
-    const obj = parseJSON(raw);
-    if (obj) return { obj, raw, model, why: "" };
-    // ⚠️ บอกด้วยว่ามันตอบว่าอะไร — ไม่งั้นไล่ปัญหาต่อไม่ได้เลย (บทเรียนจากรอบที่แล้ว)
-    why = raw ? `${short(model)} ตอบมาแต่แกะไม่ได้: ${raw.replace(/\s+/g, " ").slice(0, 60)}` : `${short(model)} ตอบมาว่างเปล่า`;
   }
   return { obj: null, raw: "", model: "", why };
 }
 
+/** แกะข้อความออกจากคำตอบของ Workers AI
+ * ⚠️ **แต่ละโมเดลคืนคนละรูปแบบ** — บางตัว `response` เป็นสตริง บางตัวเป็น object
+ *    บางตัวห่อไว้ใน `result` อีกชั้น · เดารูปแบบเดียวแล้วพังมาแล้ว 1 รอบ */
+export function aiText(out) {
+  if (out == null) return "";
+  if (typeof out === "string") return out;
+  let v = out.response;
+  if (v === undefined) v = out.result;
+  if (v === undefined) v = out.output || out.text;
+  if (v && typeof v === "object" && typeof v.response === "string") v = v.response;
+  if (typeof v === "string") return v;
+  // ตอบมาเป็น object ที่แกะเป็น JSON ให้แล้ว = ดีกว่าเดิมด้วยซ้ำ แปลงกลับเป็นข้อความให้ตัวแกะทำงานต่อ
+  if (v && typeof v === "object") { try { return JSON.stringify(v); } catch (e) { return ""; } }
+  return "";
+}
+
 const short = (m) => String(m).split("/").pop().replace("-instruct", "").replace("-fp8-fast", "");
+
+/* ⏰ วันที่ตามเวลาไทย — Workers รันด้วย UTC เสมอ ถ้าใช้ตรงๆ ช่วงหัวค่ำจะได้วันของเมื่อวาน
+   (บทเรียนเดียวกับที่ชีตเคยเจอ: อย่าคิดวันจากเวลาเครื่อง ให้บวกออฟเซ็ตก่อน) */
+const TH = (t) => new Date(t + 7 * 3600 * 1000);
+export function todayTH(now = Date.now()) { return TH(now).toISOString().slice(0, 10); }
+/** ช่วงต้น-ท้ายเดือน โดยนับถอยหลังจากเดือนนี้ (0 = เดือนนี้ · -1 = เดือนที่แล้ว) */
+export function monthRangeTH(offset = 0, now = Date.now()) {
+  const d = TH(now);
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth() + offset;
+  const first = new Date(Date.UTC(y, m, 1));
+  const last = new Date(Date.UTC(y, m + 1, 0));
+  return { from: first.toISOString().slice(0, 10), to: last.toISOString().slice(0, 10) };
+}
 
 /* AI ใช้ไม่ได้ → ค้นด้วยคำที่พิมพ์มา
    ⚠️ **ต้องตัดคำถามทิ้งก่อน** — เจ้าของเจอจริง: ถาม "หาข่าว dna ของ ปลาหมอคางดำ"
