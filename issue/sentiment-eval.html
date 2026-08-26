@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="2" />
+<meta name="page-ver" content="3" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -88,9 +88,9 @@
     </div>
     <label class="row" style="margin-top:9px" id="ctxwrap" hidden>
       <input type="checkbox" id="ctx" />
-      <span><b>ส่งหัวข้อของโพสต้นเรื่องไปด้วย</b>
-        <span class="small muted">— ตอนใช้งานจริงระบบรู้ว่าคอมเมนต์นี้อยู่ใต้โพสอะไร แต่ไฟล์เฉลยเป็นคอมเมนต์เดี่ยวๆ
-        ติ๊กแล้วจะจัดกลุ่มตามคอลัมน์ <code>topic</code> แล้วบอก AI ว่าโพสเรื่องอะไร</span></span>
+      <span><b>บอก AI ด้วยว่าคอมเมนต์อยู่ใต้ข่าวเรื่องอะไร</b>
+        <span class="small muted">— ตอนใช้งานจริง AI เห็นโพสต้นเรื่องอยู่แล้ว
+        แต่ในไฟล์ทดสอบมีแต่ตัวคอมเมนต์ ไม่มีโพส</span></span>
     </label>
     <p class="small muted" style="margin:9px 0 0">
       ต้องมีคอลัมน์ <code>id</code> · <code>message</code> · <code>sentiment_cp</code> · <code>overall_cred</code>
