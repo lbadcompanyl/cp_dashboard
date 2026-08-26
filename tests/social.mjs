@@ -1219,9 +1219,28 @@ console.log("\n[26] แท็บอยู่บนสุดและเป็น
 console.log("\n[27] รูปย่อของคอนเทนต์");
 {
   const { pg } = await open();
-  const imgs = await pg.$$eval(".post img", (n) => n.map((e) => ({ src: e.getAttribute("src") || "", w: e.naturalWidth })));
+
+  /* ⚠️ ต้องรอให้รูป "โหลดจบ" ก่อนวัด ไม่ใช่วัดทันทีที่หน้าโผล่
+     data URI ก็ยังถอดรหัสแบบไม่พร้อมกับการวาดหน้า และ WebKit ช้ากว่า Chromium
+     ⚠️ รอที่ complete ไม่ใช่ naturalWidth — โหลดไม่สำเร็จ complete ก็เป็น true
+        (พร้อม naturalWidth 0) เทสต์จึงยังจับรูปแตกจริงได้อยู่ ไม่ได้กลบปัญหา */
+  await pg.waitForFunction(
+    () => [...document.querySelectorAll(".post img")].every((i) => i.complete),
+    null, { timeout: 5000 },
+  ).catch(() => {});
+
+  const imgs = await pg.$$eval(".post img", (n) => n.map((e) => ({
+    src: e.getAttribute("src") || "", w: e.naturalWidth, done: e.complete,
+  })));
   ok(imgs.length > 0, `มีรูปย่อในรายการคอนเทนต์ (${imgs.length} รูป)`);
-  ok(imgs.every((i) => i.w > 0), "ทุกรูปโหลดขึ้นจริง ไม่มีรูปแตก");
+  /* ⚠️ ข้อความตอนตกต้องบอกสาเหตุได้ ไม่ใช่แค่ "ไม่ผ่าน"
+     เครื่องที่รัน session โหลด WebKit ไม่ได้ ไล่ปัญหาได้จาก log ของ CI ทางเดียว
+     ตกแล้วไม่รู้ว่าโหลดไม่จบ หรือโหลดจบแล้วรูปเสีย = เดาต่ออีกรอบ (เสียไปแล้ว 1 รอบ) */
+  const bad = imgs.filter((i) => !(i.w > 0));
+  ok(bad.length === 0,
+     "ทุกรูปโหลดขึ้นจริง ไม่มีรูปแตก" +
+     (bad.length ? ` — เสีย ${bad.length}/${imgs.length} ใบ · ` +
+       `complete=${bad[0].done} · src ${bad[0].src.length} ตัวอักษร: ${bad[0].src.slice(0, 90)}` : ""));
   // ⚠️ โหมดจำลองต้องไม่ยิงเน็ต — ของจริงค่อยได้ URL จากแพลตฟอร์ม
   ok(imgs.every((i) => !/^https?:/.test(i.src)), "โหมดจำลองไม่ดึงรูปจากภายนอก");
   // ฝั่งหน้าเว็บต้องวาง URL จาก data ตรงๆ เพื่อให้ของจริงไหลเข้ามาได้เลย
