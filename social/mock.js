@@ -65,7 +65,13 @@
       "<path d='M0 78 L38 " + (46 + Math.floor(rnd() * 18)) + " L74 74 L108 " + (52 + Math.floor(rnd() * 16)) +
       " L160 80 L160 100 L0 100 Z' fill='" + land + "' opacity='.85'/>" +
       "<rect x='0' y='0' width='4' height='100' fill='" + color + "'/></svg>";
-    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+    /* 🐞 ต้องเป็น `charset=utf-8` ไม่ใช่ `;utf8` (เจอจาก CI ฝั่ง WebKit 26 ส.ค. 2026)
+       `;utf8` ไม่ใช่พารามิเตอร์ที่ถูกต้องของ media type (ไม่มีเครื่องหมาย =)
+       Chrome ปล่อยผ่าน แต่ **WebKit ตีว่า media type เสีย → รูปไม่ขึ้นเลย**
+       ⚠️ เป็นบั๊กจริงของฝั่ง Safari ไม่ใช่ข้อจำกัดของเครื่องมือทดสอบ —
+          เปิด ?mock=1 บน iPhone จะเห็นรูปแตกทั้งหน้า
+       ✅ เทสต์ social.mjs [27] วัด naturalWidth > 0 ซึ่งจับเคสนี้ได้ */
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
 
   /* ลิงก์ของโพสต์
