@@ -16,6 +16,11 @@
  * ดึง → วิเคราะห์ในหน่วยความจำ → คืนเฉพาะภาพรวม (ชื่อผู้คอมเมนต์ถูกตัดออกโดย default)
  */
 
+/* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
+   เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
+   (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
+const WORKER_VER = 5;
+
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const CHUNK = 40;            // จำนวนคอมเมนต์ต่อ 1 คำขอ Claude (ตี sentiment)
@@ -57,7 +62,7 @@ export default {
 
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") {
-      return cors(json({ ok: true, service: "comment-sentiment", model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
+      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
