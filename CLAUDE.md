@@ -53,10 +53,20 @@ https://<ชื่อ branch>.cp-dashboard-680.pages.dev
 | `claude/project-tests-s5dn0n` | `claude-project-tests-s5dn0n.cp-dashboard-680.pages.dev` |
 | `claude/dashboard-google-alerts-news-0mw9bg` | `claude-dashboard-google-aler.cp-dashboard-680.pages.dev` ← โดนตัดที่ 28 |
 
-> ⚠️ **preview URL ไม่ได้ถูกปิดด้วย Cloudflare Access** — นโยบายที่ตั้งไว้คลุมแค่
-> `cp-dashboard-680.pages.dev/social` ส่วนโดเมนของ branch เป็นคนละชื่อ
-> **ใครได้ลิงก์ไปก็เปิดดูสถิติช่องได้** · ส่งลิงก์ preview ของ `/social/` ให้ระวังจุดนี้
-> · ถ้าจะปิดด้วย ต้องเพิ่ม destination ในแอป Access เดิม (ใส่ได้ถึง 5 อัน)
+> 🔒 **preview ถูกปิดด้วย Cloudflare Access แล้ว (26 ส.ค. 2026) — ต้องล็อกอินก่อนเปิด**
+> เปิดจาก **Pages → Settings → Preview access → Restrict previews** ซึ่ง Cloudflare
+> สร้างแอป Access ให้เองชื่อ `cp-dashboard - Cloudflare Pages`
+> · destination เป็น **`*.cp-dashboard-680.pages.dev`** = คลุม **ทุกหน้า ทุก branch**
+>   รวม branch ใหม่ที่ยังไม่เกิด **ไม่ต้องมาตั้งซ้ำทุกครั้ง**
+> · ⚠️ **คนละแอปกับของ `/social/`** และใช้ policy คนละตัว —
+>   preview ใช้ `Allow Members - Cloudflare Pages` (เฉพาะคนที่มีสิทธิ์ในบัญชี Cloudflare)
+>   ส่วน `/social/` บนเว็บจริงใช้ `Social team` (รายชื่ออีเมล)
+>   → **คนที่เปิดเว็บจริงได้ อาจเปิด preview ไม่ได้** ถ้าไม่ได้อยู่ในบัญชี Cloudflare
+>   ต้องเพิ่มอีเมลในนโยบายของ preview เอง หน้านั้นไม่มีปุ่มเพิ่ม policy ให้
+> · เซสชัน preview 24 ชม. (สั้นกว่าเว็บจริงที่ตั้งไว้ 2 สัปดาห์)
+>
+> ⚠️ **preview ล็อกทุกหน้า ไม่ใช่แค่ `/social/`** — `/trend/` `/ir/` `/issue/` บน preview
+> ก็ต้องล็อกอินด้วย · ส่วนเว็บจริงไม่กระทบ ยังเปิดได้ตามปกติทุกหน้า
 >
 > ⚠️ **branch ที่เนื้อหาเท่ากับ `main` เป๊ะ preview จะเหมือน production ทุกอย่าง**
 > ไม่ใช่ลิงก์เสีย — ถ้าไม่มีอะไรต่าง ให้บอกตรงๆ ว่าไม่ต้องเปิดดูก็ได้
