@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 5;
+const WORKER_VER = 6;
 
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -55,6 +55,120 @@ const CP_EXAMPLES = [
   { t: "เจ้าสัวรวยขึ้นทุกปี แต่ชาวบ้านรับกรรม", a: "negative" },             // ไม่เอ่ยชื่อ แต่บริบทชี้ชัด
 ];
 
+/* ============================================================
+ * 🎯 ตัวจัดหมวด "2 แกน" — rubric ฉบับที่เจ้าของเคาะ 26 ส.ค. 2026
+ * ------------------------------------------------------------
+ *   แกน 1 sentiment_cp  = รู้สึกยังไงกับแบรนด์ CP โดยเฉพาะ
+ *   แกน 2 overall_cred  = อารมณ์รวม + ความน่าเชื่อของเนื้อข่าว
+ *   is_sarcasm          = 1 เมื่อใช้คำบวกแต่ความหมายด่า
+ *
+ * 🚫 **ไม่มี not_related แล้ว** — "ไม่แตะ CP" = Neutral ของแกน 1
+ *    (นิยามใหม่ตกลงแล้ว ห้ามเปลี่ยนเอง — ดู README ของชุด dataset)
+ *
+ * ⚠️ ตัวอย่าง few-shot ทุกข้อ **ต้องไม่อยู่ใน eval set** ไม่งั้นเป็นข้อสอบรั่ว
+ *    ตัวเลขวัดผลจะสวยเกินจริง · รอบแรกเคยรั่ว 5 จาก 14 ข้อ (ตรงเป๊ะ 1 + แก้คำนิดหน่อย 4)
+ *    ทั้ง 5 ข้อถูกเปลี่ยนเป็นเคสจาก split=train + source=real แล้ว
+ * 🚫 ห้ามใช้ข้อที่ source=synthetic เป็นตัวอย่างหลัก — โมเดลจะจำสำนวนที่ถูก generate มา
+ * ============================================================ */
+const RUBRIC_VER = "v3";
+const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูงสุดต่อ 1 คำขอ /classify (หน้าเว็บเป็นคนวนเอง)
+
+const TWO_LENS_SHOTS = [
+  // ── ด่ารัฐ / ต่างชาติ / วิกฤตลอยๆ — ไม่แตะ CP: แกน 1 ต้องเป็น Neutral เสมอ ──
+  { t: "ไม่เห็นทำอะไรเรื่อง PM2.5 เห็นแต่โชว์ สร้างภาพ แก้ตัว", cp: "Neutral", oc: "Negative", s: 0 },
+  { t: "ทั่วโลกแตกตื่น แต่หน่วยงานราชการไทย บอกว่าอย่าแตกตื่น นั่งกระดิกตีนรองบ", cp: "Neutral", oc: "Negative", s: 0 },
+  { t: "ไร้คุณภาพ ของจีนอันตรายต่อสัตว์เลี้ยง อาหารปลอมมีเยอะ", cp: "Neutral", oc: "Negative", s: 0 },
+  // ── ประชด — ตีตามความหมายจริง ไม่ใช่ตามคำ ──
+  { t: "ต้องขอบคุณคนนำเข้าปลาหมอคางดำ ทำให้คลองมีแต่ปลาหมอคางดำ กำจัดยังไงก็ไม่หมด", cp: "Negative", oc: "Negative", s: 1 },
+  { t: "มีงนี่สุดยอด ❌ผลตรวจ ✅สรรหาคำแก้ตัวให้นายทุน", cp: "Negative", oc: "Negative", s: 1 },
+  { t: "มีอะไรอีกเยอะ รัฐบาลชุดนี้ ดีย์ๆๆทั้งนั้น", cp: "Neutral", oc: "Negative", s: 1 },
+  { t: "ฟอกขาวชัดๆ เอาข่าวดีมากลบความผิด", cp: "Negative", oc: "Negative", s: 0 },
+  // ── เชียร์ / ปกป้อง ──
+  { t: "ต้อง CP เท่านั้นค่ะ ซื้อเจ้าอื่นแล้วไม่โอเค", cp: "Positive", oc: "Positive", s: 0 },
+  { t: "ขอบคุณเจ้าสัว CPF ที่มีส่วนในวงการกุ้ง", cp: "Positive", oc: "Positive", s: 0 },
+  { t: "ไส้กรอก CP อร่อยดีนะ แต่ราคาขึ้นเยอะ", cp: "Positive", oc: "Positive", s: 0 },
+  { t: "เจ้าสัวแค่รับซื้อ ชาวบ้านต่างหากคือคนเผาคนปลูก", cp: "Positive", oc: "Neutral", s: 0 },
+  // ── สินค้า: ตำหนิเล็กน้อย ≠ ลบ · ถามเฉยๆ ≠ ลบ · ถามเชิงกล่าวหา = ลบ ──
+  { t: "อร่อยนะ แต่เค็มไปนิด โซเดียมสูง", cp: "Neutral", oc: "Neutral", s: 0 },
+  { t: "รับซื้อกิโลละเท่าไรครับ", cp: "Neutral", oc: "Neutral", s: 0 },
+  { t: "ปลาหมอคางดำใครนำเข้ามา ใครรับผิดชอบ", cp: "Negative", oc: "Negative", s: 0 },
+];
+
+function systemTwoLens() {
+  const ex = TWO_LENS_SHOTS
+    .map(e => `"${e.t}"\n→ {"cp":"${e.cp}","oc":"${e.oc}","s":${e.s}}`)
+    .join("\n");
+  return [
+    "คุณคือระบบวิเคราะห์ sentiment คอมเมนต์ภาษาไทยเกี่ยวกับเครือ CP / CPF",
+    "วิเคราะห์ทุกคอมเมนต์ตาม 2 แกนพร้อมกัน ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น",
+    "",
+    "═══ แกน 1: cp (ความรู้สึกต่อแบรนด์ CP โดยเฉพาะ) ═══",
+    "• Positive = เชียร์/ปกป้อง/ชม CP หรือสินค้า CP · แก้ต่างให้ CP (โยนผิดให้คนอื่น)",
+    "• Negative = โจมตี/ตำหนิ CP, นายทุน, เจ้าสัว, ต้นตอ, ฟอกขาว, บอยคอต, บ่นราคา/บริการ CP",
+    "• Neutral  = ไม่แตะ CP โดยตรง · ด่ารัฐ/นักการเมือง/ต่างด้าว/จีน · ถามข้อมูล · พูดวิกฤตลอยๆ",
+    "⚠️ ถ้าไม่เอ่ย CP ชัด ให้ Neutral — อย่าเดาว่าโยง CP เว้นแต่บริบทข่าวเกี่ยว CP ตรงๆ",
+    "⚠️ ด่ารัฐ ≠ ด่า CP",
+    "",
+    "═══ แกน 2: oc (อารมณ์รวม + ความน่าเชื่อของ narrative) ═══",
+    "• พื้นฐาน = อารมณ์รวม (โกรธ/ไม่พอใจ=Negative, ชอบ/เห็นด้วย=Positive, เฉย/ถาม=Neutral)",
+    "• กฎพิเศษ: ถ้าสงสัยความน่าเชื่อ / ไม่เชื่อข้อมูล / มองว่าฟอกข่าว / บอกว่าข้อมูลผิด → บังคับ Negative",
+    "",
+    "═══ กฎร่วม ═══",
+    '1. ตี "ความหมายจริง" ไม่ใช่คำผิวเผิน — ประชด (คำบวกแต่ด่า) ให้ s=1 และตีป้ายตามความหมายจริง',
+    '2. กำกวม / อวยแยกไม่ออก / เงื่อนไข "ถ้า…ก็ดี" = Neutral (ไม่เดา)',
+    "3. สินค้า: อร่อยแต่ตำหนิเล็กน้อย (เค็ม/เลี่ยน) = Neutral · แต่ปนเปื้อน/ชำรุด/เน่าเสีย = Negative",
+    '4. คำถามเชิงกล่าวหา ("เจ้าสัวไหนรับซื้อ", "ใครนำเข้า") = Negative',
+    "5. สงสัยความปลอดภัยสินค้า: ระบุ CP ชัด → cp=Negative · ไม่ระบุ CP → cp=Neutral แต่ oc=Negative",
+    "",
+    "═══ ตัวอย่างเคสจริง (โดยเฉพาะที่ 2 แกนให้ค่าต่างกัน) ═══",
+    ex,
+    "",
+    "═══ รูปแบบคำตอบ ═══",
+    'ตอบเป็น JSON array ล้วน เรียงตามลำดับคอมเมนต์ที่ให้มา ความยาวต้องเท่ากับจำนวนคอมเมนต์',
+    '[{"i":1,"cp":"Neutral","oc":"Negative","s":0}, ...]',
+    'cp และ oc ใช้ได้เฉพาะ "Positive" "Negative" "Neutral" · s เป็น 0 หรือ 1 เท่านั้น',
+  ].join("\n");
+}
+
+/** บังคับให้ค่าที่โมเดลตอบกลับมาอยู่ในชุดที่ใช้ได้เสมอ */
+function normLens(v) {
+  const s = String(v || "").trim().toLowerCase();
+  if (s.startsWith("pos")) return "Positive";
+  if (s.startsWith("neg")) return "Negative";
+  return "Neutral";               // ตอบเพี้ยน/ว่าง = Neutral (ไม่เดาเป็นลบ)
+}
+
+/**
+ * ตี 2 แกนให้คอมเมนต์ชุดหนึ่ง — คืน array ยาวเท่า texts เสมอ
+ * ⚠️ ห้ามให้ความยาวไม่ตรง ไม่งั้นผลจะเลื่อนไปทั้งชุดแล้วตัวเลขวัดผลผิดโดยไม่มีอะไรเตือน
+ */
+async function classifyTwoLens(texts, env, acc, context) {
+  const numbered = texts
+    .map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`)
+    .join("\n");
+  const ctx = context ? `บริบทโพสต์: "${String(context).replace(/\s+/g, " ").slice(0, 300)}"\n\n` : "";
+  const out = await callClaude(env, systemTwoLens(), ctx + "คอมเมนต์:\n" + numbered, 2600, acc);
+
+  let arr = [];
+  try { arr = extractJson(out); } catch (e) { arr = []; }
+  if (!Array.isArray(arr)) arr = [];
+
+  // เรียงตาม i ที่โมเดลตอบมา ถ้ามี — กันกรณีสลับลำดับ
+  const byIdx = new Map();
+  for (const o of arr) {
+    if (o && typeof o === "object" && Number.isFinite(+o.i)) byIdx.set(+o.i, o);
+  }
+  return texts.map((_, i) => {
+    const o = byIdx.get(i + 1) || arr[i] || {};
+    return {
+      sentiment_cp: normLens(o.cp ?? o.sentiment_cp),
+      overall_cred: normLens(o.oc ?? o.overall_cred),
+      is_sarcasm: (o.s ?? o.is_sarcasm) ? 1 : 0,
+      missing: byIdx.has(i + 1) || arr[i] ? undefined : true,   // โมเดลไม่ได้ตอบข้อนี้
+    };
+  });
+}
+
 export default {
   async fetch(request, env) {
     const origin = env.ALLOW_ORIGIN || "*";
@@ -66,6 +180,28 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
+    }
+
+    /* ตี 2 แกนให้ข้อความดิบที่ส่งมาตรงๆ — ใช้โดยหน้าวัดความแม่น (/issue/sentiment-eval.html)
+       ⚠️ ไม่แตะ ScrapeCreators เลย จึงไม่กินเครดิตที่จ่ายเงิน · ใช้แต่โควตา Claude
+       ⚠️ หน้าเว็บเป็นคนวนทีละก้อน ที่นี่รับได้ครั้งละไม่เกิน CLASSIFY_MAX
+          (ถ้าให้ Worker วนเองทั้ง 475 ข้อจะชนเพดานเวลาของ Cloudflare) */
+    if (request.method === "POST" && url.pathname === "/classify") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const texts = Array.isArray(body?.texts) ? body.texts : null;
+      if (!texts || !texts.length) return cors(json({ error: "no_texts" }, 400), origin);
+      if (texts.length > CLASSIFY_MAX) {
+        return cors(json({ error: "too_many", max: CLASSIFY_MAX, got: texts.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const acc = { input: 0, output: 0 };
+      try {
+        const results = await classifyTwoLens(texts, env, acc, body.context);
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model: env.CLAUDE_MODEL || DEFAULT_MODEL, results, tokens: acc }), origin);
+      } catch (e) {
+        return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
     }
     /* 🚫 เคยมี `/debugmeta` ตรงนี้ — ถอดออกทั้งเส้นทางและฟังก์ชันแล้ว (เจ้าของสั่ง 20 ส.ค. 2026)
        ตอนนั้นทำไว้ไล่ปัญหาเรื่อง map field รูปปก ซึ่งแก้จบไปแล้ว
