@@ -58,18 +58,24 @@ async function handlePlan(url, env) {
 
   let plan = null;
   let err = "";
+  let why = env && env.AI ? "" : "ยังไม่ได้ต่อ AI";
   try {
-    plan = await askPlan(env, q);
+    const r = await askPlan(env, q);
+    plan = r.plan;
+    why = why || r.why;
   } catch (e) {
     err = String((e && e.message) || e);
+    why = err.slice(0, 80);
   }
 
   // ⚠️ **ต้องมีทางถอยเสมอ** — AI ล่ม/ไม่มี binding ห้ามทำให้ช่องค้นหาใช้ไม่ได้
   //    ตกลงมาที่ "เอาคำถามไปค้นตรงๆ" ซึ่งคือพฤติกรรมเดิมของหน้าเว็บเป๊ะ
   if (!plan) {
-    L.warn(env && env.AI ? "ตัวช่วยตีความคำถามไม่ตอบ" : "ยังไม่ได้ต่อ AI");
+    // ⚠️ **บอกด้วยว่าไม่ตอบเพราะอะไร** — ของเดิมบอกแค่ "ไม่ตอบ" แล้วไล่ต่อไม่ได้เลย
+    //    (เจ้าของเจอจริงบน preview: ขึ้นว่าไม่ตอบ แต่ไม่มีทางรู้ว่าไม่มี binding หรือตอบมาแล้วแกะไม่ได้)
+    L.warn(why || "ตัวช่วยตีความคำถามไม่ตอบ");
     await finishLog(env, L, { err });
-    return json({ ...fallbackPlan(q), ai: false, why: env && env.AI ? "ตัวช่วย AI ไม่ตอบ" : "ยังไม่ได้ต่อ AI" }, 200, 0);
+    return json({ ...fallbackPlan(q), ai: false, why: why || "ไม่ตอบ" }, 200, 0);
   }
 
   const res = json({ ...plan, ai: true }, 200, EDGE_TTL);
@@ -79,7 +85,7 @@ async function handlePlan(url, env) {
 
 // ให้ AI แยกว่าอะไร "ค้นด้วยตัวอักษรได้" กับอะไร "ต้องอ่านแล้วตีความ"
 async function askPlan(env, q) {
-  if (!env || !env.AI) return null;
+  if (!env || !env.AI) return { plan: null, why: "ยังไม่ได้ต่อ AI" };
   const prompt =
     "คุณคือตัวช่วยค้นข่าวภาษาไทย แปลงคำถามเป็น JSON เท่านั้น ห้ามอธิบาย\n" +
     'รูปแบบ: {"terms":["คำ"],"from":"","to":"","judge":""}\n' +
@@ -92,18 +98,22 @@ async function askPlan(env, q) {
     "คำถาม: " + q;
 
   const out = await env.AI.run(AI_MODEL, { messages: [{ role: "user", content: prompt }], max_tokens: 200 });
-  const obj = parseJSON(out && (out.response || out.result || ""));
-  if (!obj) return null;
+  const raw = (out && (out.response || out.result || "")) || "";
+  const obj = parseJSON(raw);
+  if (!obj) return { plan: null, why: raw ? "ตอบมาแต่แกะไม่ได้" : "ตอบมาว่างเปล่า" };
 
   const terms = clean(obj.terms).slice(0, 6);
   // ⚠️ AI ตอบมาไม่มีคำค้นเลย = ตีความไม่ออก ห้ามคืนผลว่าง (จะกลายเป็น "ค้นทั้งคลัง")
-  if (!terms.length) return null;
+  if (!terms.length) return { plan: null, why: "แยกคำค้นออกมาไม่ได้" };
 
   return {
-    terms,
-    from: isDate(obj.from) ? obj.from : "",
-    to: isDate(obj.to) ? obj.to : "",
-    judge: String(obj.judge || "").trim().slice(0, 120),
+    plan: {
+      terms,
+      from: isDate(obj.from) ? obj.from : "",
+      to: isDate(obj.to) ? obj.to : "",
+      judge: String(obj.judge || "").trim().slice(0, 120),
+    },
+    why: "",
   };
 }
 

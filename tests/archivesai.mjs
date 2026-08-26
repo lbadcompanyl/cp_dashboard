@@ -4,7 +4,8 @@
  *   node archivesai.mjs
  *
  * คุมอะไร:
- *   [1] ปุ่มมีจริง · ช่องค้นหาเดิม **ต้องทำงานเหมือนเดิมทุกอย่าง** (ของใหม่ไม่ได้มาแทนที่)
+ *   [1] โหมดเดียว — พิมพ์เฉยๆ ยังไม่ถาม (ห้ามยิง AI ทุกตัวอักษร) · Enter/ปุ่ม = ถาม
+ *       และหน้าตาต้องบอกตั้งแต่แรกเห็นว่าเป็น "ค้นด้วย AI" ไม่ใช่ช่องใส่คีย์เวิร์ด
  *   [2] ถาม → เอาคำค้นที่ AI ตีความมาใส่ช่อง → คัดตามเงื่อนไข → เหลือเฉพาะใบที่ผ่าน
  *   [3] แถบต้องบอกเสมอว่า "ค้นด้วยอะไร · คัดด้วยอะไร"
  *   [4] 🔴 AI ล่ม = ยังต้องค้นได้ ไม่ใช่หน้าค้าง — และต้องบอกผู้ใช้
@@ -86,24 +87,30 @@ async function open({ plan, keep, planStatus = 200, judgeStatus = 200 } = {}) {
 const count = (page) => page.$$eval("#list a[data-u], #list .item", (els) => els.length);
 const titles = (page) => page.$$eval("#list [data-u]", (els) => els.map((e) => e.textContent.trim()));
 
-/* ─────────── [1] ปุ่มมีจริง · ช่องค้นหาเดิมไม่เปลี่ยนพฤติกรรม ─────────── */
-console.log("\n[1] ปุ่ม 🤖 มีจริง และช่องค้นหาเดิมยังทำงานเหมือนเดิม");
+/* ─────────── [1] โหมดเดียว: ต้องกดถึงจะถาม ─────────── */
+console.log("\n[1] โหมดเดียว — พิมพ์เฉยๆ ยังไม่ถาม · กด Enter หรือปุ่มถึงจะถาม");
 {
-  const { ctx, page, seen, errs } = await open();
-  ok("มีปุ่มถามเป็นประโยคในช่องค้นหา", await page.$("#askbtn") !== null);
+  const { ctx, page, seen, errs } = await open({ plan: { terms: ["ก"], judge: "", ai: true } });
+  ok("มีปุ่มถามในช่องค้นหา", await page.$("#askbtn") !== null);
   ok("แถบตีความยังไม่ขึ้นตอนเปิดหน้า", await page.$eval("#askbar", (e) => e.hidden));
+  // ⚠️ หน้าตาต้องบอกตั้งแต่แรกเห็นว่านี่คือค้นด้วย AI ไม่ใช่ช่องใส่คีย์เวิร์ด
+  const hint = await page.$eval(".qhint", (e) => e.textContent);
+  ok("บอกว่าค้นด้วย AI ตั้งแต่ยังไม่พิมพ์", /AI/.test(hint), hint);
+  ok("ช่องพิมพ์ชวนให้ถามเป็นประโยค", /ถาม/.test(await page.$eval("#q", (e) => e.placeholder)));
 
-  // พิมพ์คำค้นธรรมดาแล้วรอ debounce — ต้องค้นให้ทันทีโดยไม่ยิง AI เลย
+  // 🚫 พิมพ์เฉยๆ ต้องไม่ยิงถาม AI — ไม่งั้นถามทุกตัวอักษร
+  // (หน้านี้เปิดมาแสดงข่าวทั้งคลังอยู่แล้ว จึงวัดว่า "ผลไม่เปลี่ยน" ไม่ใช่ "ว่างเปล่า")
+  const before = await count(page);
   await page.fill("#q", "ก");
-  await page.waitForTimeout(400);
-  const n = await count(page);
-  ok("พิมพ์แล้วค้นให้เลย ไม่ต้องกดอะไร", n > 0, `เจอ ${n}`);
-  ok("🚫 ไม่ยิงถาม AI ตอนพิมพ์เฉยๆ", seen.get === 0 && seen.post === 0, JSON.stringify(seen));
+  await page.waitForTimeout(500);
+  ok("🚫 พิมพ์เฉยๆ ไม่ยิงถาม AI", seen.get === 0 && seen.post === 0, JSON.stringify(seen));
+  ok("พิมพ์เฉยๆ ผลยังไม่เปลี่ยน (ต้องกดถึงจะค้น)", (await count(page)) === before, `${before} → ${await count(page)}`);
 
-  // ⚠️ Enter ต้องไม่ไปสั่งถาม AI — คนพิมพ์คำค้นแล้วเคาะ Enter ติดนิสัย
+  // ⭐ Enter = ทางหลักของหน้านี้
   await page.press("#q", "Enter");
-  await page.waitForTimeout(400);
-  ok("🚫 กด Enter ไม่ยิงถาม AI", seen.get === 0, `get=${seen.get}`);
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  ok("กด Enter แล้วถามให้", seen.get === 1, `get=${seen.get}`);
+  ok("ได้ผลลัพธ์ออกมา", (await count(page)) > 0);
   ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
   await ctx.close();
 }
@@ -123,7 +130,11 @@ console.log("\n[2] ถามเป็นประโยค → ค้น → ค
   ok("ยิงถามไป 1 ครั้ง", seen.get === 1, `get=${seen.get}`);
   ok("ส่งพาดหัวไปให้คัด", seen.post === 1 && Array.isArray(seen.postBody?.titles) && seen.postBody.titles.length > 0);
   ok("ส่งเงื่อนไขไปด้วย", seen.postBody?.judge === "เป็นข่าวเชิงบวก", JSON.stringify(seen.postBody?.judge));
-  ok("เอาคำที่ AI ตีความมาใส่ช่องค้นหาให้เห็น", (await page.inputValue("#q")) === "ก");
+  // ⚠️ ช่องพิมพ์ต้องเก็บ "คำถาม" ไว้ ไม่ใช่โดนเขียนทับด้วยคำค้นที่ AI แยกออกมา
+  ok("ช่องพิมพ์ยังเป็นคำถามเดิม ไม่โดนเขียนทับ",
+    (await page.inputValue("#q")) === "หาข่าวด้านดีของปลาหมอคางดำทั้งหมด", await page.inputValue("#q"));
+  const bar1 = await page.$eval("#askbar", (e) => e.textContent);
+  ok("คำค้นที่แยกได้ไปโชว์ในแถบตีความแทน", /ค้นคำ/.test(bar1), bar1);
 
   const n = await count(page);
   ok("เหลือเฉพาะใบที่ผ่านเงื่อนไข", n === 2, `เหลือ ${n} ใบ`);
@@ -163,7 +174,7 @@ console.log("\n[4] 🔴 ตีความคำถามไม่ได้ — 
   const n = await count(page);
   ok("ยังค้นเจอข่าวตามปกติ", n > 0, `เจอ ${n}`);
   const bar = await page.$eval("#askbar", (e) => e.textContent);
-  ok("บอกผู้ใช้ว่าตีความไม่ได้ ไม่ใช่เงียบ", /ตีความคำถามไม่ได้/.test(bar), bar);
+  ok("บอกผู้ใช้ว่า AI ตอบไม่ได้ ไม่ใช่เงียบ", /AI ตอบไม่ได้/.test(bar), bar);
   ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
   await ctx.close();
 }
@@ -204,7 +215,7 @@ console.log("\n[6] เลิกคัด = ทิ้งเงื่อนไข 
   const many = await count(page);
 
   ok("คัดอยู่เหลือน้อยกว่า", few < many, `${few} → ${many}`);
-  ok("เลิกคัดแล้วยังเก็บคำค้นไว้", (await page.inputValue("#q")) === "ก");
+  ok("เลิกคัดแล้วยังเก็บคำถามไว้", (await page.inputValue("#q")) === "หาข่าวด้านดี");
   ok("เงื่อนไขหลุดออกจาก URL ด้วย", !new URL(page.url()).searchParams.get("judge"), page.url());
   await ctx.close();
 }
@@ -223,8 +234,9 @@ console.log("\n[7] กฎที่ต้องคุมระดับโค้�
   ok("ก้อนที่ถาม AI ไม่สำเร็จ เก็บทั้งก้อน", /if \(!picked\) \{ chunk\.forEach/.test(api));
   ok("จำกัดจำนวนพาดหัวต่อคำขอ", /MAX_TITLES\s*=\s*\d+/.test(api));
   ok("จำกัดขนาดคำขอ", /MAX_BODY\s*=/.test(api));
-  // 🚫 ผูกกับ Enter = ยิง AI ทุกครั้งที่คนเคาะ Enter หลังพิมพ์คำค้น
-  ok("🚫 ไม่ผูกการถาม AI กับปุ่ม Enter", !/Enter[\s\S]{0,60}runAsk/.test(app));
+  // ⭐ โหมดเดียว = Enter ต้องสั่งถามได้ · แต่ห้ามยิงระหว่างพิมพ์
+  ok("Enter สั่งถามได้", /Enter[\s\S]{0,60}runAsk/.test(app));
+  ok("🚫 ไม่ยิงถามระหว่างพิมพ์", !/function onSearchInput\(\)[\s\S]{0,200}runAsk/.test(app));
   ok("ยังใช้ includes() ค้นเหมือนเดิม", /\.n\.includes\(/.test(app));
 }
 

@@ -82,6 +82,12 @@ body {
 }
 .qclear:hover { color:var(--ink); background:var(--surface-2); }
 .qhint { margin:9px 20px 0; font-size:.71rem; color:var(--muted); }
+/* 🤖 ป้าย "ค้นด้วย AI" — ต้องรู้ตั้งแต่แรกเห็นว่านี่ไม่ใช่ช่องใส่คีย์เวิร์ดธรรมดา
+   (เจ้าของสั่ง 26 ส.ค. 2026) · สีเน้นเดียวกับปุ่มถาม เพื่อให้สายตาโยงถึงกัน */
+.aitag {
+  display:inline-block; margin-right:4px; padding:1px 7px; border-radius:999px;
+  background:var(--accent); color:var(--on-accent); font-size:.95em; font-weight:700;
+}
 @media (prefers-color-scheme: dark) {
   #q { box-shadow:none; }
   #q:focus { box-shadow:0 0 0 4px rgba(96,165,250,.2); }
@@ -114,17 +120,21 @@ body {
    ⚠️ **ทุกครั้งที่เพิ่มปุ่มในช่องค้นหา ต้องขยาย padding-right ของ #q ด้วย**
       ไม่งั้นข้อความที่พิมพ์จะมุดไปใต้ปุ่ม — เทสต์ archives.mjs [9c] วัดการชนกันไว้
    ลำดับจากขวา:  [⚙ ตัวกรอง]  [🤖 ถาม]  [✕ ล้าง] */
-.askbtn { right:120px; }
-.askbtn.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
-#q { padding-right:310px; }
-.qclear { right:270px; }
+/* ⭐ ปุ่ม "ถาม" เป็นการกระทำเดียวที่ทำให้เกิดผลลัพธ์ — ใช้สีเน้นให้ต่างจากปุ่มตัวกรอง */
+.askbtn {
+  right:120px;
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent);
+}
+.askbtn:hover { filter:brightness(1.08); color:var(--on-accent); border-color:var(--accent); }
+#q { padding-right:250px; }
+.qclear { right:210px; }
 
-/* จอกลาง: ปุ่ม 🤖 เหลือแต่ไอคอน (คำอธิบายอยู่ในบรรทัด hint ใต้ช่องค้นหาแล้ว) */
+/* จอกลาง: ปุ่มถามเหลือแต่ไอคอน (Enter ก็ทำงานเหมือนกัน และ hint บอกไว้แล้ว) */
 @media (max-width:860px) {
   .askbtn .flabel { display:none; }
   .askbtn { padding:9px 12px; }
-  #q { padding-right:212px; }
-  .qclear { right:172px; }
+  #q { padding-right:200px; }
+  .qclear { right:160px; }
 }
 /* ⚠️ **จอแคบใส่ 3 ปุ่มในช่องค้นหาไม่ได้** — วัดแล้วเหลือที่พิมพ์ 148px (เกณฑ์ 180px)
    ปุ่ม 🤖 จึงลงมาอยู่ "ใต้ช่อง" แทนที่จะเบียดข้างใน · ช่องพิมพ์ได้ที่คืนมาเต็ม

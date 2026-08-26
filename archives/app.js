@@ -14,7 +14,6 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const PAGE = 50;        // โหลดผลลัพธ์ทีละ 50
-const DEBOUNCE = 200;   // หน่วงการพิมพ์
 
 const state = {
   q: "", from: "", to: "",
@@ -247,7 +246,10 @@ async function runAsk() {
     judgeBusy = false;
     state.judge = "";
     judgeKeep = null;
-    judgeNote = "ตีความคำถามไม่ได้ — ค้นด้วยคำที่พิมพ์มาตรงๆ ให้แทน";
+    // ⚠️ **ต้องตั้งคำค้นเองด้วย** — โหมดเดียวแล้ว ไม่มีตัวค้นสดคอยตั้งให้เหมือนเมื่อก่อน
+    //    ลืมบรรทัดนี้ = ถามแล้วไม่มีอะไรเกิดขึ้นเลยเวลา AI ใช้ไม่ได้
+    state.q = question;
+    judgeNote = "ตอนนี้ AI ตอบไม่ได้ — ค้นแบบคำต่อคำให้แทน";
     state.shown = PAGE;
     syncURL(true);
     render();
@@ -259,7 +261,7 @@ async function runAsk() {
   if (plan.to) state.to = plan.to;
   state.judge = String(plan.judge || "");
   judgeKeep = null;
-  judgeNote = plan.ai ? "" : (plan.why || "");
+  judgeNote = plan.ai ? "" : (plan.why ? `ตอนนี้ AI ตอบไม่ได้ (${plan.why}) — ค้นแบบคำต่อคำให้แทน` : "");
   state.shown = PAGE;
   fillInputs();
 
@@ -538,15 +540,14 @@ function render() {
 }
 
 // ---------- เหตุการณ์ ----------
-let tmr = 0;
+// 🤖 **โหมดเดียว: ค้นด้วย AI** (เจ้าของสั่ง 26 ส.ค. 2026 — "ให้มีโหมดเดียวพอ")
+//
+// ⚠️ **พิมพ์แล้วไม่ค้นสดอีกแล้ว** — ของเดิมพิมพ์ปุ๊บกรองปั๊บ ซึ่งเอามาใช้กับ AI ไม่ได้
+//    (จะยิงถามทุกตัวอักษร) ถ้าปล่อยให้พิมพ์แล้วกรองสดต่อไปพร้อมกับมีปุ่มถาม
+//    = กลายเป็น 2 โหมดที่ผู้ใช้แยกไม่ออกว่าตอนไหนได้อะไร ซึ่งคือปัญหาที่เจ้าของสั่งให้เลิก
+// ตอนนี้: พิมพ์ → กด Enter หรือปุ่มถาม → ค่อยได้ผล
 function onSearchInput() {
-  clearTimeout(tmr);
-  tmr = setTimeout(() => {
-    state.q = $("#q").value;
-    state.shown = PAGE;
-    syncURL(false);   // พิมพ์ = replace ไม่ให้ back เดินทีละตัวอักษร
-    render();
-  }, DEBOUNCE);
+  $("#qclear").hidden = !$("#q").value;   // อัปเดตแค่ปุ่มล้าง ไม่ได้ค้นอะไร
 }
 
 async function onDateChange() {
@@ -572,7 +573,8 @@ function bind() {
   $("#ftoggle").addEventListener("click", () => setFiltersOpen($("#filters").hidden));
   $("#q").addEventListener("input", onSearchInput);
   $("#qclear").addEventListener("click", () => {
-    $("#q").value = ""; state.q = ""; state.shown = PAGE; syncURL(true); render(); $("#q").focus();
+    $("#q").value = ""; state.q = ""; clearAsk(); state.shown = PAGE;
+    syncURL(true); render(); $("#q").focus();
   });
   $("#from").addEventListener("change", onDateChange);
   $("#to").addEventListener("change", onDateChange);
@@ -603,9 +605,10 @@ function bind() {
   $("#clearall").addEventListener("click", clearAll);
 
   // 🤖 ถามเป็นประโยค — กดปุ่ม หรือกด Enter ในช่องค้นหา
-  // 🚫 **ไม่ผูกกับปุ่ม Enter โดยตั้งใจ** — คนพิมพ์คำค้นธรรมดาแล้วเคาะ Enter ติดนิสัย
-  //    จะกลายเป็นยิงถาม AI ทุกครั้งโดยไม่ได้ตั้งใจ (ช้าลง + เปลืองโควตา)
+  // ⭐ Enter = ทางหลักของหน้านี้ (มีโหมดเดียว) · ปุ่มถามทำอย่างเดียวกัน
+  //    ⚠️ ยังต้องกดเองอยู่ดี **ห้ามยิงถามระหว่างพิมพ์** — จะกลายเป็นถาม AI ทุกตัวอักษร
   $("#askbtn").addEventListener("click", runAsk);
+  $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runAsk(); } });
   // "เลิกคัด" = ทิ้งเงื่อนไข แต่ **เก็บคำค้นไว้** — ผู้ใช้มักอยากเห็นของทั้งหมดในเรื่องเดิม
   $("#askbar").addEventListener("click", (e) => {
     if (!e.target.closest("[data-askclear]")) return;
@@ -643,8 +646,11 @@ function bind() {
   });
 }
 
+// ⚠️ ช่องพิมพ์เก็บ **คำถามของผู้ใช้** ไม่ใช่คำค้นที่ AI แยกออกมา
+//    เขียนทับด้วยคำค้น (เช่นถาม "หาข่าวด้านดีของปลาหมอคางดำ" แล้วช่องกลายเป็น "ปลาหมอคางดำ")
+//    ผู้ใช้จะงงว่าคำถามหายไปไหน · คำค้นที่แยกได้ไปแสดงในแถบตีความแทน
 function fillInputs() {
-  $("#q").value = state.q;
+  $("#q").value = state.ask || state.q;
   $("#from").value = state.from;
   $("#to").value = state.to;
 }
