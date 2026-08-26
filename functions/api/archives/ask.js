@@ -140,7 +140,7 @@ const JUDGE_MODELS = ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.2-3b-i
  * ตัวนี้เก่งกว่ามาก แต่ **เสียเงินตามการใช้** จึงไม่เปิดเอง — ไม่ใส่กุญแจก็ทำงานเหมือนเดิมทุกอย่าง
  *
  * 💰 คำถาม 1 คำถาม = ยิง 1 ครั้ง แล้ว **จำคำตอบ 24 ชม.** · การคัดพาดหัวยิงเพิ่มตามจำนวนใบ
- *    เปลี่ยนรุ่นได้ด้วย env `ANTHROPIC_MODEL` (เช่น `claude-haiku-4-5` ถ้าอยากประหยัดกว่านี้)
+ *    ค่าตั้งต้นคือ `claude-haiku-4-5` (เจ้าของเลือก) · เปลี่ยนได้ด้วย env `ANTHROPIC_MODEL`
  *
  * 🔑 **ห้าม commit กุญแจลง repo เด็ดขาด — repo เป็น public**
  *    ใส่เป็น Secret ใน Cloudflare (Production + Preview) แล้ว Retry deployment
@@ -151,7 +151,10 @@ const JUDGE_MODELS = ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.2-3b-i
 const hasAI = (env) => !!(env && (env.ANTHROPIC_API_KEY || env.AI));
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_DEFAULT_MODEL = "claude-opus-5";
+// เจ้าของเลือกเอง 26 ส.ค. 2026: "ใช้ haiku น่าจะพอ" — งานนี้เป็นการจัดรูปประโยคสั้นๆ
+// ⚠️ ชื่อรุ่นใช้ตามนี้เป๊ะ **ห้ามเติมวันที่ต่อท้าย** (เช่น -20251001) จะกลายเป็นชื่อที่ไม่มีอยู่จริง
+// เปลี่ยนรุ่นได้จาก Cloudflare ด้วย env ANTHROPIC_MODEL โดยไม่ต้องแก้โค้ด
+const ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5";
 
 async function askClaude(env, prompt, maxTokens) {
   const key = env && env.ANTHROPIC_API_KEY;
@@ -168,8 +171,8 @@ async function askClaude(env, prompt, maxTokens) {
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        // งานนี้เป็นการจัดรูปประโยคสั้นๆ ไม่ต้องคิดลึก — ลด effort ลงเพื่อให้เร็วและถูกลง
-        output_config: { effort: "low" },
+        // 🚫 **ห้ามส่ง output_config.effort** — รุ่น haiku-4-5 ไม่รับ แล้วตอบ 400 ทันที
+        //    (เป็นของรุ่น opus เท่านั้น) งานนี้สั้นอยู่แล้วจึงไม่ได้เสียอะไร
         messages: [{ role: "user", content: prompt }],
       }),
     });
