@@ -110,11 +110,54 @@ body {
 .ftoggle .fcaret { color:var(--muted); font-size:.6rem; }
 /* ⚠️ จอแคบ: เหลือแต่ไอคอน — คำว่า "ตัวกรอง" กินที่พิมพ์ไปเกือบครึ่งช่อง
    (ปุ่มยังใหญ่พอกดได้ และยังเห็นชัดเพราะอยู่ในช่องค้นหา) */
+/* 🤖 ปุ่มถามเป็นประโยค — อยู่ในช่องค้นหาเหมือนปุ่มตัวกรอง
+   ⚠️ **ทุกครั้งที่เพิ่มปุ่มในช่องค้นหา ต้องขยาย padding-right ของ #q ด้วย**
+      ไม่งั้นข้อความที่พิมพ์จะมุดไปใต้ปุ่ม — เทสต์ archives.mjs [9c] วัดการชนกันไว้
+   ลำดับจากขวา:  [⚙ ตัวกรอง]  [🤖 ถาม]  [✕ ล้าง] */
+.askbtn { right:120px; }
+.askbtn.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+#q { padding-right:310px; }
+.qclear { right:270px; }
+
+/* จอกลาง: ปุ่ม 🤖 เหลือแต่ไอคอน (คำอธิบายอยู่ในบรรทัด hint ใต้ช่องค้นหาแล้ว) */
+@media (max-width:860px) {
+  .askbtn .flabel { display:none; }
+  .askbtn { padding:9px 12px; }
+  #q { padding-right:212px; }
+  .qclear { right:172px; }
+}
+/* ⚠️ **จอแคบใส่ 3 ปุ่มในช่องค้นหาไม่ได้** — วัดแล้วเหลือที่พิมพ์ 148px (เกณฑ์ 180px)
+   ปุ่ม 🤖 จึงลงมาอยู่ "ใต้ช่อง" แทนที่จะเบียดข้างใน · ช่องพิมพ์ได้ที่คืนมาเต็ม
+   และปุ่มยังอ่านออกว่าทำอะไร (มีคำกำกับ ไม่ใช่ไอคอนลอยๆ)
+   — เทสต์ archives.mjs [9c] วัดที่พิมพ์ไว้ ลองยัดกลับเข้าไปเมื่อไหร่ตกทันที */
 @media (max-width:560px) {
   .ftoggle .flabel { display:none; }
   .ftoggle { padding:9px 12px; }
+  /* ⚠️ **ห้ามใช้ flex-wrap ให้ปุ่มตกบรรทัด** — ลองแล้วปุ่มตัวกรอง (absolute ที่ไม่ได้กำหนด top)
+     ย้ายตามไปด้วย แล้วหลุดออกนอกกรอบช่องค้นหา (เทสต์ [9c] จับได้)
+     ใช้เว้นที่ด้านล่างของแถวแล้ววางปุ่มลงไปแทน — ปุ่มตัวกรองไม่ขยับเลย */
+  .searchrow { padding-bottom:47px; }
+  .askbtn { right:auto; left:20px; bottom:0; padding:8px 14px; }
+  .askbtn .flabel { display:inline; }
   #q { padding-right:104px; }
   .qclear { right:64px; }
+}
+
+/* แถบ "ตีความคำถามเป็นอะไร" — ต้องอ่านออกโดยไม่ต้องกดอะไร
+   ⚠️ ผลที่ถูก AI คัดโดยผู้ใช้ไม่รู้ว่าคัดด้วยอะไร = ของหายเงียบ (กับดักเดียวกับตัวกรองที่พับไว้) */
+.askbar {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin:9px 20px 0; padding:8px 12px;
+  border:1px solid var(--border); border-radius:10px; background:var(--surface-2);
+  font-size:.78rem; color:var(--ink);
+}
+.askbar .askwhy { flex:1 1 240px; min-width:0; }
+/* ⚠️ กำหนดสีเองทั้ง 2 โหมด — ไฟล์นี้ไม่มีตัวแปรสีเตือน ยืมของโหมดเดียวจะอ่านไม่ออกอีกโหมด */
+.askbar .asknote { color:#b45309; flex:1 1 100%; }
+/* ⚠️ .loading ตัวกลางมี padding 22px + จัดกึ่งกลาง (ไว้ใช้ท้ายรายการ) ต้องล้างในแถบนี้ */
+.askbar .loading { display:inline-flex; align-items:center; gap:8px; color:var(--muted); padding:0; text-align:left; }
+@media (prefers-color-scheme: dark) {
+  .askbar .asknote { color:#fbbf24; }
 }
 /* กรองอยู่ = ทำให้เห็นชัดว่ารายการถูกกรองไว้ ไม่ใช่ข่าวหายไปเฉยๆ */
 .ftoggle.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }

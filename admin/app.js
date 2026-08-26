@@ -279,6 +279,7 @@ const SRC_TH = {
   "trend/related": "คำที่เกี่ยวข้อง",
   "trend/trendnews": "ข่าวของเทรนด์",
   "trend/archive": "คลังข่าว (ชีตมาดึง)",
+  "archives/ask": "คลังข่าว (ถามเป็นประโยค)",
   "sd/news": "ข่าว SD",
   "api/allow": "ปุ่ม ↩/⚑",
   "api/flags": "ปุ่ม ⚑/🗂 บนการ์ด",

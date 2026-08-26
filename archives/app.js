@@ -21,7 +21,17 @@ const state = {
   cats: new Set(), srcs: new Set(),
   shown: PAGE,
   srcq: "",             // คำค้นในรายชื่อสำนักข่าว (ไม่เข้า URL — เป็นแค่ตัวช่วยหา)
+  // 🤖 ถามเป็นประโยค — เงื่อนไขที่ "ต้องอ่านพาดหัวแล้วตีความ" (เช่น "เป็นข่าวเชิงบวก")
+  //    ว่างเปล่า = หน้านี้ทำงานเหมือนเดิมทุกอย่าง
+  judge: "",
+  ask: "",              // คำถามต้นฉบับ ไว้แสดงให้ผู้ใช้เห็นว่าเขาถามอะไรไป
 };
+
+// ลิงก์ของข่าวที่ผ่านเงื่อนไข judge แล้ว — เก็บเป็น "ลิงก์" ไม่ใช่ลำดับแถว
+// ⚠️ ลำดับแถวเปลี่ยนได้ทุกครั้งที่โหลดปีเพิ่ม/เปลี่ยนตัวกรอง เก็บลำดับไว้แล้วจะชี้ผิดใบ
+let judgeKeep = null;   // null = ยังไม่ได้คัด · Set = คัดแล้ว
+let judgeBusy = false;
+let judgeNote = "";     // ข้อความบอกผู้ใช้ว่าเกิดอะไรขึ้น (คัดไม่ได้ / คัดไม่ครบ)
 
 let INDEX = null;         // data/index.json
 const loaded = new Set(); // ปีที่โหลดแล้ว
@@ -189,11 +199,136 @@ function applyFilters() {
       for (const c of r.c) if (cats.has(c)) { hit = true; break; }
       if (!hit) return false;
     }
+    // 🤖 เงื่อนไขที่ต้องอ่านพาดหัว — ใช้ผลที่ AI คัดไว้แล้วเท่านั้น
+    // ⚠️ ระหว่างที่ยังคัดไม่เสร็จ (judgeKeep = null) ให้ **แสดงทั้งหมดไปก่อน**
+    //    ไม่ใช่ซ่อนทุกใบ — หน้าว่างเปล่าระหว่างรอ อ่านแล้วเหมือน "ไม่มีข่าว"
+    if (state.judge && judgeKeep && !judgeKeep.has(r.u)) return false;
     return true;
   });
 }
 
-const hasFilter = () => !!(state.q || state.from || state.to || state.cats.size || state.srcs.size);
+/* ─────────── 🤖 ถามเป็นประโยค ───────────
+ *
+ * เจ้าของสั่ง 26 ส.ค. 2026: "อยากให้ search เป็นแบบ chat ai
+ *   เช่น หาข่าวด้านดีของปลาหมอคางดำทั้งหมด"
+ *
+ * แบ่งงานเป็น 2 ท่อน เพราะมันคนละเรื่องกัน:
+ *   "ปลาหมอคางดำ" → เป็นตัวอักษรที่อยู่ในพาดหัว → ค้นในเครื่องเหมือนเดิม (ทันที ฟรี)
+ *   "ด้านดี"       → ต้องอ่านแล้วตีความ         → ส่งพาดหัวที่ค้นเจอให้ AI คัด
+ *
+ * 🚫 **ไม่ได้เปลี่ยนวิธีค้นเดิมเลย** — ยังเป็น includes() ทีละแถวเหมือนเดิม
+ *    (กฎข้อห้ามข้อแรกของหน้านี้: ห้ามใช้ตัวค้นที่ตัดคำด้วยช่องว่าง)
+ */
+const ASK_EP = "/api/archives/ask";
+const JUDGE_MAX = 200; // ส่งให้ AI อ่านมากสุดกี่ใบต่อคำถาม (ต้องไม่เกินเพดานฝั่งเซิร์ฟเวอร์)
+
+// คำที่มีช่องว่างอยู่ข้างในต้องครอบเครื่องหมายคำพูด ไม่งั้นช่องค้นหาจะแยกเป็นคนละคำ
+const quoteTerm = (t) => (/\s/.test(t) ? `"${t}"` : t);
+
+async function runAsk() {
+  const question = $("#q").value.trim();
+  if (!question || judgeBusy) return;
+
+  judgeBusy = true;
+  state.ask = question;
+  renderAskBar();
+
+  let plan = null;
+  try {
+    const r = await fetch(`${ASK_EP}?q=${encodeURIComponent(question)}`);
+    // ⚠️ ต้องเช็คชนิดของคำตอบก่อนแกะ — ถ้าวันหนึ่งมี Cloudflare Access คลุม /api/
+    //    มันจะตอบหน้าล็อกอินเป็น HTML แล้ว .json() จะพัง แล้วรายงานผิดเรื่อง
+    if (r.ok && (r.headers.get("content-type") || "").includes("json")) plan = await r.json();
+  } catch (e) { /* ตกไปทางถอยข้างล่าง */ }
+
+  // ⚠️ **ทางถอยห้ามขาด** — ถามไม่ผ่านก็ต้องยังค้นได้ ไม่ใช่หน้าค้าง
+  //    เอาคำถามไปค้นตรงๆ = พฤติกรรมเดิมของหน้านี้เป๊ะ
+  if (!plan || !Array.isArray(plan.terms) || !plan.terms.length) {
+    judgeBusy = false;
+    state.judge = "";
+    judgeKeep = null;
+    judgeNote = "ตีความคำถามไม่ได้ — ค้นด้วยคำที่พิมพ์มาตรงๆ ให้แทน";
+    state.shown = PAGE;
+    syncURL(true);
+    render();
+    return;
+  }
+
+  state.q = plan.terms.map(quoteTerm).join(" ");
+  if (plan.from) state.from = plan.from;
+  if (plan.to) state.to = plan.to;
+  state.judge = String(plan.judge || "");
+  judgeKeep = null;
+  judgeNote = plan.ai ? "" : (plan.why || "");
+  state.shown = PAGE;
+  fillInputs();
+
+  // ผู้ใช้ถามถึงช่วงเวลาที่ยังไม่ได้โหลดข้อมูลปีนั้น → โหลดให้ก่อน
+  const need = yearsNeededByDate();
+  if (need.length) await withBusy(() => Promise.all(need.map(loadYear)));
+
+  syncURL(true);
+  render();                       // วาดผลของคำค้นก่อน ผู้ใช้จะได้เห็นอะไรทันที
+  await judgePass();              // แล้วค่อยคัดตามเงื่อนไข
+  judgeBusy = false;
+  render();
+}
+
+// ส่งพาดหัวที่ค้นเจอให้ AI คัดตามเงื่อนไข
+async function judgePass() {
+  if (!state.judge) { judgeKeep = null; return; }
+  const pool = filtered.slice(0, JUDGE_MAX);
+  if (!pool.length) { judgeKeep = new Set(); return; }
+
+  renderAskBar(true);
+  try {
+    const r = await fetch(ASK_EP, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ judge: state.judge, titles: pool.map((x) => x.t) }),
+    });
+    if (!r.ok || !(r.headers.get("content-type") || "").includes("json")) throw new Error("คัดไม่สำเร็จ");
+    const out = await r.json();
+    const keep = Array.isArray(out.keep) ? out.keep : [];
+    judgeKeep = new Set(keep.map((i) => pool[i] && pool[i].u).filter(Boolean));
+    judgeNote = out.ai === false ? (out.why || "ยังไม่ได้คัดตามเงื่อนไข") : (out.partial ? "คัดได้ไม่ครบทุกใบ — ใบที่คัดไม่ได้ยังแสดงอยู่" : "");
+  } catch (e) {
+    // ⚠️ คัดไม่สำเร็จ = **แสดงทุกใบ** ไม่ใช่ซ่อนทุกใบ · และต้องบอกด้วยว่ายังไม่ได้คัด
+    judgeKeep = null;
+    judgeNote = "คัดตามเงื่อนไขไม่สำเร็จ — แสดงผลจากคำค้นทั้งหมดไปก่อน";
+  }
+  if (filtered.length > JUDGE_MAX) {
+    judgeNote = (judgeNote ? judgeNote + " · " : "") + `อ่านให้แค่ ${JUDGE_MAX} ใบแรก (เจอ ${filtered.length.toLocaleString("th-TH")} ใบ) — ใส่คำให้แคบลงจะแม่นกว่า`;
+  }
+}
+
+function clearAsk() {
+  state.judge = ""; state.ask = "";
+  judgeKeep = null; judgeNote = "";
+}
+
+function renderAskBar(judging) {
+  const bar = $("#askbar");
+  if (!bar) return;
+  if (!state.ask && !state.judge && !judgeNote) { bar.hidden = true; bar.innerHTML = ""; return; }
+  bar.hidden = false;
+
+  if (judgeBusy) {
+    bar.innerHTML = `<span class="loading"><span class="spin"></span>${judging ? "กำลังอ่านพาดหัวเพื่อคัดตามเงื่อนไข…" : "กำลังตีความคำถาม…"}</span>`;
+    return;
+  }
+  // ⚠️ บอกให้ครบว่า "ค้นด้วยอะไร" และ "คัดด้วยอะไร" — ไม่งั้นผู้ใช้ไม่มีทางรู้ว่าทำไมได้ผลแบบนี้
+  const bits = [];
+  if (state.ask) bits.push(`ถามว่า <b>${esc(state.ask)}</b>`);
+  if (state.q) bits.push(`ค้นคำ <b>${esc(state.q)}</b>`);
+  if (state.judge) bits.push(`คัดเฉพาะที่ <b>${esc(state.judge)}</b>`);
+  bar.innerHTML =
+    `<span class="askwhy">${bits.join(" · ")}</span>` +
+    (judgeNote ? `<span class="asknote">⚠️ ${esc(judgeNote)}</span>` : "") +
+    `<button type="button" class="btn sm" data-askclear>เลิกคัด</button>`;
+}
+
+const hasFilter = () => !!(state.q || state.from || state.to || state.cats.size || state.srcs.size || state.judge);
 
 // ---------- URL ----------
 // เก็บสถานะทั้งหมดไว้ใน query string — ก๊อป URL ส่งต่อแล้วเปิดได้ผลเดิม
@@ -204,6 +339,9 @@ function toQuery() {
   if (state.to) p.set("to", state.to);
   if (state.cats.size) p.set("cat", [...state.cats].join(","));
   if (state.srcs.size) p.set("src", [...state.srcs].join(","));
+  // เงื่อนไขของ 🤖 เข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้ผลเดิม ไม่ใช่ได้ผลกว้างกว่า
+  if (state.judge) p.set("judge", state.judge);
+  if (state.ask) p.set("ask", state.ask);
   const s = p.toString();
   return s ? "?" + s : location.pathname;
 }
@@ -214,6 +352,9 @@ function readQuery() {
   state.to = p.get("to") || "";
   state.cats = new Set((p.get("cat") || "").split(",").filter(Boolean));
   state.srcs = new Set((p.get("src") || "").split(",").filter(Boolean));
+  state.judge = p.get("judge") || "";
+  state.ask = p.get("ask") || "";
+  judgeKeep = null;   // เปิดจากลิงก์ = ยังไม่ได้คัด ต้องไปคัดใหม่
   state.shown = PAGE;
 }
 // พิมพ์ = replace (ไม่งั้นกด back ทีละตัวอักษร) · กดปุ่ม/ชิพ = push (กด back แล้วย้อนได้)
@@ -393,6 +534,7 @@ function render() {
   renderFacets();
   renderCount();
   renderList();
+  renderAskBar();
 }
 
 // ---------- เหตุการณ์ ----------
@@ -454,10 +596,21 @@ function bind() {
   const clearAll = () => {
     state.q = ""; state.from = ""; state.to = "";
     state.cats.clear(); state.srcs.clear(); state.shown = PAGE;
+    clearAsk();
     $("#q").value = ""; $("#from").value = ""; $("#to").value = "";
     syncURL(true); render();
   };
   $("#clearall").addEventListener("click", clearAll);
+
+  // 🤖 ถามเป็นประโยค — กดปุ่ม หรือกด Enter ในช่องค้นหา
+  // 🚫 **ไม่ผูกกับปุ่ม Enter โดยตั้งใจ** — คนพิมพ์คำค้นธรรมดาแล้วเคาะ Enter ติดนิสัย
+  //    จะกลายเป็นยิงถาม AI ทุกครั้งโดยไม่ได้ตั้งใจ (ช้าลง + เปลืองโควตา)
+  $("#askbtn").addEventListener("click", runAsk);
+  // "เลิกคัด" = ทิ้งเงื่อนไข แต่ **เก็บคำค้นไว้** — ผู้ใช้มักอยากเห็นของทั้งหมดในเรื่องเดิม
+  $("#askbar").addEventListener("click", (e) => {
+    if (!e.target.closest("[data-askclear]")) return;
+    clearAsk(); state.shown = PAGE; syncURL(true); render();
+  });
 
   $("#more").addEventListener("click", async (e) => {
     if (e.target.closest("[data-more]")) { state.shown += PAGE; renderList(); return; }
