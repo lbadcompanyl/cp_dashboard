@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="3" />
+<meta name="page-ver" content="4" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -85,6 +85,9 @@
       <input type="file" id="file" accept=".xlsx,.csv" />
       <button id="run" class="primary" disabled>▶ รันวัดผล</button>
       <button id="stop" disabled>■ หยุด</button>
+      <label class="small muted">โมเดล
+        <select id="model"><option value="">(ค่าตั้งต้นของ Worker)</option></select>
+      </label>
     </div>
     <label class="row" style="margin-top:9px" id="ctxwrap" hidden>
       <input type="checkbox" id="ctx" />
@@ -139,6 +142,11 @@ let rows = [], stopped = false, meta = { ver: "?", rubric: "?", model: "?" };
 fetch(WORKER + "/").then(r => r.json()).then(d => {
   meta = { ver: d.ver ?? "?", rubric: d.rubric ?? "-", model: d.model || "?" };
   $("#wver").textContent = `Worker v${meta.ver} · rubric ${meta.rubric} · ${meta.model}`;
+  for (const m of (d.models || [])) {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m === d.model ? m + " (ตั้งต้น)" : m;
+    $("#model").appendChild(o);
+  }
 }).catch(() => { $("#wver").textContent = "⚠️ ต่อ Worker ไม่ได้"; });
 
 /* ── โหลดไฟล์เฉลย ── */
@@ -206,6 +214,7 @@ $("#run").addEventListener("click", async () => {
       const chunk = chunks[ci];
       try {
         const body = { texts: chunk.idx.map((i) => String(rows[i].message)) };
+        if ($("#model").value) body.model = $("#model").value;
         if (useCtx && chunk.topic) {
           body.context = `คอมเมนต์เหล่านี้อยู่ใต้โพส/ข่าวที่เกี่ยวกับเครือ CP/CPF หัวข้อ "${chunk.topic}"`;
         }

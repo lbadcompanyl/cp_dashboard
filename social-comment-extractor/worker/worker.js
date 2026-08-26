@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 8;
+const WORKER_VER = 9;
 
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -72,6 +72,10 @@ const CP_EXAMPLES = [
  * ============================================================ */
 const RUBRIC_VER = "v5";
 const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูงสุดต่อ 1 คำขอ /classify (หน้าเว็บเป็นคนวนเอง)
+
+/* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
+   /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
+const MODEL_CHOICES = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
 
 const TWO_LENS_SHOTS = [
   // ── ด่ารัฐ / ต่างชาติ / วิกฤตลอยๆ — ไม่แตะ CP: แกน 1 ต้องเป็น Neutral เสมอ ──
@@ -214,7 +218,7 @@ export default {
 
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") {
-      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
+      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, rubric: RUBRIC_VER, models: MODEL_CHOICES, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
@@ -235,8 +239,9 @@ export default {
       if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
       const acc = { input: 0, output: 0 };
       try {
-        const results = await classifyTwoLens(texts, env, acc, body.context);
-        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model: env.CLAUDE_MODEL || DEFAULT_MODEL, results, tokens: acc }), origin);
+        const model = MODEL_CHOICES.includes(body.model) ? body.model : (env.CLAUDE_MODEL || DEFAULT_MODEL);
+        const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context);
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, results, tokens: acc }), origin);
       } catch (e) {
         return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
       }
