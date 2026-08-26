@@ -393,5 +393,35 @@ console.log("\n[9] สรุปเก็บยาว รายละเอีย
 }
 
 
+console.log("\n[10] 🚨 รอบสร้างใหม่ = ตัวคุมโควตาเขียน KV ของทั้งโปรเจกต์");
+{
+  // เจ้าของเจอจริง 25 ส.ค. 2026: /selftest/ บน iPhone รายงานว่าข่าวใช้เวลา 21 วินาที
+  // ไล่โค้ดแล้วเจอว่า FRESH_MS ตั้งไว้ 3 นาที ซึ่ง "พอดี" กับรอบ auto-refresh ของแดชบอร์ด
+  // → มีคำขอเข้ามาทีไรก็สร้างใหม่ทุกที · สร้าง 1 ครั้ง = เขียน KV 2 ครั้ง (คลังข่าว + บันทึกระบบ)
+  //   เปิดหน้าค้างไว้ 24 ชม. ≈ 960 ครั้ง/วัน ต่อ endpoint · มี 2 endpoint = เกือบ 2 เท่าของโควตา 1,000
+  //
+  // 🚫 ห้ามลดกลับลงไปต่ำกว่า 10 นาที — โควตาหมดเมื่อไหร่ CLAUDE.md เขียนเองว่า "พังทั้งระบบ"
+  const MIN_MS = 10 * 60 * 1000;
+  for (const f of ["trend", "ir"]) {
+    const src = fs.readFileSync(new URL(`../functions/api/${f}/feeds.js`, import.meta.url), "utf8");
+    const m = src.match(/const FRESH_MS\s*=\s*(\d+)\s*\*\s*(\d+)\s*\*\s*(\d+)/);
+    ok(`${f}: อ่านค่า FRESH_MS ได้`, !!m, "หาไม่เจอ — เปลี่ยนรูปแบบการเขียนหรือเปล่า");
+    if (!m) continue;
+    const ms = Number(m[1]) * Number(m[2]) * Number(m[3]);
+    ok(`${f}: รอบสร้างใหม่ห่างพอที่จะไม่กินโควตา KV (≥ 10 นาที)`,
+       ms >= MIN_MS, Math.round(ms / 60000) + " นาที");
+    // ⚠️ อีกด้าน: ห่างเกินไปผู้ใช้ก็เห็นข่าวเก่าเกินไป — ฟีดต้นทางอัปเดตชั่วโมงละครั้ง
+    ok(`${f}: แต่ไม่ห่างเกินชั่วโมง (ข่าวจะเก่าเกินไป)`, ms <= 60 * 60 * 1000,
+       Math.round(ms / 60000) + " นาที");
+  }
+  // จำนวนครั้งที่เขียน KV ต่อ 1 build ต้องไม่เพิ่มขึ้นเงียบๆ
+  for (const f of ["trend", "ir"]) {
+    const src = fs.readFileSync(new URL(`../functions/api/${f}/feeds.js`, import.meta.url), "utf8")
+      .split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+    const puts = (src.match(/kv\.put\(|FLAGS_KV\.put\(/g) || []).length;
+    ok(`${f}: เขียน KV ที่เดียวในไฟล์ (ไม่นับบันทึกระบบ)`, puts <= 1, "เจอ " + puts + " จุด");
+  }
+}
+
 console.log("\n" + (fail ? "❌ ตก" : "✅ ผ่านหมด") + " — ผ่าน " + pass + " · ตก " + fail + "\n");
 process.exit(fail ? 1 : 0);

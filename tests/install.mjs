@@ -31,7 +31,7 @@ async function open(o = {}) {
   const p = await ctx.newPage();
   const errs = [];
   p.on("pageerror", (e) => errs.push(String(e)));
-  await p.goto(BASE + (o.path || "/trend/"), { waitUntil: "load" });
+  await p.goto(BASE + (o.path || "/"), { waitUntil: "load" });
   return { ctx, p, errs };
 }
 // headless ไม่ยิง beforeinstallprompt ให้ ต้องยิงเอง
@@ -83,9 +83,9 @@ console.log("\n[2] iOS — ไม่มี event ให้เรียก ต้
   await p.waitForTimeout(400);
   ok("กด ✕ แล้วแถบหายไป", (await p.$("#installbar")) === null);
   // ⚠️ ปิดแถบ ≠ ไม่เอาถาวร — เขาอาจแค่ปัดออกไปก่อน ยังไม่ทันอ่านจบด้วยซ้ำ
-  ok("ปิดแถบไม่นับว่าไม่เอาถาวร (เงียบตามรอบ 30 วันพอ)",
+  ok("ปิดแถบไม่นับว่าไม่เอาถาวร (รอบหน้าเปิดหน้าเว็บก็ขึ้นใหม่)",
      (await p.evaluate(() => localStorage.getItem("installPromptDone"))) === null);
-  ok("จำว่าถามไปแล้วรอบหนึ่ง", !!(await p.evaluate(() => localStorage.getItem("installPromptAt"))));
+  ok("จดเวลาที่ขึ้นไว้ให้ไล่ปัญหาได้", !!(await p.evaluate(() => localStorage.getItem("installPromptAt"))));
   ok("ไม่มี JS error", errs.length === 0, errs.join(" | "));
   await ctx.close();
 }
@@ -148,11 +148,11 @@ console.log("\n[2d] ⏱ ต้องหายเอง ไม่ต้องใ�
   const { ctx, p, errs } = await open({ ua: IOS_UA });
   await p.waitForTimeout(WAIT);
   ok("ตอนแรกแถบขึ้นอยู่", !!(await p.$("#installbar")));
-  // ⏱ เจ้าของกำหนด 6 วินาที — ห้ามวูบหายก่อนหน้านั้น และห้ามค้างเกิน
-  await p.waitForTimeout(3000);
-  ok("ผ่านไป 3 วิ ยังอยู่ (ห้ามวูบหาย)", !!(await p.$("#installbar")));
+  // ⏱ เจ้าของกำหนด 9 วินาที — ห้ามวูบหายก่อนหน้านั้น และห้ามค้างเกิน
+  await p.waitForTimeout(6000);
+  ok("ผ่านไป 6 วิ ยังอยู่ (ห้ามวูบหาย)", !!(await p.$("#installbar")));
   await p.waitForTimeout(4500);
-  ok("ครบ 6 วิ หายเอง โดยไม่มีใครกดอะไรเลย", (await p.$("#installbar")) === null);
+  ok("ครบ 9 วิ หายเอง โดยไม่มีใครกดอะไรเลย", (await p.$("#installbar")) === null);
   ok("หายเองไม่นับว่าไม่เอาถาวร (เขาอาจยังไม่ทันอ่าน)",
      (await p.evaluate(() => localStorage.getItem("installPromptDone"))) === null);
   ok("ไม่มี JS error", errs.length === 0, errs.join(" | "));
@@ -164,8 +164,8 @@ console.log("\n[2d] ⏱ ต้องหายเอง ไม่ต้องใ�
   await fire(d.p);
   await d.p.waitForTimeout(WAIT);
   ok("เดสก์ท็อป: ตอนแรกแถบขึ้นอยู่", !!(await d.p.$("#installbar")));
-  await d.p.waitForTimeout(6500); // นับจากตอนแถบโผล่ ไม่ใช่ตอนเปิดหน้า
-  ok("เดสก์ท็อป: หายเองใน 6 วิเหมือนกัน", (await d.p.$("#installbar")) === null);
+  await d.p.waitForTimeout(9500); // นับจากตอนแถบโผล่ ไม่ใช่ตอนเปิดหน้า
+  ok("เดสก์ท็อป: หายเองใน 9 วิเหมือนกัน", (await d.p.$("#installbar")) === null);
   await d.ctx.close();
 }
 
@@ -183,31 +183,46 @@ console.log("\n[3] ห้ามกวน");
   ok("เปิดจากแอปที่ติดตั้งแล้ว ไม่ชวนซ้ำ", (await p.$("#installbar")) === null);
   await ctx.close();
 
-  // กด "ไว้ก่อน" แล้วเปิดหน้าอื่นในเว็บเดียวกัน ต้องไม่เด้งใหม่
+  // 🎯 เจ้าของสั่ง 25 ส.ค. 2026: "เช็ค ถ้าเช็คแล้วยังไม่มีก็โชว์เลย"
+  //    ปิดแถบไปแล้วแต่ยังไม่ได้ติดตั้ง → เปิดหน้าใหม่ต้องขึ้นอีก (ของเดิมเงียบ 30 วัน)
   const s = await open({});
   await fire(s.p, "dismissed");
   await s.p.waitForTimeout(WAIT);
   await s.p.click(".ib-x");
   await s.p.waitForTimeout(300);
-  await s.p.goto(BASE + "/ir/", { waitUntil: "load" });
+  await s.p.goto(BASE + "/?x=1", { waitUntil: "load" }); // เปิดหน้าแรกอีกครั้ง
   await fire(s.p, "dismissed");
   await s.p.waitForTimeout(WAIT);
-  ok("กด 'ไว้ก่อน' แล้วเปิดหน้าอื่นก็ไม่เด้งซ้ำ", (await s.p.$("#installbar")) === null);
+  ok("ปิดไปแล้วแต่ยังไม่ได้ติดตั้ง → เปิดหน้าใหม่ต้องขึ้นอีก", (await s.p.$("#installbar")) !== null);
+  // แต่ถ้าติดตั้งสำเร็จแล้ว ต้องไม่ขึ้นอีกเลย
+  await s.p.evaluate(() => localStorage.setItem("installPromptDone", "1"));
+  await s.p.goto(BASE + "/?x=2", { waitUntil: "load" });
+  await fire(s.p, "accepted");
+  await s.p.waitForTimeout(WAIT);
+  ok("ติดตั้งสำเร็จแล้ว = ไม่ขึ้นอีกเลย", (await s.p.$("#installbar")) === null);
   await s.ctx.close();
 }
 
 console.log("\n[4] ครบทุกหน้า + ไม่ชนกับแถบ 'มีเวอร์ชันใหม่'");
 {
-  // ⚠️ เพิ่มหน้าใหม่เมื่อไหร่ ต้องมาเติมที่นี่ด้วย · ไม่รวม /admin/ (เครื่องมือเจ้าของ) และ /social/ (session อื่นดูแล)
-  for (const f of ["index.html", "trend/index.html", "ir/index.html", "issue/index.html",
+  // 🎯 **เจ้าของสั่ง 25 ส.ค. 2026: "พวก install เกะกะตอนดูข่าว ให้แสดงเฉพาะหน้าแรกพอ"**
+  //    หน้าข่าวคือที่ที่ผู้ใช้กำลังอ่านอยู่ แถบลอยขึ้นมาบังคือรบกวนโดยตรง
+  //    ส่วนหน้าแรกเป็นหน้าเลือกเมนู ไม่มีอะไรให้อ่าน แถบจึงไม่เกะกะ
+  const ONLY = "index.html";
+  const html = fs.readFileSync(new URL("../" + ONLY, import.meta.url), "utf8");
+  ok(`${ONLY} โหลด installprompt`, /installprompt\.js/.test(html) && /installprompt\.css/.test(html));
+  // 🚫 หน้าข่าวทุกหน้าต้องไม่มี — ใส่กลับเมื่อไหร่ เทสต์ตกทันที
+  for (const f of ["trend/index.html", "ir/index.html", "issue/index.html",
                    "issue/trends.html", "issue/three.html", "archives/index.html", "sd.html"]) {
-    const html = fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
-    ok(`${f} โหลด installprompt`, /installprompt\.js/.test(html) && /installprompt\.css/.test(html));
+    const h = fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
+    ok(`🚫 ${f} ต้องไม่มีแถบชวนติดตั้ง (เกะกะตอนอ่านข่าว)`, !/installprompt\.(js|css)/.test(h));
   }
   // ⚠️ แถบ "มีเวอร์ชันใหม่" (#updbar) สำคัญกว่า — ห้ามขึ้นทับกัน
   const js = fs.readFileSync(new URL("../installprompt.js", import.meta.url), "utf8");
   ok("หลบแถบ 'มีเวอร์ชันใหม่'", /getElementById\("updbar"\)/.test(js));
-  ok("ตั้งเวลาหายเองไว้ 6 วินาทีตามที่เจ้าของกำหนด", /AUTO_HIDE_MS\s*=\s*6000/.test(js));
+  ok("ตั้งเวลาหายเองไว้ 9 วินาทีตามที่เจ้าของกำหนด", /AUTO_HIDE_MS\s*=\s*9000/.test(js));
+  // 🎯 เกณฑ์เดียวคือ "ติดตั้งแล้วหรือยัง" — ห้ามมีการเงียบตามรอบวันอีก
+  ok("🚫 ไม่มีการเงียบตามรอบวันแล้ว", !/SNOOZE_DAYS/.test(js));
   const css = fs.readFileSync(new URL("../installprompt.css", import.meta.url), "utf8");
   ok("z-index ต่ำกว่า #updbar (9999)", /z-index:\s*9998/.test(css));
   ok("เว้นขอบล่างเผื่อ safe-area ของ iPhone", /safe-area-inset-bottom/.test(css));
