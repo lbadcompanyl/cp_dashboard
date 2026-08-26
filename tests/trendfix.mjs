@@ -1,12 +1,12 @@
 // /issue/trends.html — กราฟ Google Trends ขึ้น "Oops! Something went wrong."
 // เปิดจริงด้วย Chromium · ตัว embed ของ Google โหลดไม่ได้จากเครื่องนี้ (เน็ตขาออกถูกบล็อก)
 // จึงเทสต์เฉพาะ "สิ่งที่เราคุมได้": คำที่ส่งให้ Google · ลิงก์ทางออก · ไม่มี JS error
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = [];
 page.on("pageerror", (e) => errs.push(String(e)));

@@ -1,7 +1,7 @@
 // รายการ "✂️ ข่าวที่ระบบตัดทิ้ง" บนหน้า admin โชว์แค่ 3 วันล่าสุด (เจ้าของสั่ง 14 ส.ค. 2026)
 // ⚠️ กรองแค่ "การแสดงผล" — ข่าวเก่ายังถูกตัดอยู่เหมือนเดิม ห้ามไปแตะตรรกะการตัด
 import fs from "node:fs";
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
@@ -35,7 +35,7 @@ const FEEDS = {
   swept: { dropped: [] },
 };
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
 const page = await ctx.newPage();
 const errs = [];

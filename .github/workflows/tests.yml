@@ -1,0 +1,73 @@
+# รันเทสต์เองทุกครั้งที่ push — รวมถึงบน WebKit (เครื่องยนต์เดียวกับ Safari)
+#
+# 🎯 เจ้าของถาม 25 ส.ค. 2026: "มีวิธีทำระบบ test ของ ios mobile เองไหม?"
+#    เครื่องที่รัน session โหลด WebKit ไม่ได้ (ต้นทางถูกบล็อก ได้ 403) แต่ที่นี่โหลดได้
+#    จึงย้ายฝั่ง Safari มารันที่นี่แทน
+#
+# ⚠️ **WebKit ที่นี่ไม่ใช่ Safari บน iPhone** — ใช้เครื่องยนต์เดียวกันจึงจับเรื่อง
+#    หน้าตา/CSS/JS ที่ Safari ไม่รองรับได้ แต่ไม่มีเมนูแชร์ · ไม่มีการเพิ่มลงหน้าจอโฮม ·
+#    ไม่มี navigator.standalone → เรื่องพวกนั้นต้องเปิด /selftest/ บนเครื่องจริงเท่านั้น
+#    **ผ่านที่นี่ไม่ได้แปลว่าทดสอบ Safari แล้ว**
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # ให้เห็นผลทั้ง 2 เอนจินเสมอ ไม่ใช่ตัวแรกตกแล้วหยุด
+      matrix:
+        browser: [chromium, webkit]
+    name: ${{ matrix.browser }}
+    # ⚠️ ฝั่ง WebKit ยัง "รายงานอย่างเดียว ไม่บล็อก" ก่อน — ยังไม่เคยมีใครรันชุดนี้บน WebKit
+    #    เลยสักครั้ง (เครื่องที่เขียนเทสต์โหลด WebKit ไม่ได้) รอบแรกๆ อาจตกเพราะ
+    #    เทสต์เขียนผูกกับ Chromium ไม่ใช่เพราะเว็บพัง · เก็บผลไปไล่แก้ทีละข้อ
+    #    **แก้ครบเมื่อไหร่ให้ลบบรรทัด continue-on-error ทิ้ง** ไม่งั้นมีไว้ก็ไม่ได้กันอะไร
+    continue-on-error: ${{ matrix.browser == 'webkit' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # ⚠️ ใช้ `npm install` ไม่ใช่ `npm ci` — repo นี้ไม่ได้ commit package-lock.json
+      #    (อยู่ใน .gitignore มาแต่เดิม) `npm ci` จะพังทันทีเพราะไม่มี lock ให้อ่าน
+      - name: ติดตั้ง dependency ของเทสต์
+        working-directory: tests
+        run: npm install
+
+      - name: ติดตั้งเบราว์เซอร์
+        working-directory: tests
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: เปิดเซิร์ฟเวอร์ static (เทสต์ที่เปิดเบราว์เซอร์ต้องใช้)
+        run: |
+          python3 -m http.server 8899 --directory . &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://127.0.0.1:8899/trend/ && echo "server ok" && exit 0
+            sleep 1
+          done
+          echo "เซิร์ฟเวอร์ไม่ขึ้นภายใน 30 วิ"; exit 1
+
+      - name: รันเทสต์ทั้งหมด
+        working-directory: tests
+        env:
+          TEST_BROWSER: ${{ matrix.browser }}
+          TZ: Asia/Bangkok # sheetorder.mjs ต้องใช้ ไม่งั้นเรียงวันผิด
+        run: |
+          fails=""
+          for f in *.mjs; do
+            [ "$f" = "browser.mjs" ] && continue
+            echo "─────────── $f ───────────"
+            if timeout 300 node "$f"; then :; else fails="$fails $f"; fi
+          done
+          echo
+          if [ -n "$fails" ]; then echo "❌ ตก:$fails"; exit 1; fi
+          echo "✅ ผ่านหมด"

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>ตรวจเครื่องนี้ — CP Dashboards</title>
+<meta name="robots" content="noindex" />
+<meta name="page-ver" content="1" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>" />
+<!--
+  หน้าตรวจตัวเองบนเครื่องจริง (สร้าง 25 ส.ค. 2026)
+
+  🎯 เจ้าของถาม: "มีวิธีทำระบบ test ของ ios mobile เองไหม?"
+     เทสต์อัตโนมัติรันบน WebKit ที่ GitHub ได้ก็จริง แต่ **เรื่องที่มีแต่ iPhone จริงตอบได้**
+     (เมนูแชร์ · เพิ่มลงหน้าจอโฮม · safe-area จริง · เปิดจากในไลน์) ยังต้องมีคนเปิดดู
+     หน้านี้ทำให้งานนั้นเหลือแค่ "เปิด 1 หน้า อ่านผล" แทนที่จะไล่กดทีละอย่างแล้วเดา
+
+  ⚠️ ไม่มีลิงก์จาก landing โดยตั้งใจ — เป็นเครื่องมือ ไม่ใช่แดชบอร์ด
+  ⚠️ ห้ามใส่แถบชวนติดตั้ง (/installprompt.js) ที่หน้านี้ — มันจะไปเด้งทับผลตรวจ
+     และทำให้ค่าที่วัดเพี้ยน (หน้านี้มีไว้ "ดู" ตัวมัน ไม่ใช่ใช้ตัวมัน)
+-->
+<style>
+  :root { --bg:#f4f6fb; --surface:#fff; --border:#e4e8f0; --text:#1f2937; --muted:#6b7280;
+          --ok:#0d9488; --bad:#dc2626; --warn:#b45309; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14161a; --surface:#1b1e24; --border:rgba(150,150,150,.22); --text:#e8eaf0; --muted:#9aa2b1;
+            --ok:#2dd4bf; --bad:#f87171; --warn:#fbbf24; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+         padding: 16px 14px calc(24px + env(safe-area-inset-bottom,0px)); }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 16px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+          padding:12px 14px; margin-bottom:12px; }
+  .card h2 { font-size:14px; margin:0 0 10px; color:var(--muted); font-weight:600; }
+  .row { display:flex; gap:10px; padding:7px 0; border-top:1px solid var(--border); align-items:flex-start; }
+  .row:first-of-type { border-top:0; }
+  .ic { flex:none; width:20px; text-align:center; }
+  .what { flex:1; min-width:0; }
+  .what b { display:block; font-weight:600; font-size:14px; }
+  .what span { display:block; color:var(--muted); font-size:12.5px; word-break:break-word; }
+  .ok b { color:var(--ok); } .bad b { color:var(--bad); } .warn b { color:var(--warn); }
+  #sum { font-size:15px; font-weight:700; padding:12px 14px; border-radius:14px; margin-bottom:12px;
+         border:1px solid var(--border); background:var(--surface); }
+  #sum.good { border-color:var(--ok); color:var(--ok); }
+  #sum.bad  { border-color:var(--bad); color:var(--bad); }
+  button { font:inherit; font-weight:600; border:1px solid var(--border); background:var(--surface);
+           color:var(--text); border-radius:999px; padding:9px 16px; cursor:pointer; }
+  .acts { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+  a { color:#2563eb; } @media (prefers-color-scheme: dark) { a { color:#7ab0ff; } }
+</style>
+</head>
+<body>
+  <h1>🩺 ตรวจเครื่องนี้</h1>
+  <p class="sub">เปิดหน้านี้บนเครื่องที่อยากตรวจ — มันจะไล่เช็คให้เอง แล้วบอกว่าอะไรผ่าน อะไรไม่ผ่าน</p>
+
+  <div id="sum">กำลังตรวจ…</div>
+  <div id="out"></div>
+
+  <div class="card">
+    <h2>ถ้ามีข้อไหนไม่ผ่าน</h2>
+    <p class="sub" style="margin:0 0 10px">กดปุ่มนี้แล้วส่งข้อความที่ได้มาให้ Claude — จะได้ไม่ต้องพิมพ์เอง</p>
+    <div class="acts">
+      <button id="copy">📋 คัดลอกผลทั้งหมด</button>
+      <button id="again">🔄 ตรวจใหม่</button>
+      <button id="reset">🧹 ล้างความจำแถบชวนติดตั้ง</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+  var out = document.getElementById("out"), rows = [], groups = {};
+
+  // level: "ok" | "bad" | "warn" | "info"
+  function add(group, level, what, detail) {
+    rows.push({ group: group, level: level, what: what, detail: detail == null ? "" : String(detail) });
+  }
+  function render() {
+    var order = [], byGroup = {};
+    rows.forEach(function (r) {
+      if (!byGroup[r.group]) { byGroup[r.group] = []; order.push(r.group); }
+      byGroup[r.group].push(r);
+    });
+    out.innerHTML = order.map(function (g) {
+      return '<div class="card"><h2>' + esc(g) + "</h2>" + byGroup[g].map(function (r) {
+        var ic = r.level === "ok" ? "✅" : r.level === "bad" ? "❌" : r.level === "warn" ? "⚠️" : "•";
+        return '<div class="row ' + r.level + '"><div class="ic">' + ic + "</div>" +
+               '<div class="what"><b>' + esc(r.what) + "</b>" +
+               (r.detail ? "<span>" + esc(r.detail) + "</span>" : "") + "</div></div>";
+      }).join("") + "</div>";
+    }).join("");
+    var bad = rows.filter(function (r) { return r.level === "bad"; }).length;
+    var warn = rows.filter(function (r) { return r.level === "warn"; }).length;
+    var s = document.getElementById("sum");
+    s.className = bad ? "bad" : "good";
+    s.textContent = bad ? "❌ ไม่ผ่าน " + bad + " ข้อ" + (warn ? " · น่าสังเกต " + warn + " ข้อ" : "")
+                        : warn ? "⚠️ ผ่านหมด แต่มี " + warn + " ข้อที่ควรดู"
+                               : "✅ ผ่านหมด ไม่มีอะไรผิดปกติ";
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+
+  var UA = navigator.userAgent || "";
+  var isIOS = /iphone|ipad|ipod/i.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var isIPad = /ipad/i.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var iosSafari = isIOS && !/(CriOS|EdgiOS|FxiOS|OPiOS)/i.test(UA);
+  // ต้องตรงกับตาราง IN_APP ใน /installprompt.js
+  var IN_APP = [
+    [/(^|[\s;])Line\/\d/i, "ไลน์"], [/(FBAN|FBAV|FB_IAB|FB4A)/i, "เฟซบุ๊ก"],
+    [/Instagram/i, "อินสตาแกรม"], [/MicroMessenger/i, "วีแชท"], [/(TikTok|musical_ly|Bytedance)/i, "ติ๊กต่อก"],
+  ];
+  function inAppName() {
+    for (var i = 0; i < IN_APP.length; i++) if (IN_APP[i][0].test(UA)) return IN_APP[i][1];
+    return "";
+  }
+  function mm(q) { try { return window.matchMedia && matchMedia(q).matches; } catch (e) { return false; } }
+
+  async function run() {
+    rows = [];
+
+    // ---------- เครื่องนี้คืออะไร ----------
+    var app = inAppName();
+    var os = isIOS ? (isIPad ? "iPad" : "iPhone") : /Android/i.test(UA) ? "Android" : "เดสก์ท็อป";
+    var br = app ? "เบราว์เซอร์ในแอป" + app
+           : /CriOS|Chrome/i.test(UA) ? "Chrome" : /EdgiOS|Edg\//i.test(UA) ? "Edge"
+           : /FxiOS|Firefox/i.test(UA) ? "Firefox" : iosSafari ? "Safari" : "อื่นๆ";
+    add("เครื่องนี้คืออะไร", "info", os + " · " + br, UA);
+    add("เครื่องนี้คืออะไร", "info", "ขนาดหน้าจอ " + innerWidth + " × " + innerHeight,
+        "อัตราส่วนภาพ " + (window.devicePixelRatio || 1) + "x");
+
+    var standalone = mm("(display-mode: standalone)") || navigator.standalone === true;
+    add("เครื่องนี้คืออะไร", "info",
+        standalone ? "กำลังเปิดจากไอคอนบนหน้าจอ (ติดตั้งแล้ว)" : "กำลังเปิดจากเบราว์เซอร์ (ยังไม่ได้ติดตั้ง)",
+        standalone ? "แถบชวนติดตั้งจะไม่ขึ้น ถูกต้องแล้ว" : "");
+
+    // ---------- เงื่อนไขที่เบราว์เซอร์บังคับ ก่อนจะยอมให้ติดตั้ง ----------
+    // localhost/127.0.0.1 เบราว์เซอร์นับว่าปลอดภัยอยู่แล้ว (ไว้ทดสอบในเครื่อง)
+    var localhost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+    var secure = location.protocol === "https:" || localhost;
+    add("เงื่อนไขการติดตั้ง", secure ? "ok" : "bad",
+        "เปิดผ่าน " + location.protocol.replace(":", "") + (localhost ? " (เครื่องตัวเอง)" : ""),
+        secure ? "" : "ต้องเป็น https ไม่งั้นติดตั้งไม่ได้เลย");
+
+    try {
+      var r = await fetch("/manifest.webmanifest", { cache: "no-store" });
+      var mf = await r.json();
+      var sizes = (mf.icons || []).map(function (i) { return i.sizes; }).join(" ");
+      add("เงื่อนไขการติดตั้ง", "ok", "ไฟล์ manifest โหลดได้", mf.name + " · display: " + mf.display);
+      add("เงื่อนไขการติดตั้ง", /192x192/.test(sizes) && /512x512/.test(sizes) ? "ok" : "bad",
+          "ไอคอนครบ 192 + 512", sizes || "ไม่มีไอคอนเลย");
+      // โหลดไฟล์ไอคอนจริง ไม่ใช่เชื่อแค่ที่เขียนไว้ใน manifest
+      for (var k = 0; k < (mf.icons || []).length; k++) {
+        var ic = mf.icons[k];
+        try {
+          var ir = await fetch(ic.src, { cache: "no-store" });
+          if (!ir.ok) add("เงื่อนไขการติดตั้ง", "bad", "ไอคอน " + ic.src + " โหลดไม่ได้", "HTTP " + ir.status);
+        } catch (e) { add("เงื่อนไขการติดตั้ง", "bad", "ไอคอน " + ic.src + " โหลดไม่ได้", String(e)); }
+      }
+    } catch (e) {
+      add("เงื่อนไขการติดตั้ง", "bad", "โหลด manifest ไม่ได้", String(e));
+    }
+
+    // service worker — ตัวที่เคยทำให้เดสก์ท็อปไม่ขึ้นแถบเลย
+    if (!("serviceWorker" in navigator)) {
+      add("เงื่อนไขการติดตั้ง", "warn", "เบราว์เซอร์นี้ไม่มี service worker",
+          "โหมดส่วนตัวของ Safari เป็นแบบนี้ — หน้าเว็บใช้ได้ปกติ แค่ไม่มีระบบอัปเดตอัตโนมัติ");
+    } else {
+      try {
+        var reg = await navigator.serviceWorker.getRegistration("/");
+        if (!reg) {
+          add("เงื่อนไขการติดตั้ง", "warn", "ยังไม่ได้ลงทะเบียน service worker",
+              "ปกติจะลงให้เองตอนเปิดหน้าแดชบอร์ด — ลองเปิด /trend/ สักครั้งแล้วกลับมาตรวจใหม่");
+        } else {
+          add("เงื่อนไขการติดตั้ง", "ok", "service worker ทำงานอยู่", "scope " + reg.scope);
+          var ver = await swVersion();
+          add("เงื่อนไขการติดตั้ง", ver ? "ok" : "warn", ver ? "เวอร์ชัน sw ในเครื่องนี้ = " + ver : "ถาม sw ไม่ตอบ",
+              ver && ver < 6 ? "ตัวเก่า — ตัวที่แก้เรื่องติดตั้งคือ sw6 ขึ้นไป" : "");
+        }
+        // 🔑 ตัวจริงที่ทำให้ Chrome/Edge ยอมให้ติดตั้ง
+        var swTxt = await (await fetch("/sw.js", { cache: "no-store" })).text();
+        var hasFetch = /addEventListener\(\s*["']fetch["']/.test(swTxt);
+        add("เงื่อนไขการติดตั้ง", hasFetch ? "ok" : "bad", "sw.js มีตัวดัก fetch",
+            hasFetch ? "เงื่อนไขที่ Chrome/Edge บังคับ" : "ไม่มี → Chrome/Edge จะไม่ยอมให้ติดตั้งเลย");
+        var bad = /respondWith/.test(swTxt.split("\n").filter(function (l) {
+          return l.trim().indexOf("//") !== 0; }).join("\n"));
+        add("เงื่อนไขการติดตั้ง", bad ? "bad" : "ok", "sw.js ไม่แตะคำขอใดๆ",
+            bad ? "เจอ respondWith — เคยทำให้ทั้งเว็บเปิดไม่ขึ้นมาแล้ว" : "");
+      } catch (e) {
+        add("เงื่อนไขการติดตั้ง", "warn", "ตรวจ service worker ไม่สำเร็จ", String(e));
+      }
+    }
+
+    // ---------- แถบชวนติดตั้ง ----------
+    if (app) {
+      add("แถบชวนติดตั้ง", "warn", "เปิดจากในแอป" + app + " — ติดตั้งไม่ได้จากตรงนี้",
+          "ถูกต้องแล้วที่แถบจะบอกให้เปิดในเบราว์เซอร์ก่อน");
+    } else if (isIOS) {
+      add("แถบชวนติดตั้ง", "ok", "iOS — ไม่มีปุ่มติดตั้ง มีแต่บอกวิธี",
+          "ควรบอกว่าปุ่มแชร์อยู่" + (isIPad ? "ด้านบน" : "ด้านล่าง") +
+          (iosSafari ? "ของ Safari" : "ของเบราว์เซอร์"));
+    } else {
+      var got = await waitInstallPrompt(4000);
+      add("แถบชวนติดตั้ง", got ? "ok" : "warn",
+          got ? "เบราว์เซอร์ยอมให้ติดตั้ง (ส่งสัญญาณมาแล้ว)" : "เบราว์เซอร์ยังไม่ส่งสัญญาณติดตั้งมา",
+          got ? "" : "สาเหตุที่พบบ่อย: อยู่ในโหมดส่วนตัว/InPrivate · ติดตั้งไปแล้ว · หรือ sw ยังเป็นตัวเก่า");
+    }
+    var last = ls("installPromptAt"), done = ls("installPromptDone");
+    add("แถบชวนติดตั้ง", done ? "warn" : "ok",
+        done ? "เครื่องนี้จำว่า 'ติดตั้งสำเร็จแล้ว'" : "ยังชวนได้ตามปกติ",
+        done ? "แถบจะไม่ขึ้นอีก — ถ้าจริงๆ ยังไม่ได้ติดตั้ง กดปุ่ม 🧹 ข้างล่างเพื่อล้าง" :
+        last ? "เคยขึ้นล่าสุดเมื่อ " + new Date(+last).toLocaleString("th-TH") +
+               " · ยังไม่ได้ติดตั้ง = เปิดหน้าเว็บอีกครั้งก็ขึ้นใหม่" : "ยังไม่เคยขึ้น");
+
+    // ---------- หน้าตาบนเครื่องนี้ ----------
+    var sw2 = document.scrollingElement.scrollWidth;
+    add("หน้าตาบนเครื่องนี้", sw2 <= innerWidth + 1 ? "ok" : "bad", "หน้านี้ไม่ล้นแนวนอน",
+        "กว้างจริง " + sw2 + "px · จอกว้าง " + innerWidth + "px");
+    var safe = getComputedStyle(document.body).paddingBottom;
+    // ⚠️ ค่า env(safe-area-*) เป็น 0 เมื่อหน้าไม่ได้ใส่ viewport-fit=cover — **ไม่ใช่บั๊ก**
+    //    เพราะ iOS จะกันเนื้อหาไม่ให้ไปอยู่ใต้แถบล่างให้เองอยู่แล้ว
+    //    (เคยเขียนว่า "ควรได้มากกว่า 24px" ซึ่งทำให้เข้าใจผิดว่าผิดปกติ)
+    add("หน้าตาบนเครื่องนี้", "info", "ขอบล่างของหน้านี้ = " + safe,
+        isIOS ? "iOS กันพื้นที่ใต้แถบล่างให้เองอยู่แล้ว ค่านี้เท่าไหร่ก็ได้ ขอแค่เนื้อหาไม่โดนบัง" : "");
+    add("หน้าตาบนเครื่องนี้", "info",
+        "โหมดสี: " + (mm("(prefers-color-scheme: dark)") ? "มืด" : "สว่าง"), "");
+
+    // ---------- แดชบอร์ดยังตอบไหม ----------
+    for (var i = 0; i < EPS.length; i++) {
+      var ep = EPS[i], t0 = Date.now();
+      try {
+        var res = await fetch(ep[1], { cache: "no-store" });
+        var ms = Date.now() - t0;
+        var ct = res.headers.get("content-type") || "";
+        if (!res.ok) add("ข้อมูลยังมาไหม", "bad", ep[0] + " ตอบ " + res.status, ep[1]);
+        else if (ct.indexOf("json") < 0)
+          // ⚠️ เคสนี้เกิดจริงตอน Cloudflare Access หมดอายุ — ตอบหน้าล็อกอินเป็น HTML
+          add("ข้อมูลยังมาไหม", "bad", ep[0] + " ไม่ได้ตอบเป็นข้อมูล", "ได้ " + ct + " — อาจต้องเข้าสู่ระบบใหม่");
+        // ⚠️ ช้าเกิน 3 วิ = ผู้ใช้นั่งมองไอคอนหมุนนานเกินไป ต้องเห็นเป็นสีเหลือง ไม่ใช่เขียว
+        //    ปกติเป็นเพราะรอบนั้นไปตรงกับตอนที่ระบบดึงข่าวรอบใหม่ (build) — ลองซ้ำอีกครั้ง
+        //    ถ้ายังช้าเท่าเดิมทุกครั้ง แปลว่ามีปัญหาจริง ไม่ใช่แค่จังหวะ
+        else if (ms > 3000)
+          add("ข้อมูลยังมาไหม", "warn", ep[0] + " ช้ากว่าปกติ", ms + " ms — ลองตรวจซ้ำอีกครั้ง ถ้ายังช้าเท่าเดิมคือมีปัญหาจริง");
+        else add("ข้อมูลยังมาไหม", "ok", ep[0] + " ปกติ", ms + " ms");
+      } catch (e) {
+        add("ข้อมูลยังมาไหม", "bad", ep[0] + " เรียกไม่ได้", String(e));
+      }
+    }
+
+    render();
+  }
+  var EPS = [["ข่าว PR/Issue", "/api/trend/feeds"], ["ข่าว IR", "/api/ir/feeds"], ["สถานะปุ่ม", "/api/flags?scope=pr"]];
+
+  function ls(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function swVersion() {
+    return new Promise(function (res) {
+      var done = false;
+      function fin(v) { if (!done) { done = true; res(v); } }
+      try {
+        navigator.serviceWorker.addEventListener("message", function (e) {
+          if (e.data && e.data.type === "sw-version") fin(e.data.version);
+        });
+        navigator.serviceWorker.ready.then(function (r) {
+          var c = navigator.serviceWorker.controller || r.active;
+          if (c) c.postMessage({ type: "get-version" }); else fin(null);
+        });
+      } catch (e) { fin(null); }
+      setTimeout(function () { fin(null); }, 3000);
+    });
+  }
+  // ⚠️ ต้องดักไว้ตั้งแต่ก่อนเริ่มตรวจ — event นี้ยิงครั้งเดียวและอาจมาก่อนเราถาม
+  var gotPrompt = false;
+  window.addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); gotPrompt = true; });
+  function waitInstallPrompt(ms) {
+    return new Promise(function (res) {
+      if (gotPrompt) return res(true);
+      var t = setInterval(function () { if (gotPrompt) { clearInterval(t); res(true); } }, 150);
+      setTimeout(function () { clearInterval(t); res(gotPrompt); }, ms);
+    });
+  }
+
+  document.getElementById("again").onclick = function () { location.reload(); };
+  document.getElementById("reset").onclick = function () {
+    try { localStorage.removeItem("installPromptAt"); localStorage.removeItem("installPromptDone"); } catch (e) {}
+    alert("ล้างแล้ว — เปิดแดชบอร์ดใหม่อีกครั้ง แถบชวนติดตั้งจะขึ้นอีก");
+    location.reload();
+  };
+  document.getElementById("copy").onclick = function () {
+    var txt = "ผลตรวจ " + new Date().toLocaleString("th-TH") + "\n" + location.host + "\n\n" +
+      rows.map(function (r) {
+        var ic = r.level === "ok" ? "[ผ่าน]" : r.level === "bad" ? "[ไม่ผ่าน]" : r.level === "warn" ? "[ดูด้วย]" : "[ข้อมูล]";
+        return ic + " " + r.group + " — " + r.what + (r.detail ? "\n        " + r.detail : "");
+      }).join("\n");
+    var btn = this;
+    function done() { btn.textContent = "✅ คัดลอกแล้ว"; setTimeout(function () { btn.textContent = "📋 คัดลอกผลทั้งหมด"; }, 2000); }
+    // ⚠️ Safari รุ่นเก่าไม่มี clipboard API — ต้องมีทางถอย ไม่งั้นกดแล้วเงียบ
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done, fallback);
+    } else fallback();
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = txt; ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { prompt("คัดลอกข้อความนี้:", txt); }
+      document.body.removeChild(ta);
+    }
+  };
+
+  run().catch(function (e) {
+    document.getElementById("sum").textContent = "ตรวจไม่สำเร็จ: " + e;
+    render();
+  });
+})();
+</script>
+</body>
+</html>

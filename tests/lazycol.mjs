@@ -7,10 +7,9 @@
  *    และต้องยิง **คอลัมน์ละครั้งเดียว** (เคยพลาดเป็น 2 ครั้งเพราะ reveal กับ load() ยิงซ้อนกัน)
  */
 import fs from "node:fs";
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 const BASE = process.env.BASE || "http://127.0.0.1:8899";
-const CHROME = "/opt/pw-browsers/chromium";
 const MOBILE = { width: 390, height: 780 };
 const DESKTOP = { width: 1400, height: 900 };
 
@@ -59,7 +58,7 @@ const cols = (p) => p.$$eval(".panel", (els) => {
   return o;
 });
 
-const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox"] });
+const browser = await launch();
 
 // ── [1] มือถือ: เปิดหน้ามายิงคำขอเดียว ────────────────────────────────────
 console.log("\n[1] มือถือ — เปิดหน้ามาต้องยิงแค่คำขอเดียว");

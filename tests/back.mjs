@@ -1,5 +1,5 @@
 // /admin/ — ✂️ ข่าวที่ระบบตัดทิ้ง + ปุ่ม ↩ เอากลับ · และลำดับคอลัมน์ของ /trend/
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
 
@@ -12,7 +12,7 @@ const feeds = {
   swept: { dropped: [{ src: "alert2", why: "vendor", title: "ขายเครื่องกรองน้ำ", link: "https://epower.test/2" }] },
 };
 
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 const errs = []; page.on("pageerror", (e) => errs.push(String(e)));
 const posted = [];

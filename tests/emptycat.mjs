@@ -1,12 +1,12 @@
 // หมวดที่ไม่มีเทรนด์ ต้องบอกว่า "ไม่มีเทรนด์ในหมวดนี้" ไม่ใช่หมุนค้างว่า "กรุณารอซักครู่"
 // + เลขเวอร์ชันต้องอ่านจาก DOM ไม่ฮาร์ดโค้ดซ้ำ (ต้นเหตุที่แถบ "มีเวอร์ชันใหม่" เด้งไม่หยุด)
-import { chromium } from "playwright";
+import { launch } from "./browser.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
 
 const FEEDS = { generatedAt: new Date().toISOString(), sources: {} };
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+const browser = await launch();
 
 // ⚠️ อ่านเลขเวอร์ชันจาก index.html เอง — ห้ามพิมพ์เลขค้างไว้ในเทสต์
 // สิ่งที่เทสต์นี้คุมจริงคือ **APP_VER ต้องอ่านจากหน้าเว็บ ไม่ใช่เลขที่ฮาร์ดโค้ดไว้ในโค้ด**
