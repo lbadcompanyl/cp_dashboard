@@ -1220,13 +1220,29 @@ console.log("\n[27] รูปย่อของคอนเทนต์");
 {
   const { pg } = await open();
 
-  /* ⚠️ ต้องรอให้รูป "โหลดจบ" ก่อนวัด ไม่ใช่วัดทันทีที่หน้าโผล่
-     data URI ก็ยังถอดรหัสแบบไม่พร้อมกับการวาดหน้า และ WebKit ช้ากว่า Chromium
-     ⚠️ รอที่ complete ไม่ใช่ naturalWidth — โหลดไม่สำเร็จ complete ก็เป็น true
-        (พร้อม naturalWidth 0) เทสต์จึงยังจับรูปแตกจริงได้อยู่ ไม่ได้กลบปัญหา */
+  /* 🐞 ต้องเลื่อนหน้าให้สุดก่อนวัด — เจอจาก CI ฝั่ง WebKit (26 ส.ค. 2026)
+   *
+   *    รูปย่อมี loading="lazy" ซึ่ง **ตั้งใจให้เป็นแบบนั้น** (ไม่ใช่ของที่ต้องแก้)
+   *    WebKit โหลดเฉพาะรูปที่ใกล้จอจริงๆ · Chromium โหลดเผื่อไกลกว่ามาก
+   *    → บน WebKit รูปครึ่งล่างของหน้า **ไม่เคยถูกโหลดเลย** (complete=false ค้าง)
+   *      เทสต์เลยตก 6 จาก 12 ใบ ทั้งที่หน้าเว็บทำงานถูกทุกอย่าง
+   *      ส่วน Chromium ผ่านเพราะโหลดครบเอง = **ผ่านโดยบังเอิญ ไม่ได้ผ่านเพราะถูก**
+   *
+   * 🚫 ห้ามแก้ด้วยการถอด loading="lazy" ออก — นั่นคือทำให้เว็บแย่ลงเพื่อให้เทสต์ผ่าน
+   * ⚠️ รอที่ complete ไม่ใช่ naturalWidth — โหลดไม่สำเร็จ complete ก็เป็น true
+   *    (พร้อม naturalWidth 0) เทสต์จึงยังจับ "รูปเสียจริง" ได้อยู่ ไม่ได้กลบปัญหา
+   */
+  await pg.evaluate(async () => {
+    const el = document.scrollingElement;
+    for (let y = 0; y <= el.scrollHeight; y += innerHeight / 2) {
+      el.scrollTop = y;
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    el.scrollTop = 0;
+  });
   await pg.waitForFunction(
     () => [...document.querySelectorAll(".post img")].every((i) => i.complete),
-    null, { timeout: 5000 },
+    null, { timeout: 8000 },
   ).catch(() => {});
 
   const imgs = await pg.$$eval(".post img", (n) => n.map((e) => ({
