@@ -31,6 +31,36 @@ Cloudflare → cp-dashboard → Settings → Build → Branch control → Produc
 
 ไหลของงาน: `claude/*` → `dev` (ดูบน staging) → **อนุมัติ** → `main` (ผู้ใช้เห็น)
 
+### 🔗 มีของให้ดู = ต้องแนบ preview link มาด้วยเสมอ
+
+**เจ้าของสั่ง 26 ส.ค. 2026:** *"ต่อไปนี้ถ้ามี update ให้ดู เตรียม preview link ให้ด้วย
+เพราะไม่มี dev แล้ว"* — พอเปลี่ยนมาปล่อยจาก branch ตรงเข้า `main` แล้ว
+`dev.cp-dashboard-680.pages.dev` ไม่ใช่ที่ที่เจ้าของเปิดดูอีกต่อไป
+
+**ทุกครั้งที่บอกว่า "ทำเสร็จแล้ว ลองดู" ต้องมีลิงก์ติดมา** ไม่ใช่ให้เจ้าของไปหาเอง
+
+Cloudflare Pages แจก preview URL ให้ทุก branch อัตโนมัติ ตามสูตรนี้:
+
+```
+https://<ชื่อ branch>.cp-dashboard-680.pages.dev
+```
+
+`<ชื่อ branch>` = ชื่อ branch ที่แปลงแล้ว — ตัวพิมพ์เล็ก · อักขระที่ไม่ใช่ a-z0-9 เป็น `-`
+· **ตัดเหลือ 28 ตัวอักษร**
+
+| branch | preview URL |
+|---|---|
+| `claude/project-tests-s5dn0n` | `claude-project-tests-s5dn0n.cp-dashboard-680.pages.dev` |
+| `claude/dashboard-google-alerts-news-0mw9bg` | `claude-dashboard-google-aler.cp-dashboard-680.pages.dev` ← โดนตัดที่ 28 |
+
+> ⚠️ **preview URL ไม่ได้ถูกปิดด้วย Cloudflare Access** — นโยบายที่ตั้งไว้คลุมแค่
+> `cp-dashboard-680.pages.dev/social` ส่วนโดเมนของ branch เป็นคนละชื่อ
+> **ใครได้ลิงก์ไปก็เปิดดูสถิติช่องได้** · ส่งลิงก์ preview ของ `/social/` ให้ระวังจุดนี้
+> · ถ้าจะปิดด้วย ต้องเพิ่ม destination ในแอป Access เดิม (ใส่ได้ถึง 5 อัน)
+>
+> ⚠️ **branch ที่เนื้อหาเท่ากับ `main` เป๊ะ preview จะเหมือน production ทุกอย่าง**
+> ไม่ใช่ลิงก์เสีย — ถ้าไม่มีอะไรต่าง ให้บอกตรงๆ ว่าไม่ต้องเปิดดูก็ได้
+
 > ⚠️ **อย่าสับสนกับ `trend-dashboard.pages.dev`** — อันนั้นคือโปรเจกต์ **ต้นทาง**
 > ที่โค้ดหน้า 3 คอลัมน์ถูกยกมา (ดู `TREND-HANDOFF.md`) **ไม่ใช่แดชบอร์ดนี้**
 > เคยเข้าใจผิดมาแล้ว ทำให้ยิง URL ผิดโปรเจกต์ทั้งหมด
