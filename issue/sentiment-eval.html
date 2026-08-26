@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="1" />
+<meta name="page-ver" content="2" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -86,6 +86,12 @@
       <button id="run" class="primary" disabled>▶ รันวัดผล</button>
       <button id="stop" disabled>■ หยุด</button>
     </div>
+    <label class="row" style="margin-top:9px" id="ctxwrap" hidden>
+      <input type="checkbox" id="ctx" />
+      <span><b>ส่งหัวข้อของโพสต้นเรื่องไปด้วย</b>
+        <span class="small muted">— ตอนใช้งานจริงระบบรู้ว่าคอมเมนต์นี้อยู่ใต้โพสอะไร แต่ไฟล์เฉลยเป็นคอมเมนต์เดี่ยวๆ
+        ติ๊กแล้วจะจัดกลุ่มตามคอลัมน์ <code>topic</code> แล้วบอก AI ว่าโพสเรื่องอะไร</span></span>
+    </label>
     <p class="small muted" style="margin:9px 0 0">
       ต้องมีคอลัมน์ <code>id</code> · <code>message</code> · <code>sentiment_cp</code> · <code>overall_cred</code>
       (มี <code>is_sarcasm</code> จะวัดให้ด้วย) — เช่น <code>CPF_eval_verified_475.xlsx</code><br />
@@ -146,6 +152,7 @@ $("#file").addEventListener("change", async (e) => {
     const miss = need.filter((c) => !t.headers.includes(c));
     if (miss.length) throw new Error("ไฟล์ขาดคอลัมน์: " + miss.join(", "));
     rows = t.rows.filter((r) => String(r.message || "").trim());
+    $("#ctxwrap").hidden = !t.headers.includes("topic");
     const sar = rows.filter((r) => String(r.is_sarcasm) === "1").length;
     $("#fileinfo").innerHTML =
       `✅ อ่านได้ <b>${rows.length}</b> แถว · ประชด <b>${sar}</b> ข้อ · ` +
@@ -164,8 +171,22 @@ $("#run").addEventListener("click", async () => {
   $("#run").disabled = true; $("#stop").disabled = false;
   $("#progwrap").hidden = false; $("#out").innerHTML = "";
 
+  /* ก้อนที่จะยิง — เก็บ "ตำแหน่งจริงในตาราง" ติดไปด้วยเสมอ
+     ⚠️ ห้ามคิดตำแหน่งจาก index ของก้อน เพราะโหมดใส่บริบทจะจัดกลุ่มใหม่ตามหัวข้อ
+        ลำดับจึงไม่ตรงกับตารางอีกต่อไป — เคยเป็นบั๊กแบบเงียบที่สุดที่เจอในงานนี้ */
+  const useCtx = $("#ctx").checked && !$("#ctxwrap").hidden;
+  const groups = new Map();
+  rows.forEach((r, i) => {
+    const key = useCtx ? String(r.topic || "ไม่ระบุ") : "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(i);
+  });
   const chunks = [];
-  for (let i = 0; i < rows.length; i += BATCH) chunks.push(rows.slice(i, i + BATCH));
+  for (const [topic, idxs] of groups) {
+    for (let i = 0; i < idxs.length; i += BATCH) {
+      chunks.push({ idx: idxs.slice(i, i + BATCH), topic });
+    }
+  }
   const preds = new Array(rows.length).fill(null);
   let done = 0, failed = 0;
   const t0 = Date.now();
@@ -184,24 +205,29 @@ $("#run").addEventListener("click", async () => {
       const ci = next++;
       const chunk = chunks[ci];
       try {
+        const body = { texts: chunk.idx.map((i) => String(rows[i].message)) };
+        if (useCtx && chunk.topic) {
+          body.context = `คอมเมนต์เหล่านี้อยู่ใต้โพส/ข่าวที่เกี่ยวกับเครือ CP/CPF หัวข้อ "${chunk.topic}"`;
+        }
         const r = await fetch(WORKER + "/classify", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ texts: chunk.map((c) => String(c.message)) }),
+          body: JSON.stringify(body),
         });
         const d = await r.json();
         if (!r.ok || !Array.isArray(d.results)) throw new Error(d.detail || d.error || ("HTTP " + r.status));
         if (d.ver != null) meta = { ver: d.ver, rubric: d.rubric ?? meta.rubric, model: d.model || meta.model };
-        d.results.forEach((res, j) => { preds[ci * BATCH + j] = res; });
+        d.results.forEach((res, j) => { if (chunk.idx[j] !== undefined) preds[chunk.idx[j]] = res; });
       } catch (err) {
         failed++;
         // ก้อนที่พลาดปล่อยเป็น null — จะถูกนับแยกไว้ ไม่เอาไปปนกับผลที่ทายจริง
         console.warn("batch", ci, err);
       }
-      done += chunk.length;
+      done += chunk.idx.length;
       tick();
     }
   }
+  window.__usedCtx = useCtx;
   await Promise.all(Array.from({ length: PARALLEL }, worker));
 
   $("#stop").disabled = true; $("#run").disabled = false;
@@ -310,7 +336,7 @@ function render(preds, sec, failedBatches) {
      </div>`;
 
   $("#expcsv").addEventListener("click", () => exportRows(scored));
-  saveLog({ cp, oc, sarRows: sarRows.length, sarHit, n: scored.length, sec });
+  saveLog({ cp, oc, sarRows: sarRows.length, sarHit, n: scored.length, sec, ctx: window.__usedCtx });
 }
 
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -346,7 +372,7 @@ function readLog() { try { return JSON.parse(localStorage.getItem(LOGKEY) || "[]
 function saveLog(m) {
   const log = readLog();
   log.unshift({
-    at: new Date().toISOString(), ver: meta.ver, rubric: meta.rubric, model: meta.model, n: m.n, sec: m.sec,
+    at: new Date().toISOString(), ver: meta.ver, rubric: meta.rubric, model: meta.model, ctx: m.ctx ? 1 : 0, n: m.n, sec: m.sec,
     cp_acc: +m.cp.acc.toFixed(4), cp_neg: +m.cp.recall.Negative.toFixed(4),
     oc_acc: +m.oc.acc.toFixed(4), oc_neg: +m.oc.recall.Negative.toFixed(4),
     sar: m.sarRows ? +(m.sarHit / m.sarRows).toFixed(4) : null,
@@ -359,13 +385,13 @@ function renderLog() {
   if (!log.length) { $("#log").innerHTML = '<div class="muted small">ยังไม่มีผลรอบไหนถูกบันทึก</div>'; return; }
   const f = (x) => x == null ? "–" : (x * 100).toFixed(1) + "%";
   $("#log").innerHTML = `<div class="scroll"><table>
-    <tr><th>เมื่อไหร่</th><th class="num">Worker</th><th>rubric</th><th class="num">CP acc</th>
+    <tr><th>เมื่อไหร่</th><th class="num">Worker</th><th>rubric</th><th>บริบท</th><th class="num">CP acc</th>
         <th class="num">CP neg</th><th class="num">รวม acc</th><th class="num">รวม neg</th>
         <th class="num">ประชด</th><th class="num">n</th></tr>
     ${log.map((r) => {
       const ok = (v) => `<td class="num" style="color:${v >= PASS ? "var(--pos)" : "var(--neg)"};font-weight:700">${f(v)}</td>`;
       return `<tr><td class="small">${new Date(r.at).toLocaleString("th-TH")}</td>
-        <td class="num">v${r.ver}</td><td class="small">${r.rubric}</td>
+        <td class="num">v${r.ver}</td><td class="small">${r.rubric}</td><td class="small">${r.ctx ? 'ส่ง' : '–'}</td>
         <td class="num">${f(r.cp_acc)}</td>${ok(r.cp_neg)}
         <td class="num">${f(r.oc_acc)}</td>${ok(r.oc_neg)}
         <td class="num">${f(r.sar)}</td><td class="num">${r.n}</td></tr>`;
