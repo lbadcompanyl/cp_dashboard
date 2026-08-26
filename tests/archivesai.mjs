@@ -300,6 +300,13 @@ console.log("\n[8] ทางถอยเมื่อ AI ตอบไม่ได
   ok("แกะ JSON ที่มีข้อความพ่วงหน้า-หลังได้", M.parseJSON('นี่คือคำตอบ {"terms":["ปลา"]} ครับ')?.terms?.[0] === "ปลา");
   ok("ไม่มี JSON เลย = ยอมแพ้ ไม่เดา", M.parseJSON("ขอโทษครับ ผมไม่เข้าใจ") === null);
 
+  // 🔑 กุญแจ Claude เป็นของเสริม — ไม่ใส่ก็ต้องทำงานเหมือนเดิม และห้ามหลุดลง repo
+  const api = fs.readFileSync(new URL("../functions/api/archives/ask.js", import.meta.url), "utf8");
+  ok("อ่านกุญแจจาก env เท่านั้น", /env\.ANTHROPIC_API_KEY/.test(api));
+  ok("🚫 ไม่มีกุญแจจริงฝังอยู่ในโค้ด", !/sk-ant-[A-Za-z0-9-]{10}/.test(api));
+  ok("ไม่มีกุญแจ = ไม่ถือว่าพัง แค่ไม่ได้เปิดใช้", /if \(!key\) return \{ obj: null, why: "" \}/.test(api));
+  ok("มีทาง Cloudflare สำรองไว้เสมอ", /PLAN_MODELS/.test(api) && /env\.AI\.run/.test(api));
+
   // 🐞 เจ้าของเจอจริง: "raw.replace is not a function" — คำตอบไม่ได้เป็นสตริงเสมอไป
   //    แล้ว error หลุดออกไปทั้งฟังก์ชัน = โมเดลสำรองไม่มีวันได้ลอง
   ok("คำตอบเป็นสตริง", M.aiText({ response: "hi" }) === "hi");

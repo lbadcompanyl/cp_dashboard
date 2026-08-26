@@ -57,7 +57,7 @@ async function handlePlan(url, env) {
 
   let plan = null;
   let err = "";
-  let why = env && env.AI ? "" : "ยังไม่ได้ต่อ AI";
+  let why = hasAI(env) ? "" : "ยังไม่ได้ต่อ AI";
   try {
     const r = await askPlan(env, q);
     plan = r.plan;
@@ -84,7 +84,7 @@ async function handlePlan(url, env) {
 
 // ให้ AI แยกว่าอะไร "ค้นด้วยตัวอักษรได้" กับอะไร "ต้องอ่านแล้วตีความ"
 async function askPlan(env, q) {
-  if (!env || !env.AI) return { plan: null, why: "ยังไม่ได้ต่อ AI" };
+  if (!hasAI(env)) return { plan: null, why: "ยังไม่ได้ต่อ AI" };
   // ⚠️ **คำสั่งเป็นภาษาอังกฤษ แต่เนื้อหาเป็นไทย** — วัดจากของจริงแล้วโมเดลเล็กทำตามรูปแบบ
   //    ได้ดีกว่ามากเมื่อคำสั่งเป็นอังกฤษ (รอบแรกสั่งเป็นไทยล้วน แล้วได้ "ตอบมาแต่แกะไม่ได้")
   const prompt =
@@ -134,6 +134,61 @@ const PLAN_MODELS = [
 // การคัดพาดหัวยิงเยอะกว่ามาก (200 ใบ = 10 ครั้ง) จึงเริ่มที่ตัวกลาง ไม่ใช่ตัวใหญ่สุด
 const JUDGE_MODELS = ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.2-3b-instruct"];
 
+/* 🥇 **ทางที่ฉลาดกว่า: Claude API** — เปิดใช้เมื่อมี `ANTHROPIC_API_KEY` เท่านั้น
+ *
+ * Workers AI ที่ผูกมากับ Cloudflare เป็นโมเดลเล็ก ภาษาไทยพลาดบ่อย (เจ้าของเจอเองมาแล้ว 2 รอบ)
+ * ตัวนี้เก่งกว่ามาก แต่ **เสียเงินตามการใช้** จึงไม่เปิดเอง — ไม่ใส่กุญแจก็ทำงานเหมือนเดิมทุกอย่าง
+ *
+ * 💰 คำถาม 1 คำถาม = ยิง 1 ครั้ง แล้ว **จำคำตอบ 24 ชม.** · การคัดพาดหัวยิงเพิ่มตามจำนวนใบ
+ *    เปลี่ยนรุ่นได้ด้วย env `ANTHROPIC_MODEL` (เช่น `claude-haiku-4-5` ถ้าอยากประหยัดกว่านี้)
+ *
+ * 🔑 **ห้าม commit กุญแจลง repo เด็ดขาด — repo เป็น public**
+ *    ใส่เป็น Secret ใน Cloudflare (Production + Preview) แล้ว Retry deployment
+ *
+ * ⚠️ ยิงตรงด้วย fetch ไม่ได้ใช้ SDK — โปรเจกต์นี้ไม่มีขั้นตอน build และไม่มี npm ใน functions/
+ *    (ท่าเดียวกับที่ `social-comment-extractor/worker/worker.js` ใช้อยู่แล้ว)
+ */
+const hasAI = (env) => !!(env && (env.ANTHROPIC_API_KEY || env.AI));
+
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const ANTHROPIC_DEFAULT_MODEL = "claude-opus-5";
+
+async function askClaude(env, prompt, maxTokens) {
+  const key = env && env.ANTHROPIC_API_KEY;
+  if (!key) return { obj: null, why: "" };            // ไม่มีกุญแจ = ไม่ใช่ความผิดพลาด แค่ไม่ได้เปิดใช้
+  const model = (env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL).trim();
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        // งานนี้เป็นการจัดรูปประโยคสั้นๆ ไม่ต้องคิดลึก — ลด effort ลงเพื่อให้เร็วและถูกลง
+        output_config: { effort: "low" },
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      return { obj: null, why: `claude ${res.status}: ${t.replace(/\s+/g, " ").slice(0, 60)}` };
+    }
+    const data = await res.json();
+    // ⚠️ content เป็น "อาร์เรย์ของบล็อก" ไม่ใช่ข้อความก้อนเดียว และมีบล็อกที่ไม่ใช่ text ปนได้
+    const text = (data && Array.isArray(data.content) ? data.content : [])
+      .filter((b) => b && b.type === "text").map((b) => b.text).join("");
+    const obj = parseJSON(text);
+    if (obj) return { obj, why: "" };
+    return { obj: null, why: `claude แกะไม่ได้: ${String(text).replace(/\s+/g, " ").slice(0, 60)}` };
+  } catch (e) {
+    return { obj: null, why: `claude: ${String((e && e.message) || e).slice(0, 60)}` };
+  }
+}
+
 /** เรียก AI ไล่ทีละโมเดลจนกว่าจะได้ JSON ที่แกะได้ · คืนเหตุผลกลับไปด้วยเสมอ
  *
  * ⚠️ **ทั้งรอบต้องอยู่ใน try** — ไม่ใช่แค่ตอนเรียก AI
@@ -142,7 +197,12 @@ const JUDGE_MODELS = ["@cf/meta/llama-3.1-8b-instruct", "@cf/meta/llama-3.2-3b-i
  *    = โมเดลตัวที่ 2 กับ 3 ไม่มีวันได้ลองเลย · ตัวที่ควรกันพลาดกลับกลายเป็นตัวที่พัง
  */
 async function runAI(env, prompt, maxTokens, models) {
-  let why = "ไม่มีโมเดลที่ใช้ได้";
+  // 🥇 มีกุญแจ Claude = ใช้ตัวนั้นก่อนเสมอ (เก่งกว่ามาก) · ล้มเหลวค่อยตกมาที่ Workers AI
+  const c = await askClaude(env, prompt, maxTokens);
+  if (c.obj) return { obj: c.obj, raw: "", model: "claude", why: "" };
+
+  let why = c.why || "ไม่มีโมเดลที่ใช้ได้";
+  if (!env || !env.AI) return { obj: null, raw: "", model: "", why: why || "ยังไม่ได้ต่อ AI" };
   for (const model of models) {
     try {
       const out = await env.AI.run(model, { messages: [{ role: "user", content: prompt }], max_tokens: maxTokens });
@@ -234,7 +294,7 @@ async function handleJudge(request, url, env) {
   resetLog();
   const L = startLog("archives/ask");
 
-  if (!env.AI) {
+  if (!hasAI(env)) {
     // ⚠️ ไม่มี AI = **เก็บทุกใบ ไม่ใช่ตัดทุกใบ** — ตัดทิ้งเงียบๆ คือของหายโดยไม่มีใครรู้
     L.warn("ยังไม่ได้ต่อ AI จึงไม่ได้คัดตามเงื่อนไข");
     await finishLog(env, L);
