@@ -503,6 +503,26 @@ console.log("\n[9c] ลำดับความเด่น");
     ok(`${name}: ข้อความที่พิมพ์ไม่มุดใต้ปุ่ม`, z.textRight <= z.c + 1 && z.textRight <= z.f + 1,
       `ข้อความจบ ${Math.round(z.textRight)} · ปุ่มล้าง ${Math.round(z.c)} · ตัวกรอง ${Math.round(z.f)}`);
     ok(`${name}: ยังเหลือที่พิมพ์พอสมควร`, z.typable >= 180, `${Math.round(z.typable)}px`);
+
+    // 🏷 ป้าย "🤖 ค้นด้วย AI" ต้องอยู่ "ในช่องค้นหา" (เจ้าของสั่ง 27 ส.ค. 2026)
+    // และห้ามทับข้อความที่พิมพ์ — บทเรียนเดียวกับปุ่มตัวกรองฝั่งขวา
+    const tg = await p.evaluate(() => {
+      const t = document.querySelector(".aitag.insearch");
+      if (!t) return null;
+      const b = t.getBoundingClientRect();
+      const q = document.querySelector("#q"), cs = getComputedStyle(q), qb = q.getBoundingClientRect();
+      return { l: b.left, r: b.right, t: b.top, b: b.bottom, txt: (t.textContent || "").trim(),
+               ql: qb.left, qr: qb.right, qt: qb.top, qb2: qb.bottom,
+               textLeft: qb.left + parseInt(cs.paddingLeft) };
+    });
+    ok(`${name}: มีป้าย AI อยู่ในช่องค้นหา`, !!tg && tg.l >= tg.ql - 1 && tg.r <= tg.qr &&
+      tg.t >= tg.qt - 1 && tg.b <= tg.qb2 + 1,
+      tg ? `ช่อง ${Math.round(tg.ql)}-${Math.round(tg.qr)} · ป้าย ${Math.round(tg.l)}-${Math.round(tg.r)}` : "ไม่มีป้าย");
+    ok(`${name}: ป้าย AI ไม่ทับข้อความที่พิมพ์`, !!tg && tg.r <= tg.textLeft + 1,
+      tg ? `ป้ายจบ ${Math.round(tg.r)} · ข้อความเริ่ม ${Math.round(tg.textLeft)}` : "-");
+    // จอแคบตัดเหลือ "🤖 AI" ได้ แต่ **ห้ามเหลือแต่ไอคอน** ไม่งั้นบอกไม่ได้ว่าเป็น AI
+    ok(`${name}: ป้ายยังมีคำว่า AI อยู่`, !!tg && /AI/i.test(tg.txt), tg ? tg.txt : "-");
+
     await p.fill("#q", "");
     await p.close();
     await c.close();

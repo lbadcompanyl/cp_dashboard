@@ -60,13 +60,10 @@ body {
    เว้นที่ให้หายใจข้างบน · ตัวใหญ่กว่าปกติ · เงาลอยขึ้นมาจากพื้น */
 .sticky { position:sticky; top:0; z-index:50; background:var(--plane); padding:76px 0 16px; }
 .searchrow { position:relative; display:flex; align-items:center; }
-.sicon {
-  position:absolute; left:20px; font-size:1.15rem; pointer-events:none; opacity:.8;
-}
 #q {
   width:100%; font-family:inherit; font-size:1.15rem; font-weight:500; color:var(--ink);
   background:var(--surface); border:1.5px solid var(--border); border-radius:999px;
-  padding:18px 162px 18px 56px; -webkit-appearance:none; appearance:none;
+  padding:18px 162px 18px 148px; -webkit-appearance:none; appearance:none;
   box-shadow:0 2px 10px rgba(16,24,40,.06);
   transition:border-color .12s, box-shadow .12s;
 }
@@ -83,16 +80,24 @@ body {
 .qclear:hover { color:var(--ink); background:var(--surface-2); }
 /* 📢 อยู่ "เหนือ" ช่องค้นหา — ต้องอ่านออกก่อนที่มือจะเริ่มพิมพ์ จึงตัวใหญ่กว่าหมายเหตุทั่วไป
    (ของเดิมอยู่ใต้ช่องและตัวเล็ก .71rem ซึ่งแทบไม่มีใครอ่าน) */
+/* ⚠️ ห้ามใช้ display:flex ที่นี่ — ลูกแต่ละชิ้น (<b> <i> ข้อความ) กลายเป็น flex item
+   แล้วตัดบรรทัดทีละชิ้น จอแคบเลยยาว 4 บรรทัดดันช่องค้นหาตกจอ (วัดจริงที่ 390px)
+   เป็นข้อความธรรมดา ให้มันไหลเองตามปกติ */
 .qhint {
-  margin:0 6px 10px; font-size:.82rem; color:var(--ink-2);
-  display:flex; align-items:center; gap:8px; flex-wrap:wrap; line-height:1.45;
+  margin:0 6px 10px; font-size:.82rem; color:var(--ink-2); line-height:1.45;
 }
 .qhint i { color:var(--muted); }
 /* 🤖 ป้าย "ค้นด้วย AI" — ต้องรู้ตั้งแต่แรกเห็นว่านี่ไม่ใช่ช่องใส่คีย์เวิร์ดธรรมดา
    (เจ้าของสั่ง 26 ส.ค. 2026) · สีเน้นเดียวกับปุ่มถาม เพื่อให้สายตาโยงถึงกัน */
 .aitag {
-  display:inline-flex; align-items:center; flex:0 0 auto; padding:3px 11px; border-radius:999px;
+  display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; padding:3px 11px; border-radius:999px;
   background:var(--accent); color:var(--on-accent); font-size:.86rem; font-weight:700;
+}
+/* 🏷 ป้ายที่ติดอยู่ "ใน" ช่องค้นหา — แทนไอคอน ✨ เดิม
+   pointer-events:none เพื่อให้กดทะลุไปโฟกัสช่องพิมพ์ได้ (ป้ายไม่ใช่ปุ่ม) */
+.aitag.insearch {
+  position:absolute; left:11px; z-index:2; pointer-events:none;
+  padding:6px 12px; font-size:.8rem;
 }
 @media (prefers-color-scheme: dark) {
   #q { box-shadow:none; }
@@ -154,6 +159,9 @@ body {
 /* จอกลาง: ปุ่มถามเหลือแต่ไอคอน (Enter ก็ทำงานเหมือนกัน และ hint บอกไว้แล้ว) */
 @media (max-width:860px) {
   .askbtn .flabel { display:none; }
+  /* ป้าย 🤖 ยังมีคำกำกับได้อยู่ แค่บีบลง */
+  .aitag.insearch { padding:6px 10px; font-size:.76rem; }
+  #q { padding-left:138px; }
   .askbtn { padding:9px 12px; }
   #q { padding-right:208px; }
   .qclear { right:168px; }
@@ -164,6 +172,13 @@ body {
    — เทสต์ archives.mjs [9c] วัดที่พิมพ์ไว้ ลองยัดกลับเข้าไปเมื่อไหร่ตกทันที */
 @media (max-width:560px) {
   .ftoggle .flabel { display:none; }
+  /* ⚠️ จอแคบเหลือแค่ 🤖 — คำว่า "ค้นด้วย AI" กินที่พิมพ์ไปเกือบ 90px
+     บรรทัด hint ข้างบนยังบอกอยู่ว่าเป็น AI จึงไม่ได้หายไปไหน */
+  /* จอแคบเหลือ "🤖 AI" — ยังบอกได้ว่าเป็น AI แต่ไม่กินที่พิมพ์
+     และ .qex ซ่อนตัวอย่างยาวๆ ไว้ (placeholder ในช่องบอกตัวอย่างอยู่แล้ว) */
+  .aitag.insearch .aitxt, .qhint .qex { display:none; }
+  .aitag.insearch { left:9px; padding:6px 9px; }
+  #q { padding-left:72px; }
   .ftoggle { padding:9px 12px; }
   /* ⚠️ **ห้ามใช้ flex-wrap ให้ปุ่มตกบรรทัด** — ลองแล้วปุ่มตัวกรอง (absolute ที่ไม่ได้กำหนด top)
      ย้ายตามไปด้วย แล้วหลุดออกนอกกรอบช่องค้นหา (เทสต์ [9c] จับได้)

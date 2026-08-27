@@ -156,14 +156,17 @@
         </div>
         <div class="ysort" data-ysort>
           <button type="button" class="cat" data-sort="rank">🏆 อันดับจาก YouTube</button>
-          <!-- ปุ่ม "มาแรง" กับตัวเลือกช่วงเวลาเป็นชิ้นเดียวกัน — กดแล้วเลือกวันได้เลย ไม่ต้องมีปุ่มแยก -->
+          <!-- ปุ่ม "มาแรง" กับตัวเลือกช่วงเวลาเป็นชิ้นเดียวกัน — กดแล้วเลือกวันได้เลย ไม่ต้องมีปุ่มแยก
+               📈 มาแรง = **วิว/ชม.** ไม่ใช่ "วิวที่เพิ่มในช่วงนี้" (เจ้าของสั่ง 27 ส.ค. 2026)
+               ช่องนี้บอกว่า "อยากให้วัดย้อนหลังจากช่วงไหน" ถ้าสถิติยังไม่ถึง ระบบจะวัดจากเท่าที่มี
+               แล้วเขียนกำกับไว้บนการ์ดว่าวัดจากกี่ชั่วโมง — ห้ามถอดตัวกำกับนั้นออก -->
           <label class="cat ygrow on" data-sort="growth">📈 มาแรง
-            <select data-ytwin title="ช่วงเวลาที่ใช้วัดว่ามาแรง">
-              <option value="4">4 ชม.</option>
-              <option value="24" selected>24 ชม.</option>
-              <option value="48">48 ชม.</option>
-              <option value="72">3 วัน</option>
-              <option value="168">7 วัน</option>
+            <select data-ytwin title="อยากให้วัดวิว/ชม. ย้อนหลังจากช่วงไหน">
+              <option value="4">วัดจาก 4 ชม.</option>
+              <option value="24" selected>วัดจาก 24 ชม.</option>
+              <option value="48">วัดจาก 48 ชม.</option>
+              <option value="72">วัดจาก 3 วัน</option>
+              <option value="168">วัดจาก 7 วัน</option>
             </select>
           </label>
           <button type="button" class="cat" data-sort="new">🕒 ใหม่ล่าสุด</button>
@@ -229,6 +232,6 @@
 
   <script src="/lazycol.js?v=1"></script>
   <script src="/flags.js?v=33"></script>
-  <script src="./app.js?v=118"></script>
+  <script src="./app.js?v=119"></script>
 </body>
 </html>

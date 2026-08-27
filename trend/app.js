@@ -386,6 +386,9 @@ async function fetchYTTrends(geo, kind = "all") {
     kind: d.kind || "all",
     // server กรองหมวดให้แล้วหรือยัง — ถ้ายัง หน้าเว็บต้องกรองเองด้วยคำ
     catFiltered: !!d.catFiltered,
+    // ⚠️ เคยลืมแมปฟิลด์นี้ → หน้าเว็บอ่านได้ 0 เสมอ แล้วขึ้นป้าย "เพิ่งเริ่มเก็บสถิติ (0 ชม.)"
+    //    ทั้งที่เก็บมาหลายชั่วโมงแล้ว (เจอตอนไล่เรื่องวิว/ชม. 27 ส.ค. 2026)
+    histHours: Number(d.histHours) || 0,
     loaded: true, // แยก "ยังโหลดไม่เสร็จ" ออกจาก "โหลดแล้วแต่ไม่มีอะไรเลย"
     fetchedAt: d.fetchedAt || null,
     attempts: (d.meta && d.meta.attempts) || [],
@@ -451,6 +454,15 @@ async function reloadYTTrends(opts = {}) {
   if (keepScroll != null) list.scrollTop = keepScroll;
 }
 
+// 167432.9 → "167K วิว/ชม." — หน่วยของ "มาแรง" ต้องมี /ชม. ติดไปด้วยเสมอ
+// ไม่งั้นอ่านสลับกับยอดวิวสะสมที่อยู่บรรทัดล่างทันที
+function ratePerH(n) {
+  if (!(n > 0)) return "0 วิว/ชม.";
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + " ล้านวิว/ชม.";
+  if (n >= 1e3) return Math.round(n / 1e3) + "K วิว/ชม.";
+  return Math.round(n) + " วิว/ชม.";
+}
+
 // 1,234,567 → 1.2 ล้าน (ตัวเลขยาวๆ ในคอลัมน์แคบอ่านไม่ออก)
 function viewsTh(n) {
   if (!n) return "";
@@ -481,13 +493,21 @@ function renderYTTrends(panel) {
   syncKindToggle(panel, "[data-ytkind]", state.ytKind);
   const items = shown.slice();
 
-  // "มาแรง" = วิวที่เพิ่มในช่วงที่เลือก · ช่วงเวลามาจากช่องแยกต่างหาก (state.ytWin)
+  // 📈 "มาแรง" = **วิว/ชม.** ไม่ใช่ "วิวที่เพิ่มในช่วงที่เลือก" อีกแล้ว (เจ้าของสั่ง 27 ส.ค. 2026)
+  //
+  // ของเดิมใช้ d{w} ซึ่งคลิปที่เพิ่งลงจะได้ "ยอดสะสมทั้งก้อน" มาเป็นวิวเพิ่ม ส่วนคลิปเก่า
+  // ที่ไม่มียอดเดิมให้ลบจะเป็น null แล้วถูกดันไปท้ายลิสต์ → หมวดข่าว (คลิปลงวันนี้ทั้งหมด)
+  // ตัวเลขพองกว่าหมวดทั่วไป (MV/หนังอายุหลายวัน) ทั้งที่ทั่วไปวิวเยอะกว่าหลายเท่า
+  // 🚫 ห้ามกลับไปเรียงด้วย d{w} และ **ห้ามคำนวณ d{w}/winH เอง** — คลิปที่ลงมา 5 ชม.
+  //    จะถูกหารด้วย 24 = ต่ำกว่าความจริง 5 เท่า · ตัวหารที่ถูกอยู่ที่ rh{w} ซึ่ง server ส่งมาให้
   const isGrowth = state.ytSort === "growth";
   const winH = isGrowth ? Number(state.ytWin) || 24 : 0;
-  const dkey = isGrowth ? "d" + winH : null;
-  // ถ้ายังไม่มีสถิติย้อนหลังพอ การเรียงตาม "วิวเพิ่ม" จะไม่มีความหมาย → ถอยไปใช้ยอดรวม
-  const hasDelta = isGrowth && shown.some((it) => it[dkey] != null);
-  const sortBy = isGrowth && !hasDelta ? "views" : state.ytSort; // ไม่มีสถิติพอ → เรียงยอดรวมไปก่อน
+  const rkey = isGrowth ? "r" + winH : null;   // วิว/ชม.
+  const hkey = isGrowth ? "rh" + winH : null;  // วัดจากช่วงกี่ชั่วโมง
+  const bkey = isGrowth ? "rb" + winH : null;  // "m" = วัดจากสถิติ · "u" = เฉลี่ยตั้งแต่คลิปลง
+  // server รุ่นเก่ายังค้างใน cache ได้ (ไม่มี r{w}) → ถอยไปเรียงยอดรวมแทนหน้าว่างๆ
+  const hasRate = isGrowth && shown.some((it) => it[rkey] != null);
+  const sortBy = isGrowth && !hasRate ? "views" : state.ytSort;
 
   if (sortBy === "rank") {
     // API ส่งลำดับมาเป็นอันดับมาแรงทางการอยู่แล้ว — เรียงคืนตามนั้น
@@ -499,8 +519,9 @@ function renderYTTrends(panel) {
     items.sort((a, b) => (b.views || 0) - (a.views || 0));
   } else {
     // null = "ยังไม่รู้" คนละเรื่องกับ 0 = "ไม่เพิ่มเลย" จึงดัน null ไปท้ายเสมอ
+    // (ตอนนี้ null เหลือเฉพาะไลฟ์/คลิปที่ต้นทางไม่บอกเวลาลง ไม่ใช่ทั้งครึ่งลิสต์เหมือนเดิม)
     items.sort((a, b) => {
-      const x = a[dkey], y = b[dkey];
+      const x = a[rkey], y = b[rkey];
       if (x == null && y == null) return (b.views || 0) - (a.views || 0);
       if (x == null) return 1;
       if (y == null) return -1;
@@ -531,18 +552,23 @@ function renderYTTrends(panel) {
   panel.appendChild(fresh);
   // ต้นทางสำรอง (หน้า YouTube รายประเทศ) ไม่ใช่อันดับมาแรงทางการ — ต้องบอกให้รู้
   // ไม่งั้นผู้ใช้จะอ่านคลิป 900 วิวเป็น "คลิปมาแรงอันดับ 1 ของประเทศ"
-  const needMore = isGrowth && !hasDelta;
+  const needMore = isGrowth && !hasRate;
   const liveWarn = filterBroken
     ? `<span class="warn">⚠ แยกไลฟ์ออกไม่ได้ในรอบนี้ (ต้นทางสำรองไม่ได้บอกชัด) — โชว์ทั้งหมดไปก่อน</span>`
     : "";
-  const nUnknown = isGrowth ? items.filter((it) => it[dkey] == null).length : 0;
-  // สถิติยังสะสมไม่ครบช่วงที่เลือก → คลิปเก่ายังเทียบไม่ได้ ต้องบอก ไม่ใช่ปล่อยให้งง
+  const nUnknown = isGrowth ? items.filter((it) => it[rkey] == null).length : 0;
+  // สถิติยังสะสมไม่ครบช่วงที่ขอ → ตัวเลขที่ได้วัดจากช่วงสั้นกว่า ต้องบอก ไม่ใช่ปล่อยให้เข้าใจว่าครบ
+  // ⚠️ **ห้ามเงียบ** — ตัวเลขที่วัดจาก 3 ชม.กับ 24 ชม. ความน่าเชื่อไม่เท่ากัน
+  // ⚠️ นับ "วัดจริง" จากธง m ตรงๆ ห้ามคิดเป็น (ทั้งหมด − u) — ใบที่ไม่มีตัวเลขเลย (null)
+  //    จะถูกนับเป็น "วัดจริง" ทันที (เจอตอนวัดจริง: 3 ใบ รายงานว่าวัดจริง 2 ทั้งที่มีใบเดียว)
+  const nUpload = isGrowth ? items.filter((it) => it[bkey] === "u").length : 0;
+  const nReal = isGrowth ? items.filter((it) => it[bkey] === "m").length : 0;
   const partial =
-    isGrowth && hasDelta && (bucket.histHours || 0) < winH && nUnknown
-      ? `<span class="warn">📊 คำนวณวิวเพิ่มได้ ${items.length - nUnknown} จาก ${items.length} คลิป — ที่เหลือลงเกิน ${winH} ชม.แล้ว และเราเพิ่งเริ่มเก็บสถิติ (${bucket.histHours || 0} ชม.) จึงยังไม่มียอดเดิมไว้ลบ · คลิปพวกนั้นอยู่ท้ายลิสต์ · พรุ่งนี้จะครบทุกคลิปเอง</span>`
+    isGrowth && hasRate && nUpload
+      ? `<span class="warn">📊 ${nReal} จาก ${items.length} คลิป วัดจากสถิติที่เก็บไว้จริง (มี ${bucket.histHours || 0} ชม.) · อีก ${nUpload} ใบยังไม่เคยเก็บยอดไว้ จึงใช้ <b>เฉลี่ยตั้งแต่คลิปลง</b> แทน — คร่าวกว่าแต่เทียบกันได้ · พรุ่งนี้จะวัดจริงครบทุกใบเอง</span>`
       : "";
   const notReady = needMore
-    ? `<span class="warn">⏳ เพิ่งเริ่มเก็บสถิติยอดวิว (มี ${bucket.histHours || 0} ชม.) — ยังเทียบ "วิวเพิ่มใน ${winH} ชม." ไม่ได้ ตอนนี้เรียงตามยอดรวมไปก่อน</span>`
+    ? `<span class="warn">⏳ ยังคำนวณ "วิว/ชม." ไม่ได้เลยในรอบนี้ (ต้นทางไม่ได้บอกเวลาที่คลิปลง) — เรียงตามยอดรวมไปก่อน</span>`
     : "";
   const modeNote =
     bucket.mode === "browse"
@@ -588,14 +614,21 @@ function renderYTTrends(panel) {
   list.innerHTML = items
     .map((it, i) => {
       // ไลฟ์: ยอดที่เห็นคือคนดูอยู่ตอนนี้ ไม่ใช่ยอดวิวสะสม จึงเขียนให้ต่างกัน
-      const d = isGrowth ? it[dkey] : null;
+      const r = isGrowth ? it[rkey] : null;
       const sub = [
         it.channel,
         it.live ? (it.views ? viewsTh(it.views).replace(" วิว", " คนดูอยู่") : "") : viewsTh(it.views),
         it.published ? timeAgo(new Date(it.published).toISOString()) : "",
       ].filter(Boolean);
-      // ตัวเลขที่ผู้ใช้ขอ — วิวที่เพิ่มขึ้นในช่วงเวลาที่เลือก ให้เด่นกว่ายอดรวม
-      const delta = d != null ? `<span class="ydelta">+${escapeHtml(viewsTh(d))} ใน ${winH} ชม.</span>` : "";
+      // ตัวเลขที่ผู้ใช้ขอ — เร็วแค่ไหน ไม่ใช่ยอดสะสม จึงให้เด่นกว่ายอดรวม
+      // ⚠️ **ต้องบอกด้วยว่าวัดจากช่วงไหน** ตัวเลขที่วัดจาก 2 ชม.กับ 24 ชม. เชื่อได้ไม่เท่ากัน
+      //    และต้องแยกให้ออกว่า "วัดจริง" กับ "เฉลี่ยตั้งแต่ลง" — บทเรียนของ d{w} ที่เขียนเหมือนกันทั้งสองแบบ
+      const rh = Math.max(1, Math.round(it[hkey] || 0));
+      const rwhy = it[bkey] === "u" ? `เฉลี่ยตั้งแต่คลิปลง ${rh} ชม.ที่แล้ว` : `วัดจาก ${rh} ชม.ล่าสุด`;
+      const delta =
+        r != null
+          ? `<span class="ydelta" title="${escapeHtml(rwhy)}">${escapeHtml(ratePerH(r))}<span class="ywhy">${escapeHtml(it[bkey] === "u" ? "≈ ตั้งแต่ลง" : rh + " ชม.")}</span></span>`
+          : "";
       return `<a class="yrow" href="${escapeHtml(it.url)}" target="_blank" rel="noopener" title="เปิดคลิปบน YouTube">
         <span class="rank">${i + 1}</span>
         <span class="ythumbwrap">
