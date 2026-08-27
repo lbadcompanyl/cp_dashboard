@@ -124,18 +124,16 @@ async function askPlan(env, q, broad = false) {
   if (!r.obj) return { plan: null, why: r.why };
 
   const terms = clean(r.obj.terms).slice(0, 6);
-  // ⚠️ AI ตอบมาไม่มีคำค้นเลย = ตีความไม่ออก ห้ามคืนผลว่าง (จะกลายเป็น "ค้นทั้งคลัง")
-  if (!terms.length) return { plan: null, why: "แยกคำค้นออกมาไม่ได้" };
+  const from = isDate(r.obj.from) ? r.obj.from : "";
+  const to = isDate(r.obj.to) ? r.obj.to : "";
+  const judge = String(r.obj.judge || "").trim().slice(0, 120);
+  // ⚠️ ไม่มีคำค้น **แต่มีช่วงวันที่หรือเงื่อนไข** = ตีความออกแล้ว ไม่ใช่ตีความไม่ออก
+  //    🐞 เจ้าของเจอจริง 27 ส.ค. 2026: ถาม "ข่าวเมื่อวาน" → AI ตอบช่วงวันที่มาถูกต้อง
+  //    แต่โค้ดโยนทิ้งเพราะ terms ว่าง แล้วตกไปค้นคำว่า "ข่าวเมื่อวาน" ในพาดหัว = 0 ใบ
+  //    ห้ามคืนผลว่างเปล่าล้วนๆ เท่านั้น (ไม่มีทั้งคำ ทั้งวันที่ ทั้งเงื่อนไข = ค้นทั้งคลัง)
+  if (!terms.length && !from && !to && !judge) return { plan: null, why: "แยกคำค้นออกมาไม่ได้" };
 
-  return {
-    plan: {
-      terms,
-      from: isDate(r.obj.from) ? r.obj.from : "",
-      to: isDate(r.obj.to) ? r.obj.to : "",
-      judge: String(r.obj.judge || "").trim().slice(0, 120),
-    },
-    why: "",
-  };
+  return { plan: { terms, from, to, judge }, why: "" };
 }
 
 /* ⚠️ **ไล่โมเดลจากใหญ่ไปเล็ก** — รอบแรกใช้ตัวเล็กตัวเดียว (llama-3.2-3b) แล้วเจ้าของเจอจริง
@@ -278,12 +276,66 @@ const STOP_WORDS = new Set([
   "จาก", "และ", "กับ", "ช่วง", "แบบ", "ขอ", "ดู", "อยาก", "ช่วย", "หน่อย", "ครับ", "ค่ะ",
   "news", "about", "all", "the", "of", "find", "search",
 ]);
+// ⚠️ ภาษาไทยไม่มีช่องว่างคั่นคำ — "ข่าวเมื่อวาน" เป็น **คำเดียว** ตัดด้วย STOP_WORDS ไม่ได้เลย
+//    จึงต้องเฉือนคำนำ/คำลงท้ายออกจากสตริงตรงๆ ก่อน แล้วค่อยแยกด้วยช่องว่าง
+// 🚫 ห้ามใส่คำสั้นกำกวม (ขอ · หา · ดู) — "ขอ" ซ่อนอยู่ต้นคำว่า "ของ" แล้วเฉือนจนเหลือ "ง"
+//    คำสั้นพวกนั้นมี STOP_WORDS รับอยู่แล้วตอนที่มันยืนเป็นคำเดี่ยวๆ
+const LEAD_RE = /^(?:หาข่าว|ขอข่าว|ค้นหาข่าว|ค้นข่าว|ค้นหา|ข่าว)+/;
+const TAIL_RE = /(?:ทั้งหมด|ล่าสุด|หน่อย|บ้าง|ครับ|ค่ะ|ด้วย)+\s*$/;
+
+const DAY = 86400000;
+const dayISO = (t) => TH(t).toISOString().slice(0, 10);
+const dayRange = (offset, now) => ({ from: dayISO(now + offset * DAY), to: dayISO(now + offset * DAY) });
+const spanRange = (a, b, now) => ({ from: dayISO(now + a * DAY), to: dayISO(now + b * DAY) });
+const yearRange = (offset, now) => {
+  const y = TH(now).getUTCFullYear() + offset;
+  return { from: `${y}-01-01`, to: `${y}-12-31` };
+};
+
+/* ⏰ ช่วงวันที่ที่คนไทยพิมพ์บ่อย — **ต้องตีความเองได้แม้ AI ล่ม**
+   🐞 เจ้าของเจอจริง 27 ส.ค. 2026: ถาม "ข่าวเมื่อวาน" แล้วได้ 0 ข่าว เพราะทางถอย
+      เอาทั้งคำไปหาในพาดหัว · คำถามเรื่องวันที่ไม่ต้องใช้ AI เลยก็ตอบได้ */
+const REL_DATES = [
+  [/เมื่อวานซืน|วานซืน/, (n) => dayRange(-2, n)],
+  [/เมื่อวาน(?:นี้)?|วานนี้/, (n) => dayRange(-1, n)],
+  [/วันนี้/, (n) => dayRange(0, n)],
+  [/สัปดาห์ที่แล้ว|อาทิตย์ที่แล้ว|สัปดาห์ก่อน|อาทิตย์ก่อน/, (n) => spanRange(-13, -7, n)],
+  [/สัปดาห์นี้|อาทิตย์นี้|7\s*วัน(?:ที่ผ่านมา|ล่าสุด|นี้)?/, (n) => spanRange(-6, 0, n)],
+  [/30\s*วัน(?:ที่ผ่านมา|ล่าสุด|นี้)?|เดือนที่ผ่านมา/, (n) => spanRange(-29, 0, n)],
+  [/เดือนที่แล้ว|เดือนก่อน/, (n) => monthRangeTH(-1, n)],
+  [/เดือนนี้/, (n) => monthRangeTH(0, n)],
+  [/ปีที่แล้ว|ปีก่อน/, (n) => yearRange(-1, n)],
+  [/ปีนี้/, (n) => yearRange(0, n)],
+];
+
+/** เจอคำบอกช่วงเวลาไหม → คืนช่วงวันที่ + คำถามที่ตัดคำนั้นออกแล้ว */
+export function localDates(q, now = Date.now()) {
+  for (const [re, fn] of REL_DATES) {
+    const m = q.match(re);
+    if (m) return { ...fn(now), rest: (q.slice(0, m.index) + " " + q.slice(m.index + m[0].length)).trim() };
+  }
+  return { from: "", to: "", rest: q };
+}
+
+/* AI ใช้ไม่ได้ → ค้นด้วยคำที่พิมพ์มา
+   ⚠️ **ต้องตัดคำถามทิ้งก่อน** — เจ้าของเจอจริง: ถาม "หาข่าว dna ของ ปลาหมอคางดำ"
+      แล้วได้ 0 ข่าว เพราะเอาทั้งประโยครวม "หาข่าว" กับ "ของ" ไปหาในพาดหัว
+      (หน้านี้ใช้กฎ "ต้องมีครบทุกคำ" ซึ่งไม่มีพาดหัวไหนมีคำพวกนี้อยู่จริง) */
 // export ไว้ให้เทสต์เรียกตรงๆ — ตรรกะตัดคำถามทิ้งพลาดแล้วผู้ใช้เจอ '0 ข่าว' ทันที
-export function fallbackPlan(q) {
-  const words = q.split(/\s+/).filter(Boolean);
+export function fallbackPlan(q, now = Date.now()) {
+  const d = localDates(q, now);
+  // ⚠️ เฉือนคำนำแล้วต้องเหลือ "คำที่ยาวพอจะเป็นคำจริง" — ไม่งั้น "ข่าวสด" (ชื่อสำนักข่าว)
+  //    จะกลายเป็น "สด" · เหลือว่างเปล่าถือว่าใช้ได้ (คำถามเรื่องเวลาล้วนๆ)
+  const lead = d.rest.replace(LEAD_RE, "").trim();
+  const stripped = (lead === "" || lead.length >= 4 ? lead : d.rest).replace(TAIL_RE, "").trim();
+  const words = stripped.split(/\s+/).filter(Boolean);
   const kept = words.filter((w) => !STOP_WORDS.has(w.toLowerCase()));
-  // ⚠️ ตัดจนไม่เหลืออะไรเลย = ใช้ของเดิมทั้งประโยค ดีกว่าค้นด้วยคำว่าง (จะได้ทั้งคลัง)
-  return { terms: (kept.length ? kept : words).slice(0, 6), from: "", to: "", judge: "" };
+  const terms = kept.length ? kept : words;
+  // ✅ ตัดจนไม่เหลือคำ **แต่ได้ช่วงวันที่มา** = ตีความออกแล้ว ("ข่าวเมื่อวาน" = ข่าวของเมื่อวานทั้งหมด)
+  if (!terms.length && (d.from || d.to)) return { terms: [], from: d.from, to: d.to, judge: "" };
+  // ⚠️ ไม่เหลืออะไรเลยและไม่มีวันที่ = ใช้ของเดิมทั้งประโยค ดีกว่าค้นด้วยคำว่าง (จะได้ทั้งคลัง)
+  const orig = q.split(/\s+/).filter(Boolean);
+  return { terms: (terms.length ? terms : orig).slice(0, 6), from: d.from, to: d.to, judge: "" };
 }
 
 /* ─────────── POST — อ่านพาดหัวแล้วคัดตามเงื่อนไข ─────────── */

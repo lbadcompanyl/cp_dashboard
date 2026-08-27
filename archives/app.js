@@ -277,7 +277,13 @@ async function runAsk() {
 
   // ⚠️ **ทางถอยห้ามขาด** — ถามไม่ผ่านก็ต้องยังค้นได้ ไม่ใช่หน้าค้าง
   //    เอาคำถามไปค้นตรงๆ = พฤติกรรมเดิมของหน้านี้เป๊ะ
-  if (!plan || !Array.isArray(plan.terms) || !plan.terms.length) {
+  // 🐞 **"ไม่มีคำค้น" ไม่ได้แปลว่าตีความไม่ออก** (เจ้าของเจอ 27 ส.ค. 2026: ถาม "ข่าวเมื่อวาน")
+  //    คำถามเรื่องช่วงเวลาล้วนๆ ไม่มีคำไหนอยู่ในพาดหัวเลย — มีแต่ช่วงวันที่
+  //    ของเดิมตกไปค้นคำว่า "ข่าวเมื่อวาน" ในพาดหัว = 0 ใบทุกครั้ง
+  //    ถอยก็ต่อเมื่อ **ไม่ได้อะไรมาเลยสักอย่าง** เท่านั้น
+  const gotSomething =
+    plan && Array.isArray(plan.terms) && (plan.terms.length || plan.from || plan.to || plan.judge);
+  if (!gotSomething) {
     judgeBusy = false;
     state.judge = "";
     judgeKeep = null;
@@ -296,7 +302,12 @@ async function runAsk() {
   if (plan.to) state.to = plan.to;
   state.judge = String(plan.judge || "");
   judgeKeep = null;
-  judgeNote = plan.ai ? "" : (plan.why ? `${FALLBACK_NOTE} (${plan.why})` : FALLBACK_NOTE);
+  // AI ล่มแต่ตีความช่วงวันที่ให้เองได้ → อย่าบอกว่า "ค้นแบบคำต่อคำ" ซึ่งไม่ตรงกับที่ทำจริง
+  judgeNote = plan.ai
+    ? ""
+    : (plan.from || plan.to) && !plan.terms.length
+    ? `ตอนนี้ AI ตอบไม่ได้ — แต่อ่านช่วงวันที่ในคำถามออกเอง จึงกรองตามวันที่ให้แทน${plan.why ? ` (${plan.why})` : ""}`
+    : plan.why ? `${FALLBACK_NOTE} (${plan.why})` : FALLBACK_NOTE;
   state.shown = PAGE;
   fillInputs();
 
@@ -311,7 +322,7 @@ async function runAsk() {
   // ⚠️ ภาษาไทยไม่มีช่องว่างคั่นคำ ฝั่งหน้าเว็บจึงแยก "เผาข้าวโพด" เป็น "เผา"+"ข้าวโพด" เองไม่ได้
   //    ต้องให้ AI แยกให้ (เจอจริง 26 ส.ค. 2026: ได้คำประสมคำเดียวแล้วเหลือ 0 ข่าว)
   //    ยิงเพิ่มแค่ตอนไม่เจอเท่านั้น และ cache แยก จึงไม่เปลืองในการใช้งานปกติ
-  if (!filtered.length && plan.ai) {
+  if (!filtered.length && plan.ai && state.q) {
     const wide = await fetchPlan(question, true);
     const wideTerms = wide && Array.isArray(wide.terms) ? wide.terms.filter(Boolean) : [];
     if (wideTerms.length) {
@@ -325,7 +336,10 @@ async function runAsk() {
   // ⚠️ ยังไม่เจอจริงๆ = **บอกตรงๆ ว่าไม่มีในคลัง** ไม่ใช่ปล่อยให้เจอข้อความ "ลองลดตัวกรองลง"
   //    ซึ่งผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย อ่านแล้วงงว่าจะให้ลดอะไร
   if (!filtered.length && !relaxNote) {
-    relaxNote = `ไม่มีข่าวที่มีคำว่า “${state.q.replace(/"/g, "")}” อยู่ในคลังเลย`;
+    // ⚠️ คำถามเรื่องช่วงเวลาล้วนๆ ไม่มีคำค้นเลย — ห้ามขึ้นว่า 'ไม่มีข่าวที่มีคำว่า ""'
+    relaxNote = state.q
+      ? `ไม่มีข่าวที่มีคำว่า “${state.q.replace(/"/g, "")}” อยู่ในคลังเลย`
+      : `ไม่มีข่าวในช่วงวันที่ที่ถามมาเลย`;
   }
 
   syncURL(true);
