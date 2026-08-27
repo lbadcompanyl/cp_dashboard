@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 9;
+const WORKER_VER = 10;
 
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -189,11 +189,25 @@ async function classifyTwoLens(texts, env, acc, context) {
     .map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`)
     .join("\n");
   const ctx = context ? `บริบทโพสต์: "${String(context).replace(/\s+/g, " ").slice(0, 300)}"\n\n` : "";
-  const out = await callClaude(env, systemTwoLens(), ctx + "คอมเมนต์:\n" + numbered, 2600, acc);
+  /* เพดานโทเคนต้องโตตามจำนวนข้อ — ตั้งไว้ตายตัวแล้วโมเดลที่เขียนยาวกว่าจะถูกตัดกลางคัน
+     ⚠️ เจอจริง 27 ส.ค. 2026: opus โดนตัดที่ 2,600 → JSON พัง → ตกไปเป็น Neutral ทั้งชุด
+        แล้วรายงานออกมาเป็น "ความแม่น 10%" ทั้งที่โมเดลไม่ได้ตอบผิดสักข้อ */
+  const budget = Math.min(8000, 90 * texts.length + 600);
+  const acc2 = acc || {};
+  const out = await callClaude(env, systemTwoLens(), ctx + "คอมเมนต์:\n" + numbered, budget, acc2);
+
+  if (acc2.stop_reason === "max_tokens") {
+    throw new Error(`คำตอบถูกตัดกลางคัน (max_tokens ${budget}) — ลดจำนวนข้อต่อก้อน`);
+  }
 
   let arr = [];
   try { arr = extractJson(out); } catch (e) { arr = []; }
   if (!Array.isArray(arr)) arr = [];
+  /* 🚫 แกะไม่ได้เลย = ต้องโยน error ห้ามคืน Neutral ทั้งชุด
+     "ไม่รู้" กับ "กลาง" ไม่ใช่เรื่องเดียวกัน — คืน Neutral จะกลายเป็นตัวเลขที่ดูเหมือนผลจริง */
+  if (!arr.length) {
+    throw new Error("แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160));
+  }
 
   // เรียงตาม i ที่โมเดลตอบมา ถ้ามี — กันกรณีสลับลำดับ
   const byIdx = new Map();
@@ -241,7 +255,8 @@ export default {
       try {
         const model = MODEL_CHOICES.includes(body.model) ? body.model : (env.CLAUDE_MODEL || DEFAULT_MODEL);
         const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context);
-        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, results, tokens: acc }), origin);
+        const missing = results.filter(r => r.missing).length;
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, missing, results, tokens: acc }), origin);
       } catch (e) {
         return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
       }
@@ -621,6 +636,9 @@ async function callClaude(env, system, userText, maxTokens, acc) {
     if (data.usage) { acc.input += data.usage.input_tokens || 0; acc.output += data.usage.output_tokens || 0; }
     const rr = r.headers.get("anthropic-ratelimit-tokens-remaining");
     if (rr != null) acc.rate_remaining = +rr;
+    /* ⚠️ "max_tokens" = โมเดลพูดไม่จบ คำตอบถูกตัดกลางคัน → JSON พัง
+       ต้องเก็บไว้ให้ผู้เรียกรู้ ไม่งั้นจะกลายเป็น "ตอบไม่ได้" แบบเงียบๆ */
+    acc.stop_reason = data.stop_reason || null;
   }
   return (data.content || []).map(b => b.text || "").join("").trim();
 }

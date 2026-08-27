@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="4" />
+<meta name="page-ver" content="5" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -226,7 +226,12 @@ $("#run").addEventListener("click", async () => {
         const d = await r.json();
         if (!r.ok || !Array.isArray(d.results)) throw new Error(d.detail || d.error || ("HTTP " + r.status));
         if (d.ver != null) meta = { ver: d.ver, rubric: d.rubric ?? meta.rubric, model: d.model || meta.model };
-        d.results.forEach((res, j) => { if (chunk.idx[j] !== undefined) preds[chunk.idx[j]] = res; });
+        /* ⚠️ ข้อที่โมเดลไม่ได้ตอบ (missing) ห้ามนับเป็นคำตอบ "Neutral"
+           ไม่งั้นความล้มเหลวทางเทคนิคจะโผล่มาเป็นคะแนนที่ดูเหมือนผลจริง
+           เจอจริง 27 ส.ค. 2026: opus ถูกตัดคำตอบกลางคัน แล้วรายงานว่าความแม่น 10% */
+        d.results.forEach((res, j) => {
+          if (chunk.idx[j] !== undefined && res && !res.missing) preds[chunk.idx[j]] = res;
+        });
       } catch (err) {
         failed++;
         // ก้อนที่พลาดปล่อยเป็น null — จะถูกนับแยกไว้ ไม่เอาไปปนกับผลที่ทายจริง
@@ -309,6 +314,7 @@ function render(preds, sec, failedBatches) {
   $("#out").innerHTML =
     (missing || failedBatches ? `<div class="card"><div class="warn">
        ⚠️ มี <b>${missing}</b> ข้อที่ไม่ได้ผลกลับมา (ก้อนที่ยิงพลาด ${failedBatches} ก้อน)
+       ${missing > rows.length * 0.2 ? '<br /><b style="color:var(--neg)">เกิน 20% ของทั้งชุด — ตัวเลขข้างล่างเชื่อไม่ได้ ให้แก้ต้นเหตุก่อนแล้วรันใหม่</b>' : ""}
        — ตัวเลขข้างล่างคิดจาก <b>${scored.length}</b> ข้อที่ได้ผลจริงเท่านั้น ไม่ได้เดาแทน
      </div></div>` : "") +
     `<div class="card">
