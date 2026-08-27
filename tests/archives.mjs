@@ -507,21 +507,29 @@ console.log("\n[9c] ลำดับความเด่น");
     // 🏷 ป้าย "🤖 ค้นด้วย AI" ต้องอยู่ "ในช่องค้นหา" (เจ้าของสั่ง 27 ส.ค. 2026)
     // และห้ามทับข้อความที่พิมพ์ — บทเรียนเดียวกับปุ่มตัวกรองฝั่งขวา
     const tg = await p.evaluate(() => {
-      const t = document.querySelector(".aitag.insearch");
+      const t = document.querySelector("#modetog");
       if (!t) return null;
       const b = t.getBoundingClientRect();
       const q = document.querySelector("#q"), cs = getComputedStyle(q), qb = q.getBoundingClientRect();
-      return { l: b.left, r: b.right, t: b.top, b: b.bottom, txt: (t.textContent || "").trim(),
+      // ⚠️ textContent นับข้อความที่ display:none ด้วย — ต้องอ่านเฉพาะที่มองเห็นจริง
+      const vis = [...t.querySelectorAll("span")]
+        .filter((e) => !e.querySelector("span") && getComputedStyle(e).display !== "none")
+        .map((e) => e.textContent).join("").trim();
+      return { l: b.left, r: b.right, t: b.top, b: b.bottom, vis,
+               tag: t.tagName, pe: getComputedStyle(t).pointerEvents,
                ql: qb.left, qr: qb.right, qt: qb.top, qb2: qb.bottom,
                textLeft: qb.left + parseInt(cs.paddingLeft) };
     });
-    ok(`${name}: มีป้าย AI อยู่ในช่องค้นหา`, !!tg && tg.l >= tg.ql - 1 && tg.r <= tg.qr &&
+    ok(`${name}: มีปุ่มสลับโหมดอยู่ในช่องค้นหา`, !!tg && tg.l >= tg.ql - 1 && tg.r <= tg.qr &&
       tg.t >= tg.qt - 1 && tg.b <= tg.qb2 + 1,
       tg ? `ช่อง ${Math.round(tg.ql)}-${Math.round(tg.qr)} · ป้าย ${Math.round(tg.l)}-${Math.round(tg.r)}` : "ไม่มีป้าย");
-    ok(`${name}: ป้าย AI ไม่ทับข้อความที่พิมพ์`, !!tg && tg.r <= tg.textLeft + 1,
+    ok(`${name}: ปุ่มสลับโหมดไม่ทับข้อความที่พิมพ์`, !!tg && tg.r <= tg.textLeft + 1,
       tg ? `ป้ายจบ ${Math.round(tg.r)} · ข้อความเริ่ม ${Math.round(tg.textLeft)}` : "-");
-    // จอแคบตัดเหลือ "🤖 AI" ได้ แต่ **ห้ามเหลือแต่ไอคอน** ไม่งั้นบอกไม่ได้ว่าเป็น AI
-    ok(`${name}: ป้ายยังมีคำว่า AI อยู่`, !!tg && /AI/i.test(tg.txt), tg ? tg.txt : "-");
+    // จอแคบตัดเหลือ "🤖 AI" ได้ แต่ **ห้ามเหลือแต่ไอคอน** ไม่งั้นบอกไม่ได้ว่าอยู่โหมดไหน
+    ok(`${name}: ป้ายยังมีคำว่า AI อยู่`, !!tg && /AI/i.test(tg.vis), tg ? tg.vis : "-");
+    // 🔀 ต้องเห็นว่ากดได้จริง ไม่ใช่ป้ายเฉยๆ — เคยเป็น <span> ที่ pointer-events:none
+    ok(`${name}: ปุ่มสลับโหมดกดได้จริง`, !!tg && tg.tag === "BUTTON" && tg.pe !== "none",
+      tg ? `${tg.tag} · pointer-events:${tg.pe}` : "-");
 
     await p.fill("#q", "");
     await p.close();

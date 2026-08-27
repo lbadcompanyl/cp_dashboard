@@ -15,9 +15,9 @@
 <meta name="apple-mobile-web-app-title" content="คลังข่าว" />
 <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 <!-- ⭐ bump เลขนี้ที่เดียวทุกครั้งที่แก้หน้านี้ -->
-<meta name="page-ver" content="21" />
+<meta name="page-ver" content="22" />
 <script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){/* เช็ค service worker ตัวใหม่ "วันละครั้ง" พอ (เจ้าของสั่ง 11 ส.ค. 2026) — เดิมเช็คทุกครั้งที่สลับกลับเข้าแอป พอ deploy บ่อยๆ ป้าย "มีเวอร์ชันใหม่" เด้งทั้งวัน · ตัวเช็คหน้าเว็บ (page-ver) เป็นวันละครั้งอยู่แล้ว เหลือตัวนี้ที่ยังถี่อยู่ · ทางลัด: แตะที่ป้ายเลขเวอร์ชัน = สั่งเช็คเดี๋ยวนี้ ใช้ตอนเพิ่ง release แล้วอยากรู้ว่าถึงเครื่องหรือยัง */var __verEvery=864e5,__verKey="swChkAt";function __verDue(){try{return Date.now()-(+localStorage.getItem(__verKey)||0)>__verEvery;}catch(x){return true;}}function __verMark(){try{localStorage.setItem(__verKey,String(Date.now()));}catch(x){}}addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;function chk(force){if(!force&&!__verDue())return;__verMark();r.update();}chk(false);document.addEventListener("visibilitychange",function(){if(!document.hidden)chk(false);});var vt=document.getElementById("vtag");if(vt){vt.style.cursor="pointer";vt.title="แตะเพื่อเช็คเวอร์ชันใหม่เดี๋ยวนี้ (ปกติเช็คให้เองวันละครั้ง)";vt.addEventListener("click",function(){var t=vt.textContent;vt.textContent="กำลังเช็ค…";setTimeout(function(){if(vt.textContent==="กำลังเช็ค…")vt.textContent=t;},1500);chk(true);});}}).catch(function(){});});/* ⚠️ "เพิ่งติดตั้ง sw ครั้งแรก" ไม่ใช่ "มีเวอร์ชันใหม่" — sw ยิง sw-updated ตอน activate เสมอ รวมถึงครั้งแรกสุด ทำให้คนเปิดเว็บครั้งแรก (หรือ iOS ล้าง sw ทิ้งตอนไม่ได้เปิดเกิน 7 วัน) เจอแถบ "มีเวอร์ชันใหม่" ทั้งที่เพิ่งโหลดของล่าสุดมาหมาดๆ ดูจาก controller ตอนหน้าเริ่มทำงาน: ไม่มี = ติดตั้งครั้งแรก ไม่ต้องบอกอะไร */var __hadCtrl=!!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;if(!__hadCtrl)return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
-<link rel="stylesheet" href="styles.css?v=17" />
+<link rel="stylesheet" href="styles.css?v=18" />
 </head>
 <body>
 <div class="wrap">
@@ -33,20 +33,23 @@
   <!-- ⭐ ช่องค้นหาคือฟีเจอร์หลักของหน้านี้ — ให้เด่นที่สุด ที่เหลือเป็นของเสริม
        ติดบนสุดเสมอ เลื่อนอ่านผลลัพธ์แล้วยังแก้คำค้นต่อได้ทันที -->
   <div class="sticky">
-    <!-- 🤖 **โหมดเดียว: ค้นด้วย AI** (เจ้าของสั่ง 26 ส.ค. 2026 — "ให้มีโหมดเดียวพอ")
-         เดิมมี 2 ทาง (พิมพ์แล้วค้นทันที + ปุ่มถาม AI) ซึ่งผู้ใช้แยกไม่ออกว่าตอนไหนได้อะไร
-         ตอนนี้เหลือทางเดียว: พิมพ์เป็นประโยค → กด Enter หรือปุ่มถาม
-         ⚠️ หน้าตาต้องบอกให้รู้ตั้งแต่แรกเห็นว่า "นี่คือถาม AI" ไม่ใช่ช่องใส่คีย์เวิร์ด -->
-    <!-- 📢 **บรรทัดนี้อยู่ "เหนือ" ช่องค้นหา** (เจ้าของสั่ง 27 ส.ค. 2026 — "เอาประโยคนี้เด่นๆ
-         ไว้บน search bar เลย") · เดิมอยู่ใต้ช่อง ซึ่งสายตาจะไปถึงหลังพิมพ์ไปแล้ว
-         คนที่ยังไม่รู้ว่าถามเป็นประโยคได้ จึงพิมพ์เป็นคีย์เวิร์ดไปก่อนทุกที -->
-    <p class="qhint">พิมพ์เป็นประโยคแล้วกด <b>Enter</b> — ถามแบบที่คุยกับคนได้เลย<span class="qex"> เช่น <i>ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว</i> · พิมพ์เป็นคำเดี่ยวๆ ก็ได้ ค้นเจอกลางคำไทยเหมือนเดิม</span></p>
+    <!-- 🔀 **2 โหมด สลับด้วยปุ่มในช่องค้นหา** — 🤖 ค้นด้วย AI (ตั้งต้น) · 🔤 ค้นด้วยคำ
+         (เจ้าของสั่ง 27 ส.ค. 2026: "สลับเป็นหมวด ค้นด้วยคำ ได้ด้วย")
+         ⚠️ ทั้ง 2 โหมดต้องกด Enter/ปุ่มเหมือนกัน — **ห้ามให้โหมดไหนค้นสดระหว่างพิมพ์**
+            สิ่งที่เจ้าของสั่งเลิกเมื่อ 26 ส.ค. คือ "ระบบเดาเองว่าที่พิมพ์เป็นคำถามหรือคำค้น"
+            ไม่ใช่ "ห้ามมีโหมด" · โหมดที่ผู้ใช้กดเลือกเองและเห็นชัด ไม่ใช่ปัญหาเดียวกัน
+         📢 บรรทัดข้างล่างนี้อยู่ "เหนือ" ช่องค้นหา และ **เปลี่ยนตามโหมด** (ดู MODES ใน app.js) -->
+    <p class="qhint">พิมพ์เป็นประโยคแล้วกด <b>Enter</b> — ถามแบบที่คุยกับคนได้เลย<span class="qex"> เช่น <i>ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว</i> · กดป้าย <b>🤖</b> เพื่อสลับเป็นค้นด้วยคำ</span></p>
     <div class="searchrow">
-      <!-- 🏷 ป้ายอยู่ "ในช่องค้นหา" ไม่ใช่บรรทัดข้างบน (เจ้าของสั่ง 27 ส.ค. 2026 —
-           "เอาบน search bar เลยจะได้เห็นชัดเจน") · บรรทัดข้างบนสายตาข้ามได้ง่าย
-           แต่ป้ายที่ติดอยู่ในช่องพิมพ์ ยังไงก็ต้องเห็นตอนจะพิมพ์
-           ⚠️ จอแคบเหลือแค่ "🤖 AI" (ซ่อน .aitxt) ไม่งั้นกินที่พิมพ์เกินครึ่งช่อง -->
-      <span class="aitag insearch" aria-hidden="true">🤖<span><span class="aitxt">ค้นด้วย </span>AI</span></span>
+      <!-- 🔀 **ป้ายนี้คือปุ่มสลับโหมด** (เจ้าของสั่ง 27 ส.ค. 2026 — "เด่นกว่านี้ และ
+           สลับเป็นหมวด ค้นด้วยคำ ได้ด้วย") · รวม 2 อย่างเป็นชิ้นเดียว:
+           บอกว่าตอนนี้อยู่โหมดไหน + กดเพื่อสลับ
+           ⚠️ ต้องเห็นชัดว่ากดได้ (มีลูกศร ▾ และเงา) ไม่งั้นอ่านเป็นป้ายเฉยๆ แล้วไม่มีใครกด
+           ⚠️ จอแคบเหลือแค่ "🤖 AI" / "🔤 คำ" ไม่งั้นกินที่พิมพ์เกินครึ่งช่อง -->
+      <button id="modetog" class="aitag insearch" type="button"
+              aria-label="สลับโหมดค้นหา" title="สลับระหว่างถาม AI กับค้นด้วยคำ">
+        <span class="mico" aria-hidden="true">🤖</span><span class="mtxt"><span class="mlong">ค้นด้วย </span><span class="mshort">AI</span></span><span class="mcaret" aria-hidden="true">▾</span>
+      </button>
       <input id="q" type="search" autofocus autocomplete="off" enterkeyhint="go"
              placeholder="ถามเป็นประโยค เช่น หาข่าวด้านดีของปลาหมอคางดำทั้งหมด"
              aria-label="ถามคลังข่าวเป็นประโยค" />
@@ -105,6 +108,6 @@
 
 </div>
 <script src="outlets.config.js?v=5"></script>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

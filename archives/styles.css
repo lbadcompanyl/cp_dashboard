@@ -93,12 +93,25 @@ body {
   display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; padding:3px 11px; border-radius:999px;
   background:var(--accent); color:var(--on-accent); font-size:.86rem; font-weight:700;
 }
-/* 🏷 ป้ายที่ติดอยู่ "ใน" ช่องค้นหา — แทนไอคอน ✨ เดิม
-   pointer-events:none เพื่อให้กดทะลุไปโฟกัสช่องพิมพ์ได้ (ป้ายไม่ใช่ปุ่ม) */
+/* 🔀 ปุ่มสลับโหมดที่ติดอยู่ "ใน" ช่องค้นหา — เป็นทั้งป้ายบอกโหมดและปุ่มกด
+   ⚠️ **ต้องเห็นชัดว่ากดได้** ไม่งั้นอ่านเป็นป้ายเฉยๆ แล้วไม่มีใครรู้ว่าสลับโหมดได้
+      (มี ▾ · เงา · ขยับตอน hover) · ห้ามใส่ pointer-events:none เด็ดขาด — มันคือปุ่ม */
 .aitag.insearch {
-  position:absolute; left:11px; z-index:2; pointer-events:none;
-  padding:6px 12px; font-size:.8rem;
+  position:absolute; left:9px; z-index:2; cursor:pointer;
+  border:0; font-family:inherit; font-weight:700;
+  padding:9px 13px; font-size:.86rem; line-height:1; gap:7px;
+  box-shadow:0 2px 8px rgba(37,99,235,.32);
+  transition:box-shadow .12s, transform .12s, filter .12s;
 }
+.aitag.insearch:hover { filter:brightness(1.07); box-shadow:0 3px 12px rgba(37,99,235,.42); }
+.aitag.insearch:active { transform:translateY(1px); }
+.aitag.insearch:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+.aitag.insearch .mico { font-size:1.05em; }
+.aitag.insearch .mcaret { font-size:.68em; opacity:.85; margin-left:-1px; }
+/* โหมดค้นด้วยคำ — สีต่างกันชัดเจน ไม่ใช่แค่เปลี่ยนตัวหนังสือ
+   ไม่งั้นสลับแล้วไม่รู้สึกว่าเปลี่ยนอะไร */
+.aitag.insearch.kw { background:var(--ink-2); box-shadow:0 2px 8px rgba(75,85,99,.3); }
+.aitag.insearch.kw:hover { box-shadow:0 3px 12px rgba(75,85,99,.4); }
 @media (prefers-color-scheme: dark) {
   #q { box-shadow:none; }
   #q:focus { box-shadow:0 0 0 4px rgba(96,165,250,.2); }
@@ -160,8 +173,8 @@ body {
 @media (max-width:860px) {
   .askbtn .flabel { display:none; }
   /* ป้าย 🤖 ยังมีคำกำกับได้อยู่ แค่บีบลง */
-  .aitag.insearch { padding:6px 10px; font-size:.76rem; }
-  #q { padding-left:138px; }
+  .aitag.insearch { padding:8px 11px; font-size:.8rem; }
+  #q { padding-left:136px; }
   .askbtn { padding:9px 12px; }
   #q { padding-right:208px; }
   .qclear { right:168px; }
@@ -176,9 +189,12 @@ body {
      บรรทัด hint ข้างบนยังบอกอยู่ว่าเป็น AI จึงไม่ได้หายไปไหน */
   /* จอแคบเหลือ "🤖 AI" — ยังบอกได้ว่าเป็น AI แต่ไม่กินที่พิมพ์
      และ .qex ซ่อนตัวอย่างยาวๆ ไว้ (placeholder ในช่องบอกตัวอย่างอยู่แล้ว) */
-  .aitag.insearch .aitxt, .qhint .qex { display:none; }
-  .aitag.insearch { left:9px; padding:6px 9px; }
-  #q { padding-left:72px; }
+  .aitag.insearch .mlong, .qhint .qex { display:none; }
+  .aitag.insearch { left:8px; padding:8px 10px; gap:5px; }
+  /* ⚠️ วัดจริงที่ 390px: ปุ่มสลับกว้างถึง x=88 · ปุ่มตัวกรองเริ่มที่ x=320
+     ที่พิมพ์ที่เหลือต้องไม่ต่ำกว่า 180px (เกณฑ์ของเทสต์ archives.mjs [9c]) */
+  #q { padding-left:80px; padding-right:98px; }
+  .qclear { right:58px; padding:9px 8px; }
   .ftoggle { padding:9px 12px; }
   /* ⚠️ **ห้ามใช้ flex-wrap ให้ปุ่มตกบรรทัด** — ลองแล้วปุ่มตัวกรอง (absolute ที่ไม่ได้กำหนด top)
      ย้ายตามไปด้วย แล้วหลุดออกนอกกรอบช่องค้นหา (เทสต์ [9c] จับได้)
@@ -186,8 +202,6 @@ body {
   .searchrow { padding-bottom:47px; }
   .askbtn { right:auto; left:20px; bottom:0; padding:8px 14px; }
   .askbtn .flabel { display:inline; }
-  #q { padding-right:104px; }
-  .qclear { right:64px; }
 }
 
 /* แถบ "ตีความคำถามเป็นอะไร" — ต้องอ่านออกโดยไม่ต้องกดอะไร

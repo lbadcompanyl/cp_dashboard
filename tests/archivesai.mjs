@@ -334,6 +334,48 @@ console.log("\n[9d] ไม่มีในคลังจริงๆ — ต้�
   await ctx.close();
 }
 
+/* ─────────── [13] สลับโหมด ค้นด้วย AI ↔ ค้นด้วยคำ ─────────── */
+// เจ้าของสั่ง 27 ส.ค. 2026: "เด่นกว่านี้ และ สลับเป็นหมวด ค้นด้วยคำ ได้ด้วย"
+// ⚠️ โหมด "คำ" ต้อง **ไม่ยิง AI เลย** ไม่งั้นสลับไปแล้วยังช้าและเปลืองเหมือนเดิม
+// ⚠️ และทั้ง 2 โหมดยังต้องกด Enter/ปุ่มเหมือนกัน — ห้ามให้โหมดคำค้นสดระหว่างพิมพ์
+//    (นั่นคือ "2 โหมดที่แยกไม่ออก" ซึ่งเจ้าของสั่งให้เลิกไปแล้วเมื่อ 26 ส.ค.)
+console.log("\n[13] สลับโหมด — ค้นด้วยคำต้องไม่ยิง AI เลย");
+{
+  const { ctx, page, seen } = await open({ plan: { terms: ["ก"], from: "", to: "", judge: "", ai: true } });
+
+  ok("ค่าตั้งต้นคือโหมด AI", await page.$eval("#modetog", (e) => !e.classList.contains("kw")));
+  await page.click("#modetog");
+  await page.waitForTimeout(150);
+  ok("กดแล้วสลับเป็นโหมดค้นด้วยคำ", await page.$eval("#modetog", (e) => e.classList.contains("kw")));
+  ok("ป้ายบนปุ่มเปลี่ยนเป็น 'ค้น'", (await page.$eval("#askbtn .flabel", (e) => e.textContent)) === "ค้น");
+  ok("ข้อความชวนพิมพ์เปลี่ยนตามโหมด",
+    /คำค้น/.test(await page.$eval("#q", (e) => e.placeholder)), await page.$eval("#q", (e) => e.placeholder));
+  ok("โหมดเข้า URL ด้วย (ก๊อปลิงก์ส่งต่อได้)",
+    (await page.evaluate(() => location.search)).includes("mode=kw"));
+
+  const before = seen.get;
+  const t = (await page.$$eval("#list a.t", (e) => e.map((x) => x.textContent)))[0] || "";
+  await page.fill("#q", t.slice(3, 8));
+  await page.waitForTimeout(400);
+  ok("🚫 พิมพ์เฉยๆ ยังไม่ค้น (เหมือนโหมด AI)", seen.get === before);
+
+  await page.press("#q", "Enter");
+  await page.waitForTimeout(500);
+  ok("🚫 โหมดค้นด้วยคำ ไม่ยิง AI เลย", seen.get === before, `ยิงไป ${seen.get - before} ครั้ง`);
+  ok("ค้นเจอจริง", (await count(page)) > 0, String(await count(page)));
+  const bar = await page.$eval("#askbar", (e) => e.hidden ? "" : e.textContent);
+  ok("แถบไม่ขึ้นว่า 'ถามว่า' (ไม่ได้ถาม AI)", !/ถามว่า/.test(bar), bar);
+
+  // สลับกลับ = ต้องถาม AI ได้ตามปกติ
+  await page.click("#modetog");
+  await page.waitForTimeout(150);
+  await page.fill("#q", "หาข่าวอะไรสักอย่าง");
+  await page.press("#q", "Enter");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  ok("สลับกลับมาโหมด AI แล้วถามได้ตามปกติ", seen.get > before, `ยิงไป ${seen.get - before} ครั้ง`);
+  await ctx.close();
+}
+
 /* ─────────── [12] คำถามเรื่องช่วงเวลาล้วนๆ ─────────── */
 // 🐞 เจ้าของเจอจริง 27 ส.ค. 2026: ถาม "ข่าวเมื่อวาน" → ได้ 0 ข่าว
 //    AI ตีความถูกแล้ว (ส่งช่วงวันที่มาให้ ไม่มีคำค้น) แต่โค้ดโยนทิ้งเพราะ terms ว่าง

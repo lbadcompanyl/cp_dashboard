@@ -24,7 +24,27 @@ const state = {
   //    ว่างเปล่า = หน้านี้ทำงานเหมือนเดิมทุกอย่าง
   judge: "",
   ask: "",              // คำถามต้นฉบับ ไว้แสดงให้ผู้ใช้เห็นว่าเขาถามอะไรไป
+  // 🔀 โหมดค้นหา (เจ้าของสั่ง 27 ส.ค. 2026: "สลับเป็นหมวด ค้นด้วยคำ ได้ด้วย")
+  //   "ai" = ถามเป็นประโยค ให้ AI ตีความก่อน (ค่าตั้งต้น)
+  //   "kw" = ค้นด้วยคำตรงๆ **ไม่ยิง AI เลย** — เร็ว ฟรี ตรวจสอบได้ ตรงกับที่พิมพ์เป๊ะ
+  // ⚠️ 2 โหมดนี้ต่างกันที่ "ตีความคำที่พิมพ์ยังไง" ไม่ใช่ "กดอะไรถึงจะได้ผล"
+  //    ทั้งคู่ต้องกด Enter/ปุ่มเหมือนกัน — **ห้ามให้โหมดคำค้นสดระหว่างพิมพ์**
+  //    ไม่งั้นจะกลับไปเป็นปัญหาเดิมที่เจ้าของสั่งให้เลิก (แยกไม่ออกว่าตอนไหนได้อะไร)
+  mode: "ai",
 };
+
+const MODE_KEY = "archivesMode";
+const MODES = {
+  ai: { ico: "🤖", long: "ค้นด้วย ", short: "AI", cls: "",
+        ph: "ถามเป็นประโยค เช่น หาข่าวด้านดีของปลาหมอคางดำทั้งหมด",
+        hint: 'พิมพ์เป็นประโยคแล้วกด <b>Enter</b> — ถามแบบที่คุยกับคนได้เลย<span class="qex"> เช่น <i>ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว</i> · กดป้าย <b>🤖</b> เพื่อสลับเป็นค้นด้วยคำ</span>',
+        btn: "ถาม", tip: "ถาม (หรือกด Enter)" },
+  kw: { ico: "🔤", long: "ค้นด้วย", short: "คำ", cls: "kw",
+        ph: "พิมพ์คำค้น เช่น ปลาหมอคางดำ ฝุ่น",
+        hint: 'พิมพ์คำแล้วกด <b>Enter</b> — เว้นวรรค = ต้องมีครบทุกคำ<span class="qex"> · ค้นเจอกลางคำไทยด้วย · ใส่ <code>"…"</code> ถ้าอยากได้วลีติดกัน · กดป้าย <b>🔤</b> เพื่อสลับไปถาม AI</span>',
+        btn: "ค้น", tip: "ค้น (หรือกด Enter)" },
+};
+const isAI = () => state.mode !== "kw";
 
 // ลิงก์ของข่าวที่ผ่านเงื่อนไข judge แล้ว — เก็บเป็น "ลิงก์" ไม่ใช่ลำดับแถว
 // ⚠️ ลำดับแถวเปลี่ยนได้ทุกครั้งที่โหลดปีเพิ่ม/เปลี่ยนตัวกรอง เก็บลำดับไว้แล้วจะชี้ผิดใบ
@@ -273,6 +293,24 @@ async function runAsk() {
   renderAskBar();
   renderList();
 
+  // 🔤 โหมดค้นด้วยคำ — ไม่ยิง AI เลย เอาที่พิมพ์ไปค้นตรงๆ
+  //    (ยังผ่อนการสะกดให้ตอนไม่เจอ และยังบอกว่าผ่อนอะไร เหมือนโหมด AI)
+  if (!isAI()) {
+    judgeBusy = false;
+    state.ask = "";           // ไม่ได้ถาม จึงไม่มี "ถามว่า …" ให้แสดง
+    state.judge = "";
+    judgeKeep = null;
+    judgeNote = "";
+    state.q = question;
+    state.shown = PAGE;
+    applyFilters();
+    relaxNote = relaxIfEmpty();
+    if (!filtered.length && !relaxNote) relaxNote = `ไม่มีข่าวที่มีคำว่า “${question}” อยู่ในคลังเลย`;
+    syncURL(true);
+    render();
+    return;
+  }
+
   const plan = await fetchPlan(question, false);
 
   // ⚠️ **ทางถอยห้ามขาด** — ถามไม่ผ่านก็ต้องยังค้นได้ ไม่ใช่หน้าค้าง
@@ -443,6 +481,39 @@ function relaxIfEmpty() {
   return "";
 }
 
+/* 🔀 วาดปุ่มสลับโหมด + ปรับหน้าตาช่องค้นหาให้ตรงกับโหมดที่เลือก
+   ⚠️ ต้องเปลี่ยนให้ครบทั้ง ป้าย · placeholder · บรรทัดบอกวิธีใช้ · ป้ายบนปุ่ม
+      เปลี่ยนแค่บางอย่าง = ผู้ใช้อ่านแล้วไม่แน่ใจว่าตอนนี้อยู่โหมดไหน */
+function applyMode() {
+  const m = MODES[state.mode] || MODES.ai;
+  const t = $("#modetog");
+  if (t) {
+    t.classList.toggle("kw", state.mode === "kw");
+    $(".mico", t).textContent = m.ico;
+    $(".mlong", t).textContent = m.long;
+    $(".mshort", t).textContent = m.short;
+    t.title = state.mode === "kw" ? "ตอนนี้: ค้นด้วยคำ — กดเพื่อสลับไปถาม AI" : "ตอนนี้: ค้นด้วย AI — กดเพื่อสลับไปค้นด้วยคำ";
+  }
+  const q = $("#q");
+  if (q) q.placeholder = m.ph;
+  const h = $(".qhint");
+  if (h) h.innerHTML = m.hint;
+  const b = $("#askbtn");
+  if (b) { $(".flabel", b).textContent = m.btn; b.title = m.tip; }
+}
+
+function setMode(next) {
+  if (state.mode === next) return;
+  state.mode = next;
+  try { localStorage.setItem(MODE_KEY, next); } catch {}
+  // สลับโหมด = ทิ้งผลที่ตีความไว้ด้วยโหมดเก่า ไม่งั้นแถบจะบอกคนละเรื่องกับป้าย
+  clearAsk();
+  applyMode();
+  syncURL(true);
+  render();
+  $("#q").focus();
+}
+
 function renderAskBar(judging) {
   // ปุ่มถามต้องบอกสถานะด้วย — ปุ่มที่กดแล้วหน้าตาเหมือนเดิม อ่านแล้วเหมือนกดไม่ติด
   const btn = $("#askbtn");
@@ -487,6 +558,8 @@ function toQuery() {
   // เงื่อนไขของ 🤖 เข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้ผลเดิม ไม่ใช่ได้ผลกว้างกว่า
   if (state.judge) p.set("judge", state.judge);
   if (state.ask) p.set("ask", state.ask);
+  // โหมดเข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้หน้าตาเดียวกัน (ค่าตั้งต้นคือ ai จึงไม่ต้องใส่)
+  if (state.mode === "kw") p.set("mode", "kw");
   const s = p.toString();
   return s ? "?" + s : location.pathname;
 }
@@ -499,6 +572,10 @@ function readQuery() {
   state.srcs = new Set((p.get("src") || "").split(",").filter(Boolean));
   state.judge = p.get("judge") || "";
   state.ask = p.get("ask") || "";
+  // URL ชนะ localStorage — ลิงก์ที่ส่งต่อกันต้องเปิดได้หน้าตาเดิมเสมอ
+  let saved = "";
+  try { saved = localStorage.getItem(MODE_KEY) || ""; } catch {}
+  state.mode = p.get("mode") === "kw" ? "kw" : p.has("mode") ? "ai" : saved === "kw" ? "kw" : "ai";
   judgeKeep = null;   // เปิดจากลิงก์ = ยังไม่ได้คัด ต้องไปคัดใหม่
   state.shown = PAGE;
 }
@@ -762,6 +839,7 @@ function bind() {
   // 🤖 ถามเป็นประโยค — กดปุ่ม หรือกด Enter ในช่องค้นหา
   // ⭐ Enter = ทางหลักของหน้านี้ (มีโหมดเดียว) · ปุ่มถามทำอย่างเดียวกัน
   //    ⚠️ ยังต้องกดเองอยู่ดี **ห้ามยิงถามระหว่างพิมพ์** — จะกลายเป็นถาม AI ทุกตัวอักษร
+  $("#modetog").addEventListener("click", () => setMode(isAI() ? "kw" : "ai"));
   $("#askbtn").addEventListener("click", runAsk);
   $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runAsk(); } });
   // "เลิกคัด" = ทิ้งเงื่อนไข แต่ **เก็บคำค้นไว้** — ผู้ใช้มักอยากเห็นของทั้งหมดในเรื่องเดิม
@@ -814,6 +892,7 @@ function fillInputs() {
 (async function init() {
   bind();
   readQuery();
+  applyMode();
   fillInputs();
   // เปิด URL ที่มีตัวกรองติดมาแล้ว ให้กางกล่องให้เลย — ไม่งั้นเห็นผลถูกกรองอยู่แต่ไม่รู้ว่ากรองด้วยอะไร
   const preset = !!(state.from || state.to || state.cats.size || state.srcs.size);
