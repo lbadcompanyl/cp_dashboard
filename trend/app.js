@@ -1035,7 +1035,16 @@ const FOOD_CAT = 6;
 function pinScore(it) {
   const hay = (it.title + " " + (it.snippet || "") + " " + ((it.related || []).map((r) => r.term || r).join(" ")))
     .toLowerCase().replace(PIN_FALSE_RE, " ");
-  if (PIN_CP_RE.test(hay)) return 2; // เครือ CP มาก่อน
+  // 🚫 **ป้าย "เครือ CP" ต้องดูจากชื่อเทรนด์อย่างเดียว ห้ามดูคำค้นที่เกี่ยวข้อง**
+  //
+  // 🐞 เจ้าของเจอจริง 27 ส.ค. 2026: เทรนด์ "พิมพิชยา ก๊กรัมย์" (นักวอลเลย์บอล)
+  //    ติดป้าย "เครือ CP" เพราะคำค้นที่เกี่ยวข้องมีคำว่า "ทรูไอดี" (แอปที่คนใช้ดูถ่ายทอดสด)
+  //    → คนดูถ่ายทอดสดผ่านแอปของทรู ไม่ได้แปลว่าข่าวนั้นเป็นข่าวของเครือ
+  //
+  // เป็นกับดักเดียวกับ "ดูสนุกเกอร์สด" ที่เคยถูกไฮไลต์เป็นข่าวอาหาร (ดูหมายเหตุของ PIN_FOOD_AMBIG_RE)
+  // ต่างกันแค่ฝั่งอาหารแก้ไปแล้ว ฝั่ง CP ยังใช้กองคำรวมอยู่
+  const titleOnly = String(it.title || "").toLowerCase().replace(PIN_FALSE_RE, " ");
+  if (PIN_CP_RE.test(titleOnly)) return 2; // เครือ CP มาก่อน
   if (PIN_FOOD_STRONG_RE.test(hay) || PIN_FOOD_BRAND_RE.test(hay)) return 1;
   // คำกำกวมต้องมีคำบริบทหนุน ไม่งั้น "ดูสนุกเกอร์สด" จะกลายเป็นข่าวอาหาร
   return PIN_FOOD_AMBIG_RE.test(hay) && PIN_FOOD_CTX_RE.test(hay) ? 1 : 0;
