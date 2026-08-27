@@ -12,6 +12,8 @@
  *   [5] 🔴 คัดไม่สำเร็จ = **แสดงทุกใบ ไม่ใช่ซ่อนทุกใบ** (ซ่อน = ข่าวหายเงียบ)
  *   [6] "เลิกคัด" = ทิ้งเงื่อนไข แต่เก็บคำค้นไว้
  *   [7] ระดับโค้ด: ไม่เขียน KV เลย · Enter สั่งถามได้แต่ห้ามยิงระหว่างพิมพ์ · ห้ามตัดทิ้งเมื่อ AI ใช้ไม่ได้
+ *   [11] ⏳ เปลี่ยนคำค้น = ต้องขึ้นไอคอนหมุน และห้ามค้างผลของคำค้นเก่า
+ *   [10] ✍️ สะกดไม่ตรงเป๊ะ (วรรณยุกต์/ตัวการันต์) ต้องยังเจอ — แต่ห้ามเอามาเป็นตัวค้นหลัก
  *   [9c] 🔴 คำค้นคำเดียวแล้วไม่เจอ = ขอคำที่กว้างขึ้นอีกรอบ (ไทยไม่มีช่องว่าง แยกเองไม่ได้)
  *   [9d] ไม่มีในคลังจริงๆ = บอกตรงๆ ห้ามปล่อยให้เจอข้อความ "ลองลดตัวกรองลง"
  *   [9] 🧠 ไม่เจอเลย = ผ่อนเงื่อนไขให้เอง (ตัดช่วงวันที่ → ตัดคำ) และต้องบอกว่าผ่อนอะไร
@@ -90,7 +92,7 @@ async function open({ plan, keep, planStatus = 200, judgeStatus = 200 } = {}) {
 }
 
 const count = (page) => page.$$eval("#list a[data-u], #list .item", (els) => els.length);
-const titles = (page) => page.$$eval("#list [data-u]", (els) => els.map((e) => e.textContent.trim()));
+const titles = (page) => page.$$eval("#list a.t", (els) => els.map((e) => e.textContent.trim()));
 
 /* ─────────── [1] โหมดเดียว: ต้องกดถึงจะถาม ─────────── */
 console.log("\n[1] โหมดเดียว — พิมพ์เฉยๆ ยังไม่ถาม · กด Enter หรือปุ่มถึงจะถาม");
@@ -242,7 +244,7 @@ console.log("\n[7] กฎที่ต้องคุมระดับโค้�
   // ⭐ โหมดเดียว = Enter ต้องสั่งถามได้ · แต่ห้ามยิงระหว่างพิมพ์
   ok("Enter สั่งถามได้", /Enter[\s\S]{0,60}runAsk/.test(app));
   ok("🚫 ไม่ยิงถามระหว่างพิมพ์", !/function onSearchInput\(\)[\s\S]{0,200}runAsk/.test(app));
-  ok("ยังใช้ includes() ค้นเหมือนเดิม", /\.n\.includes\(/.test(app));
+  ok("ยังใช้ includes() ค้นเหมือนเดิม", /r\.n\)\.includes\(|\.n\.includes\(/.test(app));
 }
 
 /* ─────────── [9] 🧠 ไม่เจอเลย = ผ่อนเงื่อนไขให้ แล้วบอกว่าผ่อนอะไร ─────────── */
@@ -326,6 +328,93 @@ console.log("\n[9d] ไม่มีในคลังจริงๆ — ต้�
   // ⚠️ ผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย ข้อความ "ลองลดตัวกรองลง" จึงอ่านแล้วงง
   ok("บอกตรงๆ ว่าไม่มีคำนี้ในคลัง", /ไม่มีข่าวที่มีคำว่า/.test(bar), bar);
   await ctx.close();
+}
+
+/* ─────────── [11] ⏳ เปลี่ยนคำค้น = ต้องขึ้นไอคอนหมุน ─────────── */
+console.log("\n[11] ⏳ กดถามแล้วต้องขึ้นไอคอนหมุน ไม่ใช่ค้างผลของคำค้นเก่า");
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  await ctx.route("**/archives/data/*.json", (route) => {
+    const name = route.request().url().split("/").pop().split("?")[0];
+    route.fulfill({ status: 200, contentType: "application/json", body: FIX[name] || "{}" });
+  });
+  // หน่วงคำตอบไว้ เพื่อจับภาพ "ระหว่างรอ" ให้ทัน
+  await ctx.route("**/api/archives/ask*", async (route) => {
+    if (route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: '{"keep":[]}' });
+    await new Promise((r) => setTimeout(r, 1200));
+    route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ terms: ["ก"], from: "", to: "", judge: "", ai: true }) });
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE + "/archives/", { waitUntil: "networkidle" });
+  const before = await titles(page);
+
+  await page.fill("#q", "ขอข่าวอะไรสักอย่าง");
+  await page.click("#askbtn");
+  await page.waitForTimeout(300);          // ยังอยู่ระหว่างรอคำตอบ
+
+  ok("รายการขึ้นไอคอนหมุน", (await page.$$("#list .spin")).length > 0);
+  ok("บอกด้วยว่ากำลังทำอะไรอยู่", /กำลังค้น/.test(await page.$eval("#list", (e) => e.textContent)));
+  // 🔴 ข้อสำคัญ: ห้ามค้างผลของคำค้นเก่าไว้ให้อ่านเหมือนเป็นคำตอบของคำถามใหม่
+  ok("🔴 ไม่ค้างผลของคำค้นเก่า", (await titles(page)).length === 0, `ยังเหลือ ${(await titles(page)).length} ใบ`);
+  ok("ปุ่มถามก็ขึ้นไอคอนหมุนด้วย", (await page.$$("#askbtn .spin")).length > 0);
+  ok("ปุ่มถามกดซ้ำไม่ได้ระหว่างรอ", await page.$eval("#askbtn", (e) => e.disabled));
+
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  ok("เสร็จแล้วไอคอนหมุนหายไป", (await page.$$("#list .spin")).length === 0);
+  ok("ปุ่มถามกลับมากดได้", !(await page.$eval("#askbtn", (e) => e.disabled)));
+  ok("ได้ผลลัพธ์จริง", (await titles(page)).length > 0, `${before.length} → ${(await titles(page)).length}`);
+  await ctx.close();
+}
+
+/* ─────────── [10] ✍️ สะกดไม่ตรงเป๊ะ — ต้องยังเจอ ─────────── */
+console.log("\n[10] ✍️ สะกดไม่ตรงเป๊ะ (วรรณยุกต์/ตัวการันต์) — ต้องยังเจอ และต้องบอกว่าผ่อนให้");
+{
+  // ปลอมข้อมูล 2 ใบ: ใบหนึ่งสะกดเต็ม "เอเลี่ยนสปีชีส์" · ผู้ใช้พิมพ์ "เอเลี่ยนสปีชี่"
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const pack = {
+    o: ["สำนักทดสอบ"], c: ["ทดสอบ"],
+    r: [
+      ["สัตว์น้ำเอเลี่ยนสปีชีส์ ที่คนนิยมทำให้สูญพันธุ์ด้วยการกิน", "https://x.test/1", 1787000000, 0, [0]],
+      ["ข่าวอื่นที่ไม่เกี่ยวอะไรเลย", "https://x.test/2", 1787000001, 0, [0]],
+    ],
+  };
+  await ctx.route("**/archives/data/index.json", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ generatedAt: "2026-08-26T00:00:00.000Z", total: 2, noDate: 0, years: [{ y: 2026, n: 2 }] }),
+  }));
+  await ctx.route("**/archives/data/2026.json", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(pack) }));
+  await ctx.route("**/api/archives/ask*", (route) => {
+    if (route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: '{"keep":[]}' });
+    // จำลองว่า AI แก้คำสะกดให้ไม่ได้ — ส่งคำที่ผู้ใช้พิมพ์มาตรงๆ (กรณีแย่ที่สุด)
+    route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ terms: ["เอเลี่ยนสปีชี่"], from: "", to: "", judge: "", ai: true }) });
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE + "/archives/", { waitUntil: "networkidle" });
+  await page.fill("#q", "เอเลี่ยนสปีชี่");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const n = await count(page);
+  ok("สะกดต่างกันแค่วรรณยุกต์/ตัวการันต์ ก็ยังเจอ", n === 1, `เจอ ${n} ใบ`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าผ่อนการสะกดให้ ไม่ได้เงียบ", /สะกดไม่ตรง/.test(bar), bar);
+  // ⚠️ โหมดผ่อนห้ามไฮไลต์ — ตำแหน่งไม่ตรงกับพาดหัวจริง จะทำให้พาดหัวเพี้ยน
+  ok("🚫 โหมดผ่อนไม่ไฮไลต์ (ตำแหน่งไม่ตรง จะทำพาดหัวเพี้ยน)", (await page.$$("#list mark")).length === 0);
+  const t0 = (await titles(page))[0];
+  ok("พาดหัวยังครบถ้วนไม่เพี้ยน", t0.includes("เอเลี่ยนสปีชีส์"), t0);
+  await ctx.close();
+}
+
+console.log("\n[10b] 🚫 ห้ามเอาการผ่อนสะกดมาเป็นตัวค้นหลัก — 'กุ้ง' ต้องไม่กลายเป็น 'กุง'");
+{
+  const api = fs.readFileSync(new URL("../archives/app.js", import.meta.url), "utf8");
+  // ตัวค้นหลักต้องเทียบกับ r.n (ของเต็ม) เสมอ · r.ln ใช้ได้เฉพาะตอน looseMode
+  ok("ค้นปกติยังเทียบกับพาดหัวเต็ม", /looseMode \? r\.ln : r\.n/.test(api));
+  ok("โหมดผ่อนเริ่มต้นเป็นปิด", /let looseMode = false/.test(api));
+  ok("เปิดโหมดผ่อนเฉพาะตอนไม่เจอเลย", /if \(filtered\.length\) return ""[\s\S]{0,900}looseMode = true/.test(api));
 }
 
 /* ─────────── [8] ตรรกะฝั่งเซิร์ฟเวอร์ที่พลาดแล้วเจ็บทันที ─────────── */

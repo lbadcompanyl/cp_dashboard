@@ -578,7 +578,8 @@ console.log("\n[11] ข้อห้าม");
   const banned = ["lunr", "Fuse", "minisearch", "flexsearch"].filter((n) =>
     new RegExp(`\\b${n}\\b`, "i").test(src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
   ok("ไม่มี search library ในโค้ด", banned.length === 0, JSON.stringify(banned));
-  ok("ใช้ includes() ค้นตรงๆ", /\.n\.includes\(/.test(src));
+  // (โหมดผ่อนการสะกดเขียนเป็น `(looseMode ? r.ln : r.n).includes(` — ยังเป็น includes() เหมือนเดิม)
+  ok("ใช้ includes() ค้นตรงๆ", /r\.n\)\.includes\(|\.n\.includes\(/.test(src));
   const scripts = await page.$$eval("script[src]", (els) => els.map((e) => e.getAttribute("src")));
   ok("ไม่มีสคริปต์จากข้างนอก", scripts.every((s) => !/^https?:|^\/\//.test(s)), JSON.stringify(scripts));
 }

@@ -122,19 +122,35 @@ body {
    ลำดับจากขวา:  [⚙ ตัวกรอง]  [🤖 ถาม]  [✕ ล้าง] */
 /* ⭐ ปุ่ม "ถาม" เป็นการกระทำเดียวที่ทำให้เกิดผลลัพธ์ — ใช้สีเน้นให้ต่างจากปุ่มตัวกรอง */
 .askbtn {
-  right:120px;
+  right:126px;
   background:var(--accent); border-color:var(--accent); color:var(--on-accent);
 }
 .askbtn:hover { filter:brightness(1.08); color:var(--on-accent); border-color:var(--accent); }
-#q { padding-right:250px; }
-.qclear { right:210px; }
+/* ⏳ กำลังค้นอยู่ — ปุ่มต้องบอกสถานะ ไม่งั้นกดแล้วเหมือนกดไม่ติด
+   ⚠️ ไอคอนหมุนใช้ currentColor จึงเห็นชัดบนพื้นสีเน้นอยู่แล้ว แต่ต้องล้าง margin-right ทิ้ง
+      (ตัวกลางเว้นไว้ 7px สำหรับข้อความที่ตามหลัง ในปุ่มนี้มี gap ของ flex อยู่แล้ว) */
+.askbtn.busy { opacity:.75; cursor:progress; }
+.askbtn .spin { margin-right:0; vertical-align:0; }
+/* ⚠️ ปุ่มถาม (สีเน้น) กับปุ่มตัวกรอง "ตอนกรองอยู่" (สีเน้นเหมือนกัน) อยู่ติดกันจนอ่านเป็นก้อนเดียว
+   เจ้าของส่งภาพมาให้ดู 26 ส.ค. 2026 · แก้ด้วยการเว้นระยะ + ทำให้ตัวกรองเป็นแบบขอบ ไม่ใช่ทึบ
+   🚫 margin ใช้ไม่ได้ ปุ่มเป็น position:absolute — ต้องขยับค่า right เอา */
+/* กรองอยู่ = ทำให้เห็นชัดว่ารายการถูกกรองไว้ ไม่ใช่ข่าวหายไปเฉยๆ
+   ⚠️ ใช้ "ขอบสีเน้น" ไม่ใช่ "พื้นสีเน้น" — ของเดิมเป็นพื้นทึบเหมือนปุ่มถามเป๊ะ
+      พอกรองอยู่ 2 ปุ่มติดกันจะกลายเป็นก้อนสีน้ำเงินก้อนเดียว แยกไม่ออกว่ากดตรงไหน */
+.ftoggle.on {
+  background:var(--surface); border-color:var(--accent); color:var(--accent);
+}
+.ftoggle.on .fcaret { color:var(--accent); }
+.ftoggle.on .fbadge { background:var(--accent); color:var(--on-accent); }
+#q { padding-right:258px; }
+.qclear { right:218px; }
 
 /* จอกลาง: ปุ่มถามเหลือแต่ไอคอน (Enter ก็ทำงานเหมือนกัน และ hint บอกไว้แล้ว) */
 @media (max-width:860px) {
   .askbtn .flabel { display:none; }
   .askbtn { padding:9px 12px; }
-  #q { padding-right:200px; }
-  .qclear { right:160px; }
+  #q { padding-right:208px; }
+  .qclear { right:168px; }
 }
 /* ⚠️ **จอแคบใส่ 3 ปุ่มในช่องค้นหาไม่ได้** — วัดแล้วเหลือที่พิมพ์ 148px (เกณฑ์ 180px)
    ปุ่ม 🤖 จึงลงมาอยู่ "ใต้ช่อง" แทนที่จะเบียดข้างใน · ช่องพิมพ์ได้ที่คืนมาเต็ม
@@ -169,10 +185,6 @@ body {
 @media (prefers-color-scheme: dark) {
   .askbar .asknote { color:#fbbf24; }
 }
-/* กรองอยู่ = ทำให้เห็นชัดว่ารายการถูกกรองไว้ ไม่ใช่ข่าวหายไปเฉยๆ */
-.ftoggle.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
-.ftoggle.on .fcaret { color:var(--on-accent); }
-.ftoggle.on .fbadge { background:var(--on-accent); color:var(--accent); }
 .fbadge {
   display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px;
   margin-left:5px; padding:0 4px; border-radius:999px;

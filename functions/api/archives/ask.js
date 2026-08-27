@@ -98,6 +98,8 @@ async function askPlan(env, q, broad = false) {
     //    แยกเป็นคำสั้นหลายคำจึงแม่นกว่ามาก — เจอจริง 26 ส.ค. 2026: ถามแล้วได้ 0 ข่าว
     "  Split compound phrases into SHORT separate words. Never output one long compound.\n" +
     "  Each term must be a word that can stand alone in a headline.\n" +
+    // ✍️ ผู้ใช้พิมพ์ผิดบ่อย (เอเลี่ยนสปีชี่ / เอเลียนสปีชีส์) — ให้ AI แก้ให้เป็นตัวสะกดที่ข่าวใช้จริง
+    "  Fix misspellings. Use the spelling actually used in Thai news, including tone marks and ์.\n" +
     "  Do NOT include question words such as หาข่าว, ข่าว, ของ, เกี่ยวกับ, ทั้งหมด, ล่าสุด.\n" +
     "  Do NOT include opinion words (ดี, ร้าย, บวก, ลบ) — those go in judge.\n" +
     (broad
@@ -113,6 +115,8 @@ async function askPlan(env, q, broad = false) {
     'Q: หาข่าว dna ของ ปลาหมอคางดำ\n{"terms":["ปลาหมอคางดำ","dna"],"from":"","to":"","judge":""}\n' +
     // เคสจริงที่พลาด 26 ส.ค. 2026 — ตอบ ["เผาข้าวโพด"] คำเดียวแล้วได้ 0 ข่าว
     'Q: หาข่าวเผาข้าวโพดทั้งหมด\n{"terms":["เผา","ข้าวโพด"],"from":"","to":"","judge":""}\n' +
+    // สะกดผิด → ต้องคืนตัวสะกดที่ถูก (เจ้าของเจอจริง 26 ส.ค. 2026)
+    'Q: เอเลี่ยนสปีชี่\n{"terms":["เอเลี่ยนสปีชีส์"],"from":"","to":"","judge":""}\n' +
     `Q: ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว\n{"terms":["PM 2.5","เชียงใหม่"],"from":"${monthRangeTH(-1).from}","to":"${monthRangeTH(-1).to}","judge":""}\n\n` +
     "Q: " + q;
 

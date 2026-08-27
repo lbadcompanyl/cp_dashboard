@@ -44,6 +44,23 @@ let busy = false;
 // ⚠️ ห้ามตัดอักขระไทยหรือวรรณยุกต์ทิ้ง — "กุ้ง" กับ "กุง" คนละคำ
 const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
 
+/* ✍️ **ผ่อนการสะกด — ใช้เป็น "ทางสำรอง" เท่านั้น ห้ามเอามาเป็นตัวค้นหลัก**
+ *
+ * เจ้าของแจ้ง 26 ส.ค. 2026: พิมพ์ "เอเลี่ยนสปีชี่" แล้วไม่เจอ ทั้งที่คลังมี "เอเลี่ยนสปีชีส์"
+ * ต่างกันแค่วรรณยุกต์กับตัวการันต์ แต่การค้นแบบตัวอักษรตรงเป๊ะมองว่าคนละคำสนิท
+ *
+ * ตัดวรรณยุกต์ (่ ้ ๊ ๋) กับตัวการันต์ (์) ออกแล้วค่อยเทียบ
+ *   "เอเลี่ยนสปีชี่"  → "เอเลียนสปีชี"
+ *   "เอเลี่ยนสปีชีส์" → "เอเลียนสปีชีส"   ← อันแรกเป็นส่วนหนึ่งของอันนี้ จึงเจอ
+ *
+ * 🚫 **ห้ามใช้เป็นตัวค้นหลักเด็ดขาด** — วิธีนี้ทำให้ "กุ้ง" กับ "กุง" กลายเป็นคำเดียวกัน
+ *    ซึ่งเป็นข้อห้ามที่เขียนไว้บนสุดของไฟล์นี้ · ใช้ได้เฉพาะตอนค้นแบบเป๊ะแล้วไม่เจอเลย
+ *    และต้องบอกผู้ใช้ทุกครั้งว่ากำลังผ่อนการสะกดให้อยู่
+ */
+const TONE_RE = /[\u0E48-\u0E4C]/g;   // ่ ้ ๊ ๋ ์
+const looseNorm = (s) => norm(s).replace(TONE_RE, "");
+let looseMode = false;                 // ธงระดับโมดูล — ต้องอยู่ข้ามการ render
+
 // ---------- แยกคำค้น ----------
 // **เว้นวรรค = "ต้องมีครบทุกคำ" (AND) แต่ไม่ต้องอยู่ติดกัน** (เจ้าของสั่ง 20 ส.ค. 2026)
 //   พิมพ์ "ปลาหมอ ปลากระป๋อง" = เอาข่าวที่มี **ทั้งสองคำ** อยู่ในพาดหัว
@@ -149,6 +166,7 @@ function expand(pack) {
     out.push({
       t: title,                      // พาดหัวต้นฉบับ (ใช้ค้นหา · ยังมีหางสำนักข่าวอยู่)
       n: title.toLowerCase(),        // ตัวที่ใช้ค้น — ความยาวเท่ากับ t เสมอ
+      ln: looseNorm(title),          // ตัวสำรองตอนผ่อนการสะกด (ความยาวไม่เท่า t → ไฮไลต์ไม่ได้)
       u: r[1],
       ts: r[2] * 1000,
       o,
@@ -183,14 +201,15 @@ function yearsNeededByDate() {
 
 // ---------- กรอง ----------
 function applyFilters() {
-  const terms = parseTerms(state.q);
+  // โหมดผ่อนการสะกด: เทียบกับพาดหัวที่ตัดวรรณยุกต์แล้วทั้งสองฝั่ง
+  const terms = looseMode ? parseTerms(state.q).map(looseNorm) : parseTerms(state.q);
   const from = state.from ? Date.parse(state.from + "T00:00:00") : null;
   const to = state.to ? Date.parse(state.to + "T23:59:59") : null;
   const cats = state.cats, srcs = state.srcs;
 
   filtered = rows.filter((r) => {
     // ← substring ตรงๆ (ดูหมายเหตุบนสุด) · หลายคำ = ต้องมีครบทุกคำ อยู่ตรงไหนก็ได้
-    if (terms.length && !terms.every((t) => r.n.includes(t))) return false;
+    if (terms.length && !terms.every((t) => (looseMode ? r.ln : r.n).includes(t))) return false;
     if (from !== null && r.ts < from) return false;
     if (to !== null && r.ts > to) return false;
     if (srcs.size && !srcs.has(r.o)) return false;
@@ -246,8 +265,13 @@ async function runAsk() {
 
   judgeBusy = true;
   relaxNote = "";
+  looseMode = false;
   state.ask = question;
+  // ⏳ **วาดสถานะ "กำลังค้น" ทันที ก่อนจะไปรอคำตอบ**
+  //    ลืมบรรทัดนี้ = รายการยังเป็นผลของคำถามก่อนหน้าตลอดเวลาที่รอ
+  //    ซึ่งอ่านแล้วเข้าใจว่านี่คือคำตอบของคำถามใหม่ (เจ้าของสั่งให้มีไอคอนหมุน 26 ส.ค. 2026)
   renderAskBar();
+  renderList();
 
   const plan = await fetchPlan(question, false);
 
@@ -342,6 +366,7 @@ async function judgePass() {
 function clearAsk() {
   state.judge = ""; state.ask = "";
   judgeKeep = null; judgeNote = ""; relaxNote = "";
+  looseMode = false;
 }
 
 /* 🧠 **ไม่เจอเลย = ผ่อนเงื่อนไขให้เอง แล้วบอกว่าผ่อนอะไรไป**
@@ -365,7 +390,14 @@ function relaxIfEmpty() {
     state.from = f; state.to = t;   // ไม่ช่วย → คืนค่าเดิม
   }
 
-  // 2) ตัดคำออกทีละคำ
+  // 2) ผ่อนการสะกด — ทำก่อนตัดคำ เพราะยังได้คำที่ผู้ใช้ถามครบทุกคำ (เสียน้อยกว่า)
+  looseMode = true;
+  applyFilters();
+  if (filtered.length) return "สะกดไม่ตรงกับในข่าวเป๊ะ — จับคำที่ใกล้เคียงให้แล้ว (ไม่ได้ไฮไลต์คำในโหมดนี้)";
+  looseMode = false;
+  applyFilters();
+
+  // 3) ตัดคำออกทีละคำ
   // ⚠️ **ต้องลองตัดทีละคำแล้วดูว่าคำไหนคือตัวที่ทำให้ไม่เจอ** ไม่ใช่ตัดตามความยาว
   //    (เดาว่า "คำสั้น = ไม่สำคัญ" แล้วพลาด — คำที่ผิดมักเป็นคำยาวที่ AI แต่งขึ้นมาเอง)
   //    คำมากสุด 6 คำ การไล่ทุกแบบจึงถูกมาก
@@ -398,6 +430,14 @@ function relaxIfEmpty() {
 }
 
 function renderAskBar(judging) {
+  // ปุ่มถามต้องบอกสถานะด้วย — ปุ่มที่กดแล้วหน้าตาเหมือนเดิม อ่านแล้วเหมือนกดไม่ติด
+  const btn = $("#askbtn");
+  if (btn) {
+    btn.disabled = judgeBusy;
+    btn.classList.toggle("busy", judgeBusy);
+    const ic = btn.firstElementChild;
+    if (ic) ic.innerHTML = judgeBusy ? '<span class="spin"></span>' : "🔎";
+  }
   const bar = $("#askbar");
   if (!bar) return;
   if (!state.ask && !state.judge && !judgeNote && !relaxNote) { bar.hidden = true; bar.innerHTML = ""; return; }
@@ -504,7 +544,19 @@ const fmtDate = (ts) => {
 
 function renderList() {
   const box = $("#list");
-  const terms = parseTerms(state.q);
+
+  // ⏳ **กำลังค้นอยู่ = ต้องขึ้นไอคอนหมุน ไม่ใช่ค้างผลของคำค้นเก่า** (เจ้าของสั่ง 26 ส.ค. 2026)
+  //    ของเดิมแถบตีความมีไอคอนหมุนอยู่ก็จริง แต่รายการข้างล่างยังเป็นผลของคำถามก่อนหน้า
+  //    ผู้ใช้กดถามคำใหม่แล้วเห็นข่าวชุดเดิม = เข้าใจว่านี่คือคำตอบของคำถามใหม่
+  //    (กฎเดียวกับข้อ 5b ของแดชบอร์ด: เปิดหน้ามาต้องขึ้นไอคอนหมุน ไม่ใช่ข่าวเก่า)
+  if (judgeBusy) {
+    box.innerHTML = `<div class="empty"><span class="loading"><span class="spin"></span>กำลังค้น…</span></div>`;
+    $("#more").innerHTML = "";
+    return;
+  }
+  // ⚠️ โหมดผ่อนการสะกด **ห้ามไฮไลต์** — ตัวที่ใช้เทียบสั้นกว่าพาดหัวจริง
+  //    ตำแหน่งที่เจอจึงเอามาตัดชิ้นจากพาดหัวไม่ได้ (จะได้พาดหัวเลื่อนตำแหน่งทั้งบรรทัด)
+  const terms = looseMode ? [] : parseTerms(state.q);
 
   if (!filtered.length) {
     // ⚠️ 2 กรณีนี้ต้องพูดคนละแบบ — "ยังไม่ได้กรอง" กับ "กรองแล้วไม่พบ"
