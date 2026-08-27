@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="5" />
+<meta name="page-ver" content="6" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -196,6 +196,7 @@ $("#run").addEventListener("click", async () => {
     }
   }
   const preds = new Array(rows.length).fill(null);
+  const errors = [];        // เก็บข้อความ error จริงไว้โชว์ — ไม่งั้นได้แต่เดาว่าพลาดเพราะอะไร
   let done = 0, failed = 0;
   const t0 = Date.now();
 
@@ -235,6 +236,7 @@ $("#run").addEventListener("click", async () => {
       } catch (err) {
         failed++;
         // ก้อนที่พลาดปล่อยเป็น null — จะถูกนับแยกไว้ ไม่เอาไปปนกับผลที่ทายจริง
+        errors.push(String(err && err.message || err));
         console.warn("batch", ci, err);
       }
       done += chunk.idx.length;
@@ -246,7 +248,7 @@ $("#run").addEventListener("click", async () => {
 
   $("#stop").disabled = true; $("#run").disabled = false;
   $("#progwrap").hidden = true;
-  render(preds, Math.round((Date.now() - t0) / 1000), failed);
+  render(preds, Math.round((Date.now() - t0) / 1000), failed, errors);
 });
 
 /* ── คำนวณตัวเลข ── */
@@ -290,12 +292,17 @@ function lensCard(title, r) {
   </div>`;
 }
 
-function render(preds, sec, failedBatches) {
+function render(preds, sec, failedBatches, errors = []) {
   const scored = rows.map((r, i) => ({ r, p: preds[i] })).filter((x) => x.p);
   const missing = rows.length - scored.length;
 
   if (!scored.length) {
-    $("#out").innerHTML = `<div class="card"><div class="warn">ไม่ได้ผลกลับมาเลยสักข้อ — เช็คว่า Worker deploy รุ่นใหม่แล้วหรือยัง (ต้องมี <code>/classify</code>)</div></div>`;
+    $("#out").innerHTML = `<div class="card"><div class="warn">
+      <b>ไม่ได้ผลกลับมาเลยสักข้อ</b> — เช็คว่า Worker deploy รุ่นใหม่แล้วหรือยัง (ต้องมี <code>/classify</code>)
+      ${errors.length ? `<div style="margin-top:9px"><b>สาเหตุที่ยิงพลาด:</b><ul style="margin:5px 0 0;padding-left:20px">${
+        [...new Set(errors)].slice(0, 5).map((e) => `<li class="small"><code>${esc(e).slice(0, 300)}</code></li>`).join("")
+      }</ul></div>` : ""}
+    </div></div>`;
     return;
   }
 
@@ -315,6 +322,9 @@ function render(preds, sec, failedBatches) {
     (missing || failedBatches ? `<div class="card"><div class="warn">
        ⚠️ มี <b>${missing}</b> ข้อที่ไม่ได้ผลกลับมา (ก้อนที่ยิงพลาด ${failedBatches} ก้อน)
        ${missing > rows.length * 0.2 ? '<br /><b style="color:var(--neg)">เกิน 20% ของทั้งชุด — ตัวเลขข้างล่างเชื่อไม่ได้ ให้แก้ต้นเหตุก่อนแล้วรันใหม่</b>' : ""}
+       ${errors.length ? `<div style="margin-top:9px"><b>สาเหตุที่ยิงพลาด:</b><ul style="margin:5px 0 0;padding-left:20px">${
+         [...new Set(errors)].slice(0, 5).map((e) => `<li class="small"><code>${esc(e).slice(0, 300)}</code></li>`).join("")
+       }</ul></div>` : ""}
        — ตัวเลขข้างล่างคิดจาก <b>${scored.length}</b> ข้อที่ได้ผลจริงเท่านั้น ไม่ได้เดาแทน
      </div></div>` : "") +
     `<div class="card">
