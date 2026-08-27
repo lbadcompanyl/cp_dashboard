@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 10;
+const WORKER_VER = 11;
 
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -192,12 +192,24 @@ async function classifyTwoLens(texts, env, acc, context) {
   /* เพดานโทเคนต้องโตตามจำนวนข้อ — ตั้งไว้ตายตัวแล้วโมเดลที่เขียนยาวกว่าจะถูกตัดกลางคัน
      ⚠️ เจอจริง 27 ส.ค. 2026: opus โดนตัดที่ 2,600 → JSON พัง → ตกไปเป็น Neutral ทั้งชุด
         แล้วรายงานออกมาเป็น "ความแม่น 10%" ทั้งที่โมเดลไม่ได้ตอบผิดสักข้อ */
-  const budget = Math.min(8000, 90 * texts.length + 600);
+  /* ⚠️ เพดานต้องเผื่อ "ส่วนที่ไม่ใช่คำตอบ" ด้วย — วัดจริง 27 ส.ค. 2026:
+     ก้อน 6 ข้อ ต้องการ JSON จริงแค่ ~150 โทเคน แต่เพดาน 1,140 ยังไม่พอ
+     แปลว่าโมเดลบางตัว (opus) เขียนความคิด/คำนำก่อนถึง JSON ซึ่ง haiku/sonnet ไม่ทำ
+     จึงต้องมีส่วนเผื่อคงที่ก้อนใหญ่ ไม่ใช่คิดตามจำนวนข้ออย่างเดียว */
   const acc2 = acc || {};
-  const out = await callClaude(env, systemTwoLens(), ctx + "คอมเมนต์:\n" + numbered, budget, acc2);
+  const prompt = ctx + "คอมเมนต์:\n" + numbered;
+  const sys = systemTwoLens();
+  let budget = Math.min(12000, 60 * texts.length + 4000);
+  let out = await callClaude(env, sys, prompt, budget, acc2);
 
+  /* ถูกตัดกลางคัน = ลองใหม่อีกครั้งด้วยเพดาน 2 เท่า ก่อนจะยอมแพ้
+     ดีกว่าโยน error ทันที เพราะความยาวของคำนำเดาไม่ได้และต่างกันไปในแต่ละก้อน */
   if (acc2.stop_reason === "max_tokens") {
-    throw new Error(`คำตอบถูกตัดกลางคัน (max_tokens ${budget}) — ลดจำนวนข้อต่อก้อน`);
+    budget = Math.min(20000, budget * 2);
+    out = await callClaude(env, sys, prompt, budget, acc2);
+  }
+  if (acc2.stop_reason === "max_tokens") {
+    throw new Error(`คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว — ลดจำนวนข้อต่อก้อน`);
   }
 
   let arr = [];
