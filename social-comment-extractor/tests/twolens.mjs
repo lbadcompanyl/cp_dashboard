@@ -28,10 +28,13 @@ r = await classifyTwoLens(texts, env, null);
 ok(r.length === 4, "ตอบไม่ครบ → ความยาวยังเท่าจำนวนคอมเมนต์ (ไม่เลื่อนทั้งชุด)");
 ok(r[2].missing === true && r[3].missing === true, "ข้อที่โมเดลไม่ตอบ ติดธง missing ไว้");
 
-// [4] โมเดลตอบเป็นขยะ → ต้องไม่ throw
+// [4] โมเดลตอบเป็นขยะ → ต้อง "โยน error" ไม่ใช่คืน Neutral
+//     (เปลี่ยนจากพฤติกรรมเดิม 27 ส.ค. 2026 — ของเดิมทำให้ความล้มเหลวกลายเป็นคะแนน)
 mk({ ไม่ใช่: "array" });
-r = await classifyTwoLens(texts, env, null);
-ok(r.length === 4 && r.every(x => x.sentiment_cp === "Neutral"), "ตอบเป็นขยะ → ไม่พัง คืน Neutral ทั้งชุด");
+let threw4 = null;
+try { await classifyTwoLens(texts, env, null); } catch (e) { threw4 = e.message; }
+ok(threw4 !== null, "ตอบเป็นขยะ → โยน error (ห้ามคืน Neutral ทั้งชุดเงียบๆ)");
+ok(/แกะคำตอบ/.test(threw4 || ""), "ข้อความ error บอกว่าแกะคำตอบไม่ได้");
 
 // [5] prompt ต้องไม่มี not_related หลงเหลือ + มี few-shot ครบ
 const sys = systemTwoLens();
