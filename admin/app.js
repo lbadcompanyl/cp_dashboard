@@ -286,6 +286,7 @@ const SRC_TH = {
   "api/flags": "ปุ่ม ⚑/🗂 บนการ์ด",
   "issue/state": "ค่าที่ตั้งไว้ (Issue)",
   "sd/state": "ค่าที่ตั้งไว้ (SD)",
+  "followers": "ยอดผู้ติดตามโซเชียล",
 };
 const logSrcTH = (s) => SRC_TH[s] || s || "?";
 
