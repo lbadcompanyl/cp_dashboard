@@ -30,6 +30,34 @@ Cloudflare → cp-dashboard → Settings → Build → Branch control → Produc
 | `main` | **production** | `cp-dashboard-680.pages.dev` | ❌ **เจ้าของสั่งเท่านั้น** |
 
 ไหลของงาน: `claude/*` (ดูบน preview ของ branch) → **อนุมัติ** → `main` (ผู้ใช้เห็น)
+
+### 🔗 ทุกครั้งที่ push ต้องแปะ **ลิงก์ preview** ให้ด้วย (เจ้าของสั่ง 28 ส.ค. 2026)
+
+**"ขอ link preview ทุกครั้ง"** — push เสร็จแล้วบอกแค่ว่า "push แล้ว" ไม่พอ
+เจ้าของต้องเปิดดูของจริงเอง (sandbox ยิงเข้าเว็บไม่ได้) **ถ้าไม่มีลิงก์ให้ = ต้องไปหาเองทุกครั้ง**
+
+> 📌 **แปะไว้ท้ายข้อความที่ตอบ ทุกครั้งที่ push** ไม่ต้องรอให้ถาม
+
+**ที่อยู่ของ preview คิดจากชื่อ branch:** ตัดอักขระที่ไม่ใช่ a-z 0-9 เป็น `-`
+แล้ว **ตัดเหลือ 28 ตัวอักษร** (ตัด `-` ท้ายทิ้ง) → `<alias>.cp-dashboard-680.pages.dev`
+
+```bash
+# คิดให้เอง ไม่ต้องเดา
+node -e 'const b=process.argv[1];console.log("https://"+b.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,28).replace(/-+$/,"")+".cp-dashboard-680.pages.dev")' "$(git branch --show-current)"
+```
+
+ตัวอย่างจริง: branch `claude/social-media-follower-scraper-zo0089` (43 ตัวหลังแปลง)
+→ ตัดเหลือ 28 ตัว → **`https://claude-social-media-follower.cp-dashboard-680.pages.dev`**
+
+> ⚠️ **ยืนยันจาก session ไม่ได้ว่ากฎ 28 ตัวถูกต้อง** — เครื่องที่รัน session เข้า Cloudflare
+> และเข้าเว็บเราเองไม่ได้ (403) · **ถ้าเปิดแล้วไม่ขึ้น ให้เอาที่อยู่จริงจาก**
+> Cloudflare → Workers & Pages → cp-dashboard → **Deployments** → กดที่ deployment ของ branch นั้น
+> (ตรงนั้นมีทั้งลิงก์ของ branch และลิงก์เฉพาะ commit `<hash>.cp-dashboard-680.pages.dev`)
+> · เจอที่อยู่จริงแล้ว **ให้มาแก้บรรทัดนี้ทันที** จะได้ไม่ต้องเดากันอีก
+>
+> ⏱ **ต้องรอ deploy เสร็จก่อน (~1-2 นาทีหลัง push)** ยิงทันทีจะได้ของเก่าหรือ 404
+> · 🔑 **env/Secret ของ Preview เป็นคนละชุดกับ Production** ตัวไหนตั้งแต่ Production
+>   preview จะไม่เห็น (ดูหัวข้อ YouTube API key) — ของใหม่ที่ต้องใช้ key ต้องตั้ง **ทั้งสองที่**
 · `dev` = ที่ลองเอาของทุก session มารวมกันดู **ไม่ใช่ทางผ่านของการปล่อย**
 
 ### 🚀 วิธีปล่อยขึ้น production — **ปล่อยจาก branch ตรงเข้า `main`** (เริ่มใช้ 25 ส.ค. 2026)
