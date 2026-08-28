@@ -540,6 +540,39 @@ console.log("\n[9c] ลำดับความเด่น");
   }
 }
 
+// ── [9d] ตัวกรองต้องติดบนสุดไปด้วย ────────────────────────────────────
+// เจ้าของแจ้ง 28 ส.ค. 2026: "ตัวกรองไม่ float ตาม" — ของเดิมกล่องอยู่นอกแถบที่ติดบนสุด
+// พอเลื่อนอ่านข่าว มันจะมุดหายไปใต้แถบทีละครึ่ง ดูเหมือนหน้าพัง และแก้ตัวกรองต่อไม่ได้
+console.log("\n[9d] กางตัวกรองแล้วเลื่อนหน้า — กล่องต้องติดตามไปด้วย");
+{
+  for (const [name, w, h] of [["เดสก์ท็อป", 1200, 900], ["มือถือ", 390, 780]]) {
+    const c = await browser.newContext({ viewport: { width: w, height: h } });
+    await fakeData(c);
+    const p = await open(c);
+    await openFilters(p);
+    await p.evaluate(() => window.scrollTo(0, 1500));
+    await p.waitForTimeout(250);
+    const m = await p.evaluate(() => {
+      const f = document.querySelector("#filters").getBoundingClientRect();
+      const s = document.querySelector(".sticky").getBoundingClientRect();
+      const q = document.querySelector("#q").getBoundingClientRect();
+      return { fTop: f.top, fBottom: f.bottom, qTop: q.top, sTop: s.top, sBottom: s.bottom,
+               ih: innerHeight, scrolled: document.scrollingElement.scrollTop };
+    });
+    ok(`${name}: เลื่อนหน้าลงไปแล้วจริง`, m.scrolled > 300, String(Math.round(m.scrolled)));
+    ok(`${name}: ช่องค้นหายังติดบนสุด`, m.sTop <= 1, String(Math.round(m.sTop)));
+    // 🎯 ข้อที่เจ้าของแจ้ง — กล่องตัวกรองต้องยังเห็นอยู่ ไม่ใช่มุดหายไปใต้แถบ
+    ok(`${name}: กล่องตัวกรองยังเห็นอยู่ครบ`, m.fTop >= -1 && m.fBottom <= m.ih + 1,
+      `บน ${Math.round(m.fTop)} · ล่าง ${Math.round(m.fBottom)} · จอสูง ${m.ih}`);
+    ok(`${name}: กล่องอยู่ใต้ช่องค้นหา ไม่ทับกัน`, m.fTop >= m.qTop - 1);
+    // ⚠️ แต่ห้ามกินจอจนไม่เหลือที่อ่านข่าว
+    ok(`${name}: ยังเหลือที่อ่านข่าวอย่างน้อย 1 ใน 3 ของจอ`, m.ih - m.sBottom >= m.ih / 3,
+      `เหลือ ${Math.round(m.ih - m.sBottom)} จาก ${m.ih}`);
+    await p.close();
+    await c.close();
+  }
+}
+
 // ── [10] มือถือ ────────────────────────────────────────────────────────
 console.log("\n[10] มือถือ");
 {
