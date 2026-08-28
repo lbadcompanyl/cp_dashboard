@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>ทดสอบตัวดึงผู้ติดตาม — CP Dashboards</title>
+<meta name="robots" content="noindex" />
+<meta name="page-ver" content="1" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👥</text></svg>" />
+<!--
+  หน้าทดสอบตัวดึงยอดผู้ติดตาม (สร้าง 28 ส.ค. 2026)
+
+  🎯 ทำไมต้องมี — เครื่องที่เขียนโค้ดยิงออกไป ScrapeCreators/Apify ไม่ได้ (403)
+     จึงพิสูจน์ไม่ได้ว่า "endpoint ที่เดาไว้มีจริงไหม" และ "ตัวเลขอยู่ในฟิลด์ชื่ออะไร"
+     หน้านี้ทำให้งานนั้นเหลือแค่ **เปิด 1 หน้า กดปุ่ม แล้วกดคัดลอกผลส่งกลับมา**
+
+  ⚠️ ไม่มีลิงก์จาก landing โดยตั้งใจ — เป็นเครื่องมือ ไม่ใช่แดชบอร์ด (แบบเดียวกับ /selftest/ กับ /admin/)
+  ⚠️ ห้ามใส่ /installprompt.js ที่หน้านี้ — แถบจะเด้งทับผลตรวจ (กฎเดียวกับ /selftest/)
+  🔑 กุญแจเก็บใน localStorage ของเครื่องนี้เท่านั้น **ห้าม hardcode ลงไฟล์** (repo เป็น public)
+-->
+<style>
+  /* ชุดสีกลางของแดชบอร์ด — ต้องตรงกับ /trend/ /ir/ /issue/ (ดู CLAUDE.md หัวข้อ 🎨) */
+  :root { --bg:#f4f6fb; --surface:#fff; --border:#e4e8f0; --text:#1f2937; --muted:#6b7280;
+          --ok:#0d9488; --bad:#dc2626; --warn:#b45309; --accent:#2563eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14161a; --surface:#1b1e24; --border:rgba(150,150,150,.22); --text:#e8eaf0; --muted:#9aa2b1;
+            --ok:#2dd4bf; --bad:#f87171; --warn:#fbbf24; --accent:#7ab0ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+         padding:16px 14px calc(24px + env(safe-area-inset-bottom,0px)); max-width:760px; }
+  @media (min-width:800px) { body { margin:0 auto; } }
+  h1 { font-size:19px; margin:0 0 2px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+          padding:12px 14px; margin-bottom:12px; }
+  .card h2 { font-size:14px; margin:0 0 10px; color:var(--muted); font-weight:600; }
+  .row { display:flex; gap:10px; padding:7px 0; border-top:1px solid var(--border); align-items:flex-start; }
+  .row:first-of-type { border-top:0; }
+  .ic { flex:none; width:20px; text-align:center; }
+  .what { flex:1; min-width:0; }
+  .what b { display:block; font-weight:600; font-size:14px; }
+  .what span { display:block; color:var(--muted); font-size:12.5px; word-break:break-word; white-space:pre-wrap; }
+  .ok b { color:var(--ok); } .bad b { color:var(--bad); } .warn b { color:var(--warn); }
+  #sum { font-size:15px; font-weight:700; padding:12px 14px; border-radius:14px; margin-bottom:12px;
+         border:1px solid var(--border); background:var(--surface); }
+  #sum.good { border-color:var(--ok); color:var(--ok); }
+  #sum.bad { border-color:var(--bad); color:var(--bad); }
+  #sum.warn { border-color:var(--warn); color:var(--warn); }
+  button { font:inherit; font-weight:600; border:1px solid var(--border); background:var(--surface);
+           color:var(--text); border-radius:999px; padding:9px 16px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .acts { display:flex; gap:8px; flex-wrap:wrap; }
+  input[type=text], input[type=password] { font:inherit; color:var(--text); background:var(--bg);
+    border:1px solid var(--border); border-radius:10px; padding:8px 11px; width:100%; min-width:0; }
+  label { font-size:12.5px; color:var(--muted); display:block; margin-bottom:4px; }
+  .plat { display:flex; gap:8px; align-items:flex-end; padding:6px 0; border-top:1px solid var(--border); }
+  .plat:first-of-type { border-top:0; }
+  .plat .nm { flex:none; width:92px; font-size:13px; font-weight:600; padding-bottom:9px; }
+  .plat .fld { flex:1; min-width:0; }
+  .plat button { flex:none; padding:8px 13px; }
+  @media (max-width:520px) {
+    .plat { flex-wrap:wrap; }
+    .plat .nm { width:auto; padding-bottom:0; }
+    .plat .fld { flex-basis:100%; }
+  }
+  .warnbox { border-color:var(--warn); }
+  .warnbox h2 { color:var(--warn); }
+  a { color:var(--accent); }
+  code { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:1px 5px; font-size:12.5px; }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid currentColor;
+          border-right-color:transparent; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-1px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+  <h1>👥 ทดสอบตัวดึงผู้ติดตาม</h1>
+  <p class="sub">
+    กดปุ่มแล้วอ่านผล — ถ้ามีข้อไหนไม่ผ่าน กด <b>📋 คัดลอกผลทั้งหมด</b> ส่งกลับมาให้ Claude แก้ให้ตรงจุด
+    · <a href="/">🏠 หน้าหลัก</a>
+  </p>
+
+  <div class="card">
+    <h2>🔑 กุญแจ</h2>
+    <label for="key">ค่าเดียวกับ <code>FOLLOWERS_TOKEN</code> ที่ตั้งไว้ใน Cloudflare</label>
+    <input type="password" id="key" placeholder="วางกุญแจที่นี่" autocomplete="off" spellcheck="false" />
+    <p class="sub" style="margin:8px 0 0">
+      เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น (ไม่ได้ส่งไปที่อื่น ไม่ได้อยู่ในโค้ด)
+    </p>
+  </div>
+
+  <div id="sum">ยังไม่ได้ทดสอบ — ใส่กุญแจแล้วกดปุ่มข้างล่าง</div>
+
+  <div class="card">
+    <h2>1️⃣ ทดสอบบัญชีที่ตั้งไว้ใน followers.config.js</h2>
+    <div class="acts">
+      <button id="runcfg" class="primary">▶ ทดสอบบัญชีที่เปิดอยู่</button>
+      <button id="runmcp">🔌 ทดสอบเครื่องมือแชท (MCP)</button>
+    </div>
+    <p class="sub" style="margin:10px 0 0">
+      ⚠️ ผลที่ได้อาจมาจาก cache (6 ชม.) ซึ่ง <b>ไม่เสียเครดิต</b> — แถวผลจะบอกไว้ว่า cache หรือดึงใหม่
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>2️⃣ ทดสอบทีละแพลตฟอร์ม — ใส่ชื่อบัญชีอะไรก็ได้</h2>
+    <div id="plats"></div>
+    <div class="acts" style="margin-top:10px">
+      <button id="runall">▶ ทดสอบทุกช่องที่กรอกไว้</button>
+    </div>
+    <p class="sub" style="margin:10px 0 0">
+      ใส่ชื่อบัญชีอย่างเดียวพอ ไม่ต้องมี @ (วางลิงก์เต็มก็ได้) · <b>1 ช่อง = 1 เครดิต</b> ต่อการดึงจริง 1 ครั้ง
+    </p>
+  </div>
+
+  <div class="card warnbox">
+    <h2>⚡ บังคับดึงใหม่</h2>
+    <label><input type="checkbox" id="fresh" style="width:auto;margin-right:6px" />
+      ข้าม cache ทุกครั้ง (<b>เสียเครดิตทุกครั้งที่กด</b>)</label>
+    <p class="sub" style="margin:8px 0 0">
+      เปิดเฉพาะตอนที่เพิ่งแก้โค้ด/แก้ env แล้วอยากรู้ผลใหม่จริงๆ · ปกติปิดไว้
+    </p>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="card">
+    <h2>ส่งผลกลับมาให้ Claude</h2>
+    <div class="acts">
+      <button id="copy">📋 คัดลอกผลทั้งหมด</button>
+      <button id="clear">🧹 ล้างผล</button>
+    </div>
+    <p class="sub" style="margin:10px 0 0">
+      ข้อความที่คัดลอกมี <b>ชื่อ endpoint ที่ลองไปแล้วและได้อะไรกลับมา</b> ซึ่งเป็นสิ่งที่ต้องใช้แก้
+      · <b>ไม่มีกุญแจอยู่ในนั้น</b>
+    </p>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var API = "/api/followers";
+  var PLATFORMS = [
+    ["youtube", "YouTube", "@CPFNews"],
+    ["tiktok", "TikTok", ""],
+    ["instagram", "Instagram", ""],
+    ["x", "X (Twitter)", ""],
+    ["facebook", "Facebook", ""],
+  ];
+
+  var out = document.getElementById("out"), sum = document.getElementById("sum"), rows = [];
+  var keyEl = document.getElementById("key"), freshEl = document.getElementById("fresh");
+
+  /* ---------- จำกุญแจไว้ในเครื่อง ---------- */
+  try { keyEl.value = localStorage.getItem("followersKey") || ""; } catch (e) {}
+  keyEl.addEventListener("input", function () {
+    try { localStorage.setItem("followersKey", keyEl.value.trim()); } catch (e) {}
+  });
+
+  /* ---------- ช่องกรอกรายแพลตฟอร์ม ---------- */
+  document.getElementById("plats").innerHTML = PLATFORMS.map(function (p) {
+    return '<div class="plat"><div class="nm">' + p[1] + "</div>" +
+           '<div class="fld"><input type="text" id="h-' + p[0] + '" value="' + p[2] + '" ' +
+           'placeholder="ชื่อบัญชี" autocomplete="off" spellcheck="false" /></div>' +
+           '<button data-p="' + p[0] + '">▶</button></div>';
+  }).join("");
+
+  /* ---------- ผลลัพธ์ ---------- */
+  function add(group, level, what, detail) {
+    rows.push({ group: group, level: level, what: what, detail: detail == null ? "" : String(detail) });
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c];
+    });
+  }
+  function render(busyText) {
+    var order = [], byGroup = {};
+    rows.forEach(function (r) {
+      if (!byGroup[r.group]) { byGroup[r.group] = []; order.push(r.group); }
+      byGroup[r.group].push(r);
+    });
+    out.innerHTML = order.map(function (g) {
+      return '<div class="card"><h2>' + esc(g) + "</h2>" + byGroup[g].map(function (r) {
+        var ic = r.level === "ok" ? "✅" : r.level === "bad" ? "❌" : r.level === "warn" ? "⚠️" : "•";
+        return '<div class="row ' + r.level + '"><div class="ic">' + ic + "</div>" +
+               '<div class="what"><b>' + esc(r.what) + "</b>" +
+               (r.detail ? "<span>" + esc(r.detail) + "</span>" : "") + "</div></div>";
+      }).join("") + "</div>";
+    }).join("");
+
+    // ⚠️ กำลังทำงานอยู่ ต้องมีไอคอนหมุน ไม่ใช่ข้อความเปล่าๆ (กฎข้อ 6 ของ CLAUDE.md)
+    if (busyText) { sum.className = ""; sum.innerHTML = '<span class="spin"></span> ' + esc(busyText); return; }
+    var bad = rows.filter(function (r) { return r.level === "bad"; }).length;
+    var warn = rows.filter(function (r) { return r.level === "warn"; }).length;
+    var ok = rows.filter(function (r) { return r.level === "ok"; }).length;
+    if (!rows.length) { sum.className = ""; sum.textContent = "ยังไม่ได้ทดสอบ"; return; }
+    sum.className = bad ? "bad" : warn ? "warn" : "good";
+    sum.textContent = bad ? "❌ ไม่ผ่าน " + bad + " ข้อ (ผ่าน " + ok + ")" +
+                              (warn ? " · น่าสังเกต " + warn : "")
+                          : warn ? "⚠️ ผ่าน " + ok + " ข้อ แต่มี " + warn + " ข้อที่ควรดู"
+                                 : "✅ ผ่านหมด " + ok + " ข้อ";
+  }
+
+  /* ---------- ยิง API ----------
+     ⚠️ ต้องเช็คว่าคำตอบเป็น JSON ก่อนแกะเสมอ — พิมพ์ URL ผิด/หน้าไม่มีจริง จะได้ HTML กลับมา
+        เอาไป r.json() จะพังแล้วรายงานว่า "ต่อเซิร์ฟเวอร์ไม่ได้" ซึ่งพาไปไล่ผิดทาง
+        (บทเรียนเดียวกับตอน Access หมดอายุใน /social/data.js) */
+  function apiGet(qs) {
+    var t0 = Date.now();
+    var url = API + qs + (freshEl.checked ? "&refresh=1" : "");
+    return fetch(url, { headers: { authorization: "Bearer " + keyEl.value.trim() } })
+      .then(function (r) {
+        var ct = r.headers.get("content-type") || "";
+        var cache = r.headers.get("x-followers-cache") || "";
+        if (ct.indexOf("json") < 0) {
+          return r.text().then(function (t) {
+            return { httpErr: "เซิร์ฟเวอร์ตอบมาแต่ไม่ใช่ JSON (HTTP " + r.status + ") — " +
+                              t.slice(0, 120), status: r.status, ms: Date.now() - t0, cache: cache };
+          });
+        }
+        return r.json().then(function (d) {
+          return { data: d, status: r.status, ms: Date.now() - t0, cache: cache };
+        });
+      })
+      .catch(function (e) {
+        return { httpErr: "ต่อกับเซิร์ฟเวอร์ไม่ได้: " + (e && e.message || e), status: 0, ms: Date.now() - t0 };
+      });
+  }
+
+  // แปล HTTP status เป็นภาษาคน + บอกว่าต้องไปทำอะไร
+  function explain(res) {
+    var d = res.data || {};
+    if (res.httpErr) return res.httpErr;
+    if (res.status === 503) return "ยังไม่ได้ตั้ง FOLLOWERS_TOKEN ใน Cloudflare — " +
+      "Settings → Variables and Secrets → เพิ่มเป็น Secret ทั้ง Production และ Preview แล้วกด Retry deployment";
+    if (res.status === 401) return "กุญแจไม่ตรงกับที่ตั้งไว้ใน Cloudflare";
+    if (res.status === 400) return d.error || "คำขอไม่ถูกต้อง";
+    if (res.status !== 200) return "HTTP " + res.status + " · " + (d.error || "");
+    return d.error || "";
+  }
+
+  // เติมผลของบัญชีทีละใบลงตาราง
+  function addAccounts(group, res) {
+    var msg = explain(res);
+    if (msg) { add(group, "bad", "เรียก API ไม่สำเร็จ", msg); return 0; }
+    var d = res.data, n = 0;
+    var tag = res.cache === "hit" ? " · จาก cache (ไม่เสียเครดิต)" : " · ดึงใหม่";
+    (d.accounts || []).forEach(function (a) {
+      if (a.followers == null) {
+        // 🎯 บรรทัดนี้คือของสำคัญที่สุดของหน้านี้ — บอกว่าลอง endpoint ไหนแล้วได้อะไร
+        add(group, "bad", a.label + " — ดึงไม่สำเร็จ", a.error || "ไม่ทราบสาเหตุ");
+        return;
+      }
+      n++;
+      var unit = a.metric === "likes" ? "ยอดไลก์ (เพจนี้ไม่ให้ยอดผู้ติดตาม)" : "ผู้ติดตาม";
+      var delta = a.delta == null ? "ยังไม่มีค่าก่อนหน้าให้เทียบ"
+                : (a.delta > 0 ? "+" : "") + a.delta.toLocaleString("en-US") + " จาก " + a.deltaDays + " วันก่อน";
+      add(group, a.metric === "likes" ? "warn" : "ok",
+          a.label + " · " + a.followers.toLocaleString("en-US") + " " + unit,
+          "ดึงด้วย " + a.provider + " · ตัวเลขอยู่ในฟิลด์ \"" + a.field + "\" · " + delta + tag);
+    });
+    if (!(d.accounts || []).length) add(group, "warn", "ไม่มีบัญชีให้ดึง", d.error || "เปิดบัญชีใน followers.config.js ก่อน");
+    if (d.credits && d.credits.scrapecreators != null)
+      add(group, "info", "เครดิต ScrapeCreators คงเหลือ " + d.credits.scrapecreators, "");
+    else if (!msg)
+      add(group, "warn", "อ่านเครดิต ScrapeCreators ไม่ได้", "อาจยังไม่ได้ตั้ง SCRAPECREATORS_API_KEY หรือ endpoint เครดิตเปลี่ยนไป");
+    add(group, "info", "ใช้เวลา " + res.ms + " ms", "");
+    return n;
+  }
+
+  function needKey() {
+    if (keyEl.value.trim()) return false;
+    rows = []; add("กุญแจ", "bad", "ยังไม่ได้ใส่กุญแจ", "ใส่ค่าเดียวกับ FOLLOWERS_TOKEN ที่ตั้งไว้ใน Cloudflare");
+    render(); return true;
+  }
+  function busy(on, text) {
+    Array.prototype.forEach.call(document.querySelectorAll("button"), function (b) { b.disabled = on; });
+    if (on) render(text);
+  }
+
+  /* ---------- ปุ่มที่ 1: บัญชีที่ตั้งไว้ ---------- */
+  document.getElementById("runcfg").onclick = function () {
+    if (needKey()) return;
+    rows = []; busy(true, "กำลังดึงบัญชีที่ตั้งไว้…");
+    apiGet("?key=" + encodeURIComponent(keyEl.value.trim())).then(function (res) {
+      addAccounts("บัญชีที่ตั้งไว้ใน followers.config.js", res);
+      busy(false); render();
+    });
+  };
+
+  /* ---------- ปุ่มที่ 2: รายแพลตฟอร์ม ---------- */
+  function testOne(pid, label) {
+    var h = (document.getElementById("h-" + pid) || {}).value || "";
+    if (!h.trim()) { add(label, "warn", "ข้ามไป — ยังไม่ได้ใส่ชื่อบัญชี", ""); return Promise.resolve(); }
+    return apiGet("?key=" + encodeURIComponent(keyEl.value.trim()) +
+                  "&platform=" + pid + "&handle=" + encodeURIComponent(h.trim()))
+      .then(function (res) { addAccounts(label, res); });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".plat button"), function (b) {
+    b.onclick = function () {
+      if (needKey()) return;
+      var pid = b.getAttribute("data-p");
+      var label = (PLATFORMS.filter(function (p) { return p[0] === pid; })[0] || [])[1] || pid;
+      rows = []; busy(true, "กำลังดึง " + label + "…");
+      testOne(pid, label).then(function () { busy(false); render(); });
+    };
+  });
+
+  document.getElementById("runall").onclick = function () {
+    if (needKey()) return;
+    rows = []; busy(true, "กำลังไล่ทดสอบทุกแพลตฟอร์ม…");
+    // ⚠️ ยิงทีละตัวไม่พร้อมกัน — จะได้รู้ว่าตัวไหนช้า/ตัวไหนพัง และไม่ชนลิมิตของต้นทาง
+    PLATFORMS.reduce(function (chain, p) {
+      return chain.then(function () { return testOne(p[0], p[1]); });
+    }, Promise.resolve()).then(function () { busy(false); render(); });
+  };
+
+  /* ---------- ปุ่มที่ 3: MCP (ฝั่งแชท) ---------- */
+  function rpc(body) {
+    return fetch("/api/followers/mcp?key=" + encodeURIComponent(keyEl.value.trim()), {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer " + keyEl.value.trim() },
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      var ct = r.headers.get("content-type") || "";
+      if (ct.indexOf("json") < 0) return r.text().then(function (t) {
+        throw new Error("ตอบมาแต่ไม่ใช่ JSON (HTTP " + r.status + ") — " + t.slice(0, 100));
+      });
+      return r.json();
+    });
+  }
+
+  document.getElementById("runmcp").onclick = function () {
+    if (needKey()) return;
+    var G = "เครื่องมือแชท (MCP)";
+    rows = []; busy(true, "กำลังทดสอบฝั่งแชท…");
+    rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })
+      .then(function (d) {
+        var si = d.result && d.result.serverInfo;
+        add(G, si ? "ok" : "bad", si ? "เชื่อมต่อได้ · " + si.name + " v" + si.version : "initialize ไม่ผ่าน",
+            si ? "โปรโตคอล " + d.result.protocolVersion : JSON.stringify(d).slice(0, 200));
+        return rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+      })
+      .then(function (d) {
+        var t = (d.result && d.result.tools) || [];
+        add(G, t.length === 3 ? "ok" : "bad", "เครื่องมือที่แชทเรียกได้ " + t.length + " ตัว",
+            t.map(function (x) { return x.name; }).join(" · "));
+        return rpc({ jsonrpc: "2.0", id: 3, method: "tools/call",
+                     params: { name: "list_accounts", arguments: {} } });
+      })
+      .then(function (d) {
+        var txt = d.result && d.result.content && d.result.content[0] && d.result.content[0].text || "";
+        add(G, txt ? "ok" : "bad", "เรียกเครื่องมือแล้วได้คำตอบกลับมา", txt.slice(0, 400));
+        add(G, "info", "ถ้าทั้ง 3 ข้อผ่าน = เอา URL นี้ไปใส่เป็น Connector ใน Claude ได้เลย",
+            location.origin + "/api/followers/mcp?key=<กุญแจ>");
+      })
+      .catch(function (e) {
+        add(G, "bad", "ฝั่งแชทใช้ไม่ได้", String(e && e.message || e));
+      })
+      .then(function () { busy(false); render(); });
+  };
+
+  /* ---------- คัดลอก / ล้าง ---------- */
+  document.getElementById("clear").onclick = function () { rows = []; render(); };
+
+  document.getElementById("copy").onclick = function () {
+    var btn = this;
+    if (!rows.length) { btn.textContent = "ยังไม่มีผลให้คัดลอก"; setTimeout(reset, 2000); return; }
+    var lines = ["ผลทดสอบตัวดึงผู้ติดตาม — " + new Date().toISOString(),
+                 "หน้า: " + location.origin, "บังคับดึงใหม่: " + (freshEl.checked ? "เปิด" : "ปิด"), ""];
+    var last = "";
+    rows.forEach(function (r) {
+      if (r.group !== last) { lines.push("[" + r.group + "]"); last = r.group; }
+      var ic = r.level === "ok" ? "OK " : r.level === "bad" ? "FAIL" : r.level === "warn" ? "WARN" : "-  ";
+      lines.push("  " + ic + " " + r.what + (r.detail ? "\n       " + r.detail : ""));
+    });
+    // 🔑 กันเหนียว: ถ้าวันหนึ่งมีใครเผลอเอากุญแจไปใส่ในข้อความ ให้ลบทิ้งก่อนคัดลอก
+    var txt = lines.join("\n");
+    var k = keyEl.value.trim();
+    if (k) txt = txt.split(k).join("<กุญแจถูกตัดออก>");
+
+    function reset() { btn.textContent = "📋 คัดลอกผลทั้งหมด"; }
+    function done() { btn.textContent = "✅ คัดลอกแล้ว"; setTimeout(reset, 2000); }
+    // ⚠️ Safari รุ่นเก่าไม่มี clipboard API — ต้องมีทางถอย ไม่งั้นกดแล้วเงียบ
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
+    else fallback();
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = txt; ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { prompt("คัดลอกข้อความนี้:", txt); }
+      document.body.removeChild(ta);
+    }
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>
