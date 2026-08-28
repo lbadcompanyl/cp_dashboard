@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 12;
+const WORKER_VER = 13;
 
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -183,9 +183,7 @@ async function classifyTwoLens(texts, env, acc, context) {
     throw new Error(`คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว — ลดจำนวนข้อต่อก้อน`);
   }
 
-  let arr = [];
-  try { arr = extractJson(out); } catch (e) { arr = []; }
-  if (!Array.isArray(arr)) arr = [];
+  const arr = extractJsonArray(out) || [];
   /* 🚫 แกะไม่ได้เลย = ต้องโยน error ห้ามคืน Neutral ทั้งชุด
      "ไม่รู้" กับ "กลาง" ไม่ใช่เรื่องเดียวกัน — คืน Neutral จะกลายเป็นตัวเลขที่ดูเหมือนผลจริง */
   if (!arr.length) {
@@ -666,6 +664,47 @@ function extractJson(s) {
   const start = s.search(/[\[{]/);
   if (start > 0) s = s.slice(start);
   return JSON.parse(s);
+}
+
+/**
+ * หา "JSON array" ก้อนแรกที่แกะได้จริงในข้อความ
+ *
+ * ⚠️ ทำไมต้องมีตัวนี้แยกจาก extractJson (เจอจริง 28 ส.ค. 2026):
+ *    opus บางครั้งตอบ object เดี่ยวก่อน แล้วค่อยแก้ตัวเองเป็น array ที่ถูกต้อง เช่น
+ *      {"cp":"Negative","oc":"Negative","s":0} Wait—must output array. [{"i":1,...}, ...]
+ *    extractJson หยิบก้อนแรก ({...}) ไปแล้วได้ของที่ไม่ใช่ array → ทิ้งทั้งก้อนทั้งที่คำตอบจริงอยู่ถัดไป
+ *    ตัวนี้จึงไล่หาทุกตำแหน่งที่ขึ้นต้นด้วย [ แล้วนับวงเล็บให้สมดุล (ข้ามวงเล็บที่อยู่ในสตริง)
+ */
+function extractJsonArray(text) {
+  let s = String(text);
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) s = fence[1];
+
+  for (let i = s.indexOf("["); i !== -1; i = s.indexOf("[", i + 1)) {
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < s.length; j++) {
+      const ch = s[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "[") depth++;
+      else if (ch === "]") {
+        depth--;
+        if (depth === 0) {
+          try {
+            const v = JSON.parse(s.slice(i, j + 1));
+            if (Array.isArray(v) && v.length) return v;
+          } catch (e) { /* ก้อนนี้ไม่ใช่ ลองก้อนถัดไป */ }
+          break;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /** สรุปภาพรวม + keyword + ตัวอย่างคอมเมนต์ (ถอดความ) */
