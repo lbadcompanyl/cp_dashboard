@@ -35,13 +35,11 @@ const state = {
 
 const MODE_KEY = "archivesMode";
 const MODES = {
-  ai: { ico: "🤖", long: "ค้นด้วย ", short: "AI", cls: "",
-        ph: "ถามเป็นประโยค เช่น หาข่าวด้านดีของปลาหมอคางดำทั้งหมด",
-        hint: 'พิมพ์เป็นประโยคแล้วกด <b>Enter</b> — ถามแบบที่คุยกับคนได้เลย<span class="qex"> เช่น <i>ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว</i> · กดป้าย <b>🤖</b> เพื่อสลับเป็นค้นด้วยคำ</span>',
+  ai: { ph: "ถามเป็นประโยค เช่น หาข่าวด้านดีของปลาหมอคางดำทั้งหมด",
+        hint: '<b>🤖 ถาม AI</b> — พิมพ์เป็นประโยคแล้วกด <b>Enter</b> ถามแบบที่คุยกับคนได้เลย<span class="qex"> เช่น <i>ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว</i> · อยากค้นด้วยคำตรงๆ กดปุ่ม <b>🔤 ค้นคำ</b> ในช่องค้นหา</span>',
         btn: "ถาม", tip: "ถาม (หรือกด Enter)" },
-  kw: { ico: "🔤", long: "ค้นด้วย", short: "คำ", cls: "kw",
-        ph: "พิมพ์คำค้น เช่น ปลาหมอคางดำ ฝุ่น",
-        hint: 'พิมพ์คำแล้วกด <b>Enter</b> — เว้นวรรค = ต้องมีครบทุกคำ<span class="qex"> · ค้นเจอกลางคำไทยด้วย · ใส่ <code>"…"</code> ถ้าอยากได้วลีติดกัน · กดป้าย <b>🔤</b> เพื่อสลับไปถาม AI</span>',
+  kw: { ph: "พิมพ์คำค้น เช่น ปลาหมอคางดำ ฝุ่น",
+        hint: '<b>🔤 ค้นคำ</b> — พิมพ์คำแล้วกด <b>Enter</b> เว้นวรรค = ต้องมีครบทุกคำ<span class="qex"> · ค้นเจอกลางคำไทยด้วย · ใส่ <code>"…"</code> ถ้าอยากได้วลีติดกัน · อยากถามเป็นประโยค กดปุ่ม <b>🤖 ถาม AI</b></span>',
         btn: "ค้น", tip: "ค้น (หรือกด Enter)" },
 };
 const isAI = () => state.mode !== "kw";
@@ -486,14 +484,12 @@ function relaxIfEmpty() {
       เปลี่ยนแค่บางอย่าง = ผู้ใช้อ่านแล้วไม่แน่ใจว่าตอนนี้อยู่โหมดไหน */
 function applyMode() {
   const m = MODES[state.mode] || MODES.ai;
-  const t = $("#modetog");
-  if (t) {
-    t.classList.toggle("kw", state.mode === "kw");
-    $(".mico", t).textContent = m.ico;
-    $(".mlong", t).textContent = m.long;
-    $(".mshort", t).textContent = m.short;
-    t.title = state.mode === "kw" ? "ตอนนี้: ค้นด้วยคำ — กดเพื่อสลับไปถาม AI" : "ตอนนี้: ค้นด้วย AI — กดเพื่อสลับไปค้นด้วยคำ";
-  }
+  // 🔀 ปุ่ม 2 ช่อง — ระบายช่องที่เลือกอยู่ ที่เหลือปล่อยจางไว้ให้เห็นว่ายังกดได้
+  $$("#modeseg .mseg").forEach((b) => {
+    const on = b.dataset.mode === state.mode;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
   const q = $("#q");
   if (q) q.placeholder = m.ph;
   const h = $(".qhint");
@@ -839,7 +835,10 @@ function bind() {
   // 🤖 ถามเป็นประโยค — กดปุ่ม หรือกด Enter ในช่องค้นหา
   // ⭐ Enter = ทางหลักของหน้านี้ (มีโหมดเดียว) · ปุ่มถามทำอย่างเดียวกัน
   //    ⚠️ ยังต้องกดเองอยู่ดี **ห้ามยิงถามระหว่างพิมพ์** — จะกลายเป็นถาม AI ทุกตัวอักษร
-  $("#modetog").addEventListener("click", () => setMode(isAI() ? "kw" : "ai"));
+  $("#modeseg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-mode]");
+    if (b) setMode(b.dataset.mode);
+  });
   $("#askbtn").addEventListener("click", runAsk);
   $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runAsk(); } });
   // "เลิกคัด" = ทิ้งเงื่อนไข แต่ **เก็บคำค้นไว้** — ผู้ใช้มักอยากเห็นของทั้งหมดในเรื่องเดิม

@@ -343,10 +343,14 @@ console.log("\n[13] สลับโหมด — ค้นด้วยคำต�
 {
   const { ctx, page, seen } = await open({ plan: { terms: ["ก"], from: "", to: "", judge: "", ai: true } });
 
-  ok("ค่าตั้งต้นคือโหมด AI", await page.$eval("#modetog", (e) => !e.classList.contains("kw")));
-  await page.click("#modetog");
+  const onMode = () => page.$eval("#modeseg .mseg.on", (e) => e.dataset.mode);
+  ok("ค่าตั้งต้นคือโหมด AI", (await onMode()) === "ai");
+  // 🔀 ปุ่ม 2 ช่อง — กดที่ช่อง "ค้นคำ" ตรงๆ ไม่ใช่กดสลับไปมาที่ป้ายใบเดียว
+  await page.click('#modeseg [data-mode="kw"]');
   await page.waitForTimeout(150);
-  ok("กดแล้วสลับเป็นโหมดค้นด้วยคำ", await page.$eval("#modetog", (e) => e.classList.contains("kw")));
+  ok("กดช่อง 'ค้นคำ' แล้วเปลี่ยนโหมดจริง", (await onMode()) === "kw");
+  ok("ช่องที่เลือกอยู่บอกด้วย aria-pressed",
+    (await page.$eval('#modeseg [data-mode="kw"]', (e) => e.getAttribute("aria-pressed"))) === "true");
   ok("ป้ายบนปุ่มเปลี่ยนเป็น 'ค้น'", (await page.$eval("#askbtn .flabel", (e) => e.textContent)) === "ค้น");
   ok("ข้อความชวนพิมพ์เปลี่ยนตามโหมด",
     /คำค้น/.test(await page.$eval("#q", (e) => e.placeholder)), await page.$eval("#q", (e) => e.placeholder));
@@ -367,7 +371,7 @@ console.log("\n[13] สลับโหมด — ค้นด้วยคำต�
   ok("แถบไม่ขึ้นว่า 'ถามว่า' (ไม่ได้ถาม AI)", !/ถามว่า/.test(bar), bar);
 
   // สลับกลับ = ต้องถาม AI ได้ตามปกติ
-  await page.click("#modetog");
+  await page.click('#modeseg [data-mode="ai"]');
   await page.waitForTimeout(150);
   await page.fill("#q", "หาข่าวอะไรสักอย่าง");
   await page.press("#q", "Enter");

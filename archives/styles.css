@@ -63,7 +63,7 @@ body {
 #q {
   width:100%; font-family:inherit; font-size:1.15rem; font-weight:500; color:var(--ink);
   background:var(--surface); border:1.5px solid var(--border); border-radius:999px;
-  padding:18px 162px 18px 148px; -webkit-appearance:none; appearance:none;
+  padding:18px 162px 18px 190px; -webkit-appearance:none; appearance:none;
   box-shadow:0 2px 10px rgba(16,24,40,.06);
   transition:border-color .12s, box-shadow .12s;
 }
@@ -93,25 +93,31 @@ body {
   display:inline-flex; align-items:center; gap:5px; flex:0 0 auto; padding:3px 11px; border-radius:999px;
   background:var(--accent); color:var(--on-accent); font-size:.86rem; font-weight:700;
 }
-/* 🔀 ปุ่มสลับโหมดที่ติดอยู่ "ใน" ช่องค้นหา — เป็นทั้งป้ายบอกโหมดและปุ่มกด
-   ⚠️ **ต้องเห็นชัดว่ากดได้** ไม่งั้นอ่านเป็นป้ายเฉยๆ แล้วไม่มีใครรู้ว่าสลับโหมดได้
-      (มี ▾ · เงา · ขยับตอน hover) · ห้ามใส่ pointer-events:none เด็ดขาด — มันคือปุ่ม */
-.aitag.insearch {
-  position:absolute; left:9px; z-index:2; cursor:pointer;
-  border:0; font-family:inherit; font-weight:700;
-  padding:9px 13px; font-size:.86rem; line-height:1; gap:7px;
-  box-shadow:0 2px 8px rgba(37,99,235,.32);
-  transition:box-shadow .12s, transform .12s, filter .12s;
+/* 🔀 ปุ่มสลับโหมด 2 ช่อง ติดอยู่ "ใน" ช่องค้นหา
+   🚫 **ห้ามทำเป็นป้ายใบเดียวที่กดแล้วสลับ** — เจ้าของบอกตรงๆ ว่า "คนจะไม่รู้ซิว่ากดได้"
+      (ลองมาแล้วทั้งแบบป้ายเฉยๆ และแบบมีลูกศร ▾ + เงา ก็ยังอ่านเป็นป้ายบอกสถานะอยู่ดี)
+   ✅ โชว์ทั้ง 2 ตัวเลือก — ช่องที่ยังไม่ได้เลือกทำหน้าที่บอกเองว่ากดได้ */
+.modeseg {
+  position:absolute; left:8px; z-index:2;
+  display:inline-flex; align-items:center; gap:2px;
+  padding:3px; border-radius:999px;
+  background:var(--surface-2); border:1px solid var(--border);
 }
-.aitag.insearch:hover { filter:brightness(1.07); box-shadow:0 3px 12px rgba(37,99,235,.42); }
-.aitag.insearch:active { transform:translateY(1px); }
-.aitag.insearch:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
-.aitag.insearch .mico { font-size:1.05em; }
-.aitag.insearch .mcaret { font-size:.68em; opacity:.85; margin-left:-1px; }
-/* โหมดค้นด้วยคำ — สีต่างกันชัดเจน ไม่ใช่แค่เปลี่ยนตัวหนังสือ
-   ไม่งั้นสลับแล้วไม่รู้สึกว่าเปลี่ยนอะไร */
-.aitag.insearch.kw { background:var(--ink-2); box-shadow:0 2px 8px rgba(75,85,99,.3); }
-.aitag.insearch.kw:hover { box-shadow:0 3px 12px rgba(75,85,99,.4); }
+.mseg {
+  display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  border:0; background:transparent; color:var(--muted);
+  font-family:inherit; font-size:.8rem; font-weight:650; line-height:1;
+  padding:7px 11px; border-radius:999px; white-space:nowrap;
+  transition:background .12s, color .12s;
+}
+.mseg:hover { color:var(--ink); background:rgba(37,99,235,.09); }
+.mseg:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+/* ช่องที่เลือกอยู่ — ทึบและมีเงา ให้ต่างจากช่องที่ยังไม่ได้เลือกแบบไม่ต้องเพ่ง */
+.mseg.on {
+  background:var(--accent); color:var(--on-accent);
+  box-shadow:0 1px 4px rgba(37,99,235,.35);
+}
+.mseg.on:hover { background:var(--accent); color:var(--on-accent); }
 @media (prefers-color-scheme: dark) {
   #q { box-shadow:none; }
   #q:focus { box-shadow:0 0 0 4px rgba(96,165,250,.2); }
@@ -173,8 +179,8 @@ body {
 @media (max-width:860px) {
   .askbtn .flabel { display:none; }
   /* ป้าย 🤖 ยังมีคำกำกับได้อยู่ แค่บีบลง */
-  .aitag.insearch { padding:8px 11px; font-size:.8rem; }
-  #q { padding-left:136px; }
+  .mseg { padding:7px 9px; font-size:.76rem; }
+  #q { padding-left:176px; }
   .askbtn { padding:9px 12px; }
   #q { padding-right:208px; }
   .qclear { right:168px; }
@@ -189,11 +195,14 @@ body {
      บรรทัด hint ข้างบนยังบอกอยู่ว่าเป็น AI จึงไม่ได้หายไปไหน */
   /* จอแคบเหลือ "🤖 AI" — ยังบอกได้ว่าเป็น AI แต่ไม่กินที่พิมพ์
      และ .qex ซ่อนตัวอย่างยาวๆ ไว้ (placeholder ในช่องบอกตัวอย่างอยู่แล้ว) */
-  .aitag.insearch .mlong, .qhint .qex { display:none; }
-  .aitag.insearch { left:8px; padding:8px 10px; gap:5px; }
-  /* ⚠️ วัดจริงที่ 390px: ปุ่มสลับกว้างถึง x=88 · ปุ่มตัวกรองเริ่มที่ x=320
-     ที่พิมพ์ที่เหลือต้องไม่ต่ำกว่า 180px (เกณฑ์ของเทสต์ archives.mjs [9c]) */
-  #q { padding-left:80px; padding-right:98px; }
+  /* 📱 **จอแคบ: ปุ่มสลับโหมดลงมาอยู่แถวล่าง คู่กับปุ่มค้น** — ไม่ใช่ซ่อนหรือย่อ
+     วัดแล้วถ้ายัดไว้ในช่อง ที่พิมพ์เหลือ 156px (เกณฑ์ 180px) และต้องตัดคำกำกับทิ้งจนเหลือแต่ไอคอน
+     ย้ายลงแถวล่างแทน = ได้ที่พิมพ์คืนเต็มๆ **และยังมีคำกำกับครบ อ่านออกว่าเป็นตัวเลือก**
+     🚫 ห้ามใช้ flex-wrap (เหตุผลเดียวกับปุ่มถาม — ปุ่มตัวกรองจะหลุดกรอบ) */
+  .modeseg { left:auto; right:8px; bottom:0; top:auto; }
+  .qhint .qex { display:none; }
+  .mseg { padding:7px 10px; font-size:.76rem; }
+  #q { padding-left:20px; padding-right:98px; }
   .qclear { right:58px; padding:9px 8px; }
   .ftoggle { padding:9px 12px; }
   /* ⚠️ **ห้ามใช้ flex-wrap ให้ปุ่มตกบรรทัด** — ลองแล้วปุ่มตัวกรอง (absolute ที่ไม่ได้กำหนด top)

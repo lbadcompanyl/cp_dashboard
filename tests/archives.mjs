@@ -504,32 +504,35 @@ console.log("\n[9c] ลำดับความเด่น");
       `ข้อความจบ ${Math.round(z.textRight)} · ปุ่มล้าง ${Math.round(z.c)} · ตัวกรอง ${Math.round(z.f)}`);
     ok(`${name}: ยังเหลือที่พิมพ์พอสมควร`, z.typable >= 180, `${Math.round(z.typable)}px`);
 
-    // 🏷 ป้าย "🤖 ค้นด้วย AI" ต้องอยู่ "ในช่องค้นหา" (เจ้าของสั่ง 27 ส.ค. 2026)
-    // และห้ามทับข้อความที่พิมพ์ — บทเรียนเดียวกับปุ่มตัวกรองฝั่งขวา
+    // 🔀 ปุ่มสลับโหมด — เจ้าของแจ้ง 27 ส.ค. 2026 ว่า "คนจะไม่รู้ซิว่ากดได้"
+    //    จึงเป็นปุ่ม **2 ช่อง** โชว์ทั้ง 2 ตัวเลือกพร้อมกัน ไม่ใช่ป้ายใบเดียวที่กดแล้วสลับ
     const tg = await p.evaluate(() => {
-      const t = document.querySelector("#modetog");
-      if (!t) return null;
-      const b = t.getBoundingClientRect();
+      const g = document.querySelector("#modeseg");
+      if (!g) return null;
+      const b = g.getBoundingClientRect();
       const q = document.querySelector("#q"), cs = getComputedStyle(q), qb = q.getBoundingClientRect();
-      // ⚠️ textContent นับข้อความที่ display:none ด้วย — ต้องอ่านเฉพาะที่มองเห็นจริง
-      const vis = [...t.querySelectorAll("span")]
-        .filter((e) => !e.querySelector("span") && getComputedStyle(e).display !== "none")
-        .map((e) => e.textContent).join("").trim();
-      return { l: b.left, r: b.right, t: b.top, b: b.bottom, vis,
-               tag: t.tagName, pe: getComputedStyle(t).pointerEvents,
-               ql: qb.left, qr: qb.right, qt: qb.top, qb2: qb.bottom,
-               textLeft: qb.left + parseInt(cs.paddingLeft) };
+      const row = document.querySelector(".searchrow").getBoundingClientRect();
+      const segs = [...g.querySelectorAll(".mseg")];
+      return {
+        n: segs.length,
+        allButtons: segs.every((e) => e.tagName === "BUTTON" && getComputedStyle(e).pointerEvents !== "none"),
+        // ⚠️ textContent นับข้อความที่ display:none ด้วย — ต้องอ่านเฉพาะที่มองเห็นจริง
+        vis: segs.map((e) => [...e.childNodes]
+          .filter((c) => c.nodeType !== 1 || getComputedStyle(c).display !== "none")
+          .map((c) => c.textContent).join("")).join(" | ").replace(/\s+/g, " ").trim(),
+        onCount: segs.filter((e) => e.classList.contains("on")).length,
+        inRow: b.left >= row.left - 1 && b.right <= row.right + 1 && b.bottom <= row.bottom + 1,
+        // จอกว้างอยู่ในช่อง (ซ้ายของข้อความ) · จอแคบลงมาอยู่แถวล่าง (ใต้ช่อง) — ถูกทั้งคู่
+        clear: b.right <= qb.left + parseFloat(cs.paddingLeft) + 1 || b.top >= qb.bottom - 1,
+      };
     });
-    ok(`${name}: มีปุ่มสลับโหมดอยู่ในช่องค้นหา`, !!tg && tg.l >= tg.ql - 1 && tg.r <= tg.qr &&
-      tg.t >= tg.qt - 1 && tg.b <= tg.qb2 + 1,
-      tg ? `ช่อง ${Math.round(tg.ql)}-${Math.round(tg.qr)} · ป้าย ${Math.round(tg.l)}-${Math.round(tg.r)}` : "ไม่มีป้าย");
-    ok(`${name}: ปุ่มสลับโหมดไม่ทับข้อความที่พิมพ์`, !!tg && tg.r <= tg.textLeft + 1,
-      tg ? `ป้ายจบ ${Math.round(tg.r)} · ข้อความเริ่ม ${Math.round(tg.textLeft)}` : "-");
-    // จอแคบตัดเหลือ "🤖 AI" ได้ แต่ **ห้ามเหลือแต่ไอคอน** ไม่งั้นบอกไม่ได้ว่าอยู่โหมดไหน
-    ok(`${name}: ป้ายยังมีคำว่า AI อยู่`, !!tg && /AI/i.test(tg.vis), tg ? tg.vis : "-");
-    // 🔀 ต้องเห็นว่ากดได้จริง ไม่ใช่ป้ายเฉยๆ — เคยเป็น <span> ที่ pointer-events:none
-    ok(`${name}: ปุ่มสลับโหมดกดได้จริง`, !!tg && tg.tag === "BUTTON" && tg.pe !== "none",
-      tg ? `${tg.tag} · pointer-events:${tg.pe}` : "-");
+    ok(`${name}: ปุ่มสลับโหมดโชว์ทั้ง 2 ตัวเลือก`, !!tg && tg.n === 2, tg ? String(tg.n) : "ไม่มี");
+    ok(`${name}: ทั้ง 2 ช่องเป็นปุ่มกดได้จริง`, !!tg && tg.allButtons);
+    ok(`${name}: เลือกอยู่ช่องเดียว`, !!tg && tg.onCount === 1, tg ? String(tg.onCount) : "-");
+    ok(`${name}: อ่านออกว่าเลือกอะไรได้บ้าง (AI / คำ)`,
+      !!tg && /AI/i.test(tg.vis) && /คำ/.test(tg.vis), tg ? tg.vis : "-");
+    ok(`${name}: อยู่ในกรอบแถวค้นหา ไม่หลุดออกไป`, !!tg && tg.inRow);
+    ok(`${name}: ไม่ทับข้อความที่พิมพ์`, !!tg && tg.clear);
 
     await p.fill("#q", "");
     await p.close();
