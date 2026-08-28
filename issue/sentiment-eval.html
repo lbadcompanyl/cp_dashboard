@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="7" />
+<meta name="page-ver" content="8" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -315,6 +315,20 @@ function render(preds, sec, failedBatches, errors = []) {
   const cp = metrics(scored.map((x) => [x.r.sentiment_cp, x.p.sentiment_cp]));
   const oc = metrics(scored.map((x) => [x.r.overall_cred, x.p.overall_cred]));
 
+  /* แยก 2 ชุดตาม id คี่/คู่
+     ⚠️ ชุด "ออกแบบ" คือข้อที่เคยเอามาดู pattern ตอนแก้ prompt · ชุด "สอบไล่" ไม่เคยแตะเลย
+        ถ้า 2 ตัวนี้ห่างกันมาก = เก่งเฉพาะข้อที่เคยเห็น ไม่ใช่เก่งจริง
+        เจอมาแล้วกับ haiku: ออกแบบ 85.7% แต่สอบไล่ 73.2% */
+  const half = (odd) => {
+    const sub = scored.filter((x) => (+x.r.id % 2 === 1) === odd);
+    return sub.length ? {
+      n: sub.length,
+      cp: metrics(sub.map((x) => [x.r.sentiment_cp, x.p.sentiment_cp])),
+      oc: metrics(sub.map((x) => [x.r.overall_cred, x.p.overall_cred])),
+    } : null;
+  };
+  const dev = half(true), hold = half(false);
+
   const sarRows = scored.filter((x) => String(x.r.is_sarcasm) === "1");
   const sarHit = sarRows.filter((x) => x.p.is_sarcasm === 1).length;
   const sarFalse = scored.filter((x) => String(x.r.is_sarcasm) !== "1" && x.p.is_sarcasm === 1).length;
@@ -346,6 +360,22 @@ function render(preds, sec, failedBatches, errors = []) {
        </div>
      </div>` +
     `<div class="lens">${lensCard("แกน 1 — ท่าทีต่อ CP (sentiment_cp)", cp)}${lensCard("แกน 2 — อารมณ์รวม (overall_cred)", oc)}</div>` +
+    (dev && hold ? `<div class="card">
+       <h2>ตัวเลขนี้เชื่อได้แค่ไหน — เทียบข้อที่เคยเห็น กับ ข้อที่ไม่เคยเห็น</h2>
+       <table>
+         <tr><th>ชุด</th><th class="num">จำนวน</th><th class="num">แกน 1 Negative recall</th><th class="num">แกน 2 Negative recall</th></tr>
+         <tr><td>ชุดออกแบบ <span class="muted small">(id คี่ — เคยเอามาดูตอนแก้ prompt)</span></td>
+             <td class="num">${dev.n}</td><td class="num">${pct(dev.cp.recall.Negative)}</td><td class="num">${pct(dev.oc.recall.Negative)}</td></tr>
+         <tr><td><b>ชุดสอบไล่</b> <span class="muted small">(id คู่ — ไม่เคยแตะเลย)</span></td>
+             <td class="num">${hold.n}</td><td class="num"><b>${pct(hold.cp.recall.Negative)}</b></td><td class="num"><b>${pct(hold.oc.recall.Negative)}</b></td></tr>
+       </table>
+       <div class="verdict ${Math.abs(dev.cp.recall.Negative - hold.cp.recall.Negative) <= 0.05 ? "pass" : "fail"}">
+         ห่างกัน ${((dev.cp.recall.Negative - hold.cp.recall.Negative) * 100).toFixed(1)} จุด →
+         ${Math.abs(dev.cp.recall.Negative - hold.cp.recall.Negative) <= 0.05
+           ? "ใกล้เคียงกัน เชื่อตัวเลขรวมได้ ✅"
+           : "ห่างเกินไป — ตัวเลขรวมสูงเกินจริง ให้ยึดเลขของชุดสอบไล่ ⚠️"}
+       </div>
+     </div>` : "") +
     `<div class="card">
        <h2>ประชด (is_sarcasm)</h2>
        ${sarRows.length
@@ -389,12 +419,15 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function exportRows(scored) {
+  /* ⚠️ ต้องมี model / rubric / ctx ติดไปกับไฟล์เสมอ
+     ไม่งั้นเปิดไฟล์ทีหลังแล้วบอกไม่ได้ว่ามาจากรอบไหน ต้องไปนั่งเดาย้อนหลัง */
   const head = ["id", "message", "gold_sentiment_cp", "pred_sentiment_cp", "gold_overall_cred", "pred_overall_cred",
-    "gold_is_sarcasm", "pred_is_sarcasm", "cp_ถูก", "oc_ถูก"];
+    "gold_is_sarcasm", "pred_is_sarcasm", "cp_ถูก", "oc_ถูก", "model", "worker_ver", "rubric", "ส่งบริบท"];
   const lines = [head.join(",")].concat(scored.map((x) => [
     x.r.id, x.r.message, x.r.sentiment_cp, x.p.sentiment_cp, x.r.overall_cred, x.p.overall_cred,
     x.r.is_sarcasm ?? "", x.p.is_sarcasm,
     x.r.sentiment_cp === x.p.sentiment_cp ? 1 : 0, x.r.overall_cred === x.p.overall_cred ? 1 : 0,
+    meta.model, meta.ver, meta.rubric, window.__usedCtx ? 1 : 0,
   ].map(csvEsc).join(",")));
   download(`sentiment-eval-v${meta.ver}-${stamp()}.csv`, lines.join("\n"));
 }
