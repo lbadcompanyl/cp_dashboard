@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="6" />
+<meta name="page-ver" content="7" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -197,6 +197,10 @@ $("#run").addEventListener("click", async () => {
   }
   const preds = new Array(rows.length).fill(null);
   const errors = [];        // เก็บข้อความ error จริงไว้โชว์ — ไม่งั้นได้แต่เดาว่าพลาดเพราะอะไร
+  /* นับโทเคนที่ใช้จริงต่อรอบ — รวมก้อนที่พลาดด้วย
+     ⚠️ ก้อนที่ถูกตัดกลางคัน "คิดเงินเต็ม" ทั้งที่ไม่ได้ผลอะไรกลับมา
+        ไม่โชว์ตรงนี้ = ค่าใช้จ่ายจะไปโผล่ในบิลทีหลังโดยไม่มีใครทันเห็น */
+  const tok = { input: 0, output: 0 };
   let done = 0, failed = 0;
   const t0 = Date.now();
 
@@ -227,6 +231,7 @@ $("#run").addEventListener("click", async () => {
         const d = await r.json();
         if (!r.ok || !Array.isArray(d.results)) throw new Error(d.detail || d.error || ("HTTP " + r.status));
         if (d.ver != null) meta = { ver: d.ver, rubric: d.rubric ?? meta.rubric, model: d.model || meta.model };
+        if (d.tokens) { tok.input += d.tokens.input || 0; tok.output += d.tokens.output || 0; }
         /* ⚠️ ข้อที่โมเดลไม่ได้ตอบ (missing) ห้ามนับเป็นคำตอบ "Neutral"
            ไม่งั้นความล้มเหลวทางเทคนิคจะโผล่มาเป็นคะแนนที่ดูเหมือนผลจริง
            เจอจริง 27 ส.ค. 2026: opus ถูกตัดคำตอบกลางคัน แล้วรายงานว่าความแม่น 10% */
@@ -248,6 +253,7 @@ $("#run").addEventListener("click", async () => {
 
   $("#stop").disabled = true; $("#run").disabled = false;
   $("#progwrap").hidden = true;
+  window.__tok = tok;
   render(preds, Math.round((Date.now() - t0) / 1000), failed, errors);
 });
 
@@ -332,7 +338,8 @@ function render(preds, sec, failedBatches, errors = []) {
        <div class="row small">
          <span>ใช้เวลา <b>${sec}</b> วิ</span>·
          <span>Worker <b>v${meta.ver}</b> · rubric <b>${meta.rubric}</b> · <b>${meta.model}</b></span>·
-         <span>วัดจริง <b>${scored.length}</b>/${rows.length} ข้อ</span>
+         <span>วัดจริง <b>${scored.length}</b>/${rows.length} ข้อ</span>·
+         <span>โทเคนที่ใช้ <b>${fmtTok(window.__tok)}</b></span>
        </div>
        <div class="row" style="margin-top:10px">
          <button id="expcsv">📥 บันทึกผลรายข้อเป็น CSV</button>
@@ -364,6 +371,10 @@ function render(preds, sec, failedBatches, errors = []) {
   saveLog({ cp, oc, sarRows: sarRows.length, sarHit, n: scored.length, sec, ctx: window.__usedCtx });
 }
 
+/* โทเคนที่ใช้ไปทั้งรอบ — ตัวเลขนี้คือสิ่งที่จะไปโผล่ในบิล */
+const fmtTok = (t) => t
+  ? `เข้า ${(t.input || 0).toLocaleString()} · ออก ${(t.output || 0).toLocaleString()}`
+  : "–";
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const cell = (g, p) => g === p
   ? `<span class="${g}">${g}</span>`
@@ -398,6 +409,7 @@ function saveLog(m) {
   const log = readLog();
   log.unshift({
     at: new Date().toISOString(), ver: meta.ver, rubric: meta.rubric, model: meta.model, ctx: m.ctx ? 1 : 0, n: m.n, sec: m.sec,
+    tok_in: (window.__tok || {}).input || 0, tok_out: (window.__tok || {}).output || 0,
     cp_acc: +m.cp.acc.toFixed(4), cp_neg: +m.cp.recall.Negative.toFixed(4),
     oc_acc: +m.oc.acc.toFixed(4), oc_neg: +m.oc.recall.Negative.toFixed(4),
     sar: m.sarRows ? +(m.sarHit / m.sarRows).toFixed(4) : null,
