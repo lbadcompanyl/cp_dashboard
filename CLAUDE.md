@@ -49,7 +49,19 @@ node -e 'const b=process.argv[1];console.log("https://"+b.toLowerCase().replace(
 ตัวอย่างจริง: branch `claude/social-media-follower-scraper-zo0089` (43 ตัวหลังแปลง)
 → ตัดเหลือ 28 ตัว → **`https://claude-social-media-follower.cp-dashboard-680.pages.dev`**
 
-> ⚠️ **ยืนยันจาก session ไม่ได้ว่ากฎ 28 ตัวถูกต้อง** — เครื่องที่รัน session เข้า Cloudflare
+> 🔴 **ลองแล้วเปิดไม่ได้ (28 ส.ค. 2026) — กฎ 28 ตัวยังพิสูจน์ไม่ได้ว่าถูก อย่าเพิ่งเชื่อ**
+> เจ้าของเปิด `claude-social-media-follower.cp-dashboard-680.pages.dev` แล้วได้หน้า
+> **"Nothing is here yet"** ของ Cloudflare · หน้านั้นแปลว่า **โปรเจกต์มีจริงและ wildcard ทำงาน
+> แต่ "ไม่มี deployment อยู่ที่ alias นั้น"** — ซึ่งเกิดได้ 2 ทางและหน้าตาเหมือนกันเป๊ะ:
+> **(ก) คิด alias ผิด** หรือ **(ข) branch นั้นไม่มี preview deployment ตั้งแต่แรก**
+> · 🔍 **ไล่ในโปรเจกต์แล้วไม่มีที่ไหนเคยจดลิงก์ preview ของ branch `claude/*` ที่เปิดได้จริงเลย**
+>   (มีแต่ `dev.` กับ `cp-dashboard-680.` ซึ่งชื่อสั้น ไม่ต้องตัด) = **ยังไม่เคยมีใครพิสูจน์ว่า
+>   branch งานมี preview จริงไหม** อย่าเขียนที่นี่ว่ามีจนกว่าจะเปิดได้จริงสักครั้ง
+> · ตัวที่ต้องไปดูคือ **Settings → Build → Branch control → Preview branches**
+>   ถ้าตั้งเป็น *None* หรือ *Custom* ที่ไม่ครอบ `claude/*` = branch งานไม่มี preview เลย
+>   ไม่ว่าที่อยู่จะถูกแค่ไหน (หน้านี้เคยถูกตั้งผิดมาแล้ว — ดูประวัติข้างบน)
+>
+> ⚠️ **ยังยืนยันจาก session ไม่ได้** — เครื่องที่รัน session เข้า Cloudflare
 > และเข้าเว็บเราเองไม่ได้ (403) · **ถ้าเปิดแล้วไม่ขึ้น ให้เอาที่อยู่จริงจาก**
 > Cloudflare → Workers & Pages → cp-dashboard → **Deployments** → กดที่ deployment ของ branch นั้น
 > (ตรงนั้นมีทั้งลิงก์ของ branch และลิงก์เฉพาะ commit `<hash>.cp-dashboard-680.pages.dev`)
