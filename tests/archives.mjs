@@ -416,8 +416,7 @@ console.log("\n[9] ขยายช่วงวันที่ย้อนไป�
 // ── [9b] กล่องตัวกรองพับได้ ────────────────────────────────────────────
 console.log("\n[9b] กล่องตัวกรองพับได้");
 {
-  // ⚠️ ต้องใช้ context ใหม่ — เทสต์ก่อนหน้ากางกล่องไว้ แล้วสถานะถูกจำใน localStorage
-  //    ถ้าใช้ context เดิมจะวัด "ค่าตั้งต้น" ไม่ได้เลย
+  // ⚠️ ใช้ context ใหม่เพื่อวัด "ค่าตั้งต้น" ให้สะอาด (ไม่มีอะไรค้างจากเทสต์ก่อนหน้า)
   const fresh = await browser.newContext({ viewport: { width: 1200, height: 900 } });
   await fakeData(fresh);
   const p = await open(fresh);
@@ -446,18 +445,25 @@ console.log("\n[9b] กล่องตัวกรองพับได้");
   ok("พับแล้วยังอ่านออกว่ากรองอะไรอยู่",
     !(await p.$eval("#fsum", (e) => e.hidden)) && (await p.$eval("#fsum", (e) => e.textContent)).includes(cat));
 
-  // ⚠️ จำสถานะไว้ ไม่ใช่กางใหม่ทุกครั้งที่เปิดหน้า
-  await p.click("#ftoggle");
+  // 🚫 **ห้ามจำสถานะ — เปิดหน้าใหม่ต้องพับเสมอ** (เจ้าของสั่ง 28 ส.ค. 2026:
+  //    "ตอนนี้ filter เปิดค้างไว้ ให้ collapse ทุกครั้งที่เปิดใหม่ ไม่ต้องจำตรงนี้")
+  await p.click("#ftoggle");                       // กางค้างไว้
   await p.waitForTimeout(100);
   const p2 = await open(fresh);
-  ok("จำไว้ว่ากางค้างไว้ (เปิดหน้าใหม่ยังกางอยู่)", !(await p2.$eval("#filters", (e) => e.hidden)));
+  ok("กางค้างไว้แล้วเปิดหน้าใหม่ ต้องพับกลับ", await p2.$eval("#filters", (e) => e.hidden));
+  ok("ไม่เหลือค่าที่จำไว้ใน localStorage",
+    (await p2.evaluate(() => localStorage.getItem("archivesFiltersOpen"))) === null);
   await p2.close();
 
-  // เปิด URL ที่มีตัวกรองติดมา ต้องกางให้เห็นว่ากรองด้วยอะไร
-  await p.click("#ftoggle");                       // พับกลับ + จำว่าพับ
-  await p.waitForTimeout(100);
+  // ⚠️ ลิงก์ที่มีตัวกรองติดมาก็พับเหมือนกัน — แต่ **ต้องอ่านออกว่ากรองอะไรอยู่**
+  //    ไม่งั้นเห็นข่าวน้อยลงแล้วไม่รู้ว่าเพราะอะไร (บรรทัดสรุป + เลขบนปุ่มทำหน้าที่นี้)
   const p3 = await open(fresh, `?cat=${encodeURIComponent(cat)}`);
-  ok("เปิดลิงก์ที่มีตัวกรองติดมา = กางให้เอง", !(await p3.$eval("#filters", (e) => e.hidden)));
+  ok("เปิดลิงก์ที่มีตัวกรองติดมา = ยังพับอยู่", await p3.$eval("#filters", (e) => e.hidden));
+  ok("แต่บอกอยู่ว่ากรองอะไร (บรรทัดสรุป)",
+    !(await p3.$eval("#fsum", (e) => e.hidden)) &&
+    (await p3.$eval("#fsum", (e) => e.textContent)).includes(cat),
+    await p3.$eval("#fsum", (e) => e.textContent));
+  ok("และมีเลขบนปุ่มตัวกรอง", (await p3.$eval("#fbadge", (e) => e.textContent)) === "1");
   await p3.close();
   await p.close();
   await fresh.close();
