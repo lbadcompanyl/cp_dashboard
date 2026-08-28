@@ -714,14 +714,16 @@ function renderList() {
 }
 
 // ---------- กล่องตัวกรอง (พับได้) ----------
-// ⚠️ จำสถานะไว้ใน localStorage ไม่ใช่ใน DOM อย่างเดียว — ไม่งั้นกดกางไว้แล้ว
-//    พอเปลี่ยนหน้า/รีเฟรช ต้องมากางใหม่ทุกครั้ง
-const FOPEN_KEY = "archivesFiltersOpen";
+// 🚫 **ไม่จำสถานะเปิด/ปิด — เปิดหน้ามาต้องพับไว้เสมอ** (เจ้าของสั่ง 28 ส.ค. 2026:
+//    "ตอนนี้ filter เปิดค้างไว้ ให้ collapse ทุกครั้งที่เปิดใหม่ ไม่ต้องจำตรงนี้")
+//    ของเดิมจำไว้ใน localStorage (`archivesFiltersOpen`) กางค้างครั้งเดียวแล้วค้างตลอดไป
+// ✅ ที่ไม่เสียอะไรเพราะ **ยังบอกอยู่เสมอว่ากรองอะไรไว้** ทั้งบรรทัดสรุป (#fsum "กรองอยู่: …")
+//    และเลขบนปุ่มตัวกรอง — พับแล้วจึงไม่มีทางงงว่าทำไมข่าวน้อยลง (ดู filterSummary)
+const FOPEN_KEY = "archivesFiltersOpen"; // เหลือไว้ล้างค่าเก่าที่ค้างในเครื่องผู้ใช้เท่านั้น
 function setFiltersOpen(open) {
   $("#filters").hidden = !open;
   $("#ftoggle").setAttribute("aria-expanded", open ? "true" : "false");
   $("#ftoggle .fcaret").textContent = open ? "▾" : "▸";
-  try { localStorage.setItem(FOPEN_KEY, open ? "1" : "0"); } catch {}
 }
 
 // สรุปว่ากรองอะไรไว้ — ต้องอ่านรู้เรื่องโดยไม่ต้องกางกล่อง
@@ -922,11 +924,10 @@ function fillInputs() {
   readQuery();
   applyMode();
   fillInputs();
-  // เปิด URL ที่มีตัวกรองติดมาแล้ว ให้กางกล่องให้เลย — ไม่งั้นเห็นผลถูกกรองอยู่แต่ไม่รู้ว่ากรองด้วยอะไร
-  const preset = !!(state.from || state.to || state.cats.size || state.srcs.size);
-  let saved = false;
-  try { saved = localStorage.getItem(FOPEN_KEY) === "1"; } catch {}
-  setFiltersOpen(preset || saved);
+  // 🚫 เปิดหน้ามา **พับไว้เสมอ** ไม่ว่าจะเคยกางไว้ หรือมีตัวกรองติดมากับ URL ก็ตาม
+  //    (เจ้าของสั่ง 28 ส.ค. 2026) · ที่กรองอยู่ยังอ่านได้จากบรรทัดสรุปกับเลขบนปุ่ม
+  setFiltersOpen(false);
+  try { localStorage.removeItem(FOPEN_KEY); } catch {}   // ล้างค่าเก่าที่ค้างอยู่ในเครื่อง
   $("#list").innerHTML = `<div class="loading"><span class="spin"></span>กำลังโหลดคลังข่าว…</div>`;
   try {
     INDEX = await fetch("data/index.json").then((r) => {
