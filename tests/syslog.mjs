@@ -123,13 +123,17 @@ console.log("\n[6] แท็บบนหน้า admin");
   const browser = await launch();
   const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
 
+  // ⚠️ **เวลาต้องนับถอยจาก "ตอนนี้" ห้ามเขียนวันที่ตายตัว**
+  //    ตัวกรองช่วงเวลาบนหน้า admin ตั้งต้นไว้ที่ 7 วัน — เขียนวันที่ตายตัวแล้วอีก 7 วันเทสต์จะตกเอง
+  //    ทั้งที่โค้ดไม่ได้พัง (เกิดขึ้นจริง 27 ส.ค. 2026: เหลือ 1 จาก 3 แถว เพราะ fixture ลงวันที่ 20 ส.ค.)
+  const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
   const LOG = [
-    { at: "2026-08-20T03:00:00.000Z", env: "prod", src: "trend/feeds", ok: true, ms: 1840, cache: "build+verify",
+    { at: ago(1), env: "prod", src: "trend/feeds", ok: true, ms: 1840, cache: "build+verify",
       counts: { news: 40, alert1: 12, alert2: 30, pruned: 2 }, drops: { "archive-page": 3, "ไม่อยู่ในพาดหัว/เนื้อ": 9 },
       upstream: [], ai: 4, kvWrites: 1, note: "" },
-    { at: "2026-08-20T02:00:00.000Z", env: "prod", src: "ir/feeds", ok: true, ms: 900, cache: "build",
+    { at: ago(2), env: "prod", src: "ir/feeds", ok: true, ms: 900, cache: "build",
       counts: { alert1: 5 }, drops: {}, upstream: [{ host: "bing.com", err: "timeout" }], ai: 0, kvWrites: 1, note: "" },
-    { at: "2026-08-20T01:00:00.000Z", env: "prod", src: "trend/feeds", ok: false, ms: 300, cache: "build",
+    { at: ago(3), env: "prod", src: "trend/feeds", ok: false, ms: 300, cache: "build",
       counts: {}, drops: {}, upstream: [], ai: 0, kvWrites: 0, note: "เขียนคลังไม่สำเร็จ: quota" },
   ];
   // ⚠️ ปลอม API ทุกตัวที่หน้า admin เรียก — sandbox ยิงเน็ตออกไม่ได้

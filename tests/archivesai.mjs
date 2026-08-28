@@ -1,0 +1,577 @@
+/* คลังข่าว — 🤖 ถามเป็นประโยค (เจ้าของสั่ง 26 ส.ค. 2026)
+ *
+ *   python3 -m http.server 8899 --directory .. &
+ *   node archivesai.mjs
+ *
+ * คุมอะไร:
+ *   [1] โหมดเดียว — พิมพ์เฉยๆ ยังไม่ถาม (ห้ามยิง AI ทุกตัวอักษร) · Enter/ปุ่ม = ถาม
+ *       และหน้าตาต้องบอกตั้งแต่แรกเห็นว่าเป็น "ค้นด้วย AI" ไม่ใช่ช่องใส่คีย์เวิร์ด
+ *   [2] ถาม → เอาคำค้นที่ AI ตีความมาใส่ช่อง → คัดตามเงื่อนไข → เหลือเฉพาะใบที่ผ่าน
+ *   [3] แถบต้องบอกเสมอว่า "ค้นด้วยอะไร · คัดด้วยอะไร"
+ *   [4] 🔴 AI ล่ม = ยังต้องค้นได้ ไม่ใช่หน้าค้าง — และต้องบอกผู้ใช้
+ *   [5] 🔴 คัดไม่สำเร็จ = **แสดงทุกใบ ไม่ใช่ซ่อนทุกใบ** (ซ่อน = ข่าวหายเงียบ)
+ *   [6] "เลิกคัด" = ทิ้งเงื่อนไข แต่เก็บคำค้นไว้
+ *   [7] ระดับโค้ด: ไม่เขียน KV เลย · Enter สั่งถามได้แต่ห้ามยิงระหว่างพิมพ์ · ห้ามตัดทิ้งเมื่อ AI ใช้ไม่ได้
+ *   [11] ⏳ เปลี่ยนคำค้น = ต้องขึ้นไอคอนหมุน และห้ามค้างผลของคำค้นเก่า
+ *   [10] ✍️ สะกดไม่ตรงเป๊ะ (วรรณยุกต์/ตัวการันต์) ต้องยังเจอ — แต่ห้ามเอามาเป็นตัวค้นหลัก
+ *   [9c] 🔴 คำค้นคำเดียวแล้วไม่เจอ = ขอคำที่กว้างขึ้นอีกรอบ (ไทยไม่มีช่องว่าง แยกเองไม่ได้)
+ *   [9d] ไม่มีในคลังจริงๆ = บอกตรงๆ ห้ามปล่อยให้เจอข้อความ "ลองลดตัวกรองลง"
+ *   [9] 🧠 ไม่เจอเลย = ผ่อนเงื่อนไขให้เอง (ตัดช่วงวันที่ → ตัดคำ) และต้องบอกว่าผ่อนอะไร
+ *   [8] 🔴 ทางถอยเมื่อ AI ตอบไม่ได้ — ต้องตัดคำถามทิ้งก่อนค้น (ไม่งั้นได้ 0 ข่าว)
+ *       และต้องแกะคำตอบที่โมเดลเล็กตอบมาแบบเลอะๆ ได้
+ *
+ * ⚠️ ยิง Pages Function จริงจากที่นี่ไม่ได้ (python http.server เสิร์ฟไฟล์นิ่งอย่างเดียว)
+ *    จึงปลอม /api/archives/ask ด้วย page.route แบบเดียวกับเทสต์ตัวอื่น
+ *    → ที่วัดคือ "หน้าเว็บทำตัวถูกไหมเมื่อได้คำตอบแบบนั้น" ไม่ใช่ "AI ฉลาดแค่ไหน"
+ */
+import fs from "node:fs";
+import { launch } from "./browser.mjs";
+import { mockTable, buildRows, packYear } from "../tools/build-archives.mjs";
+
+const BASE = process.env.BASE || "http://127.0.0.1:8899";
+
+// ข้อมูลจำลอง — เทสต์สร้างเอง ไม่ผูกกับ archives/data/ ที่ commit ไว้ (เหตุผลเดียวกับ archives.mjs)
+const FIX = (() => {
+  const rows = buildRows(mockTable(600));
+  const byYear = new Map();
+  for (const r of rows) {
+    const y = r.d.slice(0, 4);
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y).push(r);
+  }
+  const years = [...byYear.keys()].sort().reverse();
+  const files = {
+    "index.json": JSON.stringify({
+      generatedAt: "2026-08-26T00:00:00.000Z",
+      total: rows.length, noDate: 0,
+      years: years.map((y) => ({ y: +y, n: byYear.get(y).length })),
+    }),
+  };
+  for (const y of years) files[y + ".json"] = JSON.stringify(packYear(byYear.get(y)));
+  return files;
+})();
+
+let pass = 0, fail = 0;
+const ok = (name, cond, extra = "") => {
+  if (cond) { pass++; console.log("  ✅", name); }
+  else { fail++; console.log("  ❌", name, extra); }
+};
+
+const browser = await launch();
+
+/** เปิดหน้าพร้อมปลอมข้อมูล + ปลอมคำตอบของ /api/archives/ask */
+async function open({ plan, keep, planStatus = 200, judgeStatus = 200 } = {}) {
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const seen = { get: 0, post: 0, postBody: null };
+
+  await ctx.route("**/archives/data/*.json", (route) => {
+    const name = route.request().url().split("/").pop().split("?")[0];
+    const body = FIX[name];
+    if (!body) return route.fulfill({ status: 404, body: "no fixture: " + name });
+    route.fulfill({ status: 200, contentType: "application/json", body });
+  });
+
+  await ctx.route("**/api/archives/ask*", async (route) => {
+    const req = route.request();
+    if (req.method() === "POST") {
+      seen.post++;
+      try { seen.postBody = JSON.parse(req.postData() || "{}"); } catch (e) { seen.postBody = null; }
+      if (judgeStatus !== 200) return route.fulfill({ status: judgeStatus, contentType: "text/plain", body: "boom" });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ keep: keep || [], ai: true }) });
+    }
+    seen.get++;
+    if (planStatus !== 200) return route.fulfill({ status: planStatus, contentType: "text/plain", body: "boom" });
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plan || {}) });
+  });
+
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on("pageerror", (e) => errs.push(String(e.message)));
+  await page.goto(BASE + "/archives/", { waitUntil: "networkidle" });
+  return { ctx, page, seen, errs };
+}
+
+const count = (page) => page.$$eval("#list a[data-u], #list .item", (els) => els.length);
+const titles = (page) => page.$$eval("#list a.t", (els) => els.map((e) => e.textContent.trim()));
+
+/* ─────────── [1] โหมดเดียว: ต้องกดถึงจะถาม ─────────── */
+console.log("\n[1] โหมดเดียว — พิมพ์เฉยๆ ยังไม่ถาม · กด Enter หรือปุ่มถึงจะถาม");
+{
+  const { ctx, page, seen, errs } = await open({ plan: { terms: ["ก"], judge: "", ai: true } });
+  ok("มีปุ่มถามในช่องค้นหา", await page.$("#askbtn") !== null);
+  ok("แถบตีความยังไม่ขึ้นตอนเปิดหน้า", await page.$eval("#askbar", (e) => e.hidden));
+  // ⚠️ หน้าตาต้องบอกตั้งแต่แรกเห็นว่านี่คือค้นด้วย AI ไม่ใช่ช่องใส่คีย์เวิร์ด
+  // 🏷 ป้ายย้ายเข้าไปอยู่ "ในช่องค้นหา" แล้ว (เจ้าของสั่ง 27 ส.ค. 2026) — บรรทัด hint
+  //    ข้างบนสายตาข้ามได้ง่าย ส่วนป้ายในช่องพิมพ์ยังไงก็ต้องเห็นตอนจะพิมพ์
+  const tagIn = await page.$eval(".searchrow", (e) => (e.textContent || "").trim());
+  ok("บอกว่าค้นด้วย AI ตั้งแต่ยังไม่พิมพ์ (ป้ายอยู่ในช่องค้นหา)", /AI/.test(tagIn), tagIn);
+  const hint = await page.$eval(".qhint", (e) => e.textContent);
+  ok("บรรทัดเหนือช่องบอกวิธีใช้ (ถามเป็นประโยค + Enter)", /ประโยค/.test(hint) && /Enter/.test(hint), hint);
+  ok("ช่องพิมพ์ชวนให้ถามเป็นประโยค", /ถาม/.test(await page.$eval("#q", (e) => e.placeholder)));
+
+  // 🚫 พิมพ์เฉยๆ ต้องไม่ยิงถาม AI — ไม่งั้นถามทุกตัวอักษร
+  // (หน้านี้เปิดมาแสดงข่าวทั้งคลังอยู่แล้ว จึงวัดว่า "ผลไม่เปลี่ยน" ไม่ใช่ "ว่างเปล่า")
+  const before = await count(page);
+  await page.fill("#q", "ก");
+  await page.waitForTimeout(500);
+  ok("🚫 พิมพ์เฉยๆ ไม่ยิงถาม AI", seen.get === 0 && seen.post === 0, JSON.stringify(seen));
+  ok("พิมพ์เฉยๆ ผลยังไม่เปลี่ยน (ต้องกดถึงจะค้น)", (await count(page)) === before, `${before} → ${await count(page)}`);
+
+  // ⭐ Enter = ทางหลักของหน้านี้
+  await page.press("#q", "Enter");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  ok("กด Enter แล้วถามให้", seen.get === 1, `get=${seen.get}`);
+  ok("ได้ผลลัพธ์ออกมา", (await count(page)) > 0);
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
+  await ctx.close();
+}
+
+/* ─────────── [2] ถามแล้วได้ผลที่ถูกคัด ─────────── */
+console.log("\n[2] ถามเป็นประโยค → ค้น → คัดตามเงื่อนไข");
+{
+  // ให้ AI ตอบว่า: ค้นคำ "ก" แล้วคัดเฉพาะที่ "เป็นข่าวเชิงบวก"
+  const { ctx, page, seen, errs } = await open({
+    plan: { terms: ["ก"], from: "", to: "", judge: "เป็นข่าวเชิงบวก", ai: true },
+    keep: [0, 2],           // ให้ผ่านแค่ใบที่ 1 กับ 3 ของที่ค้นเจอ
+  });
+  await page.fill("#q", "หาข่าวด้านดีของปลาหมอคางดำทั้งหมด");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  ok("ยิงถามไป 1 ครั้ง", seen.get === 1, `get=${seen.get}`);
+  ok("ส่งพาดหัวไปให้คัด", seen.post === 1 && Array.isArray(seen.postBody?.titles) && seen.postBody.titles.length > 0);
+  ok("ส่งเงื่อนไขไปด้วย", seen.postBody?.judge === "เป็นข่าวเชิงบวก", JSON.stringify(seen.postBody?.judge));
+  // ⚠️ ช่องพิมพ์ต้องเก็บ "คำถาม" ไว้ ไม่ใช่โดนเขียนทับด้วยคำค้นที่ AI แยกออกมา
+  ok("ช่องพิมพ์ยังเป็นคำถามเดิม ไม่โดนเขียนทับ",
+    (await page.inputValue("#q")) === "หาข่าวด้านดีของปลาหมอคางดำทั้งหมด", await page.inputValue("#q"));
+  const bar1 = await page.$eval("#askbar", (e) => e.textContent);
+  ok("คำค้นที่แยกได้ไปโชว์ในแถบตีความแทน", /ค้นคำ/.test(bar1), bar1);
+
+  const n = await count(page);
+  ok("เหลือเฉพาะใบที่ผ่านเงื่อนไข", n === 2, `เหลือ ${n} ใบ`);
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
+  await ctx.close();
+}
+
+/* ─────────── [3] แถบต้องบอกว่าตีความเป็นอะไร ─────────── */
+console.log("\n[3] บอกเสมอว่าค้นด้วยอะไร คัดด้วยอะไร");
+{
+  const { ctx, page } = await open({
+    plan: { terms: ["ก"], from: "", to: "", judge: "เป็นข่าวเชิงบวก", ai: true },
+    keep: [0],
+  });
+  await page.fill("#q", "หาข่าวด้านดีของปลาหมอคางดำทั้งหมด");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const bar = await page.$eval("#askbar", (e) => ({ hidden: e.hidden, text: e.textContent }));
+  ok("แถบขึ้นให้เห็น", !bar.hidden);
+  ok("บอกว่าถามอะไรไป", bar.text.includes("ปลาหมอคางดำ"), bar.text);
+  ok("บอกเงื่อนไขที่ใช้คัด", bar.text.includes("เป็นข่าวเชิงบวก"), bar.text);
+  ok("มีปุ่มเลิกคัด", await page.$("#askbar [data-askclear]") !== null);
+  // ก๊อป URL ส่งต่อแล้วต้องได้ผลเดิม ไม่ใช่ได้ผลกว้างกว่า
+  ok("เงื่อนไขติดไปกับ URL", new URL(page.url()).searchParams.get("judge") === "เป็นข่าวเชิงบวก", page.url());
+  await ctx.close();
+}
+
+/* ─────────── [4] 🔴 AI ตีความไม่ได้ = ต้องยังค้นได้ ─────────── */
+console.log("\n[4] 🔴 ตีความคำถามไม่ได้ — ห้ามหน้าค้าง ต้องค้นให้ตรงๆ แทน");
+{
+  const { ctx, page, errs } = await open({ planStatus: 500 });
+  await page.fill("#q", "ก");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const n = await count(page);
+  ok("ยังค้นเจอข่าวตามปกติ", n > 0, `เจอ ${n}`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกผู้ใช้ว่า AI ตอบไม่ได้ ไม่ใช่เงียบ", /AI ตอบไม่ได้/.test(bar), bar);
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
+  await ctx.close();
+}
+
+/* ─────────── [5] 🔴 คัดไม่สำเร็จ = แสดงทุกใบ ไม่ใช่ซ่อนทุกใบ ─────────── */
+console.log("\n[5] 🔴 คัดตามเงื่อนไขไม่สำเร็จ — ต้องแสดงทุกใบ ไม่ใช่ซ่อนหมด");
+{
+  const { ctx, page, errs } = await open({
+    plan: { terms: ["ก"], from: "", to: "", judge: "เป็นข่าวเชิงบวก", ai: true },
+    judgeStatus: 500,
+  });
+  await page.fill("#q", "หาข่าวด้านดี");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const n = await count(page);
+  ok("ไม่ได้ซ่อนข่าวทิ้งทั้งหมด", n > 0, `เหลือ ${n} ใบ`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่ายังไม่ได้คัด ไม่ใช่ทำเป็นว่าคัดแล้ว", /คัดตามเงื่อนไขไม่สำเร็จ/.test(bar), bar);
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
+  await ctx.close();
+}
+
+/* ─────────── [6] เลิกคัด ─────────── */
+console.log("\n[6] เลิกคัด = ทิ้งเงื่อนไข แต่เก็บคำค้นไว้");
+{
+  const { ctx, page } = await open({
+    plan: { terms: ["ก"], from: "", to: "", judge: "เป็นข่าวเชิงบวก", ai: true },
+    keep: [0],
+  });
+  await page.fill("#q", "หาข่าวด้านดี");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  const few = await count(page);
+
+  await page.click("#askbar [data-askclear]");
+  await page.waitForTimeout(300);
+  const many = await count(page);
+
+  ok("คัดอยู่เหลือน้อยกว่า", few < many, `${few} → ${many}`);
+  ok("เลิกคัดแล้วยังเก็บคำถามไว้", (await page.inputValue("#q")) === "หาข่าวด้านดี");
+  ok("เงื่อนไขหลุดออกจาก URL ด้วย", !new URL(page.url()).searchParams.get("judge"), page.url());
+  await ctx.close();
+}
+
+/* ─────────── [7] ระดับโค้ด ─────────── */
+console.log("\n[7] กฎที่ต้องคุมระดับโค้ด");
+{
+  const api = fs.readFileSync(new URL("../functions/api/archives/ask.js", import.meta.url), "utf8");
+  const app = fs.readFileSync(new URL("../archives/app.js", import.meta.url), "utf8");
+
+  // 💧 ผู้ใช้พิมพ์อะไรก็ได้ = จำนวน key ไม่มีขอบเขต เขียน KV เมื่อไหร่โควตาหมดทั้งโปรเจกต์
+  ok("🚫 endpoint ไม่เขียน KV เลย", !/\.put\s*\(/.test(api.replace(/cache\.put\s*\(/g, "")), "เจอ kv.put");
+  ok("ใช้ edge cache แทน", /caches\.default/.test(api));
+  // ⚠️ AI ใช้ไม่ได้ ต้องเก็บทุกใบ ไม่ใช่ตัดทุกใบ — ตัดทิ้งเงียบคือของหายโดยไม่มีใครรู้
+  ok("ไม่มี AI แล้วยังคืนทุกใบ", /keep:\s*titles\.map\(\(_, i\) => i\)/.test(api));
+  ok("ก้อนที่ถาม AI ไม่สำเร็จ เก็บทั้งก้อน", /if \(!picked\) \{ chunk\.forEach/.test(api));
+  ok("จำกัดจำนวนพาดหัวต่อคำขอ", /MAX_TITLES\s*=\s*\d+/.test(api));
+  ok("จำกัดขนาดคำขอ", /MAX_BODY\s*=/.test(api));
+  // ⭐ โหมดเดียว = Enter ต้องสั่งถามได้ · แต่ห้ามยิงระหว่างพิมพ์
+  ok("Enter สั่งถามได้", /Enter[\s\S]{0,60}runAsk/.test(app));
+  ok("🚫 ไม่ยิงถามระหว่างพิมพ์", !/function onSearchInput\(\)[\s\S]{0,200}runAsk/.test(app));
+  ok("ยังใช้ includes() ค้นเหมือนเดิม", /r\.n\)\.includes\(|\.n\.includes\(/.test(app));
+}
+
+/* ─────────── [9] 🧠 ไม่เจอเลย = ผ่อนเงื่อนไขให้ แล้วบอกว่าผ่อนอะไร ─────────── */
+console.log("\n[9] 🧠 ไม่เจอเลย — ผ่อนเงื่อนไขให้เอง และต้องบอกว่าผ่อนอะไร");
+{
+  // AI แต่งคำที่ไม่มีในพาดหัวไหนเลยมาเกิน 1 คำ → ถ้าไม่ผ่อน ผู้ใช้เจอ "พบ 0 ข่าว"
+  const { ctx, page, errs } = await open({
+    plan: { terms: ["ก", "ไม่มีทางมีคำนี้อยู่จริงหรอกนะจ๊ะ"], from: "", to: "", judge: "", ai: true },
+  });
+  await page.fill("#q", "หาข่าวอะไรสักอย่าง");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  ok("ไม่ปล่อยให้เหลือ 0 ข่าว", (await count(page)) > 0, `เหลือ ${await count(page)}`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าตัดคำไหนออก ไม่ผ่อนเงียบๆ", /ตัดคำว่า/.test(bar) && bar.includes("ไม่มีทางมีคำนี้"), bar);
+  ok("ไม่มี JS error", errs.length === 0, errs.join(" · "));
+  await ctx.close();
+}
+
+console.log("\n[9b] ช่วงวันที่ที่ AI เดาพลาด — ตัดช่วงวันที่ออกให้ก่อนตัดคำ");
+{
+  const { ctx, page } = await open({
+    plan: { terms: ["ก"], from: "1990-01-01", to: "1990-12-31", judge: "", ai: true },
+  });
+  await page.fill("#q", "ข่าวอะไรก็ได้เดือนที่แล้ว");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  ok("ไม่ปล่อยให้เหลือ 0 ข่าว", (await count(page)) > 0, `เหลือ ${await count(page)}`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าตัดช่วงวันที่ออก", /ตัดช่วงวันที่ออกให้แล้ว/.test(bar), bar);
+  ok("คำค้นยังอยู่ครบ", (await page.inputValue("#q")) === "ข่าวอะไรก็ได้เดือนที่แล้ว");
+  await ctx.close();
+}
+
+/* ─────────── [9c] คำเดียวแล้วไม่เจอ — ขอคำที่กว้างขึ้น แล้วถ้ายังไม่มีก็บอกตรงๆ ─────────── */
+console.log("\n[9c] 🔴 คำค้นคำเดียวแล้วไม่เจอ — ห้ามเงียบ (เจ้าของเจอจริง: 'เผาข้าวโพด' ได้ 0 ข่าว)");
+{
+  // รอบแรกได้คำประสมคำเดียวที่ไม่มีในพาดหัวไหนเลย → รอบสอง (broad=1) ให้คำที่กว้างขึ้น
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  let calls = 0;
+  await ctx.route("**/archives/data/*.json", (route) => {
+    const name = route.request().url().split("/").pop().split("?")[0];
+    route.fulfill({ status: 200, contentType: "application/json", body: FIX[name] || "{}" });
+  });
+  await ctx.route("**/api/archives/ask*", (route) => {
+    if (route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: '{"keep":[]}' });
+    calls++;
+    const wide = new URL(route.request().url()).searchParams.get("broad") === "1";
+    route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify(wide
+        ? { terms: ["ก"], from: "", to: "", judge: "", ai: true }                       // คำกว้าง — เจอ
+        : { terms: ["ไม่มีคำนี้ในพาดหัวไหนแน่ๆ"], from: "", to: "", judge: "", ai: true }), // คำแรก — ไม่เจอ
+    });
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE + "/archives/", { waitUntil: "networkidle" });
+  await page.fill("#q", "หาข่าวเผาข้าวโพดทั้งหมด");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  ok("ยิงขอคำที่กว้างขึ้นอีกรอบ", calls === 2, `ยิงไป ${calls} ครั้ง`);
+  ok("แล้วเจอข่าว ไม่ปล่อยให้เป็น 0", (await count(page)) > 0, `เหลือ ${await count(page)}`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าเปลี่ยนไปใช้คำที่กว้างขึ้น", /กว้างขึ้น/.test(bar), bar);
+  await ctx.close();
+}
+
+console.log("\n[9d] ไม่มีในคลังจริงๆ — ต้องบอกว่าไม่มี ไม่ใช่ 'ลองลดตัวกรองลง'");
+{
+  const { ctx, page } = await open({
+    plan: { terms: ["ไม่มีคำนี้ในพาดหัวไหนแน่ๆ"], from: "", to: "", judge: "", ai: true },
+  });
+  await page.fill("#q", "หาข่าวที่ไม่มีอยู่จริง");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  // ⚠️ ผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย ข้อความ "ลองลดตัวกรองลง" จึงอ่านแล้วงง
+  ok("บอกตรงๆ ว่าไม่มีคำนี้ในคลัง", /ไม่มีข่าวที่มีคำว่า/.test(bar), bar);
+  await ctx.close();
+}
+
+/* ─────────── [13] สลับโหมด ค้นด้วย AI ↔ ค้นด้วยคำ ─────────── */
+// เจ้าของสั่ง 27 ส.ค. 2026: "เด่นกว่านี้ และ สลับเป็นหมวด ค้นด้วยคำ ได้ด้วย"
+// ⚠️ โหมด "คำ" ต้อง **ไม่ยิง AI เลย** ไม่งั้นสลับไปแล้วยังช้าและเปลืองเหมือนเดิม
+// ⚠️ และทั้ง 2 โหมดยังต้องกด Enter/ปุ่มเหมือนกัน — ห้ามให้โหมดคำค้นสดระหว่างพิมพ์
+//    (นั่นคือ "2 โหมดที่แยกไม่ออก" ซึ่งเจ้าของสั่งให้เลิกไปแล้วเมื่อ 26 ส.ค.)
+console.log("\n[13] สลับโหมด — ค้นด้วยคำต้องไม่ยิง AI เลย");
+{
+  const { ctx, page, seen } = await open({ plan: { terms: ["ก"], from: "", to: "", judge: "", ai: true } });
+
+  const onMode = () => page.$eval("#modeseg .mseg.on", (e) => e.dataset.mode);
+  ok("ค่าตั้งต้นคือโหมด AI", (await onMode()) === "ai");
+  // 🔀 ปุ่ม 2 ช่อง — กดที่ช่อง "ค้นคำ" ตรงๆ ไม่ใช่กดสลับไปมาที่ป้ายใบเดียว
+  await page.click('#modeseg [data-mode="kw"]');
+  await page.waitForTimeout(150);
+  ok("กดช่อง 'ค้นคำ' แล้วเปลี่ยนโหมดจริง", (await onMode()) === "kw");
+  ok("ช่องที่เลือกอยู่บอกด้วย aria-pressed",
+    (await page.$eval('#modeseg [data-mode="kw"]', (e) => e.getAttribute("aria-pressed"))) === "true");
+  ok("ป้ายบนปุ่มเปลี่ยนเป็น 'ค้น'", (await page.$eval("#askbtn .flabel", (e) => e.textContent)) === "ค้น");
+  ok("ข้อความชวนพิมพ์เปลี่ยนตามโหมด",
+    /คำค้น/.test(await page.$eval("#q", (e) => e.placeholder)), await page.$eval("#q", (e) => e.placeholder));
+  ok("โหมดเข้า URL ด้วย (ก๊อปลิงก์ส่งต่อได้)",
+    (await page.evaluate(() => location.search)).includes("mode=kw"));
+
+  const before = seen.get;
+  const t = (await page.$$eval("#list a.t", (e) => e.map((x) => x.textContent)))[0] || "";
+  await page.fill("#q", t.slice(3, 8));
+  await page.waitForTimeout(400);
+  ok("🚫 พิมพ์เฉยๆ ยังไม่ค้น (เหมือนโหมด AI)", seen.get === before);
+
+  await page.press("#q", "Enter");
+  await page.waitForTimeout(500);
+  ok("🚫 โหมดค้นด้วยคำ ไม่ยิง AI เลย", seen.get === before, `ยิงไป ${seen.get - before} ครั้ง`);
+  ok("ค้นเจอจริง", (await count(page)) > 0, String(await count(page)));
+  const bar = await page.$eval("#askbar", (e) => e.hidden ? "" : e.textContent);
+  ok("แถบไม่ขึ้นว่า 'ถามว่า' (ไม่ได้ถาม AI)", !/ถามว่า/.test(bar), bar);
+
+  // สลับกลับ = ต้องถาม AI ได้ตามปกติ
+  await page.click('#modeseg [data-mode="ai"]');
+  await page.waitForTimeout(150);
+  await page.fill("#q", "หาข่าวอะไรสักอย่าง");
+  await page.press("#q", "Enter");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  ok("สลับกลับมาโหมด AI แล้วถามได้ตามปกติ", seen.get > before, `ยิงไป ${seen.get - before} ครั้ง`);
+  await ctx.close();
+}
+
+/* ─────────── [12] คำถามเรื่องช่วงเวลาล้วนๆ ─────────── */
+// 🐞 เจ้าของเจอจริง 27 ส.ค. 2026: ถาม "ข่าวเมื่อวาน" → ได้ 0 ข่าว
+//    AI ตีความถูกแล้ว (ส่งช่วงวันที่มาให้ ไม่มีคำค้น) แต่โค้ดโยนทิ้งเพราะ terms ว่าง
+//    แล้วตกไปค้นคำว่า "ข่าวเมื่อวาน" ในพาดหัว ซึ่งไม่มีทางเจอ
+console.log("\n[12] คำถามเรื่องช่วงเวลาล้วนๆ — ไม่มีคำค้นก็ต้องใช้ได้");
+{
+  // เอาวันจริงจากข้อมูลจำลองมาใช้ จะได้รู้ว่ากรองแล้วเหลือของจริง ไม่ใช่ 0 เพราะไม่มีข่าววันนั้น
+  const y = JSON.parse(FIX["index.json"]).years[0].y;
+  const day = JSON.parse(FIX[y + ".json"]);
+  const some = new Date(day.r[0][2] * 1000).toISOString().slice(0, 10);
+
+  const { ctx, page } = await open({ plan: { terms: [], from: some, to: some, judge: "", ai: true } });
+  await page.fill("#q", "ข่าวเมื่อวาน");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("ไม่ตกไปใช้ทางถอย (ไม่ขึ้นว่า AI ตอบไม่ได้)", !/AI ตอบไม่ได้/.test(bar), bar);
+  ok("เอาช่วงวันที่ไปใส่ตัวกรองให้จริง", (await page.inputValue("#from")) === some, await page.inputValue("#from"));
+  // ⚠️ ห้ามเอาคำถามไปยัดเป็น "คำค้น" — จะกรองจนเหลือ 0 ทันที
+  //    (ช่องพิมพ์ยังเก็บคำถามไว้ตามกฎเดิม จึงต้องดูที่คำค้นจริงใน URL แทน)
+  const qParam = await page.evaluate(() => new URL(location.href).searchParams.get("q") || "");
+  ok("ไม่ยัดคำถามลงไปเป็นคำค้น", qParam === "", qParam);
+  ok("ช่องพิมพ์ยังเก็บคำถามของผู้ใช้ไว้", (await page.inputValue("#q")).includes("เมื่อวาน"));
+  ok("ยังหาข่าวเจอ ไม่ใช่ 0 ใบ", (await count(page)) > 0, String(await count(page)));
+  ok("ไม่ขึ้นข้อความ 'ไม่มีข่าวที่มีคำว่า “”'", !/ไม่มีข่าวที่มีคำว่า\s*[“"]\s*[”"]/.test(bar), bar);
+  await ctx.close();
+}
+
+/* ─────────── [11] ⏳ เปลี่ยนคำค้น = ต้องขึ้นไอคอนหมุน ─────────── */
+console.log("\n[11] ⏳ กดถามแล้วต้องขึ้นไอคอนหมุน ไม่ใช่ค้างผลของคำค้นเก่า");
+{
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  await ctx.route("**/archives/data/*.json", (route) => {
+    const name = route.request().url().split("/").pop().split("?")[0];
+    route.fulfill({ status: 200, contentType: "application/json", body: FIX[name] || "{}" });
+  });
+  // หน่วงคำตอบไว้ เพื่อจับภาพ "ระหว่างรอ" ให้ทัน
+  await ctx.route("**/api/archives/ask*", async (route) => {
+    if (route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: '{"keep":[]}' });
+    await new Promise((r) => setTimeout(r, 1200));
+    route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ terms: ["ก"], from: "", to: "", judge: "", ai: true }) });
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE + "/archives/", { waitUntil: "networkidle" });
+  const before = await titles(page);
+
+  await page.fill("#q", "ขอข่าวอะไรสักอย่าง");
+  await page.click("#askbtn");
+  await page.waitForTimeout(300);          // ยังอยู่ระหว่างรอคำตอบ
+
+  ok("รายการขึ้นไอคอนหมุน", (await page.$$("#list .spin")).length > 0);
+  ok("บอกด้วยว่ากำลังทำอะไรอยู่", /กำลังค้น/.test(await page.$eval("#list", (e) => e.textContent)));
+  // 🔴 ข้อสำคัญ: ห้ามค้างผลของคำค้นเก่าไว้ให้อ่านเหมือนเป็นคำตอบของคำถามใหม่
+  ok("🔴 ไม่ค้างผลของคำค้นเก่า", (await titles(page)).length === 0, `ยังเหลือ ${(await titles(page)).length} ใบ`);
+  ok("ปุ่มถามก็ขึ้นไอคอนหมุนด้วย", (await page.$$("#askbtn .spin")).length > 0);
+  ok("ปุ่มถามกดซ้ำไม่ได้ระหว่างรอ", await page.$eval("#askbtn", (e) => e.disabled));
+
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  ok("เสร็จแล้วไอคอนหมุนหายไป", (await page.$$("#list .spin")).length === 0);
+  ok("ปุ่มถามกลับมากดได้", !(await page.$eval("#askbtn", (e) => e.disabled)));
+  ok("ได้ผลลัพธ์จริง", (await titles(page)).length > 0, `${before.length} → ${(await titles(page)).length}`);
+  await ctx.close();
+}
+
+/* ─────────── [10] ✍️ สะกดไม่ตรงเป๊ะ — ต้องยังเจอ ─────────── */
+console.log("\n[10] ✍️ สะกดไม่ตรงเป๊ะ (วรรณยุกต์/ตัวการันต์) — ต้องยังเจอ และต้องบอกว่าผ่อนให้");
+{
+  // ปลอมข้อมูล 2 ใบ: ใบหนึ่งสะกดเต็ม "เอเลี่ยนสปีชีส์" · ผู้ใช้พิมพ์ "เอเลี่ยนสปีชี่"
+  const ctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const pack = {
+    o: ["สำนักทดสอบ"], c: ["ทดสอบ"],
+    r: [
+      ["สัตว์น้ำเอเลี่ยนสปีชีส์ ที่คนนิยมทำให้สูญพันธุ์ด้วยการกิน", "https://x.test/1", 1787000000, 0, [0]],
+      ["ข่าวอื่นที่ไม่เกี่ยวอะไรเลย", "https://x.test/2", 1787000001, 0, [0]],
+    ],
+  };
+  await ctx.route("**/archives/data/index.json", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ generatedAt: "2026-08-26T00:00:00.000Z", total: 2, noDate: 0, years: [{ y: 2026, n: 2 }] }),
+  }));
+  await ctx.route("**/archives/data/2026.json", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(pack) }));
+  await ctx.route("**/api/archives/ask*", (route) => {
+    if (route.request().method() === "POST") return route.fulfill({ status: 200, contentType: "application/json", body: '{"keep":[]}' });
+    // จำลองว่า AI แก้คำสะกดให้ไม่ได้ — ส่งคำที่ผู้ใช้พิมพ์มาตรงๆ (กรณีแย่ที่สุด)
+    route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ terms: ["เอเลี่ยนสปีชี่"], from: "", to: "", judge: "", ai: true }) });
+  });
+  const page = await ctx.newPage();
+  await page.goto(BASE + "/archives/", { waitUntil: "networkidle" });
+  await page.fill("#q", "เอเลี่ยนสปีชี่");
+  await page.click("#askbtn");
+  await page.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+
+  const n = await count(page);
+  ok("สะกดต่างกันแค่วรรณยุกต์/ตัวการันต์ ก็ยังเจอ", n === 1, `เจอ ${n} ใบ`);
+  const bar = await page.$eval("#askbar", (e) => e.textContent);
+  ok("บอกว่าผ่อนการสะกดให้ ไม่ได้เงียบ", /สะกดไม่ตรง/.test(bar), bar);
+  // ⚠️ โหมดผ่อนห้ามไฮไลต์ — ตำแหน่งไม่ตรงกับพาดหัวจริง จะทำให้พาดหัวเพี้ยน
+  ok("🚫 โหมดผ่อนไม่ไฮไลต์ (ตำแหน่งไม่ตรง จะทำพาดหัวเพี้ยน)", (await page.$$("#list mark")).length === 0);
+  const t0 = (await titles(page))[0];
+  ok("พาดหัวยังครบถ้วนไม่เพี้ยน", t0.includes("เอเลี่ยนสปีชีส์"), t0);
+  await ctx.close();
+}
+
+console.log("\n[10b] 🚫 ห้ามเอาการผ่อนสะกดมาเป็นตัวค้นหลัก — 'กุ้ง' ต้องไม่กลายเป็น 'กุง'");
+{
+  const api = fs.readFileSync(new URL("../archives/app.js", import.meta.url), "utf8");
+  // ตัวค้นหลักต้องเทียบกับ r.n (ของเต็ม) เสมอ · r.ln ใช้ได้เฉพาะตอน looseMode
+  ok("ค้นปกติยังเทียบกับพาดหัวเต็ม", /looseMode \? r\.ln : r\.n/.test(api));
+  ok("โหมดผ่อนเริ่มต้นเป็นปิด", /let looseMode = false/.test(api));
+  ok("เปิดโหมดผ่อนเฉพาะตอนไม่เจอเลย", /if \(filtered\.length\) return ""[\s\S]{0,900}looseMode = true/.test(api));
+}
+
+/* ─────────── [8] ตรรกะฝั่งเซิร์ฟเวอร์ที่พลาดแล้วเจ็บทันที ─────────── */
+console.log("\n[8] ทางถอยเมื่อ AI ตอบไม่ได้ + การแกะคำตอบของโมเดล");
+{
+  const M = await import("../functions/api/archives/ask.js");
+
+  // 🔴 เคสจริงที่เจ้าของเจอ: ถาม "หาข่าว dna ของ ปลาหมอคางดำ" แล้วได้ 0 ข่าว
+  //    เพราะเอา "หาข่าว" กับ "ของ" ไปหาในพาดหัวด้วย (หน้านี้ใช้กฎ 'ต้องมีครบทุกคำ')
+  const a = M.fallbackPlan("หาข่าว dna ของ ปลาหมอคางดำ");
+  ok("ตัดคำถามทิ้ง เหลือแต่คำที่อยู่ในพาดหัวจริง",
+    a.terms.length === 2 && a.terms.includes("ปลาหมอคางดำ") && a.terms.includes("dna"), JSON.stringify(a.terms));
+  ok("🚫 ไม่เอาคำว่า 'หาข่าว' ไปค้น", !a.terms.includes("หาข่าว"));
+  ok("🚫 ไม่เอาคำว่า 'ของ' ไปค้น", !a.terms.includes("ของ"));
+
+  // ⚠️ ตัดจนไม่เหลืออะไร = ต้องคืนของเดิม ไม่ใช่คืนลิสต์ว่าง (ค้นด้วยคำว่าง = ได้ทั้งคลัง)
+  const b = M.fallbackPlan("ของ ที่ ใน");
+  ok("ตัดจนหมดแล้วคืนของเดิม ไม่ใช่ค้นทั้งคลัง", b.terms.length === 3, JSON.stringify(b.terms));
+
+  // ⏰ คำถามเรื่องช่วงเวลา — **ต้องตีความเองได้แม้ AI ล่ม** (เจ้าของเจอ 27 ส.ค. 2026: "ข่าวเมื่อวาน")
+  // ⚠️ ภาษาไทยไม่มีช่องว่างคั่นคำ "ข่าวเมื่อวาน" เป็นคำเดียว ตัดด้วยการแยกช่องว่างไม่ได้เลย
+  const NOW = Date.parse("2026-08-27T05:00:00Z"); // = 12:00 เวลาไทย
+  const D = [
+    ["ข่าวเมื่อวาน", [], "2026-08-26", "2026-08-26"],
+    ["ข่าววันนี้", [], "2026-08-27", "2026-08-27"],
+    ["ข่าวเมื่อวานซืน", [], "2026-08-25", "2026-08-25"],
+    ["ข่าวเดือนที่แล้ว", [], "2026-07-01", "2026-07-31"],
+    ["ข่าวปีที่แล้ว", [], "2025-01-01", "2025-12-31"],
+    ["หาข่าวปลาหมอคางดำเดือนที่แล้ว", ["ปลาหมอคางดำ"], "2026-07-01", "2026-07-31"],
+  ];
+  for (const [q, terms, from, to] of D) {
+    const p = M.fallbackPlan(q, NOW);
+    ok(`“${q}” → ${from}${from === to ? "" : " ถึง " + to}`,
+      p.from === from && p.to === to && JSON.stringify(p.terms) === JSON.stringify(terms),
+      JSON.stringify(p));
+  }
+  // 🚫 คำถามเรื่องเวลาล้วนๆ ห้ามเอาทั้งประโยคไปค้นในพาดหัว — ไม่มีทางเจอ = 0 ข่าวทุกครั้ง
+  ok("🚫 ไม่เอาคำว่า 'ข่าวเมื่อวาน' ไปหาในพาดหัว",
+    !M.fallbackPlan("ข่าวเมื่อวาน", NOW).terms.join(" ").includes("เมื่อวาน"));
+  // ไม่มีคำบอกเวลา = อย่าไปเดาช่วงวันที่ให้เอง
+  ok("ไม่มีคำบอกเวลา = ไม่ตั้งช่วงวันที่", !M.fallbackPlan("ปลาหมอคางดำ", NOW).from);
+  ok("localDates คืนคำถามที่ตัดคำบอกเวลาออกแล้ว",
+    M.localDates("หาข่าวฝุ่นเดือนที่แล้ว", NOW).rest === "หาข่าวฝุ่น",
+    M.localDates("หาข่าวฝุ่นเดือนที่แล้ว", NOW).rest);
+
+  // โมเดลเล็กชอบครอบ ```json และใส่จุลภาคเกิน — ต้องแกะได้ ไม่ใช่ทิ้งคำตอบทั้งก้อน
+  ok("แกะ JSON ที่ครอบด้วย ```json ได้", M.parseJSON('```json\n{"terms":["ก"]}\n```')?.terms?.[0] === "ก");
+  ok("แกะ JSON ที่มีจุลภาคเกินได้", M.parseJSON('{"terms":["ก",],}')?.terms?.[0] === "ก");
+  ok("แกะ JSON ที่มีข้อความพ่วงหน้า-หลังได้", M.parseJSON('นี่คือคำตอบ {"terms":["ปลา"]} ครับ')?.terms?.[0] === "ปลา");
+  ok("ไม่มี JSON เลย = ยอมแพ้ ไม่เดา", M.parseJSON("ขอโทษครับ ผมไม่เข้าใจ") === null);
+
+  // 🔑 กุญแจ Claude เป็นของเสริม — ไม่ใส่ก็ต้องทำงานเหมือนเดิม และห้ามหลุดลง repo
+  const api = fs.readFileSync(new URL("../functions/api/archives/ask.js", import.meta.url), "utf8");
+  ok("อ่านกุญแจจาก env เท่านั้น", /env\.ANTHROPIC_API_KEY/.test(api));
+  ok("🚫 ไม่มีกุญแจจริงฝังอยู่ในโค้ด", !/sk-ant-[A-Za-z0-9-]{10}/.test(api));
+  ok("ไม่มีกุญแจ = ไม่ถือว่าพัง แค่ไม่ได้เปิดใช้", /if \(!key\) return \{ obj: null, why: "" \}/.test(api));
+  ok("มีทาง Cloudflare สำรองไว้เสมอ", /PLAN_MODELS/.test(api) && /env\.AI\.run/.test(api));
+  // ⚠️ ชื่อรุ่นห้ามมีวันที่ต่อท้าย — เติมแล้วกลายเป็นชื่อที่ไม่มีอยู่จริง แล้วยิงไม่ผ่านทุกครั้ง
+  const mdl = api.match(/ANTHROPIC_DEFAULT_MODEL = "([^"]+)"/);
+  ok("ตั้งรุ่นตั้งต้นไว้", !!mdl, "หาไม่เจอ");
+  ok("🚫 ชื่อรุ่นไม่มีวันที่ต่อท้าย", mdl && !/-\d{8}$/.test(mdl[1]), mdl && mdl[1]);
+  ok("ใช้ haiku ตามที่เจ้าของเลือก", mdl && mdl[1] === "claude-haiku-4-5", mdl && mdl[1]);
+
+  // 🐞 เจ้าของเจอจริง: "raw.replace is not a function" — คำตอบไม่ได้เป็นสตริงเสมอไป
+  //    แล้ว error หลุดออกไปทั้งฟังก์ชัน = โมเดลสำรองไม่มีวันได้ลอง
+  ok("คำตอบเป็นสตริง", M.aiText({ response: "hi" }) === "hi");
+  ok("คำตอบเป็น object = แปลงเป็น JSON ให้ ไม่ใช่พัง", M.aiText({ response: { terms: ["ปลา"] } }).includes("ปลา"));
+  ok("คำตอบห่อใน result อีกชั้น", M.aiText({ result: { response: "ok" } }) === "ok");
+  ok("ไม่มีอะไรเลยก็ไม่พัง", M.aiText(null) === "" && M.aiText({}) === "");
+
+  // ⏰ ต้องบอกวันนี้ให้โมเดลรู้ ไม่งั้น "เดือนที่แล้ว" แปลงเป็นวันที่ไม่ได้
+  ok("วันที่ไทยเป็นรูปแบบ YYYY-MM-DD", /^\d{4}-\d{2}-\d{2}$/.test(M.todayTH()));
+  const jan = M.monthRangeTH(-1, Date.parse("2026-01-15T10:00:00Z"));
+  ok("ถอยเดือนข้ามปีได้", jan.from === "2025-12-01" && jan.to === "2025-12-31", JSON.stringify(jan));
+  const feb = M.monthRangeTH(0, Date.parse("2024-02-10T10:00:00Z"));
+  ok("รู้ว่าปีอธิกสุรทินเดือนกุมภามี 29 วัน", feb.to === "2024-02-29", feb.to);
+}
+
+console.log(`\n${fail === 0 ? "✅ ผ่านหมด" : "❌ ตก"} — ผ่าน ${pass} · ตก ${fail}`);
+await browser.close();
+process.exit(fail ? 1 : 0);

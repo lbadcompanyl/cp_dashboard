@@ -62,12 +62,36 @@ jobs:
           TEST_BROWSER: ${{ matrix.browser }}
           TZ: Asia/Bangkok # sheetorder.mjs ต้องใช้ ไม่งั้นเรียงวันผิด
         run: |
+          # ⚠️ ต้องตั้งเอง — shell ปริยายของ Actions ไม่ได้เปิด pipefail ให้
+          #    ไม่ตั้ง = สถานะของ `node ... | tee` มาจาก tee ซึ่งสำเร็จเสมอ → เทสต์ตกแต่รายงานว่าผ่าน
+          set -o pipefail
           fails=""
+          mkdir -p /tmp/testlogs
           for f in *.mjs; do
             [ "$f" = "browser.mjs" ] && continue
             echo "─────────── $f ───────────"
-            if timeout 300 node "$f"; then :; else fails="$fails $f"; fi
+            if timeout 300 node "$f" 2>&1 | tee "/tmp/testlogs/$f.log"; then :; else fails="$fails $f"; fi
           done
           echo
-          if [ -n "$fails" ]; then echo "❌ ตก:$fails"; exit 1; fi
+          if [ -n "$fails" ]; then
+            # ⚠️ **สรุปข้อที่ตกซ้ำอีกครั้ง "ท้ายสุด" — จำเป็น ไม่ใช่ของฟุ่มเฟือย**
+            #    เครื่องมืออ่าน log ของ GitHub ให้มาแต่ **ท้ายไฟล์** (ตัดที่ ~5,000 ตัวอักษร)
+            #    ไฟล์ที่ตกมักรันตั้งแต่ต้น ๆ (เรียงตามตัวอักษร) รายละเอียดจึงอยู่ไกลเกินจะเห็น
+            #    เคยเสียเวลาไล่ archives.mjs เพราะเห็นแต่บรรทัด "❌ ตก:" ที่ไม่บอกอะไรเลย
+            echo "══════════ รายละเอียดข้อที่ตก ══════════"
+            for f in $fails; do
+              echo "── $f"
+              # ⚠️ **ไม่มี ❌ ไม่ได้แปลว่าไม่มีอะไรผิด** — แปลว่าไฟล์นั้น "พังกลางทาง"
+              #    (โยน error / หมดเวลา) ไม่ใช่ข้อทดสอบตก จึงไม่มีบรรทัด ❌ ให้ grep เจอ
+              #    รอบแรกที่ทำตัวสรุปนี้ พิมพ์แต่ชื่อไฟล์เปล่าๆ เพราะลืมกรณีนี้
+              if grep -q '❌' "/tmp/testlogs/$f.log"; then
+                grep -n -B2 '❌' "/tmp/testlogs/$f.log" | tail -60
+              else
+                echo "   (ไม่มีข้อที่ตก = พังกลางทาง — ท้าย log ของไฟล์นี้:)"
+                tail -40 "/tmp/testlogs/$f.log"
+              fi
+            done
+            echo
+            echo "❌ ตก:$fails"; exit 1
+          fi
           echo "✅ ผ่านหมด"
