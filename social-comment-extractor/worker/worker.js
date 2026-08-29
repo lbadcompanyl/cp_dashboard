@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 15;
+const WORKER_VER = 16;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -354,6 +354,11 @@ async function analyze(opts, env) {
 
   /* คงรูปแบบเดิมไว้ด้วย เพื่อให้หน้าเว็บรุ่นก่อนที่ยังอยู่บน production ไม่พัง
      🚫 ไม่มี not_related อีกแล้ว (นิยามใหม่: ไม่แตะ CP = Neutral) จึงคืน 0 เสมอ */
+  /* 🐞 แถบสรุปกับรายการ audit ต้องมาจาก "แกนเดียวกัน" เสมอ
+     เจอจริง 28 ส.ค. 2026: โหมดอารมณ์รวมโชว์ ลบ 20 แต่รายการข้างล่างมี ลบ 7
+     เพราะแถบสรุปใช้ overall_cred ส่วน audit ฮาร์ดโค้ดไว้ที่ sentiment_cp
+     → ต้องเลือก key ที่เดียว แล้วใช้ตัวนั้นทั้งคู่ */
+  const LENS_KEY = target === "cp" ? "sentiment_cp" : "overall_cred";
   const sentiment = target === "cp" ? lenses.cp : lenses.overall;
   const not_related = 0;
   logLine(`แกนต่อ CP → บวก ${lenses.cp.positive} · กลาง ${lenses.cp.neutral} · ลบ ${lenses.cp.negative}`);
@@ -361,7 +366,7 @@ async function analyze(opts, env) {
   logLine(`ประชด ${sarcasm_count} รายการ`);
 
   // audit รายคอมเมนต์ (ข้อความ + ผลทั้ง 2 แกน) สำหรับตรวจบนจอ — ไม่รวมชื่อผู้คอมเมนต์
-  const labels = two.map(r => String(r.sentiment_cp || "neutral").toLowerCase());
+  const labels = two.map(r => String(r[LENS_KEY] || "neutral").toLowerCase());
   const audit = texts.map((t, i) => ({
     text: String(t).replace(/\s+/g, " ").slice(0, 220),
     sentiment: labels[i],                                   // ของเดิม (หน้าเก่ายังอ่านคีย์นี้)
