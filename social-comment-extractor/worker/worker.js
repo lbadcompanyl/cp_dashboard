@@ -9,46 +9,303 @@
  *   - TikTok  : ScrapeCreators /v1/tiktok/video/comments     env: SCRAPECREATORS_API_KEY
  *
  * Sentiment : Claude Messages API                            env: ANTHROPIC_API_KEY
- *   default model = claude-haiku-4-5 (เหมาะกับงานจัดหมวดจำนวนมาก + ประหยัด)
- *   ตั้ง env CLAUDE_MODEL=claude-opus-5 เพื่อความแม่นสูงสุด (แพงกว่า)
+ *   default model = claude-opus-5 (ตัวเดียวที่ผ่านเกณฑ์ความแม่น — ดู BASELINE.md)
+ *   ตั้ง env CLAUDE_MODEL=claude-haiku-4-5 ถ้าต้องการประหยัดและยอมรับความแม่นที่ต่ำลง
  *
  * ออกแบบ aggregate-first: Worker ไม่จัดเก็บ (persist) อะไรทั้งสิ้น —
  * ดึง → วิเคราะห์ในหน่วยความจำ → คืนเฉพาะภาพรวม (ชื่อผู้คอมเมนต์ถูกตัดออกโดย default)
  */
 
-const DEFAULT_MODEL = "claude-haiku-4-5";
+/* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
+   เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
+   (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
+const WORKER_VER = 19;
+
+/* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
+   เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
+   วัดจริง 6 รอบกับชุดเฉลย 475 ข้อ: opus 91.1-94.0% · haiku 65.1-79.5% (ดู BASELINE.md)
+   ⚠️ ต้นทุน ~$0.36 ต่อ 100 คอมเมนต์ (haiku ~$0.07) — แพงกว่า 5 เท่า แต่ haiku ไม่ผ่านเกณฑ์ */
+const DEFAULT_MODEL = "claude-opus-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const CHUNK = 40;            // จำนวนคอมเมนต์ต่อ 1 คำขอ Claude (ตี sentiment)
 const SYNTH_SAMPLE = 120;    // จำนวนคอมเมนต์ที่ส่งให้ Claude สรุป/หา keyword
 
 /* ============================================================
- * 🎓 ตัวอย่างสอน AI สำหรับโหมด "วัดต่อ CP" (few-shot)
+ * 🎯 ตัวจัดหมวด "2 แกน" — rubric ฉบับที่เจ้าของเคาะ 26 ส.ค. 2026
  * ------------------------------------------------------------
- * เกณฑ์เต็มอยู่ที่ RUBRIC-CP.md — ตรงนี้คือตัวอย่างที่ส่งให้ AI ดูทุกครั้ง
+ *   แกน 1 sentiment_cp  = รู้สึกยังไงกับแบรนด์ CP โดยเฉพาะ
+ *   แกน 2 overall_cred  = อารมณ์รวม + ความน่าเชื่อของเนื้อข่าว
+ *   is_sarcasm          = 1 เมื่อใช้คำบวกแต่ความหมายด่า
  *
- * ✏️ วิธีเพิ่ม: label คอมเมนต์จริงใน Excel (ปุ่ม audit) แล้วเอาเคสที่ AI เคยตอบผิด
- *    มาใส่ที่นี่ — เน้นเคสยาก (ประชด/ชื่อลวง/ด่าปลาไม่ได้ด่า CP) ไม่ต้องใส่เคสง่าย
- * ⚠️ ควรคละป้ายให้ครบทั้ง 4 แบบ ถ้าใส่แต่ negative โมเดลจะเอนไปตอบ negative รัว
- * ⚠️ อย่าใส่เยอะเกิน ~40 อัน (เปลืองโทเคนทุก batch) — เอาเฉพาะที่สอนอะไรใหม่จริงๆ
+ * 🚫 **ไม่มี not_related แล้ว** — "ไม่แตะ CP" = Neutral ของแกน 1
+ *    (นิยามใหม่ตกลงแล้ว ห้ามเปลี่ยนเอง — ดู README ของชุด dataset)
+ *
+ * ⚠️ ตัวอย่าง few-shot ทุกข้อ **ต้องไม่อยู่ใน eval set** ไม่งั้นเป็นข้อสอบรั่ว
+ *    ตัวเลขวัดผลจะสวยเกินจริง · รอบแรกเคยรั่ว 5 จาก 14 ข้อ (ตรงเป๊ะ 1 + แก้คำนิดหน่อย 4)
+ *    ทั้ง 5 ข้อถูกเปลี่ยนเป็นเคสจาก split=train + source=real แล้ว
+ * 🚫 ห้ามใช้ข้อที่ source=synthetic เป็นตัวอย่างหลัก — โมเดลจะจำสำนวนที่ถูก generate มา
  * ============================================================ */
-const CP_EXAMPLES = [
-  { t: "ขอบคุณ CP มากที่เอาปลามาแจกให้ทั้งประเทศ 🙏😂", a: "negative" },   // ประชด
-  { t: "ปลาหมอคางดำมันร้ายมาก ต้องเร่งกำจัดให้หมด", a: "not_related" },    // ด่าปลา ไม่ได้ด่า CP
-  { t: "รัฐทำงานช้ามาก ปล่อยให้ลามขนาดนี้", a: "not_related" },            // ด่ารัฐ
-  { t: "CP ต้องออกมารับผิดชอบกับสิ่งที่ทำ", a: "negative" },
-  { t: "โทษเขาไม่ได้หรอก ปลามันเข้ามาหลายทาง", a: "positive" },            // ปกป้อง
-  { t: "CP ออกแถลงการณ์ชี้แจงแล้วนะครับ", a: "neutral" },                  // ข้อเท็จจริง
-  { t: "CP เกี่ยวข้องยังไงเหรอครับ ใครพอทราบบ้าง", a: "neutral" },          // ถาม
-  { t: "เลิกซื้อของเซเว่นกันเถอะ", a: "negative" },                        // แบรนด์ในเครือ
-  { t: "ชื่นชมทีมที่ลงพื้นที่ช่วยชาวบ้านจริงจัง ขอบคุณ CP", a: "positive" },
-  { t: "เมื่อวานไปเดินซีพีเอ็นมา คนเยอะมาก", a: "not_related" },            // ชื่อลวง (Central)
-  { t: "สงสารชาวบ้านมาก เดือดร้อนกันทั้งชุมชน", a: "not_related" },
-  { t: "😡😡😡", a: "not_related" },                                        // ไม่มีเนื้อหา
-  // ── ข้อที่เจ้าของเคาะ 24 ส.ค. 2026 (ดู RUBRIC-CP.md ข้อ 8) ──
-  { t: "ควรตรวจสอบให้ชัดเจนว่า CP เกี่ยวข้องจริงไหม", a: "negative" },       // ตั้งข้อสงสัย = ลบ
-  { t: "ไก่ CP อร่อยดีนะ ซื้อประจำ", a: "positive" },                       // ชมสินค้า = บวก
-  { t: "เจ้าสัวรวยขึ้นทุกปี แต่ชาวบ้านรับกรรม", a: "negative" },             // ไม่เอ่ยชื่อ แต่บริบทชี้ชัด
+const RUBRIC_VER = "v6";
+const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูงสุดต่อ 1 คำขอ /classify (หน้าเว็บเป็นคนวนเอง)
+
+/* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
+   /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
+const MODEL_CHOICES = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
+
+/* ============================================================
+ * 📥 กองรอตรวจ (feedback queue) — ชั้น ② ของระบบเรียนรู้
+ * ------------------------------------------------------------
+ * เจ้าของเคาะดีไซน์ 3 ชั้น 29 ส.ค. 2026:
+ *   ① กดแก้ป้ายบนหน้าเว็บ  → แก้รายงานใบนั้นทันที (ไม่ผ่านที่นี่เลย)
+ *   ② ส่งเข้ากองรอตรวจ     → **ที่นี่** เก็บไว้เฉยๆ ยังไม่มีผลกับใคร
+ *   ③ เอาไปวัดกับชุดสอบ    → ผ่านเกณฑ์ค่อยกลายเป็นกฎจริงในโค้ด (คนทำ ไม่ใช่เครื่อง)
+ *
+ * 🚫 **ห้ามเอาของในกองนี้ไปสอน AI อัตโนมัติเด็ดขาด** — เจ้าของสั่งไว้ชัด
+ *    ถ้าสอนเอง ความแม่นจะเปลี่ยนทุกวันโดยไม่มีใครวัดสักครั้ง แล้ววันหนึ่งจะพบว่าแย่ลง
+ *    มานานโดยไม่รู้ว่าตั้งแต่เมื่อไหร่ (ขัดกฎ "ตัวเลขต้องมาจากผลรันจริง" ของ CLAUDE.md)
+ *    นี่คือ **ตัวกันคนยิงขยะเข้ามาสอนระบบ** ด้วย — POST เปิดไว้ได้เพราะของในกองไม่มีผลกับใคร
+ *
+ * 🔒 ไม่เก็บชื่อ · ไม่เก็บลิงก์โพส — เก็บแค่ข้อความ + ป้ายเดิม/ป้ายใหม่ (เจ้าของเคาะ 29 ส.ค.)
+ * 💧 กฎ KV ของโปรเจกต์: **blob เดียว อ่าน 1 เขียน 1 ต่อคำขอ** ห้ามแตกเป็น key รายใบ
+ * ============================================================ */
+const FB_KEY = "sentiment:feedback";
+const FB_MAX = 500;          // เพดานรายการในกอง — เกินแล้วตัดตัวเก่าสุดทิ้ง
+const FB_MAX_PER_REQ = 60;   // ส่งได้ครั้งละไม่เกินเท่านี้ (กันยิงก้อนใหญ่ถล่ม KV)
+const FB_MAX_TEXT = 400;     // ตัดข้อความยาวๆ ทิ้ง — ตัวอย่างสอน AI ไม่ควรยาวกว่านี้
+const FB_LABELS = ["positive", "neutral", "negative"];
+
+const TWO_LENS_SHOTS = [
+  // ── ด่ารัฐ / ต่างชาติ / วิกฤตลอยๆ — ไม่แตะ CP: แกน 1 ต้องเป็น Neutral เสมอ ──
+  { t: "ข้าราชการถ้าใช้สติปัญญาในทางที่ชอบ ประเทศชาติจะเจริญ ไม่ไหวแล้ววว", cp: "Neutral", oc: "Negative", s: 0 },
+  { t: "ทั่วโลกแตกตื่น แต่หน่วยงานราชการไทย บอกว่าอย่าแตกตื่น นั่งกระดิกตีนรองบ", cp: "Neutral", oc: "Negative", s: 0 },
+  { t: "ไร้คุณภาพ ของจีนอันตรายต่อสัตว์เลี้ยง อาหารปลอมมีเยอะ", cp: "Neutral", oc: "Negative", s: 0 },
+  // ── ประชด — ตีตามความหมายจริง ไม่ใช่ตามคำ ──
+  { t: "ต้องขอบคุณคนนำเข้าปลาหมอคางดำ ทำให้คลองมีแต่ปลาหมอคางดำ กำจัดยังไงก็ไม่หมด", cp: "Negative", oc: "Negative", s: 1 },
+  { t: "มีงนี่สุดยอด ❌ผลตรวจ ✅สรรหาคำแก้ตัวให้นายทุน", cp: "Negative", oc: "Negative", s: 1 },
+  { t: "มีอะไรอีกเยอะ รัฐบาลชุดนี้ ดีย์ๆๆทั้งนั้น", cp: "Neutral", oc: "Negative", s: 1 },
+  { t: "ฟอกขาวชัดๆ เอาข่าวดีมากลบความผิด", cp: "Negative", oc: "Negative", s: 0 },
+  // ── เชียร์ / ปกป้อง ──
+  { t: "ต้อง CP เท่านั้นค่ะ ซื้อเจ้าอื่นแล้วไม่โอเค", cp: "Positive", oc: "Positive", s: 0 },
+  { t: "ขอบคุณเจ้าสัว CPF ที่มีส่วนในวงการกุ้ง", cp: "Positive", oc: "Positive", s: 0 },
+  { t: "ไส้กรอก CP อร่อยดีนะ แต่ราคาขึ้นเยอะ", cp: "Positive", oc: "Positive", s: 0 },
+  { t: "เจ้าสัวแค่รับซื้อ ชาวบ้านต่างหากคือคนเผาคนปลูก", cp: "Positive", oc: "Neutral", s: 0 },
+  // ── สินค้า: ตำหนิเล็กน้อย ≠ ลบ · ถามเฉยๆ ≠ ลบ · ถามเชิงกล่าวหา = ลบ ──
+  /* ถอด "อร่อยนะ แต่เค็มไปนิด" ออก — เป็นสำนวนเดียวกับ eval id 312 (ข้อสอบรั่ว)
+     กฎเรื่องนี้อยู่ในกฎร่วมข้อ 3 อยู่แล้ว ไม่ต้องมีตัวอย่างซ้ำ */
+  { t: "รับซื้อกิโลละเท่าไรครับ", cp: "Neutral", oc: "Neutral", s: 0 },
+  { t: "ปลาหมอคางดำใครนำเข้ามา ใครรับผิดชอบ", cp: "Negative", oc: "Negative", s: 0 },
+  /* ── เพิ่มรอบ 3: ไม่เอ่ยชื่อ CP แต่พูดถึงสิ่งที่โพสนำเสนอ (ข้อ ก.) ──
+     รอบ 2 พลาดกลุ่มนี้มากที่สุด — ชมโครงการ/สินค้าแล้วถูกตีเป็น Neutral */
+  { t: "สนับสนุนตรงจุด ชาวบ้านอุ่นใจ ลูกหลานปลอดภัย ธรรมชาติยั่งยืน", cp: "Positive", oc: "Positive", s: 0 },
+  { t: "ดีมากเลยครับ จับมือกัน ร่วมมือกัน ชูเทคโนโลยี AI ได้ลดต้นทุน", cp: "Positive", oc: "Positive", s: 0 },
+  /* ── เพิ่มรอบ 3: พูดถึงมาตรการ/กฎหมายลอยๆ ไม่ได้ชี้ตัวใคร = Neutral ของแกน 1 ── */
+  { t: "มันอยู่ในอำนาจและหน้าที่ตามกฎหมายของ อย. อาหารที่นำเข้าต้องตรวจให้ครบ", cp: "Neutral", oc: "Neutral", s: 0 },
+  { t: "น้ำปลาที่กินทุกวันนี้ตรวจสอบกันมั่งรึป่าว มันเอาคางดำมาหมักใครจะรู้", cp: "Neutral", oc: "Negative", s: 0 },
+  /* ── เพิ่มรอบ 4: ด่ารัฐ "ที่เอื้อนายทุน" ยังเป็น Negative ต่อ CP ──
+     รอบ 3 พลาดกลุ่มนี้ 6 ใน 14 ข้อ เพราะกฎ "ด่ารัฐ ≠ ด่า CP" ดูดไปเป็น Neutral หมด */
+  { t: "รัฐให้ความร่วมมือกับนายทุน เพื่อมาทำลายประชาชนในช่วงข้าวยากหมากแพง", cp: "Negative", oc: "Negative", s: 0 },
+  { t: "มีหน่วยราชการไหนหรือรัฐบาลชุดไหน กล้างัดข้อ กับ บริษัทผู้นำเข้ามาแล้วปล่อยทิ้ง", cp: "Negative", oc: "Negative", s: 0 },
+  /* ── เพิ่มรอบ 4: เสนอความเห็นว่าควรทำอะไร ≠ ชม CP (กัน ก. ยิงเกิน) ── */
+  { t: "น่าจะเอาไปทำอาหารกุ้ง อาหารปู อาหารปลา อาหารสัตว์ต่างๆ", cp: "Neutral", oc: "Neutral", s: 0 },
+  /* ── เพิ่มรอบ 5 (เจ้าของเจอจากโพสจริง 28 ส.ค. 2026): ด่า "คนคอมเมนต์ด้วยกัน" ที่มาว่า CP
+     = แก้ต่างให้ CP → Positive · โมเดลเห็นคำดุแล้วตีเป็น Negative เพราะไม่ได้ดูว่าด่าใคร */
+  { t: "แค่ 395 มึงไม่ดูกันก่อนค่อยเม้นท์แหะเขาวะ", cp: "Positive", oc: "Neutral", s: 0 },
+  { t: "ฟังคลิปให้จบก่อน", cp: "Positive", oc: "Neutral", s: 0 },
 ];
+
+function systemTwoLens() {
+  const ex = TWO_LENS_SHOTS
+    .map(e => `"${e.t}"\n→ {"cp":"${e.cp}","oc":"${e.oc}","s":${e.s}}`)
+    .join("\n");
+  return [
+    "คุณคือระบบวิเคราะห์ sentiment คอมเมนต์ภาษาไทยเกี่ยวกับเครือ CP / CPF",
+    "วิเคราะห์ทุกคอมเมนต์ตาม 2 แกนพร้อมกัน ตอบเป็น JSON เท่านั้น ห้ามมีข้อความอื่น",
+    "",
+    "═══ แกน 1: cp (ความรู้สึกต่อแบรนด์ CP โดยเฉพาะ) ═══",
+    "• Positive = เชียร์/ปกป้อง/ชม CP หรือสินค้า CP · แก้ต่างให้ CP (โยนผิดให้คนอื่น)",
+    "• Negative = โจมตี/ตำหนิ CP, นายทุน, เจ้าสัว, ต้นตอ, ฟอกขาว, บอยคอต, บ่นราคา/บริการ CP",
+    "• Neutral  = ไม่แตะ CP โดยตรง · ด่ารัฐ/นักการเมือง/ต่างด้าว/จีน · ถามข้อมูล · พูดวิกฤตลอยๆ",
+    "⚠️ ด่ารัฐ ≠ ด่า CP",
+    "",
+    "─── เมื่อคอมเมนต์ไม่ได้เอ่ยชื่อ CP ให้ดู 2 ข้อนี้ต่อ ───",
+    "ก. **ชม/ตำหนิ สิ่งที่เจ้าของโพสทำหรือขาย หรือเปล่า** (โครงการ · สินค้า · กิจกรรมของเขา)",
+    "   ถ้าใช่ ท่าทีต่อสิ่งนั้น = ท่าทีต่อ CP",
+    '   ชม → Positive ("โครงการดีมากค่ะ" · "ขอให้โครงการนี้ยั่งยืน" · "อร่อยมาก")',
+    "   ⚠️ **เฉพาะการชมสิ่งที่เขาทำเท่านั้น** — ถ้าเป็นการ**เสนอความเห็นว่าควรทำอะไร**",
+    "      หรือชมสิ่งอื่นในข่าวที่ไม่ใช่ผลงานของเขา ให้ Neutral",
+    '      ("น่าจะเอาปลามาแปรรูปขาย" · "ส่งเข้าโรงงานสร้างรายได้สิ" · "ปลานี่ก็กินได้นะ อร่อย")',
+    "",
+    "ข. **ชี้ตัวคนทำหรือเปล่า** — ผู้นำเข้า · ต้นตอ · คนปล่อยปลา · เจ้าสัว · นายทุน · บริษัทที่นำเข้า",
+    "   ถ้าใช่ → **Negative** (คอมเมนต์เหล่านี้อยู่ใต้ข่าวที่เครือถูกกล่าวหาอยู่แล้ว)",
+    '   ("ไอ้ตัวต้นเหตุเงียบกริบ" · "คนที่นำเข้ามาลอยตัว" · "ใครนำเข้ามา ใครรับผิดชอบ")',
+    "   ⚠️ **ด่ารัฐไปพร้อมกันด้วย ก็ยังเป็น Negative** ถ้าประโยคชี้ว่ารัฐ",
+    "      เอื้อ/อุ้ม/ปกป้อง/ไม่กล้าแตะ นายทุนหรือผู้นำเข้า",
+    '      ("รัฐกลัวนายทุน" · "ราชการช่วยนายทุน" · "ไม่มีใครกล้างัดข้อกับบริษัทผู้นำเข้า")',
+    '      กฎ "ด่ารัฐ ≠ ด่า CP" ใช้กับประโยคที่**ด่ารัฐล้วนๆ ไม่มีนายทุนอยู่ในนั้น**เท่านั้น',
+    "",
+    "ค. **เป้าของคอมเมนต์คือ \"คนคอมเมนต์ด้วยกัน\" หรือเปล่า** — ไม่ใช่ CP และไม่ใช่รัฐ",
+    "   ถ้าใช่ ให้ดูว่าเขาเข้าข้างฝั่งไหน แล้วตีตามฝั่งนั้น:",
+    "   • ตำหนิคนที่มาด่าโดยยังไม่ดู/ไม่ฟังให้จบ · บอกให้ไปดูคลิปก่อนค่อยเม้นท์",
+    "     · เถียงแทน CP · หาว่าคนอื่นเข้าใจผิด → **Positive** (เป็นการแก้ต่างให้ CP)",
+    "   • เชียร์คนที่ด่า CP · เสริมคนที่โจมตี → Negative",
+    '   ⚠️ **คำหยาบ/น้ำเสียงดุ ไม่ได้แปลว่า Negative ต่อ CP** — ต้องดูว่า "ด่าใคร"',
+    '     ("แค่ 395 มึงไม่ดูกันก่อนค่อยเม้นท์" = ดุใส่คนคอมเมนต์ที่ยังไม่ดูคลิป → Positive)',
+    '     ("ฟังคลิปให้จบก่อน" = บอกคนอื่นให้ดูให้จบก่อนตัดสิน → Positive)',
+    "",
+    "⚠️ ไม่เข้าทั้ง ก. ข. และ ค. ให้ Neutral — อย่าเดาเอาเอง โดยเฉพาะ:",
+    '   พูดถึงมาตรการ/กฎหมาย/การตรวจสอบลอยๆ ("ยึดใบประกอบโรงงานสั่งปิดไปเลย" · "ตรวจสารพิษหรือยัง")',
+    '   ด่าโรงงาน/ทุน/ความโลภแบบทั่วไปที่ไม่ได้ชี้ว่าใคร ("ควรมีกฎหมายควบคุมผลกำไร")',
+    "   → พวกนี้เป็น Neutral ของแกน 1 (แต่แกน 2 มักเป็น Negative)",
+    "",
+    "═══ แกน 2: oc (อารมณ์รวม + ความน่าเชื่อของ narrative) ═══",
+    "• พื้นฐาน = อารมณ์รวม (โกรธ/ไม่พอใจ=Negative, ชอบ/เห็นด้วย=Positive, เฉย/ถาม=Neutral)",
+    "• กฎพิเศษ: ถ้าสงสัยความน่าเชื่อ / ไม่เชื่อข้อมูล / มองว่าฟอกข่าว / บอกว่าข้อมูลผิด → บังคับ Negative",
+    "",
+    "═══ กฎร่วม ═══",
+    '1. ตี "ความหมายจริง" ไม่ใช่คำผิวเผิน — ประชด ให้ s=1 และตีป้ายตามความหมายจริง',
+    "   ⚠️ ประชด = **ใช้ถ้อยคำเชิงบวกแต่ความหมายด่า** เท่านั้น",
+    '   ด่าตรงๆ · เยาะเย้ย · 🤣😂 · "5555" · น้ำเสียงหมั่นไส้ **ไม่ใช่ประชด** ให้ s=0',
+    '   ("ประกาศจับเจ้าสัวดีกว่า🤣" = ด่าตรงๆ s=0 · "ขอบคุณที่เอาปลามาแจก" = ประชด s=1)',
+    "   ⚠️ s เป็นแค่ธงกำกับ **ห้ามให้ s ไปเปลี่ยนป้ายของ 2 แกน** ตัดสิน 2 แกนจากความหมายเสมอ",
+    '2. กำกวม / อวยแยกไม่ออก / เงื่อนไข "ถ้า…ก็ดี" = Neutral (ไม่เดา)',
+    "3. สินค้า: อร่อยแต่ตำหนิเล็กน้อย (เค็ม/เลี่ยน) = Neutral · แต่ปนเปื้อน/ชำรุด/เน่าเสีย = Negative",
+    '4. คำถามเชิงกล่าวหา ("เจ้าสัวไหนรับซื้อ", "ใครนำเข้า") = Negative',
+    "5. สงสัยความปลอดภัยสินค้า: ระบุ CP ชัด → cp=Negative · ไม่ระบุ CP → cp=Neutral แต่ oc=Negative",
+    "",
+    "═══ ตัวอย่างเคสจริง (โดยเฉพาะที่ 2 แกนให้ค่าต่างกัน) ═══",
+    ex,
+    "",
+    "═══ รูปแบบคำตอบ ═══",
+    'ตอบเป็น JSON array ล้วน เรียงตามลำดับคอมเมนต์ที่ให้มา ความยาวต้องเท่ากับจำนวนคอมเมนต์',
+    '[{"i":1,"cp":"Neutral","oc":"Negative","s":0}, ...]',
+    'cp และ oc ใช้ได้เฉพาะ "Positive" "Negative" "Neutral" · s เป็น 0 หรือ 1 เท่านั้น',
+  ].join("\n");
+}
+
+/** บังคับให้ค่าที่โมเดลตอบกลับมาอยู่ในชุดที่ใช้ได้เสมอ */
+function normLens(v) {
+  const s = String(v || "").trim().toLowerCase();
+  if (s.startsWith("pos")) return "Positive";
+  if (s.startsWith("neg")) return "Negative";
+  return "Neutral";               // ตอบเพี้ยน/ว่าง = Neutral (ไม่เดาเป็นลบ)
+}
+
+/**
+ * ตี 2 แกนให้คอมเมนต์ชุดหนึ่ง — คืน array ยาวเท่า texts เสมอ
+ * ⚠️ ห้ามให้ความยาวไม่ตรง ไม่งั้นผลจะเลื่อนไปทั้งชุดแล้วตัวเลขวัดผลผิดโดยไม่มีอะไรเตือน
+ */
+async function classifyTwoLens(texts, env, acc, context) {
+  const numbered = texts
+    .map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`)
+    .join("\n");
+  const ctx = context ? `บริบทโพสต์: "${String(context).replace(/\s+/g, " ").slice(0, 300)}"\n\n` : "";
+  /* เพดานโทเคนต้องโตตามจำนวนข้อ — ตั้งไว้ตายตัวแล้วโมเดลที่เขียนยาวกว่าจะถูกตัดกลางคัน
+     ⚠️ เจอจริง 27 ส.ค. 2026: opus โดนตัดที่ 2,600 → JSON พัง → ตกไปเป็น Neutral ทั้งชุด
+        แล้วรายงานออกมาเป็น "ความแม่น 10%" ทั้งที่โมเดลไม่ได้ตอบผิดสักข้อ */
+  /* ⚠️ เพดานต้องเผื่อ "ส่วนที่ไม่ใช่คำตอบ" ด้วย — วัดจริง 27 ส.ค. 2026:
+     ก้อน 6 ข้อ ต้องการ JSON จริงแค่ ~150 โทเคน แต่เพดาน 1,140 ยังไม่พอ
+     แปลว่าโมเดลบางตัว (opus) เขียนความคิด/คำนำก่อนถึง JSON ซึ่ง haiku/sonnet ไม่ทำ
+     จึงต้องมีส่วนเผื่อคงที่ก้อนใหญ่ ไม่ใช่คิดตามจำนวนข้ออย่างเดียว */
+  const acc2 = acc || {};
+  const prompt = ctx + "คอมเมนต์:\n" + numbered;
+  const sys = systemTwoLens();
+  let budget = Math.min(12000, 60 * texts.length + 4000);
+  let out = await callClaude(env, sys, prompt, budget, acc2);
+
+  /* ถูกตัดกลางคัน = ลองใหม่อีกครั้งด้วยเพดาน 2 เท่า ก่อนจะยอมแพ้
+     ดีกว่าโยน error ทันที เพราะความยาวของคำนำเดาไม่ได้และต่างกันไปในแต่ละก้อน */
+  if (acc2.stop_reason === "max_tokens") {
+    budget = Math.min(20000, budget * 2);
+    out = await callClaude(env, sys, prompt, budget, acc2);
+  }
+  if (acc2.stop_reason === "max_tokens") {
+    throw new Error(`คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว — ลดจำนวนข้อต่อก้อน`);
+  }
+
+  const arr = extractJsonArray(out) || [];
+  /* 🚫 แกะไม่ได้เลย = ต้องโยน error ห้ามคืน Neutral ทั้งชุด
+     "ไม่รู้" กับ "กลาง" ไม่ใช่เรื่องเดียวกัน — คืน Neutral จะกลายเป็นตัวเลขที่ดูเหมือนผลจริง */
+  if (!arr.length) {
+    throw new Error("แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160));
+  }
+
+  // เรียงตาม i ที่โมเดลตอบมา ถ้ามี — กันกรณีสลับลำดับ
+  const byIdx = new Map();
+  for (const o of arr) {
+    if (o && typeof o === "object" && Number.isFinite(+o.i)) byIdx.set(+o.i, o);
+  }
+  return texts.map((_, i) => {
+    const o = byIdx.get(i + 1) || arr[i] || {};
+    return {
+      sentiment_cp: normLens(o.cp ?? o.sentiment_cp),
+      overall_cred: normLens(o.oc ?? o.overall_cred),
+      is_sarcasm: (o.s ?? o.is_sarcasm) ? 1 : 0,
+      missing: byIdx.has(i + 1) || arr[i] ? undefined : true,   // โมเดลไม่ได้ตอบข้อนี้
+    };
+  });
+}
+
+/** ทำความสะอาด 1 รายการที่ส่งเข้ากอง — ไม่ผ่านเกณฑ์คืน null (ทิ้งเงียบ ไม่ใช่เก็บของเสีย) */
+function fbClean(o) {
+  if (!o || typeof o !== "object") return null;
+  const text = String(o.text || "").replace(/\s+/g, " ").trim().slice(0, FB_MAX_TEXT);
+  const was = String(o.was || "").toLowerCase();
+  const now = String(o.now || "").toLowerCase();
+  if (!text) return null;
+  if (!FB_LABELS.includes(was) || !FB_LABELS.includes(now)) return null;
+  if (was === now) return null;                                  // ไม่ได้แก้อะไร ไม่ต้องเก็บ
+  return {
+    text, was, now,
+    target: o.target === "cp" ? "cp" : "overall",                // แก้แกนไหน
+    model: String(o.model || "").slice(0, 40),
+    ver: Number.isFinite(+o.ver) ? +o.ver : null,
+    rubric: String(o.rubric || "").slice(0, 10),
+    at: new Date().toISOString().slice(0, 10),                   // วันที่พอ ไม่ต้องละเอียดถึงวินาที
+  };
+}
+
+/** POST /feedback — ต่อของใหม่เข้ากอง · GET /feedback?key=… — อ่านกอง (ต้องมีกุญแจ) */
+async function feedbackRoute(request, url, env) {
+  const kv = env.FEEDBACK_KV;
+
+  if (request.method === "GET") {
+    /* 🔒 อ่านกอง = เห็นข้อความคอมเมนต์ที่สะสมไว้ทั้งหมด จึงต้องมีกุญแจเสมอ
+       ⚠️ ไม่ได้ตั้ง FEEDBACK_KEY ไว้ = **ปิด** ไม่ใช่เปิดให้ทุกคน
+          (ค่าปริยายที่ปลอดภัยกว่า — ลืมตั้งแล้วข้อมูลหลุดเป็นเรื่องที่กู้ไม่ได้) */
+    if (!env.FEEDBACK_KEY) return json({ error: "read_disabled", detail: "ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare" }, 403);
+    const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
+    if (given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    if (!kv) return json({ ok: true, stored: false, reason: "no_kv", items: [] });
+    const items = JSON.parse((await kv.get(FB_KEY)) || "[]");
+    if (url.searchParams.get("clear") === "1") {
+      await kv.put(FB_KEY, "[]");
+      return json({ ok: true, cleared: items.length, items: [] });
+    }
+    return json({ ok: true, ver: WORKER_VER, count: items.length, max: FB_MAX, items });
+  }
+
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: "bad_json" }, 400); }
+  const raw = Array.isArray(body?.items) ? body.items.slice(0, FB_MAX_PER_REQ) : [];
+  const incoming = raw.map(fbClean).filter(Boolean);
+  if (!incoming.length) return json({ error: "no_items" }, 400);
+
+  /* ไม่มี KV = บอกตรงๆ ว่าไม่ได้เก็บ **ห้ามตอบ ok เฉยๆ**
+     ไม่งั้นหน้าเว็บจะขึ้นว่า "ส่งแล้ว" ทั้งที่ไม่มีอะไรถูกเก็บเลย (กับดัก "ไม่รู้ ≠ สำเร็จ") */
+  if (!kv) return json({ ok: false, stored: false, reason: "no_kv", detail: "ยังไม่ได้ผูก KV (FEEDBACK_KV) ที่ Cloudflare" }, 200);
+
+  const cur = JSON.parse((await kv.get(FB_KEY)) || "[]");        // อ่าน 1 ครั้ง
+  const seen = new Set(cur.map(x => x.target + "\n" + x.text));
+  let added = 0;
+  for (const it of incoming) {
+    const k = it.target + "\n" + it.text;
+    if (seen.has(k)) continue;                                   // ส่งซ้ำไม่ทำให้กองบวม
+    seen.add(k); cur.push(it); added++;
+  }
+  const kept = cur.slice(-FB_MAX);                               // เกินเพดาน = ตัดตัวเก่าสุดทิ้ง
+  if (added) await kv.put(FB_KEY, JSON.stringify(kept));         // เขียน 1 ครั้ง (ไม่มีของใหม่ = ไม่เขียนเลย)
+  return json({ ok: true, stored: true, added, skipped: incoming.length - added, total: kept.length });
+}
 
 export default {
   async fetch(request, env) {
@@ -57,10 +314,75 @@ export default {
 
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") {
-      return cors(json({ ok: true, service: "comment-sentiment", model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
+      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, rubric: RUBRIC_VER, models: MODEL_CHOICES, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
+    }
+
+    /* ชั้น ② ของระบบเรียนรู้ — เก็บที่คนแก้ป้ายไว้ ยังไม่มีผลกับการตัดสินของ AI
+       ดูกฎทั้งหมดที่หัวข้อ FB_KEY ข้างบน และที่ FEEDBACK.md */
+    if (url.pathname === "/feedback" && (request.method === "POST" || request.method === "GET")) {
+      try {
+        return cors(await feedbackRoute(request, url, env), origin);
+      } catch (e) {
+        return cors(json({ error: "feedback_failed", detail: String(e && e.message || e) }, 500), origin);
+      }
+    }
+
+    /* ดึงคอมเมนต์ออกมาเฉยๆ ไม่ตี sentiment — ไว้เอาไป label เพิ่มเป็นชุดวัดผล
+       ⚠️ กินเครดิต ScrapeCreators (ของที่จ่ายเงิน) แต่ **ไม่แตะโควตา Claude เลย**
+       🔒 ไม่คืนชื่อผู้คอมเมนต์ — ตัดออกตั้งแต่ที่นี่ ไม่ใช่ไปตัดที่หน้าเว็บ */
+    if (request.method === "POST" && url.pathname === "/comments") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const link = String(body?.url || "").trim();
+      const platform = detectPlatform(link);
+      if (!link || !platform) return cors(json({ error: "bad_url" }, 400), origin);
+      const limit = Math.max(10, Math.min(2000, +body.limit || 500));
+      try {
+        const got = platform === "youtube"
+          ? await fetchYouTube(link, limit, env)
+          : await fetchScrapeCreators(platform, link, limit, env);
+        return cors(json({
+          ok: true, ver: WORKER_VER, platform,
+          post_title: got.post_title || "",
+          count: got.comments.length,
+          reply_count: got.comments.filter(c => c.is_reply).length,
+          credits_remaining: got.credits_remaining ?? null,
+          comments: got.comments.map(c => ({
+            text: String(c.text || "").replace(/\s+/g, " ").trim(),
+            likes: c.likes || 0, replies: c.replies || 0, time: c.time || "",
+            is_reply: c.is_reply ? 1 : 0,
+          })).filter(c => c.text),
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "fetch_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
+
+    /* ตี 2 แกนให้ข้อความดิบที่ส่งมาตรงๆ — ใช้โดยหน้าวัดความแม่น (/issue/sentiment-eval.html)
+       ⚠️ ไม่แตะ ScrapeCreators เลย จึงไม่กินเครดิตที่จ่ายเงิน · ใช้แต่โควตา Claude
+       ⚠️ หน้าเว็บเป็นคนวนทีละก้อน ที่นี่รับได้ครั้งละไม่เกิน CLASSIFY_MAX
+          (ถ้าให้ Worker วนเองทั้ง 475 ข้อจะชนเพดานเวลาของ Cloudflare) */
+    if (request.method === "POST" && url.pathname === "/classify") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const texts = Array.isArray(body?.texts) ? body.texts : null;
+      if (!texts || !texts.length) return cors(json({ error: "no_texts" }, 400), origin);
+      if (texts.length > CLASSIFY_MAX) {
+        return cors(json({ error: "too_many", max: CLASSIFY_MAX, got: texts.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const acc = { input: 0, output: 0 };
+      try {
+        const model = MODEL_CHOICES.includes(body.model) ? body.model : (env.CLAUDE_MODEL || DEFAULT_MODEL);
+        const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context);
+        const missing = results.filter(r => r.missing).length;
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, missing, results, tokens: acc }), origin);
+      } catch (e) {
+        return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
     }
     /* 🚫 เคยมี `/debugmeta` ตรงนี้ — ถอดออกทั้งเส้นทางและฟังก์ชันแล้ว (เจ้าของสั่ง 20 ส.ค. 2026)
        ตอนนั้นทำไว้ไล่ปัญหาเรื่อง map field รูปปก ซึ่งแก้จบไปแล้ว
@@ -108,7 +430,9 @@ async function analyze(opts, env) {
 
   const comments = collected.comments;
   if (!comments.length) throw new Error("ไม่พบคอมเมนต์ (โพสอาจปิดคอมเมนต์ หรือดึงไม่ได้)");
-  logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ`);
+  const reply_count = comments.filter(c => c.is_reply).length;
+  logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ` +
+    (reply_count ? ` (เป็น reply ${reply_count})` : " (ไม่มี reply ติดมา)"));
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
   const texts = comments.map(c => c.text).filter(Boolean);
@@ -116,24 +440,59 @@ async function analyze(opts, env) {
   // ตัวสะสมการใช้ token ของ Claude
   const tokens = { input: 0, output: 0, rate_remaining: null };
 
-  // 2) ตี sentiment ทีละ chunk ด้วย Claude
-  logLine(`ตี sentiment (${target === "cp" ? "ท่าทีต่อเครือ CP" : "อารมณ์รวม"}) ด้วย ${env.CLAUDE_MODEL || DEFAULT_MODEL} · ${Math.ceil(texts.length / CHUNK)} batch (batch ละ ${CHUNK})`);
-  const labels = await classifySentiment(texts, env, tokens, logLine, target);
-  const sentiment = { positive: 0, neutral: 0, negative: 0 };
-  let not_related = 0;
-  for (const l of labels) { if (l === "not_related") not_related++; else if (sentiment[l] != null) sentiment[l]++; }
-  logLine(`รวมผล → บวก ${sentiment.positive} · กลาง ${sentiment.neutral} · ลบ ${sentiment.negative}` +
-    (target === "cp" ? ` · ไม่เกี่ยวกับ CP ${not_related}` : ""));
+  /* 2) ตี sentiment ด้วยตัวจัดหมวด 2 แกน (rubric v5 — วัดได้ 94% กับ opus)
+        ⚠️ ตัวเดียวกับที่หน้าวัดความแม่นใช้ ห้ามแยกเป็นคนละชุด ไม่งั้นตัวเลขที่วัดไว้ใช้อ้างอิงไม่ได้ */
+  const modelUsed = env.CLAUDE_MODEL || DEFAULT_MODEL;
+  logLine(`ตี sentiment 2 แกน ด้วย ${modelUsed} · ${Math.ceil(texts.length / CHUNK)} batch (batch ละ ${CHUNK})`);
+  const two = [];
+  for (let i = 0; i < texts.length; i += CHUNK) {
+    const batch = texts.slice(i, i + CHUNK);
+    const part = await classifyTwoLens(batch, env, tokens, opts.post_context || collected.post_title || "");
+    two.push(...part);
+    logLine(`  batch ${Math.floor(i / CHUNK) + 1}/${Math.ceil(texts.length / CHUNK)} เสร็จ (${batch.length} คอมเมนต์)`);
+  }
 
-  // audit รายคอมเมนต์ (ข้อความ + ผล) สำหรับตรวจความถูกต้องบนจอ — ไม่รวมชื่อผู้คอมเมนต์
-  const audit = texts.map((t, i) => ({ text: String(t).replace(/\s+/g, " ").slice(0, 220), sentiment: labels[i] }));
+  const count = (key) => {
+    const c = { positive: 0, neutral: 0, negative: 0 };
+    for (const r of two) {
+      const k = String(r[key] || "").toLowerCase();
+      if (c[k] != null) c[k]++;
+    }
+    return c;
+  };
+  const lenses = { cp: count("sentiment_cp"), overall: count("overall_cred") };
+  const sarcasm_count = two.filter(r => r.is_sarcasm === 1).length;
 
-  // 3) สรุป + keyword + ตัวอย่าง (ถอดความ)
-  // โหมด CP: สรุปจากเฉพาะคอมเมนต์ที่เกี่ยวกับ CP (ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ)
+  /* คงรูปแบบเดิมไว้ด้วย เพื่อให้หน้าเว็บรุ่นก่อนที่ยังอยู่บน production ไม่พัง
+     🚫 ไม่มี not_related อีกแล้ว (นิยามใหม่: ไม่แตะ CP = Neutral) จึงคืน 0 เสมอ */
+  /* 🐞 แถบสรุปกับรายการ audit ต้องมาจาก "แกนเดียวกัน" เสมอ
+     เจอจริง 28 ส.ค. 2026: โหมดอารมณ์รวมโชว์ ลบ 20 แต่รายการข้างล่างมี ลบ 7
+     เพราะแถบสรุปใช้ overall_cred ส่วน audit ฮาร์ดโค้ดไว้ที่ sentiment_cp
+     → ต้องเลือก key ที่เดียว แล้วใช้ตัวนั้นทั้งคู่ */
+  const LENS_KEY = target === "cp" ? "sentiment_cp" : "overall_cred";
+  const sentiment = target === "cp" ? lenses.cp : lenses.overall;
+  const not_related = 0;
+  logLine(`แกนต่อ CP → บวก ${lenses.cp.positive} · กลาง ${lenses.cp.neutral} · ลบ ${lenses.cp.negative}`);
+  logLine(`แกนอารมณ์รวม → บวก ${lenses.overall.positive} · กลาง ${lenses.overall.neutral} · ลบ ${lenses.overall.negative}`);
+  logLine(`ประชด ${sarcasm_count} รายการ`);
+
+  // audit รายคอมเมนต์ (ข้อความ + ผลทั้ง 2 แกน) สำหรับตรวจบนจอ — ไม่รวมชื่อผู้คอมเมนต์
+  const labels = two.map(r => String(r[LENS_KEY] || "neutral").toLowerCase());
+  const audit = texts.map((t, i) => ({
+    text: String(t).replace(/\s+/g, " ").slice(0, 220),
+    sentiment: labels[i],                                   // ของเดิม (หน้าเก่ายังอ่านคีย์นี้)
+    sentiment_cp: two[i]?.sentiment_cp,
+    overall_cred: two[i]?.overall_cred,
+    is_sarcasm: two[i]?.is_sarcasm ? 1 : 0,
+  }));
+
+  /* 3) สรุป + keyword + ตัวอย่าง
+        โหมด CP: สรุปจากคอมเมนต์ที่มีท่าทีต่อ CP จริงๆ (ตัด Neutral ที่ไม่ได้แตะ CP ออก)
+        ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
   const synthPool = target === "cp"
-    ? texts.filter((_, i) => labels[i] !== "not_related")
+    ? texts.filter((_, i) => labels[i] === "positive" || labels[i] === "negative")
     : texts;
-  if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่เกี่ยวกับ CP ${synthPool.length} รายการ`);
+  if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
   const synth = synthPool.length
     ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target)
     : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
@@ -151,10 +510,14 @@ async function analyze(opts, env) {
     post_title: collected.post_title || "",
     post_thumb: collected.post_thumb || "",
     fetched_count: comments.length,
-    analyzed_count: labels.length,
+    reply_count,
+    analyzed_count: two.length,
     target,
     not_related,
     sentiment,
+    lenses,
+    sarcasm_count,
+    rubric: RUBRIC_VER,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
     keywords: synth.keywords || [],
@@ -211,7 +574,7 @@ function youtubeVideoId(url) {
   return null;
 }
 
-async function fetchYouTube(url, limit, env) {
+async function fetchYouTube(url, limit, env, includeReplies = true) {
   if (!env.YOUTUBE_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY");
   const vid = youtubeVideoId(url);
   if (!vid) throw new Error("แยก video id จากลิงก์ YouTube ไม่ได้");
@@ -220,7 +583,9 @@ async function fetchYouTube(url, limit, env) {
   let pageToken = "";
   while (out.length < limit) {
     const api = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
-    api.searchParams.set("part", "snippet");
+    /* ขอ replies มาด้วย — YouTube แถมมาให้สูงสุด 5 อันต่อกระทู้ในคำขอเดียว ไม่เปลืองโควตาเพิ่ม
+       ⚠️ กระทู้ที่มี reply เกิน 5 จะได้ไม่ครบ (ต้องยิง /comments?parentId= แยกอีกที ซึ่งเปลืองโควตา) */
+    api.searchParams.set("part", "snippet,replies");
     api.searchParams.set("videoId", vid);
     api.searchParams.set("maxResults", "100");
     api.searchParams.set("order", "relevance");
@@ -244,8 +609,24 @@ async function fetchYouTube(url, limit, env) {
         likes: s.likeCount || 0,
         replies: item.snippet?.totalReplyCount || 0,
         time: s.publishedAt || "",
+        is_reply: 0,
       });
       if (out.length >= limit) break;
+
+      /* reply นับเป็นคอมเมนต์เต็มใบ — ในกระทู้ที่คนเถียงกัน ความเห็นที่แรงที่สุดมักอยู่ใน reply
+         ไม่ใช่คอมเมนต์บนสุด ถ้าไม่นับจะได้ภาพที่อ่อนกว่าความจริง */
+      if (includeReplies) {
+        for (const rep of item.replies?.comments || []) {
+          const rs = rep.snippet;
+          if (!rs?.textDisplay) continue;
+          out.push({
+            text: rs.textDisplay, author: rs.authorDisplayName || "",
+            likes: rs.likeCount || 0, replies: 0, time: rs.publishedAt || "", is_reply: 1,
+          });
+          if (out.length >= limit) break;
+        }
+        if (out.length >= limit) break;
+      }
     }
     pageToken = data.nextPageToken || "";
     if (!pageToken) break;
@@ -290,7 +671,33 @@ function toB64(bytes) {
  * pickField() ออกแบบให้ยืดหยุ่น ถ้า field ไม่ตรงให้ปรับ mapping ตรงนี้
  * (อ้างอิง docs.scrapecreators.com — comments คืนเป็น array + cursor สำหรับหน้าถัดไป)
  */
-async function fetchScrapeCreators(kind, url, limit, env) {
+/** แปลง 1 คอมเมนต์จาก ScrapeCreators เป็นรูปแบบภายในของเรา */
+function scComment(c, is_reply) {
+  const rawReplies = pickField(c, ["reply_count", "replyCount", "comment_count"]);
+  return {
+    text: pickField(c, ["text", "comment", "content", "body", "message"]) || "",
+    author: pickField(c, ["author", "username", "user", "name", "nickname"]) || "",
+    likes: +pickField(c, ["likes", "like_count", "likeCount", "digg_count"]) || 0,
+    replies: +rawReplies || 0,
+    time: pickField(c, ["time", "created_at", "createdAt", "timestamp", "create_time"]) || "",
+    is_reply,
+  };
+}
+
+/**
+ * หา reply ที่ซ้อนอยู่ในคอมเมนต์ 1 ใบ
+ * ⚠️ คีย์ `replies` เป็นได้ทั้ง "จำนวน" (ตัวเลข) และ "รายการ" (array) แล้วแต่ต้นทาง
+ *    ต้องเช็คชนิดก่อนเสมอ — เอา array ไปบวกเลขจะได้ NaN แล้วจำนวน reply กลายเป็น 0 เงียบๆ
+ */
+function nestedReplies(c) {
+  for (const k of ["replies", "reply_list", "children", "sub_comments", "comments"]) {
+    const v = c && c[k];
+    if (Array.isArray(v) && v.length && typeof v[0] === "object") return v;
+  }
+  return [];
+}
+
+async function fetchScrapeCreators(kind, url, limit, env, includeReplies = true) {
   if (!env.SCRAPECREATORS_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY");
   const endpoint = kind === "facebook"
     ? "https://api.scrapecreators.com/v1/facebook/post/comments"
@@ -315,14 +722,18 @@ async function fetchScrapeCreators(kind, url, limit, env) {
     if (!Array.isArray(list) || !list.length) break;
 
     for (const c of list) {
-      out.push({
-        text: pickField(c, ["text", "comment", "content", "body", "message"]) || "",
-        author: pickField(c, ["author", "username", "user", "name", "nickname"]) || "",
-        likes: +pickField(c, ["likes", "like_count", "likeCount", "digg_count"]) || 0,
-        replies: +pickField(c, ["replies", "reply_count", "replyCount", "comment_count"]) || 0,
-        time: pickField(c, ["time", "created_at", "createdAt", "timestamp", "create_time"]) || "",
-      });
+      out.push(scComment(c, 0));
       if (out.length >= limit) break;
+      /* reply ที่ซ้อนมาใน response — แตกออกมาเป็นคอมเมนต์เต็มใบ
+         ⚠️ ยังไม่ยืนยันว่า ScrapeCreators ส่ง reply ซ้อนมาให้ทุกแพลตฟอร์มหรือเปล่า
+            ถ้าไม่ส่งมา ตรงนี้จะไม่ทำอะไรเลย (ไม่พัง) และจำนวนที่ได้จะเท่าเดิม */
+      if (includeReplies) {
+        for (const rep of nestedReplies(c)) {
+          out.push(scComment(rep, 1));
+          if (out.length >= limit) break;
+        }
+        if (out.length >= limit) break;
+      }
     }
     cursor = data.cursor || data.next_cursor || data.nextCursor || data.next_page_id || "";
     if (!cursor) break;
@@ -437,6 +848,9 @@ async function callClaude(env, system, userText, maxTokens, acc) {
     if (data.usage) { acc.input += data.usage.input_tokens || 0; acc.output += data.usage.output_tokens || 0; }
     const rr = r.headers.get("anthropic-ratelimit-tokens-remaining");
     if (rr != null) acc.rate_remaining = +rr;
+    /* ⚠️ "max_tokens" = โมเดลพูดไม่จบ คำตอบถูกตัดกลางคัน → JSON พัง
+       ต้องเก็บไว้ให้ผู้เรียกรู้ ไม่งั้นจะกลายเป็น "ตอบไม่ได้" แบบเงียบๆ */
+    acc.stop_reason = data.stop_reason || null;
   }
   return (data.content || []).map(b => b.text || "").join("").trim();
 }
@@ -450,76 +864,48 @@ function extractJson(s) {
   return JSON.parse(s);
 }
 
-/** system prompt สำหรับโหมด "อารมณ์รวม" (ค่าเริ่มต้น) */
-function systemGeneral() {
-  return "คุณเป็นตัวจำแนกอารมณ์ (sentiment) ของคอมเมนต์โซเชียลภาษาไทย/อังกฤษ " +
-    "จำแนกแต่ละคอมเมนต์เป็น positive, neutral หรือ negative โดยพิจารณาบริบท ประชด และภาษาวิบัติ " +
-    'ตอบกลับเป็น JSON array ของสตริงเท่านั้น เช่น ["positive","negative",...] ' +
-    "ความยาว array ต้องเท่ากับจำนวนคอมเมนต์ ห้ามมีข้อความอื่น";
-}
+/**
+ * หา "JSON array" ก้อนแรกที่แกะได้จริงในข้อความ
+ *
+ * ⚠️ ทำไมต้องมีตัวนี้แยกจาก extractJson (เจอจริง 28 ส.ค. 2026):
+ *    opus บางครั้งตอบ object เดี่ยวก่อน แล้วค่อยแก้ตัวเองเป็น array ที่ถูกต้อง เช่น
+ *      {"cp":"Negative","oc":"Negative","s":0} Wait—must output array. [{"i":1,...}, ...]
+ *    extractJson หยิบก้อนแรก ({...}) ไปแล้วได้ของที่ไม่ใช่ array → ทิ้งทั้งก้อนทั้งที่คำตอบจริงอยู่ถัดไป
+ *    ตัวนี้จึงไล่หาทุกตำแหน่งที่ขึ้นต้นด้วย [ แล้วนับวงเล็บให้สมดุล (ข้ามวงเล็บที่อยู่ในสตริง)
+ */
+function extractJsonArray(text) {
+  let s = String(text);
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) s = fence[1];
 
-/** system prompt สำหรับโหมด "ท่าทีต่อเครือ CP" (aspect-based) — อิง RUBRIC-CP.md */
-function systemCP() {
-  const ex = CP_EXAMPLES.map(e => `"${e.t}" → ${e.a}`).join("\n");
-  return [
-    "คุณเป็นนักวิเคราะห์ social listening ภาษาไทย หน้าที่คือตัดสิน **ท่าทีของผู้เขียนที่มีต่อเครือเจริญโภคภัณฑ์ (CP)** เท่านั้น",
-    "⚠️ ไม่ใช่อารมณ์รวมของคอมเมนต์ — ให้ดูเฉพาะว่าเขารู้สึกอย่างไรกับ CP",
-    "",
-    "ป้ายที่ใช้ได้ 4 แบบ:",
-    "- positive = ชื่นชม สนับสนุน ปกป้อง เห็นใจ CP หรือชมสินค้า/บริการในเครือ",
-    "- neutral = เอ่ยถึง CP แบบข้อเท็จจริง หรือถามข้อมูล ไม่แสดงท่าที",
-    "- negative = ตำหนิ กล่าวหา ประชด เรียกร้องให้ CP รับผิดชอบ ตั้งข้อสงสัยว่า CP เกี่ยวข้อง หรือชวนแบน/ฟ้อง",
-    "- not_related = ไม่ได้พูดถึง CP เลย (พูดถึงปลา รัฐ ชาวบ้าน เรื่องอื่น) หรือไม่มีเนื้อหา",
-    "",
-    "นับเป็น CP: ซีพี, CP, เจริญโภคภัณฑ์, Charoen Pokphand, เจียรวนนท์, ซีพีเอฟ/CPF, ซีพี ออลล์, ซีพีแรม, ซีพี แอ็กซ์ตร้า, เซเว่น/7-11, แม็คโคร, โลตัส, ทรู",
-    "ไม่นับ (ชื่อลวง): บีแอลซีพี/BLCP, ซีพีเอ็น/CPN (Central Pattana), บีซีพีจี/บีซีพี (บางจาก), ทรูดิจิทัล พาร์ค, ทรูธโซเชียล/Truth Social",
-    "",
-    "กฎสำคัญ:",
-    "1. ประชด/แดกดันให้ตอบตามเจตนา ไม่ใช่ตามคำ (เช่น ขอบคุณเกินจริง + 😂🙏 ในบริบทวิกฤต = negative)",
-    "2. ด่าปลา ด่ารัฐ หรือให้กำลังใจชาวบ้าน โดยไม่เอ่ยถึง CP = not_related",
-    "3. พูดถึงบริษัทในเครือ (เซเว่น แม็คโคร โลตัส ทรู) ถือว่าพูดถึง CP",
-    "4. ถ้าคอมเมนต์มีทั้งบวกและลบต่อ CP ให้ยึดท่าทีที่เด่นกว่า ถ้าพอกันให้ตอบ neutral",
-    "5. ไม่แน่ใจว่าเป็นลบหรือไม่ ให้ตอบ neutral (อย่าเดาเป็น negative)",
-    "6. โพสนี้เป็นข่าวที่เกี่ยวกับ CP อยู่แล้ว ดังนั้นคำเรียกแทนอย่าง \"เจ้าสัว\" \"นายทุนใหญ่\" \"บริษัทยักษ์ใหญ่ที่นำเข้ามา\" ให้ถือว่าหมายถึง CP",
-    "",
-    "ตัวอย่างที่ตัดสินไว้แล้ว (ใช้เป็นแนวทาง):",
-    ex,
-    "",
-    'ตอบกลับเป็น JSON array ของสตริงเท่านั้น เช่น ["negative","not_related",...] ' +
-    "ความยาว array ต้องเท่ากับจำนวนคอมเมนต์ ห้ามมีข้อความอื่น",
-  ].join("\n");
-}
-
-function normLabel(v, target) {
-  const s = String(v || "").toLowerCase();
-  if (target === "cp" && (s.includes("not_related") || s.includes("unrelated") || s === "none")) return "not_related";
-  if (s.startsWith("pos")) return "positive";
-  if (s.startsWith("neg")) return "negative";
-  return "neutral";
-}
-
-async function classifySentiment(texts, env, acc, logLine, target) {
-  const isCP = target === "cp";
-  const labels = [];
-  const nBatch = Math.ceil(texts.length / CHUNK);
-  const system = isCP ? systemCP() : systemGeneral();
-  for (let i = 0; i < texts.length; i += CHUNK) {
-    const batch = texts.slice(i, i + CHUNK);
-    const numbered = batch.map((t, j) => `${j + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`).join("\n");
-    const out = await callClaude(env, system, "คอมเมนต์:\n" + numbered, 1500, acc);
-    let arr;
-    try { arr = extractJson(out); } catch (e) { arr = []; }
-    const b = { positive: 0, neutral: 0, negative: 0, not_related: 0 };
-    for (let j = 0; j < batch.length; j++) {
-      const label = normLabel(arr[j], target);
-      labels.push(label); b[label]++;
+  for (let i = s.indexOf("["); i !== -1; i = s.indexOf("[", i + 1)) {
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < s.length; j++) {
+      const ch = s[j];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === "\\") esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === "[") depth++;
+      else if (ch === "]") {
+        depth--;
+        if (depth === 0) {
+          try {
+            const v = JSON.parse(s.slice(i, j + 1));
+            if (Array.isArray(v) && v.length) return v;
+          } catch (e) { /* ก้อนนี้ไม่ใช่ ลองก้อนถัดไป */ }
+          break;
+        }
+      }
     }
-    if (logLine) logLine(`  batch ${i / CHUNK + 1}/${nBatch}: บวก ${b.positive} · กลาง ${b.neutral} · ลบ ${b.negative}` +
-      (isCP ? ` · ไม่เกี่ยว ${b.not_related}` : "") + ` (${batch.length} คอมเมนต์)`);
   }
-  return labels;
+  return null;
 }
 
+/** สรุปภาพรวม + keyword + ตัวอย่างคอมเมนต์ (ถอดความ) */
 async function synthesize(sampleTexts, wantSamples, env, acc, target) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
