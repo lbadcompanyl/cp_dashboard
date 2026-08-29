@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 16;
+const WORKER_VER = 17;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -241,10 +241,12 @@ export default {
           ok: true, ver: WORKER_VER, platform,
           post_title: got.post_title || "",
           count: got.comments.length,
+          reply_count: got.comments.filter(c => c.is_reply).length,
           credits_remaining: got.credits_remaining ?? null,
           comments: got.comments.map(c => ({
             text: String(c.text || "").replace(/\s+/g, " ").trim(),
             likes: c.likes || 0, replies: c.replies || 0, time: c.time || "",
+            is_reply: c.is_reply ? 1 : 0,
           })).filter(c => c.text),
         }), origin);
       } catch (e) {
@@ -321,7 +323,9 @@ async function analyze(opts, env) {
 
   const comments = collected.comments;
   if (!comments.length) throw new Error("ไม่พบคอมเมนต์ (โพสอาจปิดคอมเมนต์ หรือดึงไม่ได้)");
-  logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ`);
+  const reply_count = comments.filter(c => c.is_reply).length;
+  logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ` +
+    (reply_count ? ` (เป็น reply ${reply_count})` : " (ไม่มี reply ติดมา)"));
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
   const texts = comments.map(c => c.text).filter(Boolean);
@@ -399,6 +403,7 @@ async function analyze(opts, env) {
     post_title: collected.post_title || "",
     post_thumb: collected.post_thumb || "",
     fetched_count: comments.length,
+    reply_count,
     analyzed_count: two.length,
     target,
     not_related,
@@ -462,7 +467,7 @@ function youtubeVideoId(url) {
   return null;
 }
 
-async function fetchYouTube(url, limit, env) {
+async function fetchYouTube(url, limit, env, includeReplies = true) {
   if (!env.YOUTUBE_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY");
   const vid = youtubeVideoId(url);
   if (!vid) throw new Error("แยก video id จากลิงก์ YouTube ไม่ได้");
@@ -471,7 +476,9 @@ async function fetchYouTube(url, limit, env) {
   let pageToken = "";
   while (out.length < limit) {
     const api = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
-    api.searchParams.set("part", "snippet");
+    /* ขอ replies มาด้วย — YouTube แถมมาให้สูงสุด 5 อันต่อกระทู้ในคำขอเดียว ไม่เปลืองโควตาเพิ่ม
+       ⚠️ กระทู้ที่มี reply เกิน 5 จะได้ไม่ครบ (ต้องยิง /comments?parentId= แยกอีกที ซึ่งเปลืองโควตา) */
+    api.searchParams.set("part", "snippet,replies");
     api.searchParams.set("videoId", vid);
     api.searchParams.set("maxResults", "100");
     api.searchParams.set("order", "relevance");
@@ -495,8 +502,24 @@ async function fetchYouTube(url, limit, env) {
         likes: s.likeCount || 0,
         replies: item.snippet?.totalReplyCount || 0,
         time: s.publishedAt || "",
+        is_reply: 0,
       });
       if (out.length >= limit) break;
+
+      /* reply นับเป็นคอมเมนต์เต็มใบ — ในกระทู้ที่คนเถียงกัน ความเห็นที่แรงที่สุดมักอยู่ใน reply
+         ไม่ใช่คอมเมนต์บนสุด ถ้าไม่นับจะได้ภาพที่อ่อนกว่าความจริง */
+      if (includeReplies) {
+        for (const rep of item.replies?.comments || []) {
+          const rs = rep.snippet;
+          if (!rs?.textDisplay) continue;
+          out.push({
+            text: rs.textDisplay, author: rs.authorDisplayName || "",
+            likes: rs.likeCount || 0, replies: 0, time: rs.publishedAt || "", is_reply: 1,
+          });
+          if (out.length >= limit) break;
+        }
+        if (out.length >= limit) break;
+      }
     }
     pageToken = data.nextPageToken || "";
     if (!pageToken) break;
@@ -541,7 +564,33 @@ function toB64(bytes) {
  * pickField() ออกแบบให้ยืดหยุ่น ถ้า field ไม่ตรงให้ปรับ mapping ตรงนี้
  * (อ้างอิง docs.scrapecreators.com — comments คืนเป็น array + cursor สำหรับหน้าถัดไป)
  */
-async function fetchScrapeCreators(kind, url, limit, env) {
+/** แปลง 1 คอมเมนต์จาก ScrapeCreators เป็นรูปแบบภายในของเรา */
+function scComment(c, is_reply) {
+  const rawReplies = pickField(c, ["reply_count", "replyCount", "comment_count"]);
+  return {
+    text: pickField(c, ["text", "comment", "content", "body", "message"]) || "",
+    author: pickField(c, ["author", "username", "user", "name", "nickname"]) || "",
+    likes: +pickField(c, ["likes", "like_count", "likeCount", "digg_count"]) || 0,
+    replies: +rawReplies || 0,
+    time: pickField(c, ["time", "created_at", "createdAt", "timestamp", "create_time"]) || "",
+    is_reply,
+  };
+}
+
+/**
+ * หา reply ที่ซ้อนอยู่ในคอมเมนต์ 1 ใบ
+ * ⚠️ คีย์ `replies` เป็นได้ทั้ง "จำนวน" (ตัวเลข) และ "รายการ" (array) แล้วแต่ต้นทาง
+ *    ต้องเช็คชนิดก่อนเสมอ — เอา array ไปบวกเลขจะได้ NaN แล้วจำนวน reply กลายเป็น 0 เงียบๆ
+ */
+function nestedReplies(c) {
+  for (const k of ["replies", "reply_list", "children", "sub_comments", "comments"]) {
+    const v = c && c[k];
+    if (Array.isArray(v) && v.length && typeof v[0] === "object") return v;
+  }
+  return [];
+}
+
+async function fetchScrapeCreators(kind, url, limit, env, includeReplies = true) {
   if (!env.SCRAPECREATORS_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY");
   const endpoint = kind === "facebook"
     ? "https://api.scrapecreators.com/v1/facebook/post/comments"
@@ -566,14 +615,18 @@ async function fetchScrapeCreators(kind, url, limit, env) {
     if (!Array.isArray(list) || !list.length) break;
 
     for (const c of list) {
-      out.push({
-        text: pickField(c, ["text", "comment", "content", "body", "message"]) || "",
-        author: pickField(c, ["author", "username", "user", "name", "nickname"]) || "",
-        likes: +pickField(c, ["likes", "like_count", "likeCount", "digg_count"]) || 0,
-        replies: +pickField(c, ["replies", "reply_count", "replyCount", "comment_count"]) || 0,
-        time: pickField(c, ["time", "created_at", "createdAt", "timestamp", "create_time"]) || "",
-      });
+      out.push(scComment(c, 0));
       if (out.length >= limit) break;
+      /* reply ที่ซ้อนมาใน response — แตกออกมาเป็นคอมเมนต์เต็มใบ
+         ⚠️ ยังไม่ยืนยันว่า ScrapeCreators ส่ง reply ซ้อนมาให้ทุกแพลตฟอร์มหรือเปล่า
+            ถ้าไม่ส่งมา ตรงนี้จะไม่ทำอะไรเลย (ไม่พัง) และจำนวนที่ได้จะเท่าเดิม */
+      if (includeReplies) {
+        for (const rep of nestedReplies(c)) {
+          out.push(scComment(rep, 1));
+          if (out.length >= limit) break;
+        }
+        if (out.length >= limit) break;
+      }
     }
     cursor = data.cursor || data.next_cursor || data.nextCursor || data.next_page_id || "";
     if (!cursor) break;
