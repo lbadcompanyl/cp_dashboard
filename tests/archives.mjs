@@ -57,6 +57,27 @@ const ok = (name, cond, extra = "") => {
   else { fail++; console.log("  ❌", name, extra); }
 };
 
+// 🤖 **หน้านี้มีโหมดเดียวคือถาม AI** (เจ้าของสั่ง 26 ส.ค. 2026 — "ให้มีโหมดเดียวพอ")
+//    พิมพ์เฉยๆ ไม่ค้นแล้ว ต้องกด Enter หรือปุ่มถาม
+//
+// ⚠️ เทสต์ชุดนี้ **ไม่ได้ปลอม `/api/archives/ask`** ไว้ → คำขอไปไม่ถึงไหน
+//    หน้าเว็บจึงตกไปใช้ "คำที่พิมพ์ตรงๆ" ซึ่งเป็นพฤติกรรมเดียวกับตอนยังไม่มี AI
+//    → เรื่องการค้น/ไฮไลต์/ตัวกรอง ยังวัดได้เหมือนเดิมทุกข้อ
+//    (ฝั่ง AI มีเทสต์ของตัวเองที่ archivesai.mjs)
+async function ask(p, text) {
+  if (!text) {                       // ล้างคำถาม = กดปุ่ม ✕ (กด Enter ตอนช่องว่างไม่ทำอะไร)
+    const x = await p.$("#qclear");
+    if (x && !(await x.isHidden())) await x.click();
+    else await p.fill("#q", "");
+    await p.waitForTimeout(120);
+    return;
+  }
+  await p.fill("#q", text);
+  await p.press("#q", "Enter");
+  await p.waitForFunction(() => !document.querySelector("#askbar .loading"), null, { timeout: 15000 });
+  await p.waitForTimeout(80);
+}
+
 const browser = await launch();
 
 async function open(ctx, qs = "") {
@@ -88,8 +109,7 @@ console.log("\n[1] ค้นภาษาไทยกลางคำ");
     const piece = t.slice(4, 9);
     if (piece.length < 5 || /\s/.test(piece)) continue;   // เอาเฉพาะชิ้นที่คร่อมกลางคำจริงๆ
     midTried++;
-    await page.fill("#q", piece);
-    await page.waitForTimeout(300);
+    await ask(page, piece);
     const hits = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent));
     if (hits.length && hits.every((h) => h.includes(piece))) midOK++;
   }
@@ -97,8 +117,7 @@ console.log("\n[1] ค้นภาษาไทยกลางคำ");
 
   // เคสที่เจ้าของยกมาเอง
   for (const kw of ["กุ้ง", "ปลา", "ซีพี"]) {
-    await page.fill("#q", kw);
-    await page.waitForTimeout(400);
+    await ask(page, kw);
     const hits = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent));
     ok(`ค้น "${kw}" มีผลลัพธ์`, hits.length > 0, `เจอ ${hits.length}`);
     const wrong = hits.find((h) => !h.includes(kw));
@@ -107,8 +126,7 @@ console.log("\n[1] ค้นภาษาไทยกลางคำ");
 
   // ⚠️ เคสที่เจ้าของยกมาตรงๆ: "กุ้ง" ต้องเจอ "โรคกุ้ง" กับ "ผลผลิตกุ้งทะเล" ด้วย
   //    ดูจากผลลัพธ์ทั้งชุด ไม่ใช่แค่ 50 ใบแรก (ใบแรกๆ จะเป็นอันไหนขึ้นกับวันที่ล้วนๆ)
-  await page.fill("#q", "กุ้ง");
-  await page.waitForTimeout(400);
+  await ask(page, "กุ้ง");
   const shrimp = await page.evaluate(async () => {
     const idx = await fetch("data/index.json").then((r) => r.json());
     const y = idx.years.map((x) => x.y).sort((a, b) => b - a)[0];
@@ -126,8 +144,7 @@ console.log("\n[1] ค้นภาษาไทยกลางคำ");
 console.log("\n[1b] เว้นวรรค = ต้องมีครบทุกคำ");
 {
   const only = async (q) => {
-    await page.fill("#q", q);
-    await page.waitForTimeout(400);
+    await ask(page, q);
     // ⚠️ อ่านเฉพาะเลขหลังคำว่า "พบ" — ในบรรทัดเดียวกันมีเลขปีอยู่ด้วย
     const n = await page.$eval("#count", (e) => {
       const m = e.textContent.match(/พบ\s*([\d,]+)/);
@@ -165,8 +182,7 @@ console.log("\n[1b] เว้นวรรค = ต้องมีครบทุ
     exact.n < apart.n, `เป็นวลี ${exact.n} · แยกคำ ${apart.n}`);
 
   // ไฮไลต์หลายคำ ห้ามซ้อนกัน
-  await page.fill("#q", "กุ้ง ผลผลิตกุ้ง");
-  await page.waitForTimeout(400);
+  await ask(page, "กุ้ง ผลผลิตกุ้ง");
   const nested = await page.$$eval("#list .item a.t", (els) =>
     els.filter((e) => e.querySelector("mark mark")).length);
   ok("คำที่คลุมกันเองต้องไม่ทำให้ไฮไลต์ซ้อนกัน", nested === 0, `ซ้อน ${nested} ใบ`);
@@ -178,8 +194,7 @@ console.log("\n[1b] เว้นวรรค = ต้องมีครบทุ
 // ── [2] ไฮไลต์ ─────────────────────────────────────────────────────────
 console.log("\n[2] ไฮไลต์");
 {
-  await page.fill("#q", "กุ้ง");
-  await page.waitForTimeout(400);
+  await ask(page, "กุ้ง");
   const first = await page.$("#list .item a.t");
   const html = await first.evaluate((e) => e.innerHTML);
   const text = await first.evaluate((e) => e.textContent);
@@ -194,8 +209,7 @@ console.log("\n[2] ไฮไลต์");
 // ── [3] หมวดเป็น array ─────────────────────────────────────────────────
 console.log("\n[3] หมวดหลายค่า");
 {
-  await page.fill("#q", "");
-  await page.waitForTimeout(400);
+  await ask(page, "");
   const tagCounts = await page.$$eval("#list .item", (els) =>
     els.map((e) => e.querySelectorAll(".tag").length));
   ok("มีข่าวที่ติดหมวดมากกว่า 1 หมวด (ไม่ได้เก็บเป็นสตริงเดียว)",
@@ -210,8 +224,7 @@ console.log("\n[4] ตัดหางพาดหัวตอนแสดง แ
 {
   // หาสำนักข่าวที่โผล่เป็นหางพาดหัวในข้อมูลจำลอง
   const tailWord = "ข่าวสด";
-  await page.fill("#q", tailWord);
-  await page.waitForTimeout(400);
+  await ask(page, tailWord);
   const shown = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent.trim()));
   ok(`ค้น "${tailWord}" ที่อยู่ในหางพาดหัว ยังเจอ`, shown.length > 0, `เจอ ${shown.length}`);
   const stillTailed = shown.filter((t) => new RegExp(`\\s+[-|–—·]\\s+${tailWord}$`).test(t));
@@ -243,8 +256,7 @@ console.log("\n[4] ตัดหางพาดหัวตอนแสดง แ
   ok("ที่แสดงเป็นต้นของพาดหัวจริงทุกใบ (ไม่ได้ตัดกลาง)", bad.length === 0, JSON.stringify(bad.slice(0, 2)));
 
   // ⚠️ พาดหัวที่มีตัวคั่นอยู่ข้างในเอง — ตัดหางแล้วตัวคั่นข้างในต้องไม่ถูกเขียนใหม่
-  await page.fill("#q", "เกาะติดสถานการณ์");
-  await page.waitForTimeout(400);
+  await ask(page, "เกาะติดสถานการณ์");
   const mixed = await page.$$eval("#list .item a.t", (els) => els.map((e) => e.textContent.trim()));
   ok("พาดหัวที่มีตัวคั่นข้างในยังหาเจอ", mixed.length > 0, `เจอ ${mixed.length}`);
   ok("ตัดหางแล้วตัวคั่นข้างในไม่ถูกเปลี่ยน (| ต้องยังเป็น |)",
@@ -256,8 +268,7 @@ console.log("\n[4] ตัดหางพาดหัวตอนแสดง แ
 console.log("\n[5] ตัวกรอง");
 {
   await openFilters(page);
-  await page.fill("#q", "");
-  await page.waitForTimeout(400);
+  await ask(page, "");
   const all = await page.$eval("#count", (e) => e.textContent);
 
   // หมวด
@@ -311,8 +322,7 @@ console.log("\n[5] ตัวกรอง");
 console.log("\n[6] URL เก็บสถานะ");
 {
   await openFilters(page);
-  await page.fill("#q", "ซีพี");
-  await page.waitForTimeout(400);
+  await ask(page, "ซีพี");
   const cat = await page.$eval("#cats .ch", (b) => b.dataset.cat);
   await page.click(`#cats [data-cat="${cat}"]`);
   await page.waitForTimeout(200);
@@ -345,8 +355,7 @@ console.log("\n[7] สถานะว่าง");
   const n = await p.$$eval("#list .item", (e) => e.length);
   ok("ยังไม่ได้พิมพ์อะไร = โชว์ข่าวล่าสุด ไม่ใช่หน้าว่าง", n > 0, `เจอ ${n}`);
 
-  await p.fill("#q", "ไม่มีทางมีคำนี้อยู่จริงหรอกนะจ๊ะ");
-  await p.waitForTimeout(400);
+  await ask(p, "ไม่มีทางมีคำนี้อยู่จริงหรอกนะจ๊ะ");
   const txt = await p.$eval("#list", (e) => e.textContent);
   ok("กรองแล้วไม่พบ = บอกให้ชัด", /ไม่พบ/.test(txt), txt.slice(0, 80));
   ok("กรองแล้วไม่พบ = มีปุ่มล้างตัวกรองให้กด", !!(await p.$("#list [data-clear]")));
@@ -407,8 +416,7 @@ console.log("\n[9] ขยายช่วงวันที่ย้อนไป�
 // ── [9b] กล่องตัวกรองพับได้ ────────────────────────────────────────────
 console.log("\n[9b] กล่องตัวกรองพับได้");
 {
-  // ⚠️ ต้องใช้ context ใหม่ — เทสต์ก่อนหน้ากางกล่องไว้ แล้วสถานะถูกจำใน localStorage
-  //    ถ้าใช้ context เดิมจะวัด "ค่าตั้งต้น" ไม่ได้เลย
+  // ⚠️ ใช้ context ใหม่เพื่อวัด "ค่าตั้งต้น" ให้สะอาด (ไม่มีอะไรค้างจากเทสต์ก่อนหน้า)
   const fresh = await browser.newContext({ viewport: { width: 1200, height: 900 } });
   await fakeData(fresh);
   const p = await open(fresh);
@@ -437,18 +445,25 @@ console.log("\n[9b] กล่องตัวกรองพับได้");
   ok("พับแล้วยังอ่านออกว่ากรองอะไรอยู่",
     !(await p.$eval("#fsum", (e) => e.hidden)) && (await p.$eval("#fsum", (e) => e.textContent)).includes(cat));
 
-  // ⚠️ จำสถานะไว้ ไม่ใช่กางใหม่ทุกครั้งที่เปิดหน้า
-  await p.click("#ftoggle");
+  // 🚫 **ห้ามจำสถานะ — เปิดหน้าใหม่ต้องพับเสมอ** (เจ้าของสั่ง 28 ส.ค. 2026:
+  //    "ตอนนี้ filter เปิดค้างไว้ ให้ collapse ทุกครั้งที่เปิดใหม่ ไม่ต้องจำตรงนี้")
+  await p.click("#ftoggle");                       // กางค้างไว้
   await p.waitForTimeout(100);
   const p2 = await open(fresh);
-  ok("จำไว้ว่ากางค้างไว้ (เปิดหน้าใหม่ยังกางอยู่)", !(await p2.$eval("#filters", (e) => e.hidden)));
+  ok("กางค้างไว้แล้วเปิดหน้าใหม่ ต้องพับกลับ", await p2.$eval("#filters", (e) => e.hidden));
+  ok("ไม่เหลือค่าที่จำไว้ใน localStorage",
+    (await p2.evaluate(() => localStorage.getItem("archivesFiltersOpen"))) === null);
   await p2.close();
 
-  // เปิด URL ที่มีตัวกรองติดมา ต้องกางให้เห็นว่ากรองด้วยอะไร
-  await p.click("#ftoggle");                       // พับกลับ + จำว่าพับ
-  await p.waitForTimeout(100);
+  // ⚠️ ลิงก์ที่มีตัวกรองติดมาก็พับเหมือนกัน — แต่ **ต้องอ่านออกว่ากรองอะไรอยู่**
+  //    ไม่งั้นเห็นข่าวน้อยลงแล้วไม่รู้ว่าเพราะอะไร (บรรทัดสรุป + เลขบนปุ่มทำหน้าที่นี้)
   const p3 = await open(fresh, `?cat=${encodeURIComponent(cat)}`);
-  ok("เปิดลิงก์ที่มีตัวกรองติดมา = กางให้เอง", !(await p3.$eval("#filters", (e) => e.hidden)));
+  ok("เปิดลิงก์ที่มีตัวกรองติดมา = ยังพับอยู่", await p3.$eval("#filters", (e) => e.hidden));
+  ok("แต่บอกอยู่ว่ากรองอะไร (บรรทัดสรุป)",
+    !(await p3.$eval("#fsum", (e) => e.hidden)) &&
+    (await p3.$eval("#fsum", (e) => e.textContent)).includes(cat),
+    await p3.$eval("#fsum", (e) => e.textContent));
+  ok("และมีเลขบนปุ่มตัวกรอง", (await p3.$eval("#fbadge", (e) => e.textContent)) === "1");
   await p3.close();
   await p.close();
   await fresh.close();
@@ -494,7 +509,71 @@ console.log("\n[9c] ลำดับความเด่น");
     ok(`${name}: ข้อความที่พิมพ์ไม่มุดใต้ปุ่ม`, z.textRight <= z.c + 1 && z.textRight <= z.f + 1,
       `ข้อความจบ ${Math.round(z.textRight)} · ปุ่มล้าง ${Math.round(z.c)} · ตัวกรอง ${Math.round(z.f)}`);
     ok(`${name}: ยังเหลือที่พิมพ์พอสมควร`, z.typable >= 180, `${Math.round(z.typable)}px`);
+
+    // 🔀 ปุ่มสลับโหมด — เจ้าของแจ้ง 27 ส.ค. 2026 ว่า "คนจะไม่รู้ซิว่ากดได้"
+    //    จึงเป็นปุ่ม **2 ช่อง** โชว์ทั้ง 2 ตัวเลือกพร้อมกัน ไม่ใช่ป้ายใบเดียวที่กดแล้วสลับ
+    const tg = await p.evaluate(() => {
+      const g = document.querySelector("#modeseg");
+      if (!g) return null;
+      const b = g.getBoundingClientRect();
+      const q = document.querySelector("#q"), cs = getComputedStyle(q), qb = q.getBoundingClientRect();
+      const row = document.querySelector(".searchrow").getBoundingClientRect();
+      const segs = [...g.querySelectorAll(".mseg")];
+      return {
+        n: segs.length,
+        allButtons: segs.every((e) => e.tagName === "BUTTON" && getComputedStyle(e).pointerEvents !== "none"),
+        // ⚠️ textContent นับข้อความที่ display:none ด้วย — ต้องอ่านเฉพาะที่มองเห็นจริง
+        vis: segs.map((e) => [...e.childNodes]
+          .filter((c) => c.nodeType !== 1 || getComputedStyle(c).display !== "none")
+          .map((c) => c.textContent).join("")).join(" | ").replace(/\s+/g, " ").trim(),
+        onCount: segs.filter((e) => e.classList.contains("on")).length,
+        inRow: b.left >= row.left - 1 && b.right <= row.right + 1 && b.bottom <= row.bottom + 1,
+        // จอกว้างอยู่ในช่อง (ซ้ายของข้อความ) · จอแคบลงมาอยู่แถวล่าง (ใต้ช่อง) — ถูกทั้งคู่
+        clear: b.right <= qb.left + parseFloat(cs.paddingLeft) + 1 || b.top >= qb.bottom - 1,
+      };
+    });
+    ok(`${name}: ปุ่มสลับโหมดโชว์ทั้ง 2 ตัวเลือก`, !!tg && tg.n === 2, tg ? String(tg.n) : "ไม่มี");
+    ok(`${name}: ทั้ง 2 ช่องเป็นปุ่มกดได้จริง`, !!tg && tg.allButtons);
+    ok(`${name}: เลือกอยู่ช่องเดียว`, !!tg && tg.onCount === 1, tg ? String(tg.onCount) : "-");
+    ok(`${name}: อ่านออกว่าเลือกอะไรได้บ้าง (AI / คำ)`,
+      !!tg && /AI/i.test(tg.vis) && /คำ/.test(tg.vis), tg ? tg.vis : "-");
+    ok(`${name}: อยู่ในกรอบแถวค้นหา ไม่หลุดออกไป`, !!tg && tg.inRow);
+    ok(`${name}: ไม่ทับข้อความที่พิมพ์`, !!tg && tg.clear);
+
     await p.fill("#q", "");
+    await p.close();
+    await c.close();
+  }
+}
+
+// ── [9d] ตัวกรองต้องติดบนสุดไปด้วย ────────────────────────────────────
+// เจ้าของแจ้ง 28 ส.ค. 2026: "ตัวกรองไม่ float ตาม" — ของเดิมกล่องอยู่นอกแถบที่ติดบนสุด
+// พอเลื่อนอ่านข่าว มันจะมุดหายไปใต้แถบทีละครึ่ง ดูเหมือนหน้าพัง และแก้ตัวกรองต่อไม่ได้
+console.log("\n[9d] กางตัวกรองแล้วเลื่อนหน้า — กล่องต้องติดตามไปด้วย");
+{
+  for (const [name, w, h] of [["เดสก์ท็อป", 1200, 900], ["มือถือ", 390, 780]]) {
+    const c = await browser.newContext({ viewport: { width: w, height: h } });
+    await fakeData(c);
+    const p = await open(c);
+    await openFilters(p);
+    await p.evaluate(() => window.scrollTo(0, 1500));
+    await p.waitForTimeout(250);
+    const m = await p.evaluate(() => {
+      const f = document.querySelector("#filters").getBoundingClientRect();
+      const s = document.querySelector(".sticky").getBoundingClientRect();
+      const q = document.querySelector("#q").getBoundingClientRect();
+      return { fTop: f.top, fBottom: f.bottom, qTop: q.top, sTop: s.top, sBottom: s.bottom,
+               ih: innerHeight, scrolled: document.scrollingElement.scrollTop };
+    });
+    ok(`${name}: เลื่อนหน้าลงไปแล้วจริง`, m.scrolled > 300, String(Math.round(m.scrolled)));
+    ok(`${name}: ช่องค้นหายังติดบนสุด`, m.sTop <= 1, String(Math.round(m.sTop)));
+    // 🎯 ข้อที่เจ้าของแจ้ง — กล่องตัวกรองต้องยังเห็นอยู่ ไม่ใช่มุดหายไปใต้แถบ
+    ok(`${name}: กล่องตัวกรองยังเห็นอยู่ครบ`, m.fTop >= -1 && m.fBottom <= m.ih + 1,
+      `บน ${Math.round(m.fTop)} · ล่าง ${Math.round(m.fBottom)} · จอสูง ${m.ih}`);
+    ok(`${name}: กล่องอยู่ใต้ช่องค้นหา ไม่ทับกัน`, m.fTop >= m.qTop - 1);
+    // ⚠️ แต่ห้ามกินจอจนไม่เหลือที่อ่านข่าว
+    ok(`${name}: ยังเหลือที่อ่านข่าวอย่างน้อย 1 ใน 3 ของจอ`, m.ih - m.sBottom >= m.ih / 3,
+      `เหลือ ${Math.round(m.ih - m.sBottom)} จาก ${m.ih}`);
     await p.close();
     await c.close();
   }
@@ -555,8 +634,7 @@ console.log("\n[10b] โหมดมืด");
   const p = await open(d);
   const bg = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);
   ok("โหมดมืดเปลี่ยนสีพื้นจริง", bg === "rgb(13, 17, 23)", bg);
-  await p.fill("#q", "กุ้ง");
-  await p.waitForTimeout(400);
+  await ask(p, "กุ้ง");
   const m = await p.$eval("#list mark", (e) => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]);
   ok("ไฮไลต์ในโหมดมืดไม่ใช่ตัวหนังสือดำบนพื้นเหลือง", m[0] !== "rgb(0, 0, 0)" && m[1] !== "rgb(255, 255, 0)", JSON.stringify(m));
   await p.close();
@@ -570,7 +648,8 @@ console.log("\n[11] ข้อห้าม");
   const banned = ["lunr", "Fuse", "minisearch", "flexsearch"].filter((n) =>
     new RegExp(`\\b${n}\\b`, "i").test(src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
   ok("ไม่มี search library ในโค้ด", banned.length === 0, JSON.stringify(banned));
-  ok("ใช้ includes() ค้นตรงๆ", /\.n\.includes\(/.test(src));
+  // (โหมดผ่อนการสะกดเขียนเป็น `(looseMode ? r.ln : r.n).includes(` — ยังเป็น includes() เหมือนเดิม)
+  ok("ใช้ includes() ค้นตรงๆ", /r\.n\)\.includes\(|\.n\.includes\(/.test(src));
   const scripts = await page.$$eval("script[src]", (els) => els.map((e) => e.getAttribute("src")));
   ok("ไม่มีสคริปต์จากข้างนอก", scripts.every((s) => !/^https?:|^\/\//.test(s)), JSON.stringify(scripts));
 }

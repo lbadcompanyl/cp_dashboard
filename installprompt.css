@@ -31,6 +31,9 @@
 .ib-txt span { display: block; font-size: 12.5px; color: #6b7280; }
 .ib-txt span b { display: inline; color: inherit; font-size: inherit; margin: 0; }
 
+/* ข้อความบรรทัดเดียว (ไม่มีหัวข้อ) — ใช้กับฝั่งแอปแชต · ต้องอ่านชัดเท่าหัวข้อ ไม่ใช่ตัวเล็กสีจาง */
+.ib-txt span.ib-one { font-size: 14px; color: inherit; line-height: 1.5; }
+
 .ib-act { display: flex; gap: 8px; flex: 0 0 auto; margin-left: auto; }
 .ib-act button {
   border-radius: 999px; padding: 8px 15px; font: inherit; font-size: 13px;

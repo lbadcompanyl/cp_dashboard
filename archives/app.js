@@ -14,14 +14,42 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const PAGE = 50;        // โหลดผลลัพธ์ทีละ 50
-const DEBOUNCE = 200;   // หน่วงการพิมพ์
 
 const state = {
   q: "", from: "", to: "",
   cats: new Set(), srcs: new Set(),
   shown: PAGE,
   srcq: "",             // คำค้นในรายชื่อสำนักข่าว (ไม่เข้า URL — เป็นแค่ตัวช่วยหา)
+  // 🤖 ถามเป็นประโยค — เงื่อนไขที่ "ต้องอ่านพาดหัวแล้วตีความ" (เช่น "เป็นข่าวเชิงบวก")
+  //    ว่างเปล่า = หน้านี้ทำงานเหมือนเดิมทุกอย่าง
+  judge: "",
+  ask: "",              // คำถามต้นฉบับ ไว้แสดงให้ผู้ใช้เห็นว่าเขาถามอะไรไป
+  // 🔀 โหมดค้นหา (เจ้าของสั่ง 27 ส.ค. 2026: "สลับเป็นหมวด ค้นด้วยคำ ได้ด้วย")
+  //   "ai" = ถามเป็นประโยค ให้ AI ตีความก่อน (ค่าตั้งต้น)
+  //   "kw" = ค้นด้วยคำตรงๆ **ไม่ยิง AI เลย** — เร็ว ฟรี ตรวจสอบได้ ตรงกับที่พิมพ์เป๊ะ
+  // ⚠️ 2 โหมดนี้ต่างกันที่ "ตีความคำที่พิมพ์ยังไง" ไม่ใช่ "กดอะไรถึงจะได้ผล"
+  //    ทั้งคู่ต้องกด Enter/ปุ่มเหมือนกัน — **ห้ามให้โหมดคำค้นสดระหว่างพิมพ์**
+  //    ไม่งั้นจะกลับไปเป็นปัญหาเดิมที่เจ้าของสั่งให้เลิก (แยกไม่ออกว่าตอนไหนได้อะไร)
+  mode: "ai",
 };
+
+const MODE_KEY = "archivesMode";
+const MODES = {
+  ai: { ph: "ถามเป็นประโยค เช่น หาข่าวด้านดีของปลาหมอคางดำทั้งหมด",
+        hint: '<b>🤖 ถาม AI</b> — พิมพ์เป็นประโยคแล้วกด <b>Enter</b> ถามแบบที่คุยกับคนได้เลย<span class="qex"> เช่น <i>ข่าว PM 2.5 เชียงใหม่เดือนที่แล้ว</i> · อยากค้นด้วยคำตรงๆ กดปุ่ม <b>🔤 ค้นคำ</b> ในช่องค้นหา</span>',
+        btn: "ถาม", tip: "ถาม (หรือกด Enter)" },
+  kw: { ph: "พิมพ์คำค้น เช่น ปลาหมอคางดำ ฝุ่น",
+        hint: '<b>🔤 ค้นคำ</b> — พิมพ์คำแล้วกด <b>Enter</b> เว้นวรรค = ต้องมีครบทุกคำ<span class="qex"> · ค้นเจอกลางคำไทยด้วย · ใส่ <code>"…"</code> ถ้าอยากได้วลีติดกัน · อยากถามเป็นประโยค กดปุ่ม <b>🤖 ถาม AI</b></span>',
+        btn: "ค้น", tip: "ค้น (หรือกด Enter)" },
+};
+const isAI = () => state.mode !== "kw";
+
+// ลิงก์ของข่าวที่ผ่านเงื่อนไข judge แล้ว — เก็บเป็น "ลิงก์" ไม่ใช่ลำดับแถว
+// ⚠️ ลำดับแถวเปลี่ยนได้ทุกครั้งที่โหลดปีเพิ่ม/เปลี่ยนตัวกรอง เก็บลำดับไว้แล้วจะชี้ผิดใบ
+let judgeKeep = null;   // null = ยังไม่ได้คัด · Set = คัดแล้ว
+let judgeBusy = false;
+let judgeNote = "";     // ข้อความบอกผู้ใช้ว่าเกิดอะไรขึ้น (คัดไม่ได้ / คัดไม่ครบ)
+let relaxNote = "";     // บอกว่า "ไม่เจอเลย เลยผ่อนเงื่อนไขให้แล้ว" — ต้องบอกเสมอ ห้ามผ่อนเงียบๆ
 
 let INDEX = null;         // data/index.json
 const loaded = new Set(); // ปีที่โหลดแล้ว
@@ -33,6 +61,23 @@ let busy = false;
 // ยุบช่องว่างซ้ำ + ตัดหัวท้าย + lowercase (มีผลกับอังกฤษเท่านั้น ไทยไม่มีตัวพิมพ์)
 // ⚠️ ห้ามตัดอักขระไทยหรือวรรณยุกต์ทิ้ง — "กุ้ง" กับ "กุง" คนละคำ
 const norm = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/* ✍️ **ผ่อนการสะกด — ใช้เป็น "ทางสำรอง" เท่านั้น ห้ามเอามาเป็นตัวค้นหลัก**
+ *
+ * เจ้าของแจ้ง 26 ส.ค. 2026: พิมพ์ "เอเลี่ยนสปีชี่" แล้วไม่เจอ ทั้งที่คลังมี "เอเลี่ยนสปีชีส์"
+ * ต่างกันแค่วรรณยุกต์กับตัวการันต์ แต่การค้นแบบตัวอักษรตรงเป๊ะมองว่าคนละคำสนิท
+ *
+ * ตัดวรรณยุกต์ (่ ้ ๊ ๋) กับตัวการันต์ (์) ออกแล้วค่อยเทียบ
+ *   "เอเลี่ยนสปีชี่"  → "เอเลียนสปีชี"
+ *   "เอเลี่ยนสปีชีส์" → "เอเลียนสปีชีส"   ← อันแรกเป็นส่วนหนึ่งของอันนี้ จึงเจอ
+ *
+ * 🚫 **ห้ามใช้เป็นตัวค้นหลักเด็ดขาด** — วิธีนี้ทำให้ "กุ้ง" กับ "กุง" กลายเป็นคำเดียวกัน
+ *    ซึ่งเป็นข้อห้ามที่เขียนไว้บนสุดของไฟล์นี้ · ใช้ได้เฉพาะตอนค้นแบบเป๊ะแล้วไม่เจอเลย
+ *    และต้องบอกผู้ใช้ทุกครั้งว่ากำลังผ่อนการสะกดให้อยู่
+ */
+const TONE_RE = /[\u0E48-\u0E4C]/g;   // ่ ้ ๊ ๋ ์
+const looseNorm = (s) => norm(s).replace(TONE_RE, "");
+let looseMode = false;                 // ธงระดับโมดูล — ต้องอยู่ข้ามการ render
 
 // ---------- แยกคำค้น ----------
 // **เว้นวรรค = "ต้องมีครบทุกคำ" (AND) แต่ไม่ต้องอยู่ติดกัน** (เจ้าของสั่ง 20 ส.ค. 2026)
@@ -139,6 +184,7 @@ function expand(pack) {
     out.push({
       t: title,                      // พาดหัวต้นฉบับ (ใช้ค้นหา · ยังมีหางสำนักข่าวอยู่)
       n: title.toLowerCase(),        // ตัวที่ใช้ค้น — ความยาวเท่ากับ t เสมอ
+      ln: looseNorm(title),          // ตัวสำรองตอนผ่อนการสะกด (ความยาวไม่เท่า t → ไฮไลต์ไม่ได้)
       u: r[1],
       ts: r[2] * 1000,
       o,
@@ -173,14 +219,15 @@ function yearsNeededByDate() {
 
 // ---------- กรอง ----------
 function applyFilters() {
-  const terms = parseTerms(state.q);
+  // โหมดผ่อนการสะกด: เทียบกับพาดหัวที่ตัดวรรณยุกต์แล้วทั้งสองฝั่ง
+  const terms = looseMode ? parseTerms(state.q).map(looseNorm) : parseTerms(state.q);
   const from = state.from ? Date.parse(state.from + "T00:00:00") : null;
   const to = state.to ? Date.parse(state.to + "T23:59:59") : null;
   const cats = state.cats, srcs = state.srcs;
 
   filtered = rows.filter((r) => {
     // ← substring ตรงๆ (ดูหมายเหตุบนสุด) · หลายคำ = ต้องมีครบทุกคำ อยู่ตรงไหนก็ได้
-    if (terms.length && !terms.every((t) => r.n.includes(t))) return false;
+    if (terms.length && !terms.every((t) => (looseMode ? r.ln : r.n).includes(t))) return false;
     if (from !== null && r.ts < from) return false;
     if (to !== null && r.ts > to) return false;
     if (srcs.size && !srcs.has(r.o)) return false;
@@ -189,11 +236,340 @@ function applyFilters() {
       for (const c of r.c) if (cats.has(c)) { hit = true; break; }
       if (!hit) return false;
     }
+    // 🤖 เงื่อนไขที่ต้องอ่านพาดหัว — ใช้ผลที่ AI คัดไว้แล้วเท่านั้น
+    // ⚠️ ระหว่างที่ยังคัดไม่เสร็จ (judgeKeep = null) ให้ **แสดงทั้งหมดไปก่อน**
+    //    ไม่ใช่ซ่อนทุกใบ — หน้าว่างเปล่าระหว่างรอ อ่านแล้วเหมือน "ไม่มีข่าว"
+    if (state.judge && judgeKeep && !judgeKeep.has(r.u)) return false;
     return true;
   });
 }
 
-const hasFilter = () => !!(state.q || state.from || state.to || state.cats.size || state.srcs.size);
+/* ─────────── 🤖 ถามเป็นประโยค ───────────
+ *
+ * เจ้าของสั่ง 26 ส.ค. 2026: "อยากให้ search เป็นแบบ chat ai
+ *   เช่น หาข่าวด้านดีของปลาหมอคางดำทั้งหมด"
+ *
+ * แบ่งงานเป็น 2 ท่อน เพราะมันคนละเรื่องกัน:
+ *   "ปลาหมอคางดำ" → เป็นตัวอักษรที่อยู่ในพาดหัว → ค้นในเครื่องเหมือนเดิม (ทันที ฟรี)
+ *   "ด้านดี"       → ต้องอ่านแล้วตีความ         → ส่งพาดหัวที่ค้นเจอให้ AI คัด
+ *
+ * 🚫 **ไม่ได้เปลี่ยนวิธีค้นเดิมเลย** — ยังเป็น includes() ทีละแถวเหมือนเดิม
+ *    (กฎข้อห้ามข้อแรกของหน้านี้: ห้ามใช้ตัวค้นที่ตัดคำด้วยช่องว่าง)
+ */
+const ASK_EP = "/api/archives/ask";
+// ⚠️ AI ล่มแล้วค้นแบบคำต่อคำ **ใช้ไม่ได้กับคำถามไทยที่เขียนติดกันไม่มีช่องว่าง**
+//    ("หาข่าวด้านดีของปลาหมอคางดำทั้งหมด" จะกลายเป็นคำเดียวยาวๆ ที่ไม่มีในพาดหัวไหนเลย)
+//    บอกทางออกให้ผู้ใช้ไปเลย ดีกว่าปล่อยให้เจอ "พบ 0 ข่าว" แล้วเดาเอง
+const FALLBACK_NOTE = "ตอนนี้ AI ตอบไม่ได้ — ค้นแบบคำต่อคำให้แทน ถ้าไม่เจอ ลองพิมพ์เฉพาะคำสำคัญ เช่น ปลาหมอคางดำ";
+const JUDGE_MAX = 200; // ส่งให้ AI อ่านมากสุดกี่ใบต่อคำถาม (ต้องไม่เกินเพดานฝั่งเซิร์ฟเวอร์)
+
+// คำที่มีช่องว่างอยู่ข้างในต้องครอบเครื่องหมายคำพูด ไม่งั้นช่องค้นหาจะแยกเป็นคนละคำ
+const quoteTerm = (t) => (/\s/.test(t) ? `"${t}"` : t);
+
+/** ขอให้เซิร์ฟเวอร์ตีความคำถาม · broad = รอบสอง ขอคำที่กว้างขึ้น */
+async function fetchPlan(question, broad) {
+  try {
+    const r = await fetch(`${ASK_EP}?q=${encodeURIComponent(question)}${broad ? "&broad=1" : ""}`);
+    // ⚠️ ต้องเช็คชนิดของคำตอบก่อนแกะ — ถ้าวันหนึ่งมี Cloudflare Access คลุม /api/
+    //    มันจะตอบหน้าล็อกอินเป็น HTML แล้ว .json() จะพัง แล้วรายงานผิดเรื่อง
+    if (r.ok && (r.headers.get("content-type") || "").includes("json")) return await r.json();
+  } catch (e) { /* คืน null ให้ผู้เรียกจัดการ */ }
+  return null;
+}
+
+async function runAsk() {
+  const question = $("#q").value.trim();
+  if (!question || judgeBusy) return;
+
+  judgeBusy = true;
+  relaxNote = "";
+  looseMode = false;
+  state.ask = question;
+  // ⏳ **วาดสถานะ "กำลังค้น" ทันที ก่อนจะไปรอคำตอบ**
+  //    ลืมบรรทัดนี้ = รายการยังเป็นผลของคำถามก่อนหน้าตลอดเวลาที่รอ
+  //    ซึ่งอ่านแล้วเข้าใจว่านี่คือคำตอบของคำถามใหม่ (เจ้าของสั่งให้มีไอคอนหมุน 26 ส.ค. 2026)
+  renderAskBar();
+  renderList();
+
+  // 🔤 โหมดค้นด้วยคำ — ไม่ยิง AI เลย เอาที่พิมพ์ไปค้นตรงๆ
+  //    (ยังผ่อนการสะกดให้ตอนไม่เจอ และยังบอกว่าผ่อนอะไร เหมือนโหมด AI)
+  if (!isAI()) {
+    judgeBusy = false;
+    state.ask = "";           // ไม่ได้ถาม จึงไม่มี "ถามว่า …" ให้แสดง
+    state.judge = "";
+    judgeKeep = null;
+    judgeNote = "";
+    state.q = question;
+    state.shown = PAGE;
+    applyFilters();
+    relaxNote = relaxIfEmpty();
+    if (!filtered.length && !relaxNote) relaxNote = `ไม่มีข่าวที่มีคำว่า “${question}” อยู่ในคลังเลย`;
+    syncURL(true);
+    render();
+    return;
+  }
+
+  const plan = await fetchPlan(question, false);
+
+  // ⚠️ **ทางถอยห้ามขาด** — ถามไม่ผ่านก็ต้องยังค้นได้ ไม่ใช่หน้าค้าง
+  //    เอาคำถามไปค้นตรงๆ = พฤติกรรมเดิมของหน้านี้เป๊ะ
+  // 🐞 **"ไม่มีคำค้น" ไม่ได้แปลว่าตีความไม่ออก** (เจ้าของเจอ 27 ส.ค. 2026: ถาม "ข่าวเมื่อวาน")
+  //    คำถามเรื่องช่วงเวลาล้วนๆ ไม่มีคำไหนอยู่ในพาดหัวเลย — มีแต่ช่วงวันที่
+  //    ของเดิมตกไปค้นคำว่า "ข่าวเมื่อวาน" ในพาดหัว = 0 ใบทุกครั้ง
+  //    ถอยก็ต่อเมื่อ **ไม่ได้อะไรมาเลยสักอย่าง** เท่านั้น
+  const gotSomething =
+    plan && Array.isArray(plan.terms) && (plan.terms.length || plan.from || plan.to || plan.judge);
+  if (!gotSomething) {
+    judgeBusy = false;
+    state.judge = "";
+    judgeKeep = null;
+    // ⚠️ **ต้องตั้งคำค้นเองด้วย** — โหมดเดียวแล้ว ไม่มีตัวค้นสดคอยตั้งให้เหมือนเมื่อก่อน
+    //    ลืมบรรทัดนี้ = ถามแล้วไม่มีอะไรเกิดขึ้นเลยเวลา AI ใช้ไม่ได้
+    state.q = question;
+    judgeNote = FALLBACK_NOTE;
+    state.shown = PAGE;
+    syncURL(true);
+    render();
+    return;
+  }
+
+  state.q = plan.terms.map(quoteTerm).join(" ");
+  if (plan.from) state.from = plan.from;
+  if (plan.to) state.to = plan.to;
+  state.judge = String(plan.judge || "");
+  judgeKeep = null;
+  // AI ล่มแต่ตีความช่วงวันที่ให้เองได้ → อย่าบอกว่า "ค้นแบบคำต่อคำ" ซึ่งไม่ตรงกับที่ทำจริง
+  judgeNote = plan.ai
+    ? ""
+    : (plan.from || plan.to) && !plan.terms.length
+    ? `ตอนนี้ AI ตอบไม่ได้ — แต่อ่านช่วงวันที่ในคำถามออกเอง จึงกรองตามวันที่ให้แทน${plan.why ? ` (${plan.why})` : ""}`
+    : plan.why ? `${FALLBACK_NOTE} (${plan.why})` : FALLBACK_NOTE;
+  state.shown = PAGE;
+  fillInputs();
+
+  // ผู้ใช้ถามถึงช่วงเวลาที่ยังไม่ได้โหลดข้อมูลปีนั้น → โหลดให้ก่อน
+  const need = yearsNeededByDate();
+  if (need.length) await withBusy(() => Promise.all(need.map(loadYear)));
+
+  applyFilters();
+  relaxNote = relaxIfEmpty();     // ไม่เจอเลย → ผ่อนให้ก่อนที่ผู้ใช้จะเห็นหน้าว่าง
+
+  // 🧠 ยังไม่เจออีก → **ขอคำที่กว้างขึ้นอีกรอบเดียว**
+  // ⚠️ ภาษาไทยไม่มีช่องว่างคั่นคำ ฝั่งหน้าเว็บจึงแยก "เผาข้าวโพด" เป็น "เผา"+"ข้าวโพด" เองไม่ได้
+  //    ต้องให้ AI แยกให้ (เจอจริง 26 ส.ค. 2026: ได้คำประสมคำเดียวแล้วเหลือ 0 ข่าว)
+  //    ยิงเพิ่มแค่ตอนไม่เจอเท่านั้น และ cache แยก จึงไม่เปลืองในการใช้งานปกติ
+  if (!filtered.length && plan.ai && state.q) {
+    const wide = await fetchPlan(question, true);
+    const wideTerms = wide && Array.isArray(wide.terms) ? wide.terms.filter(Boolean) : [];
+    if (wideTerms.length) {
+      const before = state.q;
+      state.q = wideTerms.map(quoteTerm).join(" ");
+      applyFilters();
+      if (filtered.length) relaxNote = `ไม่เจอด้วยคำว่า “${before.replace(/"/g, "")}” — ลองคำที่กว้างขึ้นให้แล้ว`;
+      else { state.q = before; applyFilters(); }
+    }
+  }
+  // ⚠️ ยังไม่เจอจริงๆ = **บอกตรงๆ ว่าไม่มีในคลัง** ไม่ใช่ปล่อยให้เจอข้อความ "ลองลดตัวกรองลง"
+  //    ซึ่งผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย อ่านแล้วงงว่าจะให้ลดอะไร
+  if (!filtered.length && !relaxNote) {
+    // ⚠️ คำถามเรื่องช่วงเวลาล้วนๆ ไม่มีคำค้นเลย — ห้ามขึ้นว่า 'ไม่มีข่าวที่มีคำว่า ""'
+    const cov = coverage();
+    const span = cov ? ` (คลังมีข่าวตั้งแต่ ${dayOf(cov.lo)} ถึง ${dayOf(cov.hi)})` : "";
+    relaxNote = state.q
+      ? `ไม่มีข่าวที่มีคำว่า “${state.q.replace(/"/g, "")}” อยู่ในคลังเลย`
+      : `ไม่มีข่าวในช่วงวันที่ที่ถามมาเลย${span}`;
+  }
+
+  syncURL(true);
+  render();                       // วาดผลของคำค้นก่อน ผู้ใช้จะได้เห็นอะไรทันที
+  await judgePass();              // แล้วค่อยคัดตามเงื่อนไข
+  judgeBusy = false;
+  render();
+}
+
+// ส่งพาดหัวที่ค้นเจอให้ AI คัดตามเงื่อนไข
+async function judgePass() {
+  if (!state.judge) { judgeKeep = null; return; }
+  const pool = filtered.slice(0, JUDGE_MAX);
+  if (!pool.length) { judgeKeep = new Set(); return; }
+
+  renderAskBar(true);
+  try {
+    const r = await fetch(ASK_EP, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ judge: state.judge, titles: pool.map((x) => x.t) }),
+    });
+    if (!r.ok || !(r.headers.get("content-type") || "").includes("json")) throw new Error("คัดไม่สำเร็จ");
+    const out = await r.json();
+    const keep = Array.isArray(out.keep) ? out.keep : [];
+    judgeKeep = new Set(keep.map((i) => pool[i] && pool[i].u).filter(Boolean));
+    judgeNote = out.ai === false ? (out.why || "ยังไม่ได้คัดตามเงื่อนไข") : (out.partial ? "คัดได้ไม่ครบทุกใบ — ใบที่คัดไม่ได้ยังแสดงอยู่" : "");
+  } catch (e) {
+    // ⚠️ คัดไม่สำเร็จ = **แสดงทุกใบ** ไม่ใช่ซ่อนทุกใบ · และต้องบอกด้วยว่ายังไม่ได้คัด
+    judgeKeep = null;
+    judgeNote = "คัดตามเงื่อนไขไม่สำเร็จ — แสดงผลจากคำค้นทั้งหมดไปก่อน";
+  }
+  if (filtered.length > JUDGE_MAX) {
+    judgeNote = (judgeNote ? judgeNote + " · " : "") + `อ่านให้แค่ ${JUDGE_MAX} ใบแรก (เจอ ${filtered.length.toLocaleString("th-TH")} ใบ) — ใส่คำให้แคบลงจะแม่นกว่า`;
+  }
+}
+
+function clearAsk() {
+  state.judge = ""; state.ask = "";
+  judgeKeep = null; judgeNote = ""; relaxNote = "";
+  looseMode = false;
+}
+
+/* 🧠 **ไม่เจอเลย = ผ่อนเงื่อนไขให้เอง แล้วบอกว่าผ่อนอะไรไป**
+ *
+ * หน้านี้ใช้กฎ "ต้องมีครบทุกคำ" → มีคำเดียวที่ไม่ตรงก็เหลือ 0 ทันที
+ * และ AI เดาช่วงเวลาพลาดก็ทำให้เหลือ 0 ได้เหมือนกัน
+ * ปล่อยให้ผู้ใช้เจอ "พบ 0 ข่าว" แล้วไปนั่งเดาเองว่าคำไหนผิด = แย่กว่าไม่มี AI
+ *
+ * ⚠️ **ห้ามผ่อนเงียบๆ** — ต้องบอกทุกครั้งว่าตัดอะไรออก ไม่งั้นผู้ใช้จะนึกว่าผลที่เห็นตรงกับที่ถาม
+ * ⚠️ ผ่อนตามลำดับ "ตัวที่น่าจะรัดเกินไปก่อน": ช่วงวันที่ → คำที่สั้นที่สุด (เจาะจงน้อยสุด)
+ */
+/* 📅 คลังข่าวมีข่าวถึงแค่วันไหน — คิดจากแถวที่โหลดมาจริง ไม่ใช่เดาจากวันนี้
+   ⚠️ ข้อมูลเป็นไฟล์นิ่งที่ commit ไว้ ต้องสร้างใหม่ด้วยมือ (tools/build-archives.mjs)
+      ไม่ได้อัปเดตเองทุกวัน → มักเก่ากว่าวันนี้หลายวันเสมอ */
+const dayOf = (ts) => fmtDate(ts).slice(0, 10);
+function coverage() {
+  if (!rows.length) return null;
+  let lo = Infinity, hi = -Infinity;
+  for (const r of rows) { if (r.ts) { if (r.ts < lo) lo = r.ts; if (r.ts > hi) hi = r.ts; } }
+  return hi > 0 ? { lo, hi } : null;
+}
+
+function relaxIfEmpty() {
+  if (filtered.length) return "";
+
+  // 🐞 **ถามถึงช่วงที่คลังยังไม่มีข่าว — ห้ามตัดวันที่ทิ้งแล้วโยนข่าวทั้งคลังมาให้**
+  //    (เจ้าของเจอจริง 28 ส.ค. 2026: ถาม "ข่าวเมื่อวาน" แล้วได้ข่าวของ 13-14 ส.ค. เป็นพรืด)
+  //    คำถามเรื่องเวลาล้วนๆ พอตัดวันที่ออกจะไม่เหลือเงื่อนไขอะไรเลย = ได้ทั้งคลัง
+  //    ซึ่งไม่เกี่ยวกับที่ถามสักนิด · ตอบว่า "คลังมีถึงแค่วันไหน" ตรงๆ มีประโยชน์กว่ามาก
+  //    ⚠️ ใช้ทางนี้ **เฉพาะคำถามที่ไม่มีคำค้น** — ถ้ามีคำค้นอยู่ด้วย การตัดวันที่ทิ้ง
+  //       ยังมีประโยชน์ (AI เดาเดือนพลาดบ่อย) และผู้ใช้ยังได้ของที่ถามอยู่
+  const cov = coverage();
+  const outside =
+    cov && !parseTerms(state.q).length &&
+    ((state.from && Date.parse(state.from + "T23:59:59") < cov.lo) ||
+     (state.to && Date.parse(state.to + "T00:00:00") > cov.hi));
+  if (outside) {
+    return `คลังข่าวมีข่าวถึงแค่ ${dayOf(cov.hi)} (ตั้งแต่ ${dayOf(cov.lo)}) — ยังไม่มีข่าวของช่วงที่ถามมา`;
+  }
+
+  // 1) ช่วงวันที่ — AI เดาเดือนพลาดเจอบ่อยที่สุด และตัดออกแล้วผู้ใช้ยังได้ของที่ถามอยู่
+  //    ⚠️ ทำได้เฉพาะตอน **มีคำค้นอยู่ด้วย** — ไม่งั้นตัดแล้วไม่เหลือเงื่อนไขเลย
+  if ((state.from || state.to) && parseTerms(state.q).length) {
+    const f = state.from, t = state.to;
+    state.from = ""; state.to = "";
+    applyFilters();
+    if (filtered.length) return `ไม่เจอข่าวในช่วง ${f || "…"} ถึง ${t || "…"} เลย — ตัดช่วงวันที่ออกให้แล้ว`;
+    state.from = f; state.to = t;   // ไม่ช่วย → คืนค่าเดิม
+  }
+
+  // 2) ผ่อนการสะกด — ทำก่อนตัดคำ เพราะยังได้คำที่ผู้ใช้ถามครบทุกคำ (เสียน้อยกว่า)
+  looseMode = true;
+  applyFilters();
+  if (filtered.length) return "สะกดไม่ตรงกับในข่าวเป๊ะ — จับคำที่ใกล้เคียงให้แล้ว (ไม่ได้ไฮไลต์คำในโหมดนี้)";
+  looseMode = false;
+  applyFilters();
+
+  // 3) ตัดคำออกทีละคำ
+  // ⚠️ **ต้องลองตัดทีละคำแล้วดูว่าคำไหนคือตัวที่ทำให้ไม่เจอ** ไม่ใช่ตัดตามความยาว
+  //    (เดาว่า "คำสั้น = ไม่สำคัญ" แล้วพลาด — คำที่ผิดมักเป็นคำยาวที่ AI แต่งขึ้นมาเอง)
+  //    คำมากสุด 6 คำ การไล่ทุกแบบจึงถูกมาก
+  const saveQ = state.q, saveFrom = state.from, saveTo = state.to;
+  let keep = parseTerms(state.q);
+  if (keep.length < 2) return "";
+  const dropped = [];
+  while (keep.length > 1) {
+    let best = null;
+    for (let i = 0; i < keep.length; i++) {
+      const trial = keep.filter((_, k) => k !== i);
+      state.q = trial.map(quoteTerm).join(" ");
+      applyFilters();
+      if (filtered.length && (!best || filtered.length > best.n)) best = { i, n: filtered.length, trial };
+    }
+    if (best) {
+      dropped.push(keep[best.i]);
+      state.q = best.trial.map(quoteTerm).join(" ");
+      applyFilters();
+      return `ไม่เจอข่าวที่มีครบทุกคำ — ตัดคำว่า “${dropped.join("”, “")}” ออกให้แล้ว`;
+    }
+    // ตัดคำเดียวยังไม่พอ → ตัดคำที่สั้นสุดทิ้งแล้ววนหาต่อ
+    keep = [...keep].sort((a, b) => b.length - a.length);
+    dropped.push(keep.pop());
+  }
+  // ตัดจนเหลือคำเดียวแล้วยังไม่เจอ = ไม่มีจริงๆ คืนของเดิมไป ไม่ต้องหลอกว่าผ่อนแล้ว
+  state.q = saveQ; state.from = saveFrom; state.to = saveTo;
+  applyFilters();
+  return "";
+}
+
+/* 🔀 วาดปุ่มสลับโหมด + ปรับหน้าตาช่องค้นหาให้ตรงกับโหมดที่เลือก
+   ⚠️ ต้องเปลี่ยนให้ครบทั้ง ป้าย · placeholder · บรรทัดบอกวิธีใช้ · ป้ายบนปุ่ม
+      เปลี่ยนแค่บางอย่าง = ผู้ใช้อ่านแล้วไม่แน่ใจว่าตอนนี้อยู่โหมดไหน */
+function applyMode() {
+  const m = MODES[state.mode] || MODES.ai;
+  // 🔀 ปุ่ม 2 ช่อง — ระบายช่องที่เลือกอยู่ ที่เหลือปล่อยจางไว้ให้เห็นว่ายังกดได้
+  $$("#modeseg .mseg").forEach((b) => {
+    const on = b.dataset.mode === state.mode;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  const q = $("#q");
+  if (q) q.placeholder = m.ph;
+  const h = $(".qhint");
+  if (h) h.innerHTML = m.hint;
+  const b = $("#askbtn");
+  if (b) { $(".flabel", b).textContent = m.btn; b.title = m.tip; }
+}
+
+function setMode(next) {
+  if (state.mode === next) return;
+  state.mode = next;
+  try { localStorage.setItem(MODE_KEY, next); } catch {}
+  // สลับโหมด = ทิ้งผลที่ตีความไว้ด้วยโหมดเก่า ไม่งั้นแถบจะบอกคนละเรื่องกับป้าย
+  clearAsk();
+  applyMode();
+  syncURL(true);
+  render();
+  $("#q").focus();
+}
+
+function renderAskBar(judging) {
+  // ปุ่มถามต้องบอกสถานะด้วย — ปุ่มที่กดแล้วหน้าตาเหมือนเดิม อ่านแล้วเหมือนกดไม่ติด
+  const btn = $("#askbtn");
+  if (btn) {
+    btn.disabled = judgeBusy;
+    btn.classList.toggle("busy", judgeBusy);
+    const ic = btn.firstElementChild;
+    if (ic) ic.innerHTML = judgeBusy ? '<span class="spin"></span>' : "🔎";
+  }
+  const bar = $("#askbar");
+  if (!bar) return;
+  if (!state.ask && !state.judge && !judgeNote && !relaxNote) { bar.hidden = true; bar.innerHTML = ""; return; }
+  bar.hidden = false;
+
+  if (judgeBusy) {
+    bar.innerHTML = `<span class="loading"><span class="spin"></span>${judging ? "กำลังอ่านพาดหัวเพื่อคัดตามเงื่อนไข…" : "กำลังตีความคำถาม…"}</span>`;
+    return;
+  }
+  // ⚠️ บอกให้ครบว่า "ค้นด้วยอะไร" และ "คัดด้วยอะไร" — ไม่งั้นผู้ใช้ไม่มีทางรู้ว่าทำไมได้ผลแบบนี้
+  const bits = [];
+  if (state.ask) bits.push(`ถามว่า <b>${esc(state.ask)}</b>`);
+  if (state.q) bits.push(`ค้นคำ <b>${esc(state.q)}</b>`);
+  if (state.judge) bits.push(`คัดเฉพาะที่ <b>${esc(state.judge)}</b>`);
+  bar.innerHTML =
+    `<span class="askwhy">${bits.join(" · ")}</span>` +
+    (relaxNote ? `<span class="asknote">🔎 ${esc(relaxNote)}</span>` : "") +
+    (judgeNote ? `<span class="asknote">⚠️ ${esc(judgeNote)}</span>` : "") +
+    `<button type="button" class="btn sm" data-askclear>เลิกคัด</button>`;
+}
+
+const hasFilter = () => !!(state.q || state.from || state.to || state.cats.size || state.srcs.size || state.judge);
 
 // ---------- URL ----------
 // เก็บสถานะทั้งหมดไว้ใน query string — ก๊อป URL ส่งต่อแล้วเปิดได้ผลเดิม
@@ -204,6 +580,11 @@ function toQuery() {
   if (state.to) p.set("to", state.to);
   if (state.cats.size) p.set("cat", [...state.cats].join(","));
   if (state.srcs.size) p.set("src", [...state.srcs].join(","));
+  // เงื่อนไขของ 🤖 เข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้ผลเดิม ไม่ใช่ได้ผลกว้างกว่า
+  if (state.judge) p.set("judge", state.judge);
+  if (state.ask) p.set("ask", state.ask);
+  // โหมดเข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้หน้าตาเดียวกัน (ค่าตั้งต้นคือ ai จึงไม่ต้องใส่)
+  if (state.mode === "kw") p.set("mode", "kw");
   const s = p.toString();
   return s ? "?" + s : location.pathname;
 }
@@ -214,6 +595,13 @@ function readQuery() {
   state.to = p.get("to") || "";
   state.cats = new Set((p.get("cat") || "").split(",").filter(Boolean));
   state.srcs = new Set((p.get("src") || "").split(",").filter(Boolean));
+  state.judge = p.get("judge") || "";
+  state.ask = p.get("ask") || "";
+  // URL ชนะ localStorage — ลิงก์ที่ส่งต่อกันต้องเปิดได้หน้าตาเดิมเสมอ
+  let saved = "";
+  try { saved = localStorage.getItem(MODE_KEY) || ""; } catch {}
+  state.mode = p.get("mode") === "kw" ? "kw" : p.has("mode") ? "ai" : saved === "kw" ? "kw" : "ai";
+  judgeKeep = null;   // เปิดจากลิงก์ = ยังไม่ได้คัด ต้องไปคัดใหม่
   state.shown = PAGE;
 }
 // พิมพ์ = replace (ไม่งั้นกด back ทีละตัวอักษร) · กดปุ่ม/ชิพ = push (กด back แล้วย้อนได้)
@@ -272,7 +660,19 @@ const fmtDate = (ts) => {
 
 function renderList() {
   const box = $("#list");
-  const terms = parseTerms(state.q);
+
+  // ⏳ **กำลังค้นอยู่ = ต้องขึ้นไอคอนหมุน ไม่ใช่ค้างผลของคำค้นเก่า** (เจ้าของสั่ง 26 ส.ค. 2026)
+  //    ของเดิมแถบตีความมีไอคอนหมุนอยู่ก็จริง แต่รายการข้างล่างยังเป็นผลของคำถามก่อนหน้า
+  //    ผู้ใช้กดถามคำใหม่แล้วเห็นข่าวชุดเดิม = เข้าใจว่านี่คือคำตอบของคำถามใหม่
+  //    (กฎเดียวกับข้อ 5b ของแดชบอร์ด: เปิดหน้ามาต้องขึ้นไอคอนหมุน ไม่ใช่ข่าวเก่า)
+  if (judgeBusy) {
+    box.innerHTML = `<div class="empty"><span class="loading"><span class="spin"></span>กำลังค้น…</span></div>`;
+    $("#more").innerHTML = "";
+    return;
+  }
+  // ⚠️ โหมดผ่อนการสะกด **ห้ามไฮไลต์** — ตัวที่ใช้เทียบสั้นกว่าพาดหัวจริง
+  //    ตำแหน่งที่เจอจึงเอามาตัดชิ้นจากพาดหัวไม่ได้ (จะได้พาดหัวเลื่อนตำแหน่งทั้งบรรทัด)
+  const terms = looseMode ? [] : parseTerms(state.q);
 
   if (!filtered.length) {
     // ⚠️ 2 กรณีนี้ต้องพูดคนละแบบ — "ยังไม่ได้กรอง" กับ "กรองแล้วไม่พบ"
@@ -314,14 +714,16 @@ function renderList() {
 }
 
 // ---------- กล่องตัวกรอง (พับได้) ----------
-// ⚠️ จำสถานะไว้ใน localStorage ไม่ใช่ใน DOM อย่างเดียว — ไม่งั้นกดกางไว้แล้ว
-//    พอเปลี่ยนหน้า/รีเฟรช ต้องมากางใหม่ทุกครั้ง
-const FOPEN_KEY = "archivesFiltersOpen";
+// 🚫 **ไม่จำสถานะเปิด/ปิด — เปิดหน้ามาต้องพับไว้เสมอ** (เจ้าของสั่ง 28 ส.ค. 2026:
+//    "ตอนนี้ filter เปิดค้างไว้ ให้ collapse ทุกครั้งที่เปิดใหม่ ไม่ต้องจำตรงนี้")
+//    ของเดิมจำไว้ใน localStorage (`archivesFiltersOpen`) กางค้างครั้งเดียวแล้วค้างตลอดไป
+// ✅ ที่ไม่เสียอะไรเพราะ **ยังบอกอยู่เสมอว่ากรองอะไรไว้** ทั้งบรรทัดสรุป (#fsum "กรองอยู่: …")
+//    และเลขบนปุ่มตัวกรอง — พับแล้วจึงไม่มีทางงงว่าทำไมข่าวน้อยลง (ดู filterSummary)
+const FOPEN_KEY = "archivesFiltersOpen"; // เหลือไว้ล้างค่าเก่าที่ค้างในเครื่องผู้ใช้เท่านั้น
 function setFiltersOpen(open) {
   $("#filters").hidden = !open;
   $("#ftoggle").setAttribute("aria-expanded", open ? "true" : "false");
   $("#ftoggle .fcaret").textContent = open ? "▾" : "▸";
-  try { localStorage.setItem(FOPEN_KEY, open ? "1" : "0"); } catch {}
 }
 
 // สรุปว่ากรองอะไรไว้ — ต้องอ่านรู้เรื่องโดยไม่ต้องกางกล่อง
@@ -393,18 +795,18 @@ function render() {
   renderFacets();
   renderCount();
   renderList();
+  renderAskBar();
 }
 
 // ---------- เหตุการณ์ ----------
-let tmr = 0;
+// 🤖 **โหมดเดียว: ค้นด้วย AI** (เจ้าของสั่ง 26 ส.ค. 2026 — "ให้มีโหมดเดียวพอ")
+//
+// ⚠️ **พิมพ์แล้วไม่ค้นสดอีกแล้ว** — ของเดิมพิมพ์ปุ๊บกรองปั๊บ ซึ่งเอามาใช้กับ AI ไม่ได้
+//    (จะยิงถามทุกตัวอักษร) ถ้าปล่อยให้พิมพ์แล้วกรองสดต่อไปพร้อมกับมีปุ่มถาม
+//    = กลายเป็น 2 โหมดที่ผู้ใช้แยกไม่ออกว่าตอนไหนได้อะไร ซึ่งคือปัญหาที่เจ้าของสั่งให้เลิก
+// ตอนนี้: พิมพ์ → กด Enter หรือปุ่มถาม → ค่อยได้ผล
 function onSearchInput() {
-  clearTimeout(tmr);
-  tmr = setTimeout(() => {
-    state.q = $("#q").value;
-    state.shown = PAGE;
-    syncURL(false);   // พิมพ์ = replace ไม่ให้ back เดินทีละตัวอักษร
-    render();
-  }, DEBOUNCE);
+  $("#qclear").hidden = !$("#q").value;   // อัปเดตแค่ปุ่มล้าง ไม่ได้ค้นอะไร
 }
 
 async function onDateChange() {
@@ -430,7 +832,8 @@ function bind() {
   $("#ftoggle").addEventListener("click", () => setFiltersOpen($("#filters").hidden));
   $("#q").addEventListener("input", onSearchInput);
   $("#qclear").addEventListener("click", () => {
-    $("#q").value = ""; state.q = ""; state.shown = PAGE; syncURL(true); render(); $("#q").focus();
+    $("#q").value = ""; state.q = ""; clearAsk(); state.shown = PAGE;
+    syncURL(true); render(); $("#q").focus();
   });
   $("#from").addEventListener("change", onDateChange);
   $("#to").addEventListener("change", onDateChange);
@@ -454,10 +857,26 @@ function bind() {
   const clearAll = () => {
     state.q = ""; state.from = ""; state.to = "";
     state.cats.clear(); state.srcs.clear(); state.shown = PAGE;
+    clearAsk();
     $("#q").value = ""; $("#from").value = ""; $("#to").value = "";
     syncURL(true); render();
   };
   $("#clearall").addEventListener("click", clearAll);
+
+  // 🤖 ถามเป็นประโยค — กดปุ่ม หรือกด Enter ในช่องค้นหา
+  // ⭐ Enter = ทางหลักของหน้านี้ (มีโหมดเดียว) · ปุ่มถามทำอย่างเดียวกัน
+  //    ⚠️ ยังต้องกดเองอยู่ดี **ห้ามยิงถามระหว่างพิมพ์** — จะกลายเป็นถาม AI ทุกตัวอักษร
+  $("#modeseg").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-mode]");
+    if (b) setMode(b.dataset.mode);
+  });
+  $("#askbtn").addEventListener("click", runAsk);
+  $("#q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runAsk(); } });
+  // "เลิกคัด" = ทิ้งเงื่อนไข แต่ **เก็บคำค้นไว้** — ผู้ใช้มักอยากเห็นของทั้งหมดในเรื่องเดิม
+  $("#askbar").addEventListener("click", (e) => {
+    if (!e.target.closest("[data-askclear]")) return;
+    clearAsk(); state.shown = PAGE; syncURL(true); render();
+  });
 
   $("#more").addEventListener("click", async (e) => {
     if (e.target.closest("[data-more]")) { state.shown += PAGE; renderList(); return; }
@@ -490,8 +909,11 @@ function bind() {
   });
 }
 
+// ⚠️ ช่องพิมพ์เก็บ **คำถามของผู้ใช้** ไม่ใช่คำค้นที่ AI แยกออกมา
+//    เขียนทับด้วยคำค้น (เช่นถาม "หาข่าวด้านดีของปลาหมอคางดำ" แล้วช่องกลายเป็น "ปลาหมอคางดำ")
+//    ผู้ใช้จะงงว่าคำถามหายไปไหน · คำค้นที่แยกได้ไปแสดงในแถบตีความแทน
 function fillInputs() {
-  $("#q").value = state.q;
+  $("#q").value = state.ask || state.q;
   $("#from").value = state.from;
   $("#to").value = state.to;
 }
@@ -500,12 +922,12 @@ function fillInputs() {
 (async function init() {
   bind();
   readQuery();
+  applyMode();
   fillInputs();
-  // เปิด URL ที่มีตัวกรองติดมาแล้ว ให้กางกล่องให้เลย — ไม่งั้นเห็นผลถูกกรองอยู่แต่ไม่รู้ว่ากรองด้วยอะไร
-  const preset = !!(state.from || state.to || state.cats.size || state.srcs.size);
-  let saved = false;
-  try { saved = localStorage.getItem(FOPEN_KEY) === "1"; } catch {}
-  setFiltersOpen(preset || saved);
+  // 🚫 เปิดหน้ามา **พับไว้เสมอ** ไม่ว่าจะเคยกางไว้ หรือมีตัวกรองติดมากับ URL ก็ตาม
+  //    (เจ้าของสั่ง 28 ส.ค. 2026) · ที่กรองอยู่ยังอ่านได้จากบรรทัดสรุปกับเลขบนปุ่ม
+  setFiltersOpen(false);
+  try { localStorage.removeItem(FOPEN_KEY); } catch {}   // ล้างค่าเก่าที่ค้างอยู่ในเครื่อง
   $("#list").innerHTML = `<div class="loading"><span class="spin"></span>กำลังโหลดคลังข่าว…</div>`;
   try {
     INDEX = await fetch("data/index.json").then((r) => {

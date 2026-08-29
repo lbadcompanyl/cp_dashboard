@@ -65,7 +65,13 @@
       "<path d='M0 78 L38 " + (46 + Math.floor(rnd() * 18)) + " L74 74 L108 " + (52 + Math.floor(rnd() * 16)) +
       " L160 80 L160 100 L0 100 Z' fill='" + land + "' opacity='.85'/>" +
       "<rect x='0' y='0' width='4' height='100' fill='" + color + "'/></svg>";
-    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+    /* ใช้ `charset=utf-8` ไม่ใช่ `;utf8` — `;utf8` ไม่ใช่พารามิเตอร์ที่ถูกต้อง
+       ของ media type (ไม่มีเครื่องหมาย =) เขียนให้ตรงมาตรฐานไว้ก่อน
+       ⚠️ **ไม่ใช่ตัวที่ทำให้เทสต์ WebKit ตก** — เคยสรุปแบบนั้นไว้ตรงนี้ ซึ่งผิด
+          แก้เป็น charset=utf-8 แล้วยังตกเหมือนเดิม
+          ตัวจริงคือ loading="lazy" ทำให้รูปครึ่งล่างไม่ถูกโหลดตอนวัด
+          (ดูคำอธิบายเต็มที่ social.mjs [27]) */
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
 
   /* ลิงก์ของโพสต์
