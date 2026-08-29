@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="8" />
+<meta name="page-ver" content="9" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -101,6 +101,22 @@
       🔒 ไฟล์ถูกอ่านในเครื่องคุณ ไม่ได้อัปโหลดไปเก็บที่ไหน
     </p>
     <div id="fileinfo" class="small" style="margin-top:9px"></div>
+  </div>
+
+  <div class="card">
+    <h2>📥 ดึงคอมเมนต์จากโพส → CSV <span class="muted small">(ไว้เอาไป label เพิ่ม)</span></h2>
+    <div class="row">
+      <input type="url" id="posturl" placeholder="วางลิงก์โพส Facebook / TikTok / YouTube"
+             style="flex:1;min-width:280px;font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:9px" />
+      <input type="number" id="postlimit" value="500" min="10" max="2000" title="ดึงมากสุดกี่คอมเมนต์"
+             style="width:90px;font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:9px" />
+      <button id="grab">ดึงคอมเมนต์</button>
+    </div>
+    <p class="small muted" style="margin:9px 0 0">
+      ⚠️ ใช้เครดิต ScrapeCreators (ของที่จ่ายเงิน) · <b>ไม่ใช้โควตา Claude เลย</b> — ดึงอย่างเดียว ไม่ได้ตี sentiment<br />
+      🔒 ไฟล์ที่ได้<b>ไม่มีชื่อผู้คอมเมนต์</b> ถูกตัดออกตั้งแต่ฝั่ง Worker
+    </p>
+    <div id="grabinfo" class="small" style="margin-top:9px"></div>
   </div>
 
   <div class="card" id="progwrap" hidden>
@@ -255,6 +271,38 @@ $("#run").addEventListener("click", async () => {
   $("#progwrap").hidden = true;
   window.__tok = tok;
   render(preds, Math.round((Date.now() - t0) / 1000), failed, errors);
+});
+
+/* ── ดึงคอมเมนต์จากโพสจริง → CSV (ไม่เกี่ยวกับการวัดผล) ── */
+$("#grab").addEventListener("click", async () => {
+  const link = $("#posturl").value.trim();
+  if (!link) { $("#grabinfo").textContent = "ใส่ลิงก์โพสก่อน"; return; }
+  $("#grab").disabled = true;
+  $("#grabinfo").innerHTML = '<span class="spin"></span>กำลังดึงคอมเมนต์… (โพสใหญ่ๆ ใช้เวลาสักครู่)';
+  try {
+    const r = await fetch(WORKER + "/comments", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: link, limit: +$("#postlimit").value || 500 }),
+    });
+    const d = await r.json();
+    if (!r.ok || !Array.isArray(d.comments)) throw new Error(d.detail || d.error || ("HTTP " + r.status));
+    if (!d.comments.length) throw new Error("ดึงได้ 0 คอมเมนต์ (โพสอาจปิดคอมเมนต์ หรือลิงก์ไม่รองรับ)");
+
+    /* ใส่คอลัมน์ที่ต้องใช้ตอน label ไว้ให้เลย (ว่างไว้ให้กรอก)
+       ⚠️ ชื่อคอลัมน์ต้องตรงกับที่หน้านี้อ่านตอนวัดผล ไม่งั้น label เสร็จแล้วเอากลับมาใช้ไม่ได้ */
+    const head = ["id", "message", "topic", "sentiment_cp", "overall_cred", "is_sarcasm", "likes", "time"];
+    const lines = [head.join(",")].concat(d.comments.map((c, i) =>
+      [i + 1, c.text, "", "", "", "", c.likes, c.time].map(csvEsc).join(",")));
+    download(`comments-${d.platform}-${stamp()}.csv`, lines.join("\n"));
+
+    $("#grabinfo").innerHTML = `✅ ได้ <b>${d.comments.length}</b> คอมเมนต์` +
+      (d.post_title ? ` · โพส: ${esc(String(d.post_title).slice(0, 70))}` : "") +
+      (d.credits_remaining != null ? ` · เครดิต ScrapeCreators เหลือ <b>${d.credits_remaining}</b>` : "") +
+      `<br />ไฟล์ถูกดาวน์โหลดแล้ว — คอลัมน์ <code>sentiment_cp</code> · <code>overall_cred</code> · <code>is_sarcasm</code> เว้นว่างไว้ให้กรอก`;
+  } catch (err) {
+    $("#grabinfo").innerHTML = `<span style="color:var(--neg)">❌ ${esc(err.message)}</span>`;
+  }
+  $("#grab").disabled = false;
 });
 
 /* ── คำนวณตัวเลข ── */

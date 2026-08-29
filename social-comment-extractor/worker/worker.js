@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 13;
+const WORKER_VER = 14;
 
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -217,6 +217,35 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
+    }
+
+    /* ดึงคอมเมนต์ออกมาเฉยๆ ไม่ตี sentiment — ไว้เอาไป label เพิ่มเป็นชุดวัดผล
+       ⚠️ กินเครดิต ScrapeCreators (ของที่จ่ายเงิน) แต่ **ไม่แตะโควตา Claude เลย**
+       🔒 ไม่คืนชื่อผู้คอมเมนต์ — ตัดออกตั้งแต่ที่นี่ ไม่ใช่ไปตัดที่หน้าเว็บ */
+    if (request.method === "POST" && url.pathname === "/comments") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const link = String(body?.url || "").trim();
+      const platform = detectPlatform(link);
+      if (!link || !platform) return cors(json({ error: "bad_url" }, 400), origin);
+      const limit = Math.max(10, Math.min(2000, +body.limit || 500));
+      try {
+        const got = platform === "youtube"
+          ? await fetchYouTube(link, limit, env)
+          : await fetchScrapeCreators(platform, link, limit, env);
+        return cors(json({
+          ok: true, ver: WORKER_VER, platform,
+          post_title: got.post_title || "",
+          count: got.comments.length,
+          credits_remaining: got.credits_remaining ?? null,
+          comments: got.comments.map(c => ({
+            text: String(c.text || "").replace(/\s+/g, " ").trim(),
+            likes: c.likes || 0, replies: c.replies || 0, time: c.time || "",
+          })).filter(c => c.text),
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "fetch_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
     }
 
     /* ตี 2 แกนให้ข้อความดิบที่ส่งมาตรงๆ — ใช้โดยหน้าวัดความแม่น (/issue/sentiment-eval.html)
