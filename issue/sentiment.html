@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="7" />
+<meta name="page-ver" content="8" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -117,6 +117,15 @@
   .sc-fix:hover { border-color: var(--sc-accent); color: var(--sc-accent); }
   .sc-fix.sc-on { background: var(--sc-ink2); color: #fff; border-color: transparent; cursor: default; }
   .sc-editmark { font-size: 11px; color: var(--sc-accent); white-space: nowrap; }
+  /* กล่องส่งเข้ากองรอตรวจ — จอแคบให้ปุ่มลงมาอยู่บรรทัดล่างเต็มความกว้าง */
+  .sc-teach { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+              margin-top: 12px; padding: 11px 13px; border: 1px dashed var(--sc-border);
+              border-radius: 10px; background: var(--sc-plane); }
+  .sc-teachtxt { flex: 1 1 260px; min-width: 0; font-size: 12.5px; line-height: 1.55; }
+  .sc-teachtxt .sc-sub { display: block; margin-top: 2px; }
+  .sc-teachmsg { margin-top: 8px; font-size: 12.5px; }
+  .sc-teachmsg.sc-bad { color: var(--sc-neg); }
+  @media (max-width: 560px) { .sc-teach #teachBtn { width: 100%; } }
   .sc-afbtn { border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-ink2); border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
   .sc-afbtn.sc-on { background: var(--sc-accent); color: #fff; border-color: transparent; }
   .sc-alist { display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow: auto; }
@@ -240,6 +249,19 @@
           </div>
         </div>
         <div class="sc-alist" id="auditList"></div>
+
+        <!-- ชั้น ② ของระบบเรียนรู้ — โผล่เฉพาะตอนมีของที่แก้ไว้
+             🚫 เป็นปุ่มแยกโดยตั้งใจ ห้ามส่งอัตโนมัติตอนกดแก้ป้าย
+                "แก้รายงาน" กับ "สอนระบบ" ต้องแยกกันให้ผู้ใช้เห็น (ดู FEEDBACK.md) -->
+        <div class="sc-teach" id="teachBox" hidden>
+          <div class="sc-teachtxt">
+            <b>📥 ส่งที่แก้ไว้เข้ากองรอตรวจ</b>
+            <span class="sc-sub">เก็บแค่ <b>ข้อความ + ป้ายเดิม/ป้ายใหม่</b> ไม่มีชื่อ ไม่มีลิงก์โพส ·
+            <b>ยังไม่เปลี่ยนวิธีคิดของ AI ทันที</b> ต้องเอาไปวัดกับชุดสอบก่อนถึงจะกลายเป็นกฎ</span>
+          </div>
+          <button class="sc-btn sc-pri" id="teachBtn" type="button">📥 ส่งเข้ากองรอตรวจ</button>
+        </div>
+        <div class="sc-teachmsg" id="teachMsg" hidden></div>
       </details>
     </div>
   </div>
@@ -336,7 +358,11 @@ async function analyze(){
   try {
     const data = DEMO ? await demoResult(opts) : await callWorker(opts, inflight.signal);
     lastResult = data;
+    /* โพสใหม่ = เริ่มนับใหม่ทั้งหมด · ข้อความที่ส่งไปแล้วของโพสก่อนไม่เกี่ยวกับรอบนี้ */
+    teachSent = new Set();
+    el("teachMsg").hidden = true;
     renderResult(data);
+    syncTeachBox();
   } catch (e){
     /* กดหยุดเองไม่ใช่ error — ไม่ต้องขึ้นแถบแดงให้ตกใจ */
     if (e && e.name === "AbortError") toast("หยุดแล้ว");
@@ -570,7 +596,69 @@ function applyEdits(){
   }
   lastResult.edited_count = (lastResult.audit || []).filter(a => a.edited).length;
   renderResult(lastResult, true);
+  syncTeachBox();
 }
+
+/* ══════════════════════════════════════════════════════════════
+ * ชั้น ② ของระบบเรียนรู้ — ส่งที่แก้ไว้เข้ากองรอตรวจ
+ * 🚫 ห้ามส่งอัตโนมัติตอนกดแก้ป้าย ต้องให้ผู้ใช้กดเอง
+ *    เพราะ "แก้รายงานใบนี้" กับ "สอนระบบทั้งระบบ" ไม่ใช่เรื่องเดียวกัน
+ *    (เจ้าของเคาะดีไซน์ 3 ชั้น 29 ส.ค. 2026 — รายละเอียดที่ FEEDBACK.md)
+ * ══════════════════════════════════════════════════════════════ */
+let teachSent = new Set();     // ส่งไปแล้วในรอบนี้ ไม่ต้องส่งซ้ำ
+
+/** ใบที่แก้แล้วและยังไม่ได้ส่ง */
+function pendingTeach(){
+  return (lastResult?.audit || [])
+    .filter(a => a.edited && a.was && !teachSent.has(a.text))
+    .map(a => ({
+      text: a.text, was: a.was, now: a.sentiment,
+      target: lastResult.target === "cp" ? "cp" : "overall",
+      model: lastResult.model || "", ver: lastResult.ver || null, rubric: lastResult.rubric || "",
+    }));
+}
+
+function syncTeachBox(){
+  const n = pendingTeach().length;
+  el("teachBox").hidden = n === 0;
+  el("teachBtn").textContent = `📥 ส่งเข้ากองรอตรวจ (${n} ใบ)`;
+  el("teachBtn").disabled = false;
+}
+
+function teachMsg(text, bad){
+  const m = el("teachMsg");
+  m.hidden = false; m.textContent = text; m.classList.toggle("sc-bad", !!bad);
+}
+
+el("teachBtn").onclick = async () => {
+  const items = pendingTeach();
+  if (!items.length) return;
+  el("teachBtn").disabled = true;
+  el("teachBtn").textContent = "กำลังส่ง…";
+  try {
+    const r = await fetch(WORKER.replace(/\/+$/,"") + "/feedback", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    const j = await r.json().catch(() => ({}));
+    /* ⚠️ ok:false มาพร้อม status 200 ได้ (เช่นยังไม่ได้ผูก KV) — ต้องดูที่ stored ไม่ใช่ที่ r.ok
+       ถ้าดูแต่ r.ok จะขึ้นว่า "ส่งแล้ว" ทั้งที่ไม่มีอะไรถูกเก็บเลย */
+    if (!r.ok || j.stored !== true) {
+      teachMsg("ส่งไม่สำเร็จ — " + (j.detail || j.error || `หลังบ้านตอบ ${r.status}`) +
+               " · ที่แก้ไว้ยังอยู่ในรายงานและไฟล์ที่ส่งออกตามปกติ", true);
+      syncTeachBox();
+      return;
+    }
+    items.forEach(it => teachSent.add(it.text));
+    teachMsg(`ส่งเข้ากองรอตรวจแล้ว ${j.added} ใบ` +
+             (j.skipped ? ` (ซ้ำกับที่เคยส่ง ${j.skipped} ใบ)` : "") +
+             ` · ตอนนี้กองมี ${j.total} ใบ — ยังไม่มีผลกับ AI จนกว่าจะผ่านการวัด`);
+    syncTeachBox();
+  } catch (e) {
+    teachMsg("ส่งไม่สำเร็จ — ต่อกับหลังบ้านไม่ได้ · ที่แก้ไว้ยังอยู่ในรายงานตามปกติ", true);
+    syncTeachBox();
+  }
+};
 
 function auditSheets(){
   const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };

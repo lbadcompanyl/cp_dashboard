@@ -1927,6 +1927,7 @@ env ที่ต้องใส่ (Cloudflare **Secret** เท่านั้�
 | กฎ/ข้อตกลง/กับดักของทั้งโปรเจกต์ | `CLAUDE.md` (ไฟล์นี้) |
 | เกณฑ์ตัดสิน sentiment ต่อ CP | `social-comment-extractor/RUBRIC-CP.md` |
 | ผลวัดความแม่นทุกรอบ + pattern ที่พลาด | `social-comment-extractor/BASELINE.md` |
+| ระบบเรียนรู้จากที่เจ้าของแก้ป้าย (3 ชั้น + กฎ 6 ข้อ) | `social-comment-extractor/FEEDBACK.md` |
 | ไฟล์ไหนใครดูแล · วิธีปล่อยงาน | `WORKFLOW-PROPOSAL.md` |
 
 ### 2. หนึ่งห้องหนึ่งงาน

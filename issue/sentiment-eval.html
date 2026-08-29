@@ -5,17 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="9" />
+<meta name="page-ver" content="10" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
 
   📌 ไม่มีการ์ดบน landing และไม่มีแท็บใน /issue/ โดยตั้งใจ — แบบเดียวกับ /selftest/
 
-  🔒 ข้อมูลคอมเมนต์ไม่ถูกเก็บไว้ที่ไหนเลย
-     ไฟล์เฉลยถูกอ่านในเบราว์เซอร์ ไม่ได้อัปโหลดขึ้น repo (repo เป็น public — คอมเมนต์จริง
+  🔒 ไฟล์เฉลยถูกอ่านในเบราว์เซอร์ ไม่ได้อัปโหลดขึ้น repo (repo เป็น public — คอมเมนต์จริง
      ของคนอื่นห้ามขึ้นไปอยู่ตรงนั้น) · ข้อความถูกส่งไปที่ Worker เพื่อตีป้ายเท่านั้น
-     ซึ่งเป็นเส้นทางเดียวกับตอนใช้งานปกติ และ Worker ไม่บันทึกอะไรลงที่ใด
+     ซึ่งเป็นเส้นทางเดียวกับตอนใช้งานปกติ และการวัดผลไม่บันทึกอะไรลงที่ใด
+
+  📥 กล่อง "กองรอตรวจ" เป็นข้อยกเว้นเดียวที่มีที่เก็บถาวร — เก็บเฉพาะใบที่ผู้ใช้
+     กดแก้ป้ายเองแล้วกดส่ง (ไม่มีชื่อ ไม่มีลิงก์โพส) · ดู FEEDBACK.md และ PRIVACY_NOTE.md ข้อ 4.1
+     🚫 ของในกองห้ามเอาไปสอน AI อัตโนมัติ — ต้องวัดกับชุดเฉลยก่อนเสมอ
 
   ⚠️ /classify ใช้แต่โควตา Claude — ไม่แตะเครดิต ScrapeCreators ที่จ่ายเงิน
 -->
@@ -117,6 +120,24 @@
       🔒 ไฟล์ที่ได้<b>ไม่มีชื่อผู้คอมเมนต์</b> ถูกตัดออกตั้งแต่ฝั่ง Worker
     </p>
     <div id="grabinfo" class="small" style="margin-top:9px"></div>
+  </div>
+
+  <!-- ชั้น ③ ของระบบเรียนรู้ — เอากองที่ผู้ใช้แก้ไว้มาตรวจ (ดู FEEDBACK.md) -->
+  <div class="card">
+    <h2>🧑‍⚖️ กองรอตรวจ <span class="muted small">(ที่ผู้ใช้กดแก้ป้ายไว้)</span></h2>
+    <p class="small muted" style="margin:0 0 9px">
+      ของในกอง <b>ยังไม่มีผลกับ AI</b> — ต้องเอามาวัดกับชุดเฉลยก่อน ผ่านเกณฑ์ถึงจะเขียนเป็นกฎในโค้ด<br />
+      🔒 อ่านกองต้องมีกุญแจ (<code>FEEDBACK_KEY</code> ที่ตั้งไว้ใน Cloudflare) — เก็บไว้ในเครื่องนี้เท่านั้น
+    </p>
+    <div class="row">
+      <input type="password" id="fbkey" placeholder="กุญแจสำหรับอ่านกอง"
+             style="flex:1;min-width:200px;font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:9px" />
+      <button id="fbload">📂 เปิดกอง</button>
+      <button id="fbcsv" hidden>📥 บันทึกเป็น CSV</button>
+      <button id="fbclear" hidden>🗑 ล้างกอง</button>
+    </div>
+    <div id="fbinfo" class="small" style="margin-top:9px"></div>
+    <div id="fblist" style="margin-top:9px"></div>
   </div>
 
   <div class="card" id="progwrap" hidden>
@@ -483,6 +504,93 @@ function stamp() {
   const d = new Date(), p = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
+
+/* ══════════════════════════════════════════════════════════════
+ * ชั้น ③ — กองรอตรวจ · เปิดดู / ส่งออก / ล้าง
+ * กฎ 6 ข้อที่ต้องผ่านก่อนกลายเป็นกฎจริง อยู่ที่ FEEDBACK.md
+ * ⚠️ หน้านี้แค่ "เปิดดู" ไม่ได้เอาไปสอน AI — การสอนเป็นงานที่คนทำในโค้ด
+ * 🔑 กุญแจเก็บใน localStorage ของเครื่องนี้เท่านั้น ไม่ส่งไปไหนนอกจากหลังบ้านของเราเอง
+ * ══════════════════════════════════════════════════════════════ */
+let fbItems = [];
+const FBK = "sentimentFeedbackKey";
+try { $("#fbkey").value = localStorage.getItem(FBK) || ""; } catch (e) {}
+
+async function fbFetch(qs) {
+  const key = $("#fbkey").value.trim();
+  if (!key) throw new Error("ใส่กุญแจก่อน");
+  try { localStorage.setItem(FBK, key); } catch (e) {}
+  const r = await fetch(`${WORKER.replace(/\/+$/, "")}/feedback?key=${encodeURIComponent(key)}${qs || ""}`);
+  const j = await r.json().catch(() => ({}));
+  if (j.error === "bad_key") throw new Error("กุญแจไม่ถูก");
+  if (j.error === "read_disabled") throw new Error("ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare");
+  if (!r.ok || j.ok !== true) throw new Error(j.detail || j.error || `หลังบ้านตอบ ${r.status}`);
+  return j;
+}
+
+/** จับกลุ่มว่า "แก้จากอะไรเป็นอะไร" — pattern ที่เจอซ้ำ ≥ 3 ครั้งคือตัวที่ควรเอาไปทำเป็นกฎ */
+function fbRender() {
+  if (!fbItems.length) { $("#fblist").innerHTML = '<p class="small muted">กองว่าง</p>'; return; }
+  const groups = new Map();
+  for (const it of fbItems) {
+    const k = `${it.target}|${it.was}→${it.now}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(it);
+  }
+  const LENS = { cp: "แกน CP", overall: "แกนอารมณ์รวม" };
+  const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+  $("#fblist").innerHTML = sorted.map(([k, list]) => {
+    const [target, move] = k.split("|");
+    /* กฎข้อ 3 ของ FEEDBACK.md — ต่ำกว่า 3 ครั้งยังเป็นรสนิยม ไม่ใช่ pattern */
+    const ready = list.length >= 3;
+    return `<details style="margin-bottom:7px;border:1px solid var(--border);border-radius:9px;padding:8px 11px">
+      <summary><b>${esc(LENS[target] || target)} · ${esc(move)}</b>
+        <span class="muted small"> — ${list.length} ใบ</span>
+        ${ready ? '<span class="small" style="color:var(--pos)"> ✔ ครบ 3 ใบ พอเอาไปทำเป็นกฎได้</span>'
+                : `<span class="small muted"> (ยังไม่ถึง 3 ใบ — ขาดอีก ${3 - list.length})</span>`}
+      </summary>
+      <ul style="margin:7px 0 0;padding-left:18px">
+        ${list.map((it) => `<li class="small">${esc(it.text)} <span class="muted">· ${esc(it.at || "")} · ${esc(it.model || "")} v${esc(String(it.ver ?? "?"))}</span></li>`).join("")}
+      </ul>
+    </details>`;
+  }).join("");
+}
+
+$("#fbload").onclick = async () => {
+  $("#fbinfo").innerHTML = '<span class="muted">กำลังเปิดกอง…</span>';
+  try {
+    const j = await fbFetch();
+    fbItems = j.items || [];
+    const pats = new Set(fbItems.map((it) => `${it.target}|${it.was}→${it.now}`)).size;
+    $("#fbinfo").innerHTML = `กองมี <b>${fbItems.length}</b> ใบ (เพดาน ${j.max}) · แยกได้ <b>${pats}</b> รูปแบบ` +
+      (fbItems.length ? ' · <b>ยังไม่มีผลกับ AI</b> จนกว่าจะเอาไปวัดแล้วเขียนเป็นกฎในโค้ด' : "");
+    $("#fbcsv").hidden = $("#fbclear").hidden = !fbItems.length;
+    fbRender();
+  } catch (e) {
+    $("#fbinfo").innerHTML = `<span style="color:var(--neg)">❌ ${esc(e.message)}</span>`;
+    $("#fbcsv").hidden = $("#fbclear").hidden = true;
+    $("#fblist").innerHTML = "";
+  }
+};
+
+$("#fbcsv").onclick = () => {
+  const head = ["ข้อความ", "แกน", "AI ตอบเดิม", "คนแก้เป็น", "วันที่", "โมเดล", "worker_ver", "rubric"];
+  download(`sentiment-feedback-${stamp()}.csv`,
+    [head.join(",")].concat(fbItems.map((it) =>
+      [it.text, it.target, it.was, it.now, it.at, it.model, it.ver, it.rubric].map(csvEsc).join(","))).join("\n"));
+};
+
+$("#fbclear").onclick = async () => {
+  if (!confirm(`ล้างกองทั้งหมด ${fbItems.length} ใบ? เอากลับไม่ได้ — บันทึก CSV ไว้ก่อนหรือยัง`)) return;
+  try {
+    const j = await fbFetch("&clear=1");
+    fbItems = [];
+    $("#fbinfo").innerHTML = `ล้างแล้ว ${j.cleared} ใบ`;
+    $("#fbcsv").hidden = $("#fbclear").hidden = true;
+    fbRender();
+  } catch (e) {
+    $("#fbinfo").innerHTML = `<span style="color:var(--neg)">❌ ${esc(e.message)}</span>`;
+  }
+};
 
 /* ── บันทึกผลแต่ละรอบ (เก็บแต่ตัวเลข ไม่มีข้อความคอมเมนต์) ── */
 function readLog() { try { return JSON.parse(localStorage.getItem(LOGKEY) || "[]"); } catch (e) { return []; } }

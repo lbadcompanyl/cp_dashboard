@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 18;
+const WORKER_VER = 19;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -51,6 +51,28 @@ const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูง
 /* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
    /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
 const MODEL_CHOICES = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
+
+/* ============================================================
+ * 📥 กองรอตรวจ (feedback queue) — ชั้น ② ของระบบเรียนรู้
+ * ------------------------------------------------------------
+ * เจ้าของเคาะดีไซน์ 3 ชั้น 29 ส.ค. 2026:
+ *   ① กดแก้ป้ายบนหน้าเว็บ  → แก้รายงานใบนั้นทันที (ไม่ผ่านที่นี่เลย)
+ *   ② ส่งเข้ากองรอตรวจ     → **ที่นี่** เก็บไว้เฉยๆ ยังไม่มีผลกับใคร
+ *   ③ เอาไปวัดกับชุดสอบ    → ผ่านเกณฑ์ค่อยกลายเป็นกฎจริงในโค้ด (คนทำ ไม่ใช่เครื่อง)
+ *
+ * 🚫 **ห้ามเอาของในกองนี้ไปสอน AI อัตโนมัติเด็ดขาด** — เจ้าของสั่งไว้ชัด
+ *    ถ้าสอนเอง ความแม่นจะเปลี่ยนทุกวันโดยไม่มีใครวัดสักครั้ง แล้ววันหนึ่งจะพบว่าแย่ลง
+ *    มานานโดยไม่รู้ว่าตั้งแต่เมื่อไหร่ (ขัดกฎ "ตัวเลขต้องมาจากผลรันจริง" ของ CLAUDE.md)
+ *    นี่คือ **ตัวกันคนยิงขยะเข้ามาสอนระบบ** ด้วย — POST เปิดไว้ได้เพราะของในกองไม่มีผลกับใคร
+ *
+ * 🔒 ไม่เก็บชื่อ · ไม่เก็บลิงก์โพส — เก็บแค่ข้อความ + ป้ายเดิม/ป้ายใหม่ (เจ้าของเคาะ 29 ส.ค.)
+ * 💧 กฎ KV ของโปรเจกต์: **blob เดียว อ่าน 1 เขียน 1 ต่อคำขอ** ห้ามแตกเป็น key รายใบ
+ * ============================================================ */
+const FB_KEY = "sentiment:feedback";
+const FB_MAX = 500;          // เพดานรายการในกอง — เกินแล้วตัดตัวเก่าสุดทิ้ง
+const FB_MAX_PER_REQ = 60;   // ส่งได้ครั้งละไม่เกินเท่านี้ (กันยิงก้อนใหญ่ถล่ม KV)
+const FB_MAX_TEXT = 400;     // ตัดข้อความยาวๆ ทิ้ง — ตัวอย่างสอน AI ไม่ควรยาวกว่านี้
+const FB_LABELS = ["positive", "neutral", "negative"];
 
 const TWO_LENS_SHOTS = [
   // ── ด่ารัฐ / ต่างชาติ / วิกฤตลอยๆ — ไม่แตะ CP: แกน 1 ต้องเป็น Neutral เสมอ ──
@@ -223,6 +245,68 @@ async function classifyTwoLens(texts, env, acc, context) {
   });
 }
 
+/** ทำความสะอาด 1 รายการที่ส่งเข้ากอง — ไม่ผ่านเกณฑ์คืน null (ทิ้งเงียบ ไม่ใช่เก็บของเสีย) */
+function fbClean(o) {
+  if (!o || typeof o !== "object") return null;
+  const text = String(o.text || "").replace(/\s+/g, " ").trim().slice(0, FB_MAX_TEXT);
+  const was = String(o.was || "").toLowerCase();
+  const now = String(o.now || "").toLowerCase();
+  if (!text) return null;
+  if (!FB_LABELS.includes(was) || !FB_LABELS.includes(now)) return null;
+  if (was === now) return null;                                  // ไม่ได้แก้อะไร ไม่ต้องเก็บ
+  return {
+    text, was, now,
+    target: o.target === "cp" ? "cp" : "overall",                // แก้แกนไหน
+    model: String(o.model || "").slice(0, 40),
+    ver: Number.isFinite(+o.ver) ? +o.ver : null,
+    rubric: String(o.rubric || "").slice(0, 10),
+    at: new Date().toISOString().slice(0, 10),                   // วันที่พอ ไม่ต้องละเอียดถึงวินาที
+  };
+}
+
+/** POST /feedback — ต่อของใหม่เข้ากอง · GET /feedback?key=… — อ่านกอง (ต้องมีกุญแจ) */
+async function feedbackRoute(request, url, env) {
+  const kv = env.FEEDBACK_KV;
+
+  if (request.method === "GET") {
+    /* 🔒 อ่านกอง = เห็นข้อความคอมเมนต์ที่สะสมไว้ทั้งหมด จึงต้องมีกุญแจเสมอ
+       ⚠️ ไม่ได้ตั้ง FEEDBACK_KEY ไว้ = **ปิด** ไม่ใช่เปิดให้ทุกคน
+          (ค่าปริยายที่ปลอดภัยกว่า — ลืมตั้งแล้วข้อมูลหลุดเป็นเรื่องที่กู้ไม่ได้) */
+    if (!env.FEEDBACK_KEY) return json({ error: "read_disabled", detail: "ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare" }, 403);
+    const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
+    if (given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    if (!kv) return json({ ok: true, stored: false, reason: "no_kv", items: [] });
+    const items = JSON.parse((await kv.get(FB_KEY)) || "[]");
+    if (url.searchParams.get("clear") === "1") {
+      await kv.put(FB_KEY, "[]");
+      return json({ ok: true, cleared: items.length, items: [] });
+    }
+    return json({ ok: true, ver: WORKER_VER, count: items.length, max: FB_MAX, items });
+  }
+
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: "bad_json" }, 400); }
+  const raw = Array.isArray(body?.items) ? body.items.slice(0, FB_MAX_PER_REQ) : [];
+  const incoming = raw.map(fbClean).filter(Boolean);
+  if (!incoming.length) return json({ error: "no_items" }, 400);
+
+  /* ไม่มี KV = บอกตรงๆ ว่าไม่ได้เก็บ **ห้ามตอบ ok เฉยๆ**
+     ไม่งั้นหน้าเว็บจะขึ้นว่า "ส่งแล้ว" ทั้งที่ไม่มีอะไรถูกเก็บเลย (กับดัก "ไม่รู้ ≠ สำเร็จ") */
+  if (!kv) return json({ ok: false, stored: false, reason: "no_kv", detail: "ยังไม่ได้ผูก KV (FEEDBACK_KV) ที่ Cloudflare" }, 200);
+
+  const cur = JSON.parse((await kv.get(FB_KEY)) || "[]");        // อ่าน 1 ครั้ง
+  const seen = new Set(cur.map(x => x.target + "\n" + x.text));
+  let added = 0;
+  for (const it of incoming) {
+    const k = it.target + "\n" + it.text;
+    if (seen.has(k)) continue;                                   // ส่งซ้ำไม่ทำให้กองบวม
+    seen.add(k); cur.push(it); added++;
+  }
+  const kept = cur.slice(-FB_MAX);                               // เกินเพดาน = ตัดตัวเก่าสุดทิ้ง
+  if (added) await kv.put(FB_KEY, JSON.stringify(kept));         // เขียน 1 ครั้ง (ไม่มีของใหม่ = ไม่เขียนเลย)
+  return json({ ok: true, stored: true, added, skipped: incoming.length - added, total: kept.length });
+}
+
 export default {
   async fetch(request, env) {
     const origin = env.ALLOW_ORIGIN || "*";
@@ -234,6 +318,16 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
+    }
+
+    /* ชั้น ② ของระบบเรียนรู้ — เก็บที่คนแก้ป้ายไว้ ยังไม่มีผลกับการตัดสินของ AI
+       ดูกฎทั้งหมดที่หัวข้อ FB_KEY ข้างบน และที่ FEEDBACK.md */
+    if (url.pathname === "/feedback" && (request.method === "POST" || request.method === "GET")) {
+      try {
+        return cors(await feedbackRoute(request, url, env), origin);
+      } catch (e) {
+        return cors(json({ error: "feedback_failed", detail: String(e && e.message || e) }, 500), origin);
+      }
     }
 
     /* ดึงคอมเมนต์ออกมาเฉยๆ ไม่ตี sentiment — ไว้เอาไป label เพิ่มเป็นชุดวัดผล

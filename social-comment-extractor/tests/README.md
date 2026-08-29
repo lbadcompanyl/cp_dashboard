@@ -9,7 +9,9 @@
 | `lensconsistency.mjs` | **ตัวเลขบนแถบสรุป ต้องเท่ากับรายการ audit เสมอ** (บั๊กที่เจ้าของจับได้เอง) |  |
 | `leakcheck.py` | few-shot ห้ามซ้ำ/ใกล้เคียงกับ eval set | `python3 leakcheck.py ../worker/worker.js <eval.xlsx>` |
 | `evalpage.cjs` · `evalpage-context.cjs` · `evalpage-missing.cjs` · `evalpage-error.cjs` · `evalpage-tokens.cjs` · `evalpage-split.cjs` · `evalpage-grab.cjs` | หน้า `issue/sentiment-eval.html` — แถวไม่เลื่อน · ก้อนที่ยิงพลาดต้องไม่ถูกเดาแทน · ป้ายเตือน · โทเคน · ชุดสอบไล่ · ดึงคอมเมนต์เป็น CSV | ต้องมีเซิร์ฟเวอร์ static |
-| `verbadge.cjs` · `stopbtn.cjs` | หน้า `issue/sentiment.html` — ป้ายเวอร์ชันหลังบ้าน · ปุ่มหยุดวิเคราะห์ | ต้องมีเซิร์ฟเวอร์ static |
+| `verbadge.cjs` · `stopbtn.cjs` · `edittest.cjs` | หน้า `issue/sentiment.html` — ป้ายเวอร์ชันหลังบ้าน · ปุ่มเดียวสลับวิเคราะห์/หยุด · แก้ป้ายเองแล้วตัวเลขต้องขยับ | ต้องมีเซิร์ฟเวอร์ static |
+| `feedback.mjs` | กองรอตรวจฝั่ง worker — เขียน KV ครั้งเดียว · ไม่มี KV ต้องตอบ `ok:false` · อ่านต้องมีกุญแจ | `node feedback.mjs` |
+| `teachbox.cjs` · `fbreview.cjs` | ระบบเรียนรู้ชั้น ②/③ — ปุ่มส่งเข้ากอง (ห้ามส่งชื่อ/ลิงก์) · หน้าตรวจกอง | ต้องมีเซิร์ฟเวอร์ static |
 
 ```bash
 # เทสต์ฝั่ง worker ทุกตัว: ก๊อป worker.js เป็น .mjs แล้วเติม "export line" เดียวนี้
@@ -18,10 +20,11 @@
 cp ../worker/worker.js /tmp/w.mjs
 cat >> /tmp/w.mjs <<'EOF'
 export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonArray,
-         nestedReplies, scComment, fetchYouTube };
+         nestedReplies, scComment, fetchYouTube,
+         feedbackRoute, fbClean, FB_MAX, FB_MAX_PER_REQ, FB_MAX_TEXT };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in twolens retry jsonparse replies lensconsistency; do node $t.mjs; done
+for t in twolens retry jsonparse replies lensconsistency feedback; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
