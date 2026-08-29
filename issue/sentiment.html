@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="4" />
+<meta name="page-ver" content="5" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -41,6 +41,9 @@
     border: 1px solid #d1d5db; border-radius: 9px; padding: 9px 11px; width: 100%;
   }
   .sc-wrap input:focus-visible, .sc-btn:focus-visible, .sc-chip:focus-visible { outline: 2px solid var(--sc-accent); outline-offset: 1px; }
+  /* ⚠️ ต้องประกาศก่อนกฎที่ตั้ง display ไม่งั้น [hidden] แพ้แล้วปุ่มที่สั่งซ่อนยังโผล่
+     (กับดักเดียวกับที่ CLAUDE.md เตือนไว้เรื่องกล่องตัวกรองของ /archives/) */
+  [hidden] { display: none !important; }
   .sc-btn { border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-ink2); border-radius: 999px; padding: 9px 15px; font: inherit; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
   .sc-btn:hover { background: var(--sc-surface2); }
   .sc-btn.sc-pri { background: var(--sc-accent); color: #fff; border-color: transparent; font-weight: 600; }
@@ -166,6 +169,7 @@
         <div class="sc-field">
           <label aria-hidden="true">&nbsp;</label>
           <button class="sc-btn sc-pri" id="analyzeBtn" type="button">🔎 วิเคราะห์</button>
+          <button class="sc-btn" id="stopBtn" type="button" hidden title="ยกเลิกรอบนี้ (เช่น ตั้งค่าผิด)">■ หยุด</button>
         </div>
       </div>
       <div class="sc-chiprow">
@@ -304,6 +308,9 @@ el("creditsChip").onclick = checkCredits;
 el("analyzeBtn").onclick = analyze;
 el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
 
+/* ตัวยกเลิกคำขอที่กำลังวิ่งอยู่ — ไว้กดหยุดเมื่อตั้งค่าผิด (เช่น เลือกโหมดผิด / ใส่จำนวนเยอะไป) */
+let inflight = null;
+
 async function analyze(){
   const url = el("url").value.trim();
   const platform = detectPlatform(url);
@@ -312,6 +319,8 @@ async function analyze(){
   el("results").classList.remove("sc-show");
   setLoading(true, "กำลังดึงคอมเมนต์และวิเคราะห์…");
   el("analyzeBtn").disabled = true;
+  el("stopBtn").hidden = false;
+  inflight = new AbortController();
 
   const opts = {
     url, platform,
@@ -320,19 +329,32 @@ async function analyze(){
     anonymize: true, samples: true,
   };
   try {
-    const data = DEMO ? await demoResult(opts) : await callWorker(opts);
+    const data = DEMO ? await demoResult(opts) : await callWorker(opts, inflight.signal);
     lastResult = data;
     renderResult(data);
   } catch (e){
-    showErr(friendlyError(e && e.message ? e.message : String(e)));
+    /* กดหยุดเองไม่ใช่ error — ไม่ต้องขึ้นแถบแดงให้ตกใจ */
+    if (e && e.name === "AbortError") toast("หยุดแล้ว");
+    else showErr(friendlyError(e && e.message ? e.message : String(e)));
   } finally {
+    inflight = null;
     setLoading(false);
+    el("stopBtn").hidden = true;
     el("analyzeBtn").disabled = false;
   }
 }
-async function callWorker(opts){
+
+el("stopBtn").onclick = () => {
+  if (!inflight) return;
+  inflight.abort();
+  /* ⚠️ พูดให้ตรงความจริง: นี่คือ "เลิกรอ" ไม่ใช่ "เรียกเงินคืน"
+     คอมเมนต์ที่ส่งให้ Claude ไปแล้วยังถูกคิดเงินตามปกติ กดเร็วก็เสียน้อย */
+  toast("หยุดรอผลแล้ว — ส่วนที่ส่งไปแล้วยังถูกคิดค่าใช้จ่ายตามจริง");
+};
+
+async function callWorker(opts, signal){
   const resp = await fetch(WORKER.replace(/\/+$/,"") + "/analyze", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts), signal,
   });
   if (!resp.ok){
     let msg = "HTTP " + resp.status;
