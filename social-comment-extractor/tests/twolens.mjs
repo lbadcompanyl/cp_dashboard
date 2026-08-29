@@ -39,7 +39,7 @@ ok(/แกะคำตอบ/.test(threw4 || ""), "ข้อความ error �
 // [5] prompt ต้องไม่มี not_related หลงเหลือ + มี few-shot ครบ
 const sys = systemTwoLens();
 ok(!/not_related/.test(sys), "prompt ไม่มี not_related หลงเหลือ");
-ok(TWO_LENS_SHOTS.length === 20, "few-shot 20 ข้อ");
+ok(TWO_LENS_SHOTS.length === 22, "few-shot 22 ข้อ");
 const sar = TWO_LENS_SHOTS.filter(s => s.s === 1).length;
 ok(sar === 3, "มีตัวอย่างประชด " + sar + " ข้อ");
 const cps = new Set(TWO_LENS_SHOTS.map(s => s.cp));
