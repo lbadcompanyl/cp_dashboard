@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 19;
+const WORKER_VER = 20;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -28,6 +28,28 @@ const WORKER_VER = 19;
 const DEFAULT_MODEL = "claude-opus-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const CHUNK = 40;            // จำนวนคอมเมนต์ต่อ 1 คำขอ Claude (ตี sentiment)
+
+/* ============================================================
+ * 🚫 นับเฉพาะ "คอมเมนต์บนสุด" ไม่เอา reply — เจ้าของเคาะ 29 ส.ค. 2026
+ * ------------------------------------------------------------
+ * เหตุผลที่เจ้าของให้ไว้ตรงจุด: **คน reply สื่อถึงคอมเมนต์ ไม่ได้สื่อถึงโพส**
+ * เอามารวมเป็น % เมื่อไหร่ ตัวเลขหลักจะแปลไม่ได้ทันที —
+ * โพสที่คนเถียงกันดุเดือดจะดู "ลบ" เยอะ ทั้งที่เถียงกันเอง ไม่ได้ด่า CP
+ *
+ *   คอมเมนต์บนสุด → พูดกับโพส/แบรนด์      = สิ่งที่เครื่องมือนี้วัด
+ *   reply         → พูดกับคนคอมเมนต์ด้วยกัน = คนละคำถาม
+ *
+ * 🐞 ก่อนหน้านี้เปิดไว้ แล้วเกิดปัญหาที่แย่กว่าไม่มี: **แต่ละแพลตฟอร์มนับไม่เหมือนกัน**
+ *    YouTube ส่ง reply มาให้ในคำตอบเดียวกัน → ตัวเลขรวม reply
+ *    Facebook ไม่ส่งมา (ยืนยันจากการใช้จริง 29 ส.ค.) → ตัวเลขไม่รวม
+ *    = เอา % ของ 2 แพลตฟอร์มมาเทียบกันไม่ได้ โดยไม่มีอะไรบอกเลย
+ *
+ * ⚠️ อยากได้ reply จริงๆ **ห้ามแค่เปลี่ยนค่านี้เป็น true**
+ *    ต้องแยกเป็นตัวเลขคนละก้อน ไม่ใช่รวมเข้า % เดิม (เจ้าของสั่งไว้)
+ *    และ Facebook ต้องยิง /v1/facebook/post/comment/replies แยกต่อคอมเมนต์ 1 ใบ
+ *    = เปลืองเครดิตที่จ่ายเงินราว 30 เท่า
+ * ============================================================ */
+const INCLUDE_REPLIES = false;
 const SYNTH_SAMPLE = 120;    // จำนวนคอมเมนต์ที่ส่งให้ Claude สรุป/หา keyword
 
 /* ============================================================
@@ -432,7 +454,7 @@ async function analyze(opts, env) {
   if (!comments.length) throw new Error("ไม่พบคอมเมนต์ (โพสอาจปิดคอมเมนต์ หรือดึงไม่ได้)");
   const reply_count = comments.filter(c => c.is_reply).length;
   logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ` +
-    (reply_count ? ` (เป็น reply ${reply_count})` : " (ไม่มี reply ติดมา)"));
+    (reply_count ? ` (เป็น reply ${reply_count})` : " (นับเฉพาะคอมเมนต์บนสุด ไม่รวม reply)"));
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
   const texts = comments.map(c => c.text).filter(Boolean);
@@ -574,7 +596,7 @@ function youtubeVideoId(url) {
   return null;
 }
 
-async function fetchYouTube(url, limit, env, includeReplies = true) {
+async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
   if (!env.YOUTUBE_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY");
   const vid = youtubeVideoId(url);
   if (!vid) throw new Error("แยก video id จากลิงก์ YouTube ไม่ได้");
@@ -697,7 +719,7 @@ function nestedReplies(c) {
   return [];
 }
 
-async function fetchScrapeCreators(kind, url, limit, env, includeReplies = true) {
+async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLUDE_REPLIES) {
   if (!env.SCRAPECREATORS_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY");
   const endpoint = kind === "facebook"
     ? "https://api.scrapecreators.com/v1/facebook/post/comments"
