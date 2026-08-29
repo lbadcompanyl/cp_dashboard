@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="3" />
+<meta name="page-ver" content="4" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -172,6 +172,7 @@
         <span id="platformBadge" class="sc-badge">แพลตฟอร์ม: —</span>
         <span class="sc-badge sc-on" title="ตัดชื่อผู้คอมเมนต์ออกเสมอ (PDPA)">🔒 ปกปิดชื่ออัตโนมัติ</span>
         <button class="sc-chip" id="creditsChip" type="button" title="เครดิต ScrapeCreators คงเหลือ — กดเพื่อตรวจสอบ">💠 เครดิต: <span id="creditsChipVal">—</span></button>
+        <span class="sc-badge" id="verBadge" title="เวอร์ชันของหลังบ้านที่ทำงานอยู่จริง + โมเดลที่ใช้ตี sentiment">⚙️ กำลังถาม…</span>
       </div>
       <div class="sc-loading" id="loading"><span class="sc-spinner"></span><span id="loadingText">กำลังดึงคอมเมนต์และวิเคราะห์…</span></div>
       <div class="sc-err" id="err"></div>
@@ -259,6 +260,24 @@ function refreshPlatform(){
   b.classList.toggle("sc-on", !!p);
 }
 el("url").addEventListener("input", refreshPlatform);
+
+/* ---------------- ป้ายเวอร์ชันหลังบ้าน ----------------
+   ⚠️ ต้องมี — ไม่งั้นเวลาแก้ Worker แล้ว deploy จะเดาไม่ออกว่าโค้ดที่รันอยู่เป็นตัวไหน
+   (กฎเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md) */
+function showWorkerVer(d){
+  const b = el("verBadge");
+  if (!b) return;
+  if (!d) { b.textContent = "⚙️ ต่อหลังบ้านไม่ได้"; b.title = "เรียก Worker ไม่สำเร็จ"; return; }
+  const model = String(d.model || "").replace("claude-", "").replace("-4-5", " 4.5").replace("-5", " 5");
+  b.textContent = `⚙️ v${d.ver ?? "?"} · ${model || "?"}`;
+  b.title = `Worker v${d.ver ?? "?"} · rubric ${d.rubric ?? "-"} · โมเดล ${d.model || "?"}`;
+}
+if (!DEMO) {
+  fetch(WORKER.replace(/\/+$/,"") + "/")
+    .then(r => r.json()).then(showWorkerVer).catch(() => showWorkerVer(null));
+} else {
+  showWorkerVer({ ver: "demo", model: "—" });
+}
 
 /* ---------------- credits / tokens ---------------- */
 function showCredits(n){
