@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="5" />
+<meta name="page-ver" content="7" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -111,6 +111,12 @@
 
   .sc-auditbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
   .sc-afilter { display: flex; gap: 7px; flex-wrap: wrap; }
+  .sc-fixrow { display: inline-flex; gap: 4px; margin-left: auto; flex: none; }
+  .sc-fix { border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-muted);
+            border-radius: 999px; padding: 2px 9px; font-size: 11.5px; cursor: pointer; font-family: inherit; }
+  .sc-fix:hover { border-color: var(--sc-accent); color: var(--sc-accent); }
+  .sc-fix.sc-on { background: var(--sc-ink2); color: #fff; border-color: transparent; cursor: default; }
+  .sc-editmark { font-size: 11px; color: var(--sc-accent); white-space: nowrap; }
   .sc-afbtn { border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-ink2); border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
   .sc-afbtn.sc-on { background: var(--sc-accent); color: #fff; border-color: transparent; }
   .sc-alist { display: flex; flex-direction: column; gap: 6px; max-height: 430px; overflow: auto; }
@@ -169,7 +175,6 @@
         <div class="sc-field">
           <label aria-hidden="true">&nbsp;</label>
           <button class="sc-btn sc-pri" id="analyzeBtn" type="button">🔎 วิเคราะห์</button>
-          <button class="sc-btn" id="stopBtn" type="button" hidden title="ยกเลิกรอบนี้ (เช่น ตั้งค่าผิด)">■ หยุด</button>
         </div>
       </div>
       <div class="sc-chiprow">
@@ -305,7 +310,7 @@ async function checkCredits(){
 el("creditsChip").onclick = checkCredits;
 
 /* ---------------- analyze ---------------- */
-el("analyzeBtn").onclick = analyze;
+el("analyzeBtn").addEventListener("click", () => { if (!inflight) analyze(); });
 el("url").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
 
 /* ตัวยกเลิกคำขอที่กำลังวิ่งอยู่ — ไว้กดหยุดเมื่อตั้งค่าผิด (เช่น เลือกโหมดผิด / ใส่จำนวนเยอะไป) */
@@ -318,8 +323,8 @@ async function analyze(){
   hideErr();
   el("results").classList.remove("sc-show");
   setLoading(true, "กำลังดึงคอมเมนต์และวิเคราะห์…");
-  el("analyzeBtn").disabled = true;
-  el("stopBtn").hidden = false;
+  /* ปุ่มเดียวสลับหน้าที่ — ปุ่มแยกทำให้ตกบรรทัดบนจอแคบจนดูเหมือนหน้าพัง */
+  setAnalyzeBtn(true);
   inflight = new AbortController();
 
   const opts = {
@@ -339,18 +344,26 @@ async function analyze(){
   } finally {
     inflight = null;
     setLoading(false);
-    el("stopBtn").hidden = true;
-    el("analyzeBtn").disabled = false;
+    setAnalyzeBtn(false);
   }
 }
 
-el("stopBtn").onclick = () => {
-  if (!inflight) return;
+/** สลับปุ่มเดียวระหว่าง "วิเคราะห์" กับ "หยุด" */
+function setAnalyzeBtn(running){
+  const b = el("analyzeBtn");
+  b.textContent = running ? "■ หยุด" : "🔎 วิเคราะห์";
+  b.classList.toggle("sc-pri", !running);
+  b.title = running ? "ยกเลิกรอบนี้ (เช่น ตั้งค่าผิด)" : "";
+}
+
+el("analyzeBtn").addEventListener("click", (e) => {
+  if (!inflight) return;              // ไม่ได้กำลังรัน → ปล่อยให้ analyze() ทำงานตามปกติ
+  e.stopImmediatePropagation();
   inflight.abort();
   /* ⚠️ พูดให้ตรงความจริง: นี่คือ "เลิกรอ" ไม่ใช่ "เรียกเงินคืน"
      คอมเมนต์ที่ส่งให้ Claude ไปแล้วยังถูกคิดเงินตามปกติ กดเร็วก็เสียน้อย */
   toast("หยุดรอผลแล้ว — ส่วนที่ส่งไปแล้วยังถูกคิดค่าใช้จ่ายตามจริง");
-};
+}, true);   // capture: ต้องดักก่อน handler ของ analyze
 
 async function callWorker(opts, signal){
   const resp = await fetch(WORKER.replace(/\/+$/,"") + "/analyze", {
@@ -402,7 +415,9 @@ async function demoResult(opts){
 
 /* ---------------- render ---------------- */
 function pct(n, total){ return total ? Math.round(n/total*100) : 0; }
-function renderResult(d){
+/* keepAudit = true → วาดเฉพาะส่วนสรุป ไม่แตะรายการ audit
+   (ตอนผู้ใช้แก้ป้ายเอง ถ้าวาด audit ใหม่ด้วย ตัวกรองที่เลือกไว้กับตำแหน่งที่เลื่อนอยู่จะหายหมด) */
+function renderResult(d, keepAudit){
   const s = d.sentiment || {positive:0,neutral:0,negative:0};
   const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
   const pp = pct(s.positive,total), pnu = pct(s.neutral,total), pn = 100-pp-pnu;
@@ -411,6 +426,7 @@ function renderResult(d){
   el("resSub").innerHTML =
     escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ดึงมา ${d.analyzed_count||total} คอมเมนต์`) +
     (isCP ? ` · <b>พูดถึง CP ${total} คอมเมนต์</b> (ไม่เกี่ยว ${d.not_related||0})` : "") +
+    (d.edited_count ? ` · <b style="color:var(--sc-accent)">✏️ คุณแก้เอง ${d.edited_count} ใบ</b>` : "") +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
   el("donutCap").textContent = isCP ? "% ของคอมเมนต์ที่พูดถึงเครือ CP เท่านั้น" : "";
   if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
@@ -477,9 +493,11 @@ function renderResult(d){
     return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>${body}</div>`;
   }).join("");
 
-  renderAudit(d);
-  el("results").classList.add("sc-show");
-  el("results").scrollIntoView({ behavior:"smooth", block:"start" });
+  if (!keepAudit) {
+    renderAudit(d);
+    el("results").classList.add("sc-show");
+    el("results").scrollIntoView({ behavior:"smooth", block:"start" });
+  }
 }
 
 /* ---------------- audit ---------------- */
@@ -487,29 +505,79 @@ function renderAudit(d){
   const audit = d.audit || [];
   el("auditCard").style.display = audit.length ? "" : "none";
   if (!audit.length) return;
-  const counts = { all: audit.length, positive:0, neutral:0, negative:0, not_related:0 };
-  audit.forEach(a => { if (counts[a.sentiment] != null) counts[a.sentiment]++; });
-  const filters = [["all","ทั้งหมด"],["positive","บวก"],["neutral","กลาง"],["negative","ลบ"]];
-  if (counts.not_related) filters.push(["not_related","ไม่เกี่ยวกับ CP"]);
-  el("auditFilter").innerHTML = filters.map(([k,l]) => `<button class="sc-afbtn${k==="all"?" sc-on":""}" data-f="${k}" type="button">${l} (${counts[k]||0})</button>`).join("");
   const tagL = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยว" };
   const tagC = { positive:"--sc-pos", neutral:"--sc-neu", negative:"--sc-neg", not_related:"--sc-muted" };
-  function draw(f){
-    const rows = audit.filter(a => f==="all" || a.sentiment===f);
-    auditRows = rows;
-    el("auditList").innerHTML = rows.map(a =>
-      `<div class="sc-arow"><span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span><span class="sc-atext">${escapeHtml(a.text)}</span></div>`).join("");
+  const ORDER = ["positive", "neutral", "negative"];
+  let cur = "all";
+
+  /* นับใหม่ทุกครั้งจาก audit ที่แก้แล้ว — ห้ามใช้ตัวเลขที่ Worker ส่งมาค้างไว้
+     ไม่งั้นแก้ป้ายแล้ว % ข้างบนไม่ขยับ = ตัวเลขบนหน้าเดียวกันขัดกันเอง (บั๊กที่เพิ่งแก้ไป) */
+  function recount(){
+    const c = { all: audit.length, positive:0, neutral:0, negative:0, not_related:0 };
+    audit.forEach(a => { if (c[a.sentiment] != null) c[a.sentiment]++; });
+    return c;
   }
-  el("auditFilter").querySelectorAll(".sc-afbtn").forEach(b => b.onclick = () => {
-    el("auditFilter").querySelectorAll(".sc-afbtn").forEach(x => x.classList.remove("sc-on"));
-    b.classList.add("sc-on"); draw(b.dataset.f);
-  });
-  draw("all");
+
+  function drawFilter(){
+    const counts = recount();
+    const filters = [["all","ทั้งหมด"],["positive","บวก"],["neutral","กลาง"],["negative","ลบ"]];
+    if (counts.not_related) filters.push(["not_related","ไม่เกี่ยวกับ CP"]);
+    el("auditFilter").innerHTML = filters.map(([k,l]) =>
+      `<button class="sc-afbtn${k===cur?" sc-on":""}" data-f="${k}" type="button">${l} (${counts[k]||0})</button>`).join("");
+    el("auditFilter").querySelectorAll(".sc-afbtn").forEach(b => b.onclick = () => { cur = b.dataset.f; drawFilter(); draw(); });
+  }
+
+  function draw(){
+    const rows = audit.filter(a => cur==="all" || a.sentiment===cur);
+    auditRows = rows;
+    el("auditList").innerHTML = rows.map(a => {
+      const i = audit.indexOf(a);
+      const pick = ORDER.map(k =>
+        `<button class="sc-fix${a.sentiment===k?" sc-on":""}" data-i="${i}" data-s="${k}" type="button"
+                 title="แก้เป็น ${tagL[k]}">${tagL[k]}</button>`).join("");
+      return `<div class="sc-arow">
+        <span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span>
+        <span class="sc-atext">${escapeHtml(a.text)}${a.edited ? ' <span class="sc-editmark" title="คุณแก้ป้ายนี้เอง">✏️ แก้แล้ว</span>' : ""}</span>
+        <span class="sc-fixrow">${pick}</span>
+      </div>`;
+    }).join("");
+
+    el("auditList").querySelectorAll(".sc-fix").forEach(b => b.onclick = () => {
+      const a = audit[+b.dataset.i];
+      const to = b.dataset.s;
+      if (!a || a.sentiment === to) return;
+      a.was = a.was ?? a.sentiment;      // เก็บของเดิมไว้ ไว้ส่งออกเป็นบทเรียน
+      a.sentiment = to;
+      a.edited = a.was !== to ? 1 : 0;
+      if (!a.edited) delete a.was;
+      applyEdits();                       // อัปเดตทั้งหน้าให้ตรงกันทันที
+      drawFilter(); draw();
+    });
+  }
+
+  drawFilter(); draw();
 }
+
+/** เอาป้ายที่แก้แล้วไปคิดใหม่ทั้งหน้า — โดนัท · ตัวเลข · ตัวอย่าง */
+function applyEdits(){
+  if (!lastResult) return;
+  const c = { positive:0, neutral:0, negative:0 };
+  (lastResult.audit || []).forEach(a => { if (c[a.sentiment] != null) c[a.sentiment]++; });
+  lastResult.sentiment = c;
+  if (lastResult.lenses) {
+    const k = lastResult.target === "cp" ? "cp" : "overall";
+    lastResult.lenses[k] = { ...c };
+  }
+  lastResult.edited_count = (lastResult.audit || []).filter(a => a.edited).length;
+  renderResult(lastResult, true);
+}
+
 function auditSheets(){
   const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };
   const sheets = lastResult ? buildSheets(lastResult) : {};
-  sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ"], ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.text])];
+  sheets["รายคอมเมนต์"] = [["ผล sentiment","ข้อความ","AI ตอบเดิม","คุณแก้เอง"],
+    ...auditRows.map(a => [sentTh[a.sentiment]||a.sentiment, a.text,
+                           a.was ? (sentTh[a.was]||a.was) : "", a.edited ? "ใช่" : ""])];
   return sheets;
 }
 el("auditXlsxBtn").onclick = async () => { if (auditRows.length && await writeXlsx(auditSheets(), "sentiment-audit.xlsx")) toast("ดาวน์โหลด Excel แล้ว ✓"); };
