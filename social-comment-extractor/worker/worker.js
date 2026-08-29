@@ -9,8 +9,8 @@
  *   - TikTok  : ScrapeCreators /v1/tiktok/video/comments     env: SCRAPECREATORS_API_KEY
  *
  * Sentiment : Claude Messages API                            env: ANTHROPIC_API_KEY
- *   default model = claude-haiku-4-5 (เหมาะกับงานจัดหมวดจำนวนมาก + ประหยัด)
- *   ตั้ง env CLAUDE_MODEL=claude-opus-5 เพื่อความแม่นสูงสุด (แพงกว่า)
+ *   default model = claude-opus-5 (ตัวเดียวที่ผ่านเกณฑ์ความแม่น — ดู BASELINE.md)
+ *   ตั้ง env CLAUDE_MODEL=claude-haiku-4-5 ถ้าต้องการประหยัดและยอมรับความแม่นที่ต่ำลง
  *
  * ออกแบบ aggregate-first: Worker ไม่จัดเก็บ (persist) อะไรทั้งสิ้น —
  * ดึง → วิเคราะห์ในหน่วยความจำ → คืนเฉพาะภาพรวม (ชื่อผู้คอมเมนต์ถูกตัดออกโดย default)
@@ -19,9 +19,13 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 14;
+const WORKER_VER = 15;
 
-const DEFAULT_MODEL = "claude-haiku-4-5";
+/* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
+   เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
+   วัดจริง 6 รอบกับชุดเฉลย 475 ข้อ: opus 91.1-94.0% · haiku 65.1-79.5% (ดู BASELINE.md)
+   ⚠️ ต้นทุน ~$0.36 ต่อ 100 คอมเมนต์ (haiku ~$0.07) — แพงกว่า 5 เท่า แต่ haiku ไม่ผ่านเกณฑ์ */
+const DEFAULT_MODEL = "claude-opus-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const CHUNK = 40;            // จำนวนคอมเมนต์ต่อ 1 คำขอ Claude (ตี sentiment)
 const SYNTH_SAMPLE = 120;    // จำนวนคอมเมนต์ที่ส่งให้ Claude สรุป/หา keyword
