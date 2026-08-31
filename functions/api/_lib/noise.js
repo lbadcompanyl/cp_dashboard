@@ -34,6 +34,9 @@ export const SHOP_HOSTS = [
   // ร้านวัสดุ/ของแต่งบ้าน — หน้าสินค้ามีรหัสรุ่นที่ลงท้ายด้วย -CP (เจอจริง: ราวแขวนผ้า
   // KOHLER K-R26691-CP ของโฮมโปร หลุดเข้าคอลัมน์ CP เพราะรหัสสี "CP" = โครเมียม)
   "homepro.co", "thaiwatsadu", "dohome", "globalhouse", "boonthavorn", "index-living",
+  // ร้านเครื่องดนตรี/เสื้อผ้า — รหัสรุ่นขึ้นต้นด้วย CP (เจ้าของส่งภาพมา 29 ส.ค. 2026:
+  // Musedo CP-60G ปิ๊กอัพกีตาร์ · Boss CP-1X เอฟเฟค · Cp Company ฮู้ด)
+  "marcato.co.th", "ultravthailand",
   // เว็บเกม/เว็บบอร์ดที่มีหน้าค้นหาในตัว — ไม่ใช่ข่าว (เจอจริง: "Card Search — OnPlay Arena")
   "onplay.in.th", "gamingdose", "playpark",
   // ร้านสินค้าสัตว์เลี้ยง — "CP" เป็นชื่อรุ่นแผ่นรองซับ ไม่ใช่ชื่อเครือ (เจอจริง: vif.pet)
@@ -71,6 +74,12 @@ export const GALLERY_RE = /viewpic|viewimage|showpic|gallery\.php|\/album\//i;
 // เป็น permalink ของข่าวจริง ถ้าจับที่ลิงก์จะตัดข่าวจริงหายไปทั้งเว็บ
 // \b ใช้ได้กับพาดหัวไทยด้วย เพราะอักษรไทยไม่ใช่ \w จึงนับเป็นขอบคำอยู่แล้ว
 export const ARCHIVE_RE = /\barchives?\b/i;
+
+/* 📄 **พาดหัวที่บอกเลขหน้า = หน้ารวมรายการ ไม่ใช่ข่าว** (เจ้าของส่งภาพมา 29 ส.ค. 2026)
+   เจอจริง: "CP AXTRA | Page 6 of 6 - ThaiPR.NET" — เป็นหน้ารวม tag ของเว็บแจกข่าว
+   ⚠️ ดูที่ **พาดหัว** เท่านั้น เหมือน ARCHIVE_RE — ลิงก์ที่มี /page/ เป็น permalink ของข่าวจริงได้ */
+// ⚠️ ฝั่งไทยห้ามใส่ \b — อักษรไทยไม่ใช่ \w จึงไม่มีขอบคำให้จับ (เทสต์ [6] จับได้)
+export const PAGED_RE = /\bpage\s*\d+\s*(?:of|\/)\s*\d+\b|หน้า(?:ที่)?\s*\d+\s*(?:จาก|\/)\s*\d+/i;
 
 // หน้า "งานอีเวนต์/นิทรรศการ" ของเว็บองค์กร-หน่วยงาน ไม่ใช่ข่าว — เจ้าของแจ้ง 14 ส.ค. 2026
 // เจอจริง: นิทรรศการศิลปะ "Shared Sensibilities" บน greener.bangkok.go.th หลุดเข้าคอลัมน์
@@ -135,7 +144,18 @@ export const CP_BRANDS = [
 
 export const CP_FALSE = ["บีแอลซีพี", "blcp", "ซีพีเอ็น", "cpn ", "บีซีพีจี", "bcpg", "บีซีพี", "bcp "];
 
+/* 🎸 **`CP` ที่เป็นรหัสรุ่นสินค้า ไม่ใช่ชื่อเครือ** (เจ้าของส่งภาพมา 29 ส.ค. 2026)
+   เจอจริงในคอลัมน์ CP: `Musedo CP-60G` ปิ๊กอัพกีตาร์ · `Boss CP-1X` เอฟเฟคกีตาร์
+   ⚠️ ต้องมี "ตัวเลข" ต่อท้ายเสมอ — `CP-` เฉยๆ ไม่นับ ไม่งั้นไปโดน "CP-Meiji" ที่เป็นบริษัทจริง
+   (กฎตระกูลเดียวกับรหัสสี `-CP` ของโฮมโปรที่เคยเจอ แต่คนละฝั่งของขีด) */
+export const CP_MODEL_RE = /\bcp\s*[-–]\s*\d|\bcp\d{2,}\b/i;
+const CP_MODEL_RE_G = new RegExp(CP_MODEL_RE.source, "gi");
+
 export const CP_FALSE_RX = [
+  // 👕 CP Company = แบรนด์เสื้อผ้าอิตาลี (เจอจริง: หน้าขายฮู้ดของ ultravthailand)
+  "cp\\s*company",
+  // 🎮 ค่าพลังโปเกม่อน — "Snorlax Pokemon Go CP Explained" หลุดเข้าคอลัมน์ CP
+  "pok[eé]mon[\\s\\S]{0,40}\\bcp\\b|\\bcp\\b[\\s\\S]{0,40}pok[eé]mon",
   "ทรู\\s*ดิจิ(?:ทัล|ตอล)\\s*(?:พาร์ค|ปาร์ค|park)",
   "true\\s*digital\\s*park",
   "ทรู\\s*ธ?\\s*โซเชี?ย?ล",
@@ -191,6 +211,7 @@ export function noiseReason(it, title, src) {
   if (GALLERY_RE.test(link)) return "gallery";
   if (IMGPOST_RE.test(title)) return "imagepost"; // เดิมมีแค่ฝั่ง IR — รวมมาแล้ว ใช้ทุกแดชบอร์ด
   if (ARCHIVE_RE.test(title)) return "archive-page"; // หน้ารวมบทความ ไม่ใช่ข่าว
+  if (PAGED_RE.test(title)) return "paged-list";     // "Page 6 of 6" = หน้ารวมรายการ ไม่ใช่ข่าว
   if (EVENT_PATH_RE.test(link)) return "event-page";  // หน้างานอีเวนต์/นิทรรศการ ไม่ใช่ข่าว
   if (PR_RE.test(title)) return "pr";
   if (DUSTPAGE_RE.test(title)) return "dustpage"; // หน้ารายงานค่าฝุ่นของท้องถิ่น ไม่ใช่ข่าว
@@ -331,6 +352,47 @@ export // ---------- Hybrid alert filter: keyword ต้องอยู่ใน
 // ต้นเหตุ false positive: Google Alert จับ keyword จากบล็อก "ข่าวที่เกี่ยวข้อง/แนะนำ/roundup" ท้ายหน้า
 const ROUNDUP_RE = /สรุปข่าวประจำวัน|สรุปข่าวเด่น|รวมข่าวเด่นประจำ|ข่าวเด่นประจำวัน|มาร์เก็ตนิวส์|market\s*news/;
 
+/* ✂️ **ตัดบล็อก "ข่าวที่เกี่ยวข้อง" ออกจากเนื้อข่าวก่อนไปหา keyword**
+ *
+ * เจ้าของแจ้ง 29 ส.ค. 2026: "บางข่าว keyword อยู่หลังคำว่า ข่าวที่เกี่ยวข้อง ชัดเจนเลยนะ"
+ * Google Alert เห็นคำที่ไหนก็ได้ในหน้า — รวมถึงลิสต์ข่าวแนะนำท้ายบทความ ซึ่ง **ไม่ใช่เนื้อข่าวใบนี้**
+ * ข่าวคนละเรื่องจึงไหลเข้าคอลัมน์ CP ทั้งที่ในบทความจริงไม่มีชื่อเครือเลยสักคำ
+ *
+ * ⚠️ **ตัดเฉพาะ marker ที่อยู่ "ท้ายบทความ" เท่านั้น** — เว็บข่าวไทยชอบแทรกกล่อง
+ *    "ข่าวที่เกี่ยวข้อง" ไว้ **กลางบทความ** แล้วเขียนเนื้อข่าวจริงต่อ
+ *    ถ้าเจอ marker ตรงไหนก็ตัดยาวถึงท้าย = กินเนื้อข่าวจริงไปด้วย
+ * 🚫 **และห้ามตัดเป็นช่วงความยาวตายตัว** (เคยลอง 700 ตัวอักษร) — บล็อกแนะนำยาวไม่เท่ากัน
+ *    เดาสั้นไปก็ตัดไม่หมด เดายาวไปก็กินเนื้อข่าว · เทสต์ related.mjs [2] จับได้ตอนลองจริง
+ * ✅ ยึดหลัก "ตัดพลาดแล้วข่าวหายเงียบ แย่กว่าปล่อยขยะผ่าน" — marker กลางบทความจึงไม่แตะเลย
+ */
+const RELATED_RE =
+  /(?:ข่าว|เรื่อง|บทความ|คลิป)?\s*(?:ที่|อื่น)?\s*(?:เกี่ยวข้อง|แนะนำ|น่าสนใจ)|อ่านข่าวต้นฉบับ|อ่านเพิ่มเติมได้ที่|ข่าวยอดนิยม|ข่าวฮิต|related\s*(?:news|articles?|posts?|stories)|you\s*may\s*also\s*like|read\s*(?:also|more|next)|more\s*(?:from|stories)/gi;
+const RELATED_TAIL_AT = 0.6;  // marker ที่อยู่หลังจุดนี้ = บล็อกท้ายหน้า ตัดถึงจบ · ก่อนหน้านี้ไม่แตะ
+
+export function cutRelated(text) {
+  const s = String(text || "");
+  if (!s) return "";
+  RELATED_RE.lastIndex = 0;
+  const cuts = [];
+  let m;
+  while ((m = RELATED_RE.exec(s))) {
+    if (!m[0].trim()) { RELATED_RE.lastIndex++; continue; }  // กันแมตช์ว่างวนไม่จบ
+    if (m.index / s.length < RELATED_TAIL_AT) continue;      // กลางบทความ = ไม่แตะ
+    cuts.push([m.index, s.length]);
+  }
+  if (!cuts.length) return s;
+  // รวมช่วงที่ทับกันก่อนเฉือน ไม่งั้นตัดซ้อนแล้วตำแหน่งเพี้ยน
+  cuts.sort((a, b) => a[0] - b[0]);
+  const keep = [];
+  let at = 0;
+  for (const [a, b] of cuts) {
+    if (a > at) keep.push(s.slice(at, a));
+    at = Math.max(at, b);
+  }
+  if (at < s.length) keep.push(s.slice(at));
+  return keep.join(" ");
+}
+
 export // ครอบคำที่ match ด้วย marker [[hl]] ให้ frontend ไฮไลต์ (เหมือน <b> ของ Google Alert)
 function hlWrap(text, term) {
   if (!text || !term) return text || "";
@@ -441,7 +503,9 @@ const CP_STRONG_CTX =
 export function cpEvidence(text) {
   // ⚠️ ตัดจุดก่อน **แล้วค่อย** ตัดชื่อลวง — ไม่งั้น "ซี.พี.เอ็น" จะรอดด่านชื่อลวงไปได้
   const raw = undot(String(text || "").replace(/\[\[\/?hl\]\]/g, ""));
-  const hay = dropFalseCP(raw).toLowerCase();
+  // 🎸 รหัสรุ่นสินค้า (CP-60G · CP-1X) ต้องหายไปก่อนนับหลักฐาน ไม่งั้นถูกนับเป็น "CP เดี่ยว"
+  //    แล้วส่งไปให้ AI ตัดสิน ซึ่ง AI ตอบว่าใช่บ่อย → ปิ๊กอัพกีตาร์หลุดเข้าคอลัมน์ CP
+  const hay = dropFalseCP(raw).replace(CP_MODEL_RE_G, " ").toLowerCase();
   let found = "";
   const scan = (list, level) => {
     for (const b of list) {

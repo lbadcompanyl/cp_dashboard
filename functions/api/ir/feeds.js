@@ -11,7 +11,8 @@ import {
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
-  WEAK_TERMS, ROUNDUP_RE, hlWrap,
+  WEAK_TERMS, ROUNDUP_RE, hlWrap,,
+  cutRelated,
 } from "../_lib/noise.js";
 
 const EDGE_TTL = 3600;
@@ -31,7 +32,7 @@ const EDGE_TTL = 3600;
 //    · เทสต์ `syslog.mjs` มีด่านจับไม่ให้ลดกลับลงไปต่ำกว่า 10 นาที
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "75"; // bump: C.P. แบบมีจุด + บริบทไฮสปีด/แอร์พอร์ตลิงก์ + หน้ารายงานค่าฝุ่นของท้องถิ่น
+const CACHE_VER = "76"; // bump: ตัดบล็อก "ข่าวที่เกี่ยวข้อง" ก่อนหา keyword + รหัสรุ่นสินค้า CP-60G + หน้ารวมแบบแบ่งหน้า
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -635,7 +636,9 @@ function articleBodyText(html) {
       else if (n && typeof n.description === "string" && n.description.length > 20) out.push(n.description); // เผื่อไม่มี articleBody แต่มี description ของบทความเอง
     }
   }
-  return out.join("  ").replace(/<[^>]+>/g, " ").toLowerCase();
+  // ✂️ ตัดบล็อก "ข่าวที่เกี่ยวข้อง" ทิ้งก่อนเสมอ — ไม่ใช่เนื้อข่าวใบนี้
+  //    (เจ้าของแจ้ง 29 ส.ค. 2026: "keyword อยู่หลังคำว่า ข่าวที่เกี่ยวข้อง ชัดเจนเลย")
+  return cutRelated(out.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
 }
 // เช็คว่า "เนื้อข่าวจริง" มีคำเฉพาะโดเมน (keep) ไหม — cache เนื้อที่ดึงได้ต่อลิงก์ 24 ชม. (ไม่ fetch ซ้ำ)
 async function bodyHasKeep(cache, link, keep) {
@@ -679,7 +682,7 @@ async function mapPoolResults(items, limit, fn) {
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch) → cold ใช้พาดหัวอย่างเดียว (ตัด) แล้ว background ค่อยกู้คืนถ้าเนื้อจริงมีคำโดเมน
 const BODY_FETCH_MAX = 12; // เพดานยิงอ่านเนื้อข่าวต่อ 1 build — กันชนโควตา subrequest 50 ของ Cloudflare
-const VFY_VER = 5; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const VFY_VER = 6; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
 const AI_CP_MAX = 12; // เพดานใบที่ถาม AI ต่อ 1 build — คำตอบถูกจำไว้ ใบเดิมจึงถามครั้งเดียวตลอด
 
 // ถาม AI แล้ว "จำคำตอบไว้ 7 วัน" ต่อข่าว 1 ใบ — ไม่งั้นทุก build จะถามซ้ำทั้งคอลัมน์
