@@ -183,7 +183,12 @@ console.log("\n[10] 🔒 การ์ด Issue บนหน้ารวม ต�
   const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const at = html.indexOf('href="issue/"');
   const card = html.slice(at, at + 1400);
-  ok("การ์ด Issue มีป้าย 🔒 ต้องเข้าสู่ระบบ", /class="lock-badge">🔒[^<]*เข้าสู่ระบบ/.test(card), card.slice(0, 160));
+  ok("การ์ด Issue มีป้าย 🔒", /class="lock-badge"[^>]*>🔒</.test(card), card.slice(0, 200));
+  // เจ้าของสั่ง 29 ส.ค. 2026: "เปลี่ยนเป็นตัว lock อย่างเดียว ไม่ต้องมี text"
+  ok("ป้ายมีแต่ไอคอน ไม่มีข้อความ", /class="lock-badge"[^>]*>🔒<\/span>/.test(card));
+  // ⚠️ ไม่มีข้อความแล้ว ต้องมีคำอธิบายให้คนที่ไม่เข้าใจไอคอน + screen reader
+  ok("มีคำอธิบายตอนเอาเมาส์ชี้", /class="lock-badge"[^>]*title="[^"]*เข้าสู่ระบบ/.test(card));
+  ok("คนใช้ screen reader ก็รู้", /class="lock-badge"[^>]*aria-label="[^"]*เข้าสู่ระบบ/.test(card));
   ok("มีกุญแจที่มุมไอคอนด้วย", /class="lock-corner"[^>]*>🔒</.test(card));
   // เจ้าของสั่ง 29 ส.ค. 2026: "เอา under construct ออกและเอารูป Lock ไปไว้แทน"
   ok("🚫 ไม่มี Under Construction บนการ์ดนี้แล้ว", !/wip-badge|wip-corner|card wip/.test(card), card.slice(0, 200));
@@ -196,7 +201,7 @@ console.log("\n[10] 🔒 การ์ด Issue บนหน้ารวม ต�
   ok("🚫 มีป้ายล็อกใบเดียว (การ์ดอื่นยังเปิดอยู่)", (html.match(/class="lock-badge"/g) || []).length === 1,
     String((html.match(/class="lock-badge"/g) || []).length));
   const v = html.match(/name="page-ver" content="(\d+)"/);
-  ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 24, v ? v[1] : "-");
+  ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 25, v ? v[1] : "-");
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} ผ่าน ${pass} · ตก ${fail}\n`);
