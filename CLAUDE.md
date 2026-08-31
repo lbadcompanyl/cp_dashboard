@@ -359,20 +359,29 @@ session ไหนก็ทำให้ไม่ได้ (เครื่อง�
 2. ซ้ายมือ **Access → Applications** → ปุ่ม **Add an application**
 3. เลือก **Self-hosted**
 4. **Application name**: `Issue Dashboard` · **Session Duration**: `24 hours` (หมดอายุแล้วให้ล็อกอินใหม่)
-5. **Application domain** — ใส่ 3 ช่องแยกกัน
-   | ช่อง | ใส่อะไร |
+5. **Destinations → Public hostnames → Add public hostname** — ใส่ปลายทาง
+   > 🚨 **ช่อง Domain เป็น dropdown ที่มีแต่โดเมนที่เราซื้อไว้ใน Cloudflare**
+   > `pages.dev` เป็นของ Cloudflare ไม่ใช่ของเรา **จึงไม่มีให้เลือก — ติดตรงนี้ทุกคน**
+   > ✅ กด **"Switch to custom input"** (ลิงก์เล็กๆ ใต้ช่อง Subdomain)
+   >    แล้วช่องจะกลายเป็นช่องพิมพ์อิสระ
+   | ช่อง (หลังกด Switch to custom input) | ใส่อะไร |
    |---|---|
-   | Subdomain | `cp-dashboard-680` |
-   | Domain | `pages.dev` |
+   | Subdomain | เว้นว่าง |
+   | Domain | `cp-dashboard-680.pages.dev` ← **พิมพ์ทั้งชื่อเลย** |
    | Path | `issue` ← **ไม่ต้องมี `/` นำหน้า ไม่ต้องมี `*`** |
    > 🚨 **ห้ามเว้น Path ว่าง หรือใส่ `/`** — จะกลายเป็นล็อกทั้งเว็บรวม `/api/*` ด้วย
    >    แดชบอร์ดสาธารณะจะพังทั้งหมดทันที (ดูข้อห้ามข้างล่าง)
 6. **Identity providers**: ปล่อยตามที่มีอยู่ (ชุดเดียวกับที่ `/social/` ใช้)
-7. **Next** → **Add policy**
+7. เลื่อนลงไปหัวข้อ **Access policies** (ตอนแรกเขียนว่า *default-deny* = ยังไม่มีใครเข้าได้เลย)
+   → **Add a policy** / **Create new policy**
    · Policy name: `เจ้าของ` · Action: **Allow**
    · Include → **Emails** → ใส่อีเมลที่ให้เข้าได้ (ใส่ได้หลายอัน)
    · (อยากให้ทั้งโดเมนเข้าได้ ใช้ **Emails ending in** → `@บริษัท.com` แทน)
-8. **Next → Add application**
+8. **Save / Create application**
+
+> ⚠️ **หน้า Cloudflare มี 2 รุ่น** — รุ่นเก่าถาม Application domain เป็น 3 ช่องในหน้าเดียว
+> รุ่นใหม่ (ที่เห็นตอนนี้) แยกเป็น **Destinations** กับ **Access policies** คนละส่วน
+> ต่างกันแค่หน้าตา ค่าที่ต้องใส่เหมือนกันทุกอย่าง
 
 **เช็คว่าได้ผลจริง** — เปิดหน้าต่างไม่ระบุตัวตน แล้วลองทีละอัน
 `/issue/` · `/issue/trends.html` · `/issue/three.html` → **ต้องเด้งหน้าล็อกอินทุกอัน**
