@@ -7,11 +7,14 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 import { readDecisions } from "../allow.js";
 import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 import {
-  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
+  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, dropListingSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
-  WEAK_TERMS, ROUNDUP_RE, hlWrap,
+  WEAK_TERMS, ROUNDUP_RE, hlWrap,,
+  cutRelated,
+
+  htmlToText,
 } from "../_lib/noise.js";
 
 const EDGE_TTL = 3600;
@@ -31,7 +34,7 @@ const EDGE_TTL = 3600;
 //    · เทสต์ `syslog.mjs` มีด่านจับไม่ให้ลดกลับลงไปต่ำกว่า 10 นาที
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "75"; // bump: C.P. แบบมีจุด + บริบทไฮสปีด/แอร์พอร์ตลิงก์ + หน้ารายงานค่าฝุ่นของท้องถิ่น
+const CACHE_VER = "78"; // bump: สรุปที่ซ้ำข้อความตัวเอง = ลิสต์ข่าว ตัดทิ้ง + แปลง &middot;
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -460,6 +463,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   // ทำให้ข่าวคนละเรื่องถูกดูดเข้าคอลัมน์ (ดูเหตุผลเต็มใน _lib/noise.js)
   const shared = {};
   dropSharedSnippets(sources, shared);
+  try { dropListingSnippets(sources, shared); } catch {}
 
   mergeNewsIntoAlert(sources, "alert1", ["newsth", "newsintl"], CP_BRANDS);
   mergeNewsIntoAlert(sources, "alert2", ["newsth", "newsintl"], ALERT2_KEEP);
@@ -534,6 +538,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   // (เหตุผลเดียวกับที่ dropNoiseAfterArchive ต้องมี — verify ทำงานก่อน mergeArchives)
   // · รอบนี้ข้อมูลเยอะกว่าเดิม การจับ "สรุปก้อนเดียวกันหลายใบ" จึงแม่นขึ้นด้วย
   try { dropSharedSnippets(sources, shared); } catch {}
+  try { dropListingSnippets(sources, shared); } catch {}
 
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   const pruned = {};
@@ -635,7 +640,19 @@ function articleBodyText(html) {
       else if (n && typeof n.description === "string" && n.description.length > 20) out.push(n.description); // เผื่อไม่มี articleBody แต่มี description ของบทความเอง
     }
   }
-  return out.join("  ").replace(/<[^>]+>/g, " ").toLowerCase();
+  // ✂️ ตัดบล็อก "ข่าวที่เกี่ยวข้อง" ทิ้งก่อนเสมอ — ไม่ใช่เนื้อข่าวใบนี้
+  //    (เจ้าของแจ้ง 29 ส.ค. 2026: "keyword อยู่หลังคำว่า ข่าวที่เกี่ยวข้อง ชัดเจนเลย")
+  if (out.length) return cutRelated(out.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
+
+  // 🧱 **เว็บไม่มี JSON-LD → ใช้ HTML ที่ตัดกล่องแนะนำออกแล้วเป็นเนื้อข่าวสำรอง**
+  //    ของเดิมคืนค่าว่าง = "อ่านเนื้อข่าวไม่ได้" → ตัดสินไม่ได้ → โยนให้ AI เดา
+  //    ซึ่ง AI ตอบว่าใช่บ่อย ข่าวคนละเรื่องจึงหลุดเข้าคอลัมน์ CP
+  //    ⚠️ ตัดที่ HTML แม่นกว่าตัดที่ข้อความ เพราะกล่องแนะนำมีขอบเขตของตัวเอง
+  //       ใช้ได้กับกล่องที่แทรก **กลางบทความ** ด้วย (cutRelated ยอมไม่แตะกรณีนั้น)
+  const txt = htmlToText(html);
+  // ⚠️ สั้นเกินไป = แกะเนื้อข่าวไม่ได้จริงๆ ต้องคืนค่าว่างให้ถือว่า "ตัดสินไม่ได้" เหมือนเดิม
+  //    ห้ามเดาจากเศษข้อความไม่กี่คำ ไม่งั้นจะตัดข่าวจริงทิ้งเพราะหาคำไม่เจอ
+  return txt.length >= 400 ? cutRelated(txt).toLowerCase() : "";
 }
 // เช็คว่า "เนื้อข่าวจริง" มีคำเฉพาะโดเมน (keep) ไหม — cache เนื้อที่ดึงได้ต่อลิงก์ 24 ชม. (ไม่ fetch ซ้ำ)
 async function bodyHasKeep(cache, link, keep) {
@@ -679,7 +696,7 @@ async function mapPoolResults(items, limit, fn) {
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch) → cold ใช้พาดหัวอย่างเดียว (ตัด) แล้ว background ค่อยกู้คืนถ้าเนื้อจริงมีคำโดเมน
 const BODY_FETCH_MAX = 12; // เพดานยิงอ่านเนื้อข่าวต่อ 1 build — กันชนโควตา subrequest 50 ของ Cloudflare
-const VFY_VER = 5; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const VFY_VER = 6; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
 const AI_CP_MAX = 12; // เพดานใบที่ถาม AI ต่อ 1 build — คำตอบถูกจำไว้ ใบเดิมจึงถามครั้งเดียวตลอด
 
 // ถาม AI แล้ว "จำคำตอบไว้ 7 วัน" ต่อข่าว 1 ใบ — ไม่งั้นทุก build จะถามซ้ำทั้งคอลัมน์
