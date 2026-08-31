@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 20;
+const WORKER_VER = 23;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -73,6 +73,18 @@ const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูง
 /* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
    /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
 const MODEL_CHOICES = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
+
+/* ⚙️ ระดับการคิดของโมเดล — วัดแล้วพบว่าโทเคนส่วนใหญ่หมดไปกับ "การคิด" ไม่ใช่คำตอบ
+   วัดจริง 31 ส.ค. 2026 (475 ใบ): คำตอบที่ต้องเขียนจริงราว 25 โทเคน/ใบ แต่ใช้จริง
+   opus 105 · sonnet 224 → ส่วนเกินคือการคิด (sonnet คิดเยอะกว่า opus ~2.5 เท่า)
+   ไม่ส่งค่านี้ = ใช้ค่าตั้งต้นของโมเดล ซึ่งคือคิดเต็มที่ (high)
+
+   🚫 **haiku ไม่รองรับ ส่งไปแล้วตอบ error** จึงมีรายชื่อรุ่นที่ส่งได้แยกไว้
+   ⚠️ ค่าตั้งต้นของระบบยัง **ไม่ส่ง** — ห้ามเปลี่ยนจนกว่าจะวัดกับชุดเฉลย 475 ใบแล้วเทียบ
+      ทั้ง 3 อย่าง: ความแม่น · ราคา · **เวลา** (เจ้าของสั่ง 31 ส.ค.: ช้าเกินไปก็ไม่เอา
+      ยกเว้นว่าลดแล้วความแม่นตก) */
+const EFFORT_CHOICES = ["low", "medium", "high", "xhigh", "max"];
+const EFFORT_MODELS = ["claude-opus-5", "claude-sonnet-5"];
 
 /* ============================================================
  * 📥 กองรอตรวจ (feedback queue) — ชั้น ② ของระบบเรียนรู้
@@ -216,7 +228,7 @@ function normLens(v) {
  * ตี 2 แกนให้คอมเมนต์ชุดหนึ่ง — คืน array ยาวเท่า texts เสมอ
  * ⚠️ ห้ามให้ความยาวไม่ตรง ไม่งั้นผลจะเลื่อนไปทั้งชุดแล้วตัวเลขวัดผลผิดโดยไม่มีอะไรเตือน
  */
-async function classifyTwoLens(texts, env, acc, context) {
+async function classifyTwoLens(texts, env, acc, context, effort) {
   const numbered = texts
     .map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`)
     .join("\n");
@@ -232,13 +244,13 @@ async function classifyTwoLens(texts, env, acc, context) {
   const prompt = ctx + "คอมเมนต์:\n" + numbered;
   const sys = systemTwoLens();
   let budget = Math.min(12000, 60 * texts.length + 4000);
-  let out = await callClaude(env, sys, prompt, budget, acc2);
+  let out = await callClaude(env, sys, prompt, budget, acc2, { effort });
 
   /* ถูกตัดกลางคัน = ลองใหม่อีกครั้งด้วยเพดาน 2 เท่า ก่อนจะยอมแพ้
      ดีกว่าโยน error ทันที เพราะความยาวของคำนำเดาไม่ได้และต่างกันไปในแต่ละก้อน */
   if (acc2.stop_reason === "max_tokens") {
     budget = Math.min(20000, budget * 2);
-    out = await callClaude(env, sys, prompt, budget, acc2);
+    out = await callClaude(env, sys, prompt, budget, acc2, { effort });
   }
   if (acc2.stop_reason === "max_tokens") {
     throw new Error(`คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว — ลดจำนวนข้อต่อก้อน`);
@@ -399,9 +411,10 @@ export default {
       const acc = { input: 0, output: 0 };
       try {
         const model = MODEL_CHOICES.includes(body.model) ? body.model : (env.CLAUDE_MODEL || DEFAULT_MODEL);
-        const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context);
+        const effort = EFFORT_CHOICES.includes(body.effort) ? body.effort : null;
+        const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context, effort);
         const missing = results.filter(r => r.missing).length;
-        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, missing, results, tokens: acc }), origin);
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, effort, missing, results, tokens: acc }), origin);
       } catch (e) {
         return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
       }
@@ -457,7 +470,24 @@ async function analyze(opts, env) {
     (reply_count ? ` (เป็น reply ${reply_count})` : " (นับเฉพาะคอมเมนต์บนสุด ไม่รวม reply)"));
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
-  const texts = comments.map(c => c.text).filter(Boolean);
+  /* คอมเมนต์ที่เป็นสติกเกอร์ / GIF / รูปล้วน — ไม่มีตัวอักษรให้ AI อ่าน
+     ✅ เจ้าของสั่ง 31 ส.ค. 2026: **ไม่ตัดทิ้ง ให้นับเป็น "กลาง"** จำนวนจะได้ตรงกับที่ดึงมา
+        (ของเดิมคัดทิ้ง แล้วเลขบนจอไม่ตรงกับจำนวนคอมเมนต์จริง ทำให้เข้าใจผิด)
+
+     ⚠️ แต่ยังต้องนับแยกและติดธงไว้ทุกใบ — "กลาง" ตรงนี้แปลว่า **ไม่มีอะไรให้อ่าน**
+        ไม่ใช่ "AI อ่านแล้วเห็นว่าเป็นกลาง" · คนละเรื่องกันสิ้นเชิง
+        ถ้าไม่แยก วันหนึ่งโพสที่มีแต่สติกเกอร์จะรายงานว่า "กลาง 100%" อย่างมั่นใจ
+        ทั้งที่ไม่ได้อ่านอะไรเลยสักใบ (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ใน CLAUDE.md)
+
+     🚫 ห้ามส่งใบพวกนี้ไปให้ AI — ข้อความว่างเปล่าไม่มีอะไรให้ตัดสิน เปลืองโทเคนฟรี */
+  /* ⚠️ ต้อง trim ก่อนเสมอ — "   " (ช่องว่างล้วน) ไม่ใช่ข้อความ แต่ผ่านเงื่อนไข if(t) ได้
+     เจอจริงตอนเขียนเทสต์ 31 ส.ค. 2026: ส่งบรรทัดว่างไปให้ AI แล้วมันตอบมั่วให้ 1 ใบ */
+  const texts = comments.map(c => String(c.text || "").trim());
+  const askIdx = [];                                  // ตำแหน่งของใบที่มีข้อความจริง
+  texts.forEach((t, i) => { if (t) askIdx.push(i); });
+  const skipped_no_text = texts.length - askIdx.length;
+  if (skipped_no_text) logLine(`ไม่มีข้อความ ${skipped_no_text} รายการ (สติกเกอร์/รูป) — นับเป็นกลาง ไม่ส่งให้ AI`);
+  if (!askIdx.length) throw new Error("คอมเมนต์ทั้งหมดเป็นสติกเกอร์/รูป ไม่มีข้อความให้วิเคราะห์");
 
   // ตัวสะสมการใช้ token ของ Claude
   const tokens = { input: 0, output: 0, rate_remaining: null };
@@ -465,13 +495,22 @@ async function analyze(opts, env) {
   /* 2) ตี sentiment ด้วยตัวจัดหมวด 2 แกน (rubric v5 — วัดได้ 94% กับ opus)
         ⚠️ ตัวเดียวกับที่หน้าวัดความแม่นใช้ ห้ามแยกเป็นคนละชุด ไม่งั้นตัวเลขที่วัดไว้ใช้อ้างอิงไม่ได้ */
   const modelUsed = env.CLAUDE_MODEL || DEFAULT_MODEL;
-  logLine(`ตี sentiment 2 แกน ด้วย ${modelUsed} · ${Math.ceil(texts.length / CHUNK)} batch (batch ละ ${CHUNK})`);
-  const two = [];
-  for (let i = 0; i < texts.length; i += CHUNK) {
-    const batch = texts.slice(i, i + CHUNK);
+  const nBatch = Math.ceil(askIdx.length / CHUNK);
+  logLine(`ตี sentiment 2 แกน ด้วย ${modelUsed} · ${nBatch} batch (batch ละ ${CHUNK})`);
+  const asked = [];
+  for (let i = 0; i < askIdx.length; i += CHUNK) {
+    const batch = askIdx.slice(i, i + CHUNK).map(j => texts[j]);
     const part = await classifyTwoLens(batch, env, tokens, opts.post_context || collected.post_title || "");
-    two.push(...part);
-    logLine(`  batch ${Math.floor(i / CHUNK) + 1}/${Math.ceil(texts.length / CHUNK)} เสร็จ (${batch.length} คอมเมนต์)`);
+    asked.push(...part);
+    logLine(`  batch ${Math.floor(i / CHUNK) + 1}/${nBatch} เสร็จ (${batch.length} คอมเมนต์)`);
+  }
+
+  /* เอาคำตอบกลับเข้าตำแหน่งเดิม แล้วเติมใบที่ไม่มีข้อความเป็น "กลาง" พร้อมติดธง
+     ⚠️ ต้องคืนตำแหน่งตามลำดับเดิม ไม่งั้นข้อความในรายการตรวจกับป้ายจะสลับกันทั้งกระดาน */
+  const two = texts.map(() => null);
+  askIdx.forEach((j, k) => { two[j] = asked[k]; });
+  for (let i = 0; i < two.length; i++) {
+    if (!two[i]) two[i] = { sentiment_cp: "Neutral", overall_cred: "Neutral", is_sarcasm: 0, no_text: 1 };
   }
 
   const count = (key) => {
@@ -506,14 +545,19 @@ async function analyze(opts, env) {
     sentiment_cp: two[i]?.sentiment_cp,
     overall_cred: two[i]?.overall_cred,
     is_sarcasm: two[i]?.is_sarcasm ? 1 : 0,
+    /* 🏷 ธงบอกว่าใบนี้ "ไม่มีข้อความให้อ่าน" ไม่ใช่ "AI อ่านแล้วเห็นว่ากลาง"
+       หน้าเว็บต้องเอาไปแสดงให้ต่างกัน ไม่งั้นดูเหมือน AI ตัดสินมาแล้วทั้งที่ไม่ได้อ่าน */
+    no_text: two[i]?.no_text ? 1 : 0,
   }));
 
   /* 3) สรุป + keyword + ตัวอย่าง
         โหมด CP: สรุปจากคอมเมนต์ที่มีท่าทีต่อ CP จริงๆ (ตัด Neutral ที่ไม่ได้แตะ CP ออก)
         ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
-  const synthPool = target === "cp"
-    ? texts.filter((_, i) => labels[i] === "positive" || labels[i] === "negative")
-    : texts;
+  /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
+        ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน (โหมดอารมณ์รวมของเดิมส่ง texts ทั้งก้อน) */
+  const synthPool = texts.filter((t, i) => t && (
+    target === "cp" ? (labels[i] === "positive" || labels[i] === "negative") : true
+  ));
   if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
   const synth = synthPool.length
     ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target)
@@ -533,6 +577,8 @@ async function analyze(opts, env) {
     post_thumb: collected.post_thumb || "",
     fetched_count: comments.length,
     reply_count,
+    no_text_count: skipped_no_text,   // สติกเกอร์/รูป — นับเป็นกลางแล้ว แต่ต้องบอกผู้ใช้ว่ามีกี่ใบ
+    skipped_no_text: 0,               // ไม่ได้คัดทิ้งแล้ว (คงคีย์ไว้ให้หน้าเว็บรุ่นก่อนไม่พัง)
     analyzed_count: two.length,
     target,
     not_related,
@@ -848,8 +894,26 @@ function aggregateTime(comments) {
 
 /* ---------------- Claude sentiment ---------------- */
 
-async function callClaude(env, system, userText, maxTokens, acc) {
+async function callClaude(env, system, userText, maxTokens, acc, opts = {}) {
   const model = env.CLAUDE_MODEL || DEFAULT_MODEL;
+  const body = {
+    model,
+    max_tokens: maxTokens,
+    /* 💾 คำสั่ง + ตัวอย่าง 22 ข้อ ยาว ~5,800 ตัวอักษร และ **เหมือนกันทุกครั้ง**
+       (systemTwoLens() ไม่รับพารามิเตอร์เลย · บริบทโพสอยู่ในข้อความของผู้ใช้ ไม่ได้อยู่ตรงนี้)
+       ของเดิมส่งซ้ำทุกก้อน — วิเคราะห์ 475 ใบ = ส่งคำสั่งชุดเดิมซ้ำ 12 รอบ
+       ทำเครื่องหมายให้ฝั่ง Anthropic เก็บไว้ใช้ซ้ำ → รอบถัดๆ ไปคิดถูกลงมาก
+       ⚠️ **ห้ามเอาอะไรที่เปลี่ยนทุกรอบมาใส่ใน system เด็ดขาด** (เวลา · ชื่อโพส · เลขรัน)
+          เปลี่ยนแม้แต่ตัวอักษรเดียว = แคชพังทั้งก้อน แล้วจะกลับไปจ่ายเต็มโดยไม่มีอะไรบอก
+          วิธีตรวจ: ดู cache_read ในผลลัพธ์ ถ้าเป็น 0 ตลอด แปลว่าแคชไม่ทำงาน */
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: userText }],
+  };
+  /* ระดับการคิด — ไม่ส่ง = ใช้ค่าตั้งต้นของโมเดล (คิดเต็มที่)
+     🚫 haiku ไม่รองรับ ส่งไปแล้วตอบ error — ต้องกันไว้ ไม่ใช่ปล่อยให้พังตอนรัน */
+  if (opts.effort && EFFORT_MODELS.includes(model)) {
+    body.output_config = { effort: opts.effort };
+  }
   const r = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
@@ -857,17 +921,19 @@ async function callClaude(env, system, userText, maxTokens, acc) {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: userText }],
-    }),
+    body: JSON.stringify(body),
   });
   const data = await r.json();
   if (!r.ok) throw new Error("Claude API: " + (data?.error?.message || ("HTTP " + r.status)));
   if (acc) {
-    if (data.usage) { acc.input += data.usage.input_tokens || 0; acc.output += data.usage.output_tokens || 0; }
+    if (data.usage) {
+      acc.input += data.usage.input_tokens || 0;
+      acc.output += data.usage.output_tokens || 0;
+      /* แยกนับโทเคนที่ "เขียนแคช" กับ "อ่านแคช" — คนละราคากัน
+         เขียน 1.25 เท่าของปกติ · อ่าน 0.1 เท่า · เอาไปรวมกับ input เฉยๆ จะคิดเงินผิด */
+      acc.cache_write = (acc.cache_write || 0) + (data.usage.cache_creation_input_tokens || 0);
+      acc.cache_read = (acc.cache_read || 0) + (data.usage.cache_read_input_tokens || 0);
+    }
     const rr = r.headers.get("anthropic-ratelimit-tokens-remaining");
     if (rr != null) acc.rate_remaining = +rr;
     /* ⚠️ "max_tokens" = โมเดลพูดไม่จบ คำตอบถูกตัดกลางคัน → JSON พัง
