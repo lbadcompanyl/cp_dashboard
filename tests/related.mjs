@@ -153,5 +153,26 @@ console.log("\n[7] ต่อสายในโค้ดจริง + หน้�
   ok("หน้า admin แปล paged-list เป็นภาษาคนแล้ว", /"paged-list":\s*"[^"]*[ก-๙]/.test(adm));
 }
 
+console.log("\n[10] 🔒 การ์ด Issue บนหน้ารวม ต้องมีป้ายบอกว่าต้องเข้าสู่ระบบ");
+{
+  // เจ้าของสั่ง 29 ส.ค. 2026: "อยาก lock issue dashboard และเพิ่มไอคอน lock เล็กๆ ในหน้ารวม"
+  // ⚠️ ป้ายนี้ **ไม่ได้ล็อกอะไรเลย** — ตัวล็อกจริงคือ Cloudflare Access ที่เจ้าของตั้งเอง
+  //    ป้ายทำหน้าที่เดียวคือบอกล่วงหน้าว่ากดแล้วจะเจอหน้าล็อกอิน
+  const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const at = html.indexOf('href="issue/"');
+  const card = html.slice(at, at + 1400);
+  ok("การ์ด Issue มีไอคอน 🔒", /class="lock"[^>]*>🔒</.test(card));
+  ok("มีคำอธิบายตอนเอาเมาส์ชี้", /title="[^"]*เข้าสู่ระบบ/.test(card));
+  ok("คนใช้ screen reader ก็รู้", /aria-label="[^"]*เข้าสู่ระบบ/.test(card));
+  // ⚠️ .card เป็น flex column — วาง 🔒 เป็นลูกตรงๆ จะกลายเป็นแถวของตัวเองกว้างเต็มการ์ด (วัดจริง 233px)
+  ok("ห่อไว้ในแถวเดียวกับป้าย ISSUE", /<span class="tagrow">[\s\S]*?class="lock"/.test(card));
+  ok("มีสไตล์ของ .tagrow", /\.card \.tagrow \{[^}]*display:flex/.test(html));
+  // 🚫 การ์ดอื่นยังไม่ได้ล็อก ห้ามติดป้ายมั่ว
+  ok("🚫 มีป้ายล็อกใบเดียว (การ์ดอื่นยังเปิดอยู่)", (html.match(/class="lock"/g) || []).length === 1,
+    String((html.match(/class="lock"/g) || []).length));
+  const v = html.match(/name="page-ver" content="(\d+)"/);
+  ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 23, v ? v[1] : "-");
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);
