@@ -413,6 +413,24 @@ session ไหนก็ทำให้ไม่ได้ (เครื่อง�
 > ⚠️ **preview URL ของแต่ละ branch เป็นคนละโดเมน** (`<branch>.cp-dashboard-680.pages.dev`)
 > application ที่ตั้งไว้กับ `cp-dashboard-680.pages.dev` **ไม่ครอบ preview**
 >
+> ### 🔗 วิธีคิดลิงก์ preview ของ branch — **พิสูจน์แล้วว่าถูก** (เจ้าของเปิดได้จริง 31 ส.ค. 2026)
+>
+> เอาชื่อ branch มา **เปลี่ยนทุกตัวที่ไม่ใช่ a-z 0-9 เป็น `-` แล้วตัดเหลือ 28 ตัวแรก**
+>
+> | | |
+> |---|---|
+> | branch | `claude/dashboard-google-alerts-news-0mw9bg` |
+> | เปลี่ยน `/` เป็น `-` | `claude-dashboard-google-alerts-news-0mw9bg` |
+> | ตัดเหลือ 28 ตัว | `claude-dashboard-google-aler` |
+> | **ลิงก์ที่ได้** | `https://claude-dashboard-google-aler.cp-dashboard-680.pages.dev/` |
+>
+> · ✅ **แปะลิงก์นี้ให้เจ้าของทุกครั้งที่ push** ไม่ต้องให้ไปหาเองใน Cloudflare
+> · 🚫 **เจอหน้า "Nothing is here yet" ไม่ได้แปลว่าคิดที่อยู่ผิดเสมอไป** — หน้านั้นแปลว่า
+>   **"ไม่มี deployment อยู่ที่ alias นี้"** ซึ่งมักเป็นเพราะ **ยังไม่ได้ push / build ยังไม่เสร็จ /
+>   build พัง** · เคยเข้าใจผิดว่ากฎ 28 ตัวใช้ไม่ได้เพราะเจอหน้านี้ **ทั้งที่กฎถูกมาตลอด**
+> · ⏱ push แล้วต้อง **รอ build 1–2 นาที** ก่อนเปิด
+>
+
 > ✅ **preview ถูกล็อกอยู่แล้ว — Cloudflare Pages สร้าง application ให้เอง** (เห็นของจริง 31 ส.ค. 2026)
 > ชื่อ **`cp-dashboard - Cloudflare Pages`** · ปลายทาง **`*.cp-dashboard-680.pages.dev`** ·
 > นโยบาย `Allow Members - Cloudflare Pages` · เกิดจากการเปิด "Access policy for preview deployments"
