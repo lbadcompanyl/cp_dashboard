@@ -13,6 +13,8 @@ import {
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
   WEAK_TERMS, ROUNDUP_RE, hlWrap,,
   cutRelated,
+
+  htmlToText,
 } from "../_lib/noise.js";
 
 const EDGE_TTL = 3600;
@@ -638,7 +640,17 @@ function articleBodyText(html) {
   }
   // ✂️ ตัดบล็อก "ข่าวที่เกี่ยวข้อง" ทิ้งก่อนเสมอ — ไม่ใช่เนื้อข่าวใบนี้
   //    (เจ้าของแจ้ง 29 ส.ค. 2026: "keyword อยู่หลังคำว่า ข่าวที่เกี่ยวข้อง ชัดเจนเลย")
-  return cutRelated(out.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
+  if (out.length) return cutRelated(out.join("  ").replace(/<[^>]+>/g, " ")).toLowerCase();
+
+  // 🧱 **เว็บไม่มี JSON-LD → ใช้ HTML ที่ตัดกล่องแนะนำออกแล้วเป็นเนื้อข่าวสำรอง**
+  //    ของเดิมคืนค่าว่าง = "อ่านเนื้อข่าวไม่ได้" → ตัดสินไม่ได้ → โยนให้ AI เดา
+  //    ซึ่ง AI ตอบว่าใช่บ่อย ข่าวคนละเรื่องจึงหลุดเข้าคอลัมน์ CP
+  //    ⚠️ ตัดที่ HTML แม่นกว่าตัดที่ข้อความ เพราะกล่องแนะนำมีขอบเขตของตัวเอง
+  //       ใช้ได้กับกล่องที่แทรก **กลางบทความ** ด้วย (cutRelated ยอมไม่แตะกรณีนั้น)
+  const txt = htmlToText(html);
+  // ⚠️ สั้นเกินไป = แกะเนื้อข่าวไม่ได้จริงๆ ต้องคืนค่าว่างให้ถือว่า "ตัดสินไม่ได้" เหมือนเดิม
+  //    ห้ามเดาจากเศษข้อความไม่กี่คำ ไม่งั้นจะตัดข่าวจริงทิ้งเพราะหาคำไม่เจอ
+  return txt.length >= 400 ? cutRelated(txt).toLowerCase() : "";
 }
 // เช็คว่า "เนื้อข่าวจริง" มีคำเฉพาะโดเมน (keep) ไหม — cache เนื้อที่ดึงได้ต่อลิงก์ 24 ชม. (ไม่ fetch ซ้ำ)
 async function bodyHasKeep(cache, link, keep) {

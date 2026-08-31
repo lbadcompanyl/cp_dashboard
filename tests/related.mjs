@@ -9,7 +9,7 @@
  * รันด้วย: node related.mjs
  */
 import fs from "node:fs";
-import { cutRelated, noiseReason, cpEvidence, CP_MODEL_RE, PAGED_RE } from "../functions/api/_lib/noise.js";
+import { cutRelated, htmlToText, stripBoilerplateHtml, noiseReason, cpEvidence, CP_MODEL_RE, PAGED_RE } from "../functions/api/_lib/noise.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { c ? (pass++, console.log("  ✅ " + n)) : (fail++, console.log("  ❌ " + n + (x ? " → " + x : ""))); };
@@ -93,6 +93,46 @@ console.log("\n[6] 📄 หน้ารวมรายการแบบแบ�
   for (const t of ["ซีพีเอฟ กำไรไตรมาส 2 โต 30%", "เปิด 6 มาตรการรับมือฝุ่น PM 2.5",
                    "ราคาหมู 3 เดือนติด", "CP ลงทุน 5 พันล้าน"]) {
     ok(`🚫 ไม่ตัดข่าวจริง: ${t.slice(0, 30)}`, !PAGED_RE.test(t));
+  }
+}
+
+console.log("\n[8] 🧱 ตัดที่ HTML — กล่องที่แทรก 'กลางบทความ' ก็ตัดได้ เนื้อข่าวไม่หาย");
+{
+  // เจ้าของถาม 29 ส.ค. 2026: "บางข่าว related news แทรกกลางจะแก้ยังไง?"
+  // ในข้อความล้วนไม่รู้ว่ากล่องจบตรงไหน แต่ใน HTML กล่องมีขอบเขตของตัวเอง → ตัดทั้ง element
+  const page = `<article>
+    <h1>เกาะประเด็นการเมือง คดีฮั้ว สว.</h1>
+    <p>วันนี้ที่รัฐสภา มีการประชุมเรื่องคดีฮั้ว สว. โดยมีตัวแทนจากหลายฝ่ายเข้าร่วมประชุมกันอย่างพร้อมเพรียง</p>
+    <div class="related-news"><h3>ข่าวที่เกี่ยวข้อง</h3>
+      <ul><li>ซีพี ออลล์ เปิดสาขาใหม่ 100 แห่ง</li><li>เครือซีพี ลงทุนเพิ่มในอีอีซี</li></ul>
+    </div>
+    <p>ต่อมาในช่วงบ่าย ที่ประชุมได้ข้อสรุปว่าจะตั้งคณะกรรมการสอบเพิ่มเติมอีกชุดหนึ่ง</p>
+    <p>ปิดท้ายด้วยการแถลงข่าวร่วมกันที่ห้องประชุมชั้นสอง</p>
+  </article>
+  <aside class="sidebar"><h3>ข่าวยอดนิยม</h3><ul><li>ซีพีเอฟ กำไรโต 30%</li></ul></aside>
+  <nav><a href="/cp">หมวดซีพี</a></nav>
+  <footer>ติดตามข่าวสารเพิ่มเติมได้ที่ เครือซีพี</footer>`;
+  const out = htmlToText(page);
+  ok("ก่อนตัด หน้าเว็บมีคำว่า ซีพี จริง", /ซีพี/.test(page));
+  ok("🎯 กล่องที่แทรกกลางบทความถูกตัด — ไม่เหลือคำว่า ซีพี", !/ซีพี/.test(out), out.slice(0, 120));
+  ok("เนื้อข่าวที่อยู่ 'ต่อจาก' กล่องแทรก ยังอยู่", out.includes("ตั้งคณะกรรมการสอบเพิ่มเติม"), out);
+  ok("ย่อหน้าสุดท้ายยังอยู่", out.includes("ห้องประชุมชั้นสอง"));
+  ok("ต้นบทความยังอยู่", out.includes("วันนี้ที่รัฐสภา"));
+
+  // 🚫 ห้ามตัด div เปล่าๆ ที่ห่อเนื้อข่าวจริงอยู่
+  const plain = `<div class="content"><p>ซีพีเอฟ แจ้งผลประกอบการไตรมาส 2 กำไรโต 30%</p></div>`;
+  ok("🚫 div ที่ไม่ได้ชื่อว่ากล่องแนะนำ ห้ามตัด", htmlToText(plain).includes("ซีพีเอฟ"), htmlToText(plain));
+  ok("script/style ถูกตัดทิ้ง", !stripBoilerplateHtml(`<script>var cp="ซีพี"</script><p>ข่าว</p>`).includes("ซีพี"));
+  ok("ข้อความว่างไม่พัง", htmlToText("") === "" && htmlToText(null) === "");
+}
+
+console.log("\n[9] 🧱 เว็บที่ไม่มี JSON-LD — ต้องอ่านเนื้อข่าวได้แล้ว ไม่ใช่โยนให้ AI เดา");
+{
+  for (const f of ["trend", "ir"]) {
+    const src = fs.readFileSync(new URL(`../functions/api/${f}/feeds.js`, import.meta.url), "utf8");
+    ok(`${f}: มีทางสำรองอ่าน HTML เมื่อไม่มี JSON-LD`, /htmlToText\(html\)/.test(src));
+    // ⚠️ เศษข้อความสั้นๆ ห้ามเอามาตัดสิน ต้องคืนค่าว่าง = "ตัดสินไม่ได้" เหมือนเดิม
+    ok(`${f}: ข้อความสั้นเกินไปยังถือว่าตัดสินไม่ได้`, /txt\.length >= 400/.test(src));
   }
 }
 

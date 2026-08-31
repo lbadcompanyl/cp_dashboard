@@ -369,6 +369,34 @@ const RELATED_RE =
   /(?:ข่าว|เรื่อง|บทความ|คลิป)?\s*(?:ที่|อื่น)?\s*(?:เกี่ยวข้อง|แนะนำ|น่าสนใจ)|อ่านข่าวต้นฉบับ|อ่านเพิ่มเติมได้ที่|ข่าวยอดนิยม|ข่าวฮิต|related\s*(?:news|articles?|posts?|stories)|you\s*may\s*also\s*like|read\s*(?:also|more|next)|more\s*(?:from|stories)/gi;
 const RELATED_TAIL_AT = 0.6;  // marker ที่อยู่หลังจุดนี้ = บล็อกท้ายหน้า ตัดถึงจบ · ก่อนหน้านี้ไม่แตะ
 
+/* 🧱 **ตัดกล่อง "ข่าวที่เกี่ยวข้อง" ที่ระดับ HTML — แม่นกว่าตัดที่ข้อความมาก**
+ *
+ * เจ้าของถาม 29 ส.ค. 2026: "บางข่าว related news แทรกกลางจะแก้ยังไง?"
+ * ตอบ: ในข้อความล้วนเราไม่รู้ว่ากล่องจบตรงไหน แต่ **ใน HTML กล่องมีขอบเขตของตัวเอง**
+ * ตัดทั้ง element ทิ้งได้เลย ใช้ได้กับกล่องที่แทรก **กลางบทความ** ด้วย โดยเนื้อข่าวที่อยู่
+ * ต่อจากกล่องไม่หายไปไหน (ต่างจาก cutRelated ที่ยอมไม่แตะ marker กลางบทความ)
+ *
+ * ⚠️ **ข้อจำกัดที่ต้องรู้** — `<div>` ซ้อนกันหลายชั้น regex หาตัวปิดที่ถูกต้องไม่ได้
+ *    จึงแม่นเฉพาะแท็กที่ไม่ค่อยซ้อน · `cutRelated()` ยังอยู่เป็นชั้นสำรองเสมอ
+ * 🚫 **ห้ามตัด `<div>` ที่ไม่มีชื่อคลาสบอกว่าเป็นกล่องแนะนำ** — เว็บห่อเนื้อข่าวด้วย div เปล่าๆ เต็มไปหมด
+ */
+const HTML_DROP_TAGS = /<(script|style|noscript|aside|nav|footer|header|form|figure)\b[\s\S]*?<\/\1>/gi;
+const HTML_DROP_NAMED =
+  /<(ul|ol|section|aside|div)\b[^>]*(?:class|id)\s*=\s*["'][^"']*(?:related|relate[ds]?|recommend|popular|most-?read|more-?news|read-?also|read-?next|sidebar|widget)[^"']*["'][\s\S]*?<\/\1>/gi;
+
+export function stripBoilerplateHtml(html) {
+  return String(html || "").replace(HTML_DROP_TAGS, " ").replace(HTML_DROP_NAMED, " ");
+}
+
+/** HTML → ข้อความล้วนที่ตัดกล่องแนะนำออกแล้ว (ใช้เป็นเนื้อข่าวสำรองตอนเว็บไม่มี JSON-LD) */
+export function htmlToText(html) {
+  return stripBoilerplateHtml(html)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function cutRelated(text) {
   const s = String(text || "");
   if (!s) return "";
