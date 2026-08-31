@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>วัดความแม่น sentiment — CP</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
+<meta name="page-ver" content="10" />
+<meta name="robots" content="noindex" />
+<!--
+  หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
+
+  📌 ไม่มีการ์ดบน landing และไม่มีแท็บใน /issue/ โดยตั้งใจ — แบบเดียวกับ /selftest/
+
+  🔒 ไฟล์เฉลยถูกอ่านในเบราว์เซอร์ ไม่ได้อัปโหลดขึ้น repo (repo เป็น public — คอมเมนต์จริง
+     ของคนอื่นห้ามขึ้นไปอยู่ตรงนั้น) · ข้อความถูกส่งไปที่ Worker เพื่อตีป้ายเท่านั้น
+     ซึ่งเป็นเส้นทางเดียวกับตอนใช้งานปกติ และการวัดผลไม่บันทึกอะไรลงที่ใด
+
+  📥 กล่อง "กองรอตรวจ" เป็นข้อยกเว้นเดียวที่มีที่เก็บถาวร — เก็บเฉพาะใบที่ผู้ใช้
+     กดแก้ป้ายเองแล้วกดส่ง (ไม่มีชื่อ ไม่มีลิงก์โพส) · ดู FEEDBACK.md และ PRIVACY_NOTE.md ข้อ 4.1
+     🚫 ของในกองห้ามเอาไปสอน AI อัตโนมัติ — ต้องวัดกับชุดเฉลยก่อนเสมอ
+
+  ⚠️ /classify ใช้แต่โควตา Claude — ไม่แตะเครดิต ScrapeCreators ที่จ่ายเงิน
+-->
+<style>
+  :root{
+    --bg:#f4f6fb; --surface:#ffffff; --border:#e4e8f0; --text:#1f2937; --muted:#6b7280;
+    --pos:#0d9488; --neg:#dc2626; --neu:#6b7280; --accent:#2563eb;
+    --okbg:#ecfdf5; --okline:#a7f3d0; --badbg:#fef2f2; --badline:#fecaca;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Noto Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.6}
+  .wrap{max-width:1100px;margin:0 auto;padding:14px}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:14px}
+  .bar h1{font-size:16px;margin:0;font-weight:700}
+  .bar a{color:var(--accent);text-decoration:none;font-weight:600}
+  .grow{flex:1}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px}
+  .card h2{font-size:14px;margin:0 0 10px;font-weight:700}
+  button{font:inherit;border:1px solid var(--border);background:var(--surface);color:var(--text);
+    border-radius:9px;padding:7px 14px;cursor:pointer;font-weight:600}
+  button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.primary:hover:not(:disabled){opacity:.9;color:#fff}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border:1px solid var(--border);padding:5px 9px;text-align:left;vertical-align:top}
+  th{background:#f9fafb;font-weight:700}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .lens{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px}
+  .verdict{border-radius:9px;padding:9px 12px;font-weight:700;margin-top:9px}
+  .verdict.pass{background:var(--okbg);border:1px solid var(--okline);color:#065f46}
+  .verdict.fail{background:var(--badbg);border:1px solid var(--badline);color:#991b1b}
+  .diag{background:#eef2ff;font-weight:700}
+  progress{width:100%;height:16px}
+  .row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .Positive{color:var(--pos);font-weight:700}
+  .Negative{color:var(--neg);font-weight:700}
+  .Neutral{color:var(--neu);font-weight:700}
+  .scroll{max-height:440px;overflow:auto;border:1px solid var(--border);border-radius:9px}
+  .scroll table{border:0}
+  .scroll th{position:sticky;top:0;z-index:1}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid currentColor;border-right-color:transparent;
+    border-radius:50%;animation:sp .8s linear infinite;vertical-align:-1px;margin-right:5px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .warn{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:9px 12px}
+  code{background:#f3f4f6;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="bar">
+    <h1>🎯 วัดความแม่น sentiment</h1>
+    <span class="grow"></span>
+    <span class="small muted" id="wver">กำลังถาม Worker…</span>
+    <a href="./sentiment.html">← กระแสความเห็น</a>
+    <a href="/">🏠 หน้าหลัก</a>
+  </div>
+
+  <div class="card">
+    <h2>1. เลือกไฟล์เฉลย</h2>
+    <div class="row">
+      <input type="file" id="file" accept=".xlsx,.csv" />
+      <button id="run" class="primary" disabled>▶ รันวัดผล</button>
+      <button id="stop" disabled>■ หยุด</button>
+      <label class="small muted">โมเดล
+        <select id="model"><option value="">(ค่าตั้งต้นของ Worker)</option></select>
+      </label>
+    </div>
+    <label class="row" style="margin-top:9px" id="ctxwrap" hidden>
+      <input type="checkbox" id="ctx" />
+      <span><b>บอก AI ด้วยว่าคอมเมนต์อยู่ใต้ข่าวเรื่องอะไร</b>
+        <span class="small muted">— ตอนใช้งานจริง AI เห็นโพสต้นเรื่องอยู่แล้ว
+        แต่ในไฟล์ทดสอบมีแต่ตัวคอมเมนต์ ไม่มีโพส</span></span>
+    </label>
+    <p class="small muted" style="margin:9px 0 0">
+      ต้องมีคอลัมน์ <code>id</code> · <code>message</code> · <code>sentiment_cp</code> · <code>overall_cred</code>
+      (มี <code>is_sarcasm</code> จะวัดให้ด้วย) — เช่น <code>CPF_eval_verified_475.xlsx</code><br />
+      🔒 ไฟล์ถูกอ่านในเครื่องคุณ ไม่ได้อัปโหลดไปเก็บที่ไหน
+    </p>
+    <div id="fileinfo" class="small" style="margin-top:9px"></div>
+  </div>
+
+  <div class="card">
+    <h2>📥 ดึงคอมเมนต์จากโพส → CSV <span class="muted small">(ไว้เอาไป label เพิ่ม)</span></h2>
+    <div class="row">
+      <input type="url" id="posturl" placeholder="วางลิงก์โพส Facebook / TikTok / YouTube"
+             style="flex:1;min-width:280px;font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:9px" />
+      <input type="number" id="postlimit" value="500" min="10" max="2000" title="ดึงมากสุดกี่คอมเมนต์"
+             style="width:90px;font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:9px" />
+      <button id="grab">ดึงคอมเมนต์</button>
+    </div>
+    <p class="small muted" style="margin:9px 0 0">
+      ⚠️ ใช้เครดิต ScrapeCreators (ของที่จ่ายเงิน) · <b>ไม่ใช้โควตา Claude เลย</b> — ดึงอย่างเดียว ไม่ได้ตี sentiment<br />
+      🔒 ไฟล์ที่ได้<b>ไม่มีชื่อผู้คอมเมนต์</b> ถูกตัดออกตั้งแต่ฝั่ง Worker
+    </p>
+    <div id="grabinfo" class="small" style="margin-top:9px"></div>
+  </div>
+
+  <!-- ชั้น ③ ของระบบเรียนรู้ — เอากองที่ผู้ใช้แก้ไว้มาตรวจ (ดู FEEDBACK.md) -->
+  <div class="card">
+    <h2>🧑‍⚖️ กองรอตรวจ <span class="muted small">(ที่ผู้ใช้กดแก้ป้ายไว้)</span></h2>
+    <p class="small muted" style="margin:0 0 9px">
+      ของในกอง <b>ยังไม่มีผลกับ AI</b> — ต้องเอามาวัดกับชุดเฉลยก่อน ผ่านเกณฑ์ถึงจะเขียนเป็นกฎในโค้ด<br />
+      🔒 อ่านกองต้องมีกุญแจ (<code>FEEDBACK_KEY</code> ที่ตั้งไว้ใน Cloudflare) — เก็บไว้ในเครื่องนี้เท่านั้น
+    </p>
+    <div class="row">
+      <input type="password" id="fbkey" placeholder="กุญแจสำหรับอ่านกอง"
+             style="flex:1;min-width:200px;font:inherit;padding:7px 10px;border:1px solid var(--border);border-radius:9px" />
+      <button id="fbload">📂 เปิดกอง</button>
+      <button id="fbcsv" hidden>📥 บันทึกเป็น CSV</button>
+      <button id="fbclear" hidden>🗑 ล้างกอง</button>
+    </div>
+    <div id="fbinfo" class="small" style="margin-top:9px"></div>
+    <div id="fblist" style="margin-top:9px"></div>
+  </div>
+
+  <div class="card" id="progwrap" hidden>
+    <h2>กำลังรัน</h2>
+    <progress id="prog" value="0" max="100"></progress>
+    <div id="progtxt" class="small muted" style="margin-top:6px"></div>
+  </div>
+
+  <div id="out"></div>
+
+  <div class="card">
+    <h2>📒 บันทึกผลแต่ละรอบ</h2>
+    <p class="small muted" style="margin:0 0 9px">
+      เก็บไว้ในเครื่องนี้เท่านั้น (ไม่มีข้อความคอมเมนต์ เก็บแต่ตัวเลข) — ไว้ดูว่ารอบไหนดีขึ้นหรือแย่ลง
+    </p>
+    <div id="log"></div>
+    <div class="row" style="margin-top:9px">
+      <button id="logcsv">📥 บันทึกทั้งหมดเป็น CSV</button>
+      <button id="logclear">🗑 ล้างบันทึก</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="./xlsxread.js?v=1"></script>
+<script>
+"use strict";
+const WORKER = "https://comment-sentiment.s3445028.workers.dev";
+const BATCH = 40;          // คอมเมนต์ต่อ 1 คำขอ (Worker รับได้ถึง 50)
+const PARALLEL = 2;        // ยิงพร้อมกันกี่ก้อน — มากกว่านี้เสี่ยงชน rate limit ของ Claude
+const PASS = 0.85;         // เกณฑ์ผ่าน Negative recall
+const LABELS = ["Positive", "Negative", "Neutral"];
+const LOGKEY = "sentEvalLog";
+
+const $ = (s) => document.querySelector(s);
+let rows = [], stopped = false, meta = { ver: "?", rubric: "?", model: "?" };
+
+/* ── ถาม Worker ว่าเป็นเวอร์ชันไหน (กันการวัดผลแล้วไม่รู้ว่าวัดโค้ดตัวไหน) ── */
+fetch(WORKER + "/").then(r => r.json()).then(d => {
+  meta = { ver: d.ver ?? "?", rubric: d.rubric ?? "-", model: d.model || "?" };
+  $("#wver").textContent = `Worker v${meta.ver} · rubric ${meta.rubric} · ${meta.model}`;
+  for (const m of (d.models || [])) {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m === d.model ? m + " (ตั้งต้น)" : m;
+    $("#model").appendChild(o);
+  }
+}).catch(() => { $("#wver").textContent = "⚠️ ต่อ Worker ไม่ได้"; });
+
+/* ── โหลดไฟล์เฉลย ── */
+$("#file").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  $("#fileinfo").innerHTML = '<span class="spin"></span>กำลังอ่านไฟล์…';
+  try {
+    const t = await XlsxRead.readTable(f);
+    const need = ["id", "message", "sentiment_cp", "overall_cred"];
+    const miss = need.filter((c) => !t.headers.includes(c));
+    if (miss.length) throw new Error("ไฟล์ขาดคอลัมน์: " + miss.join(", "));
+    rows = t.rows.filter((r) => String(r.message || "").trim());
+    $("#ctxwrap").hidden = !t.headers.includes("topic");
+    const sar = rows.filter((r) => String(r.is_sarcasm) === "1").length;
+    $("#fileinfo").innerHTML =
+      `✅ อ่านได้ <b>${rows.length}</b> แถว · ประชด <b>${sar}</b> ข้อ · ` +
+      `เฉลย ${LABELS.map((l) => `${l} ${rows.filter((r) => r.sentiment_cp === l).length}`).join(" · ")}`;
+    $("#run").disabled = rows.length === 0;
+  } catch (err) {
+    rows = []; $("#run").disabled = true;
+    $("#fileinfo").innerHTML = `<span style="color:var(--neg)">❌ ${err.message}</span>`;
+  }
+});
+
+/* ── รันวัดผล ── */
+$("#stop").addEventListener("click", () => { stopped = true; });
+$("#run").addEventListener("click", async () => {
+  stopped = false;
+  $("#run").disabled = true; $("#stop").disabled = false;
+  $("#progwrap").hidden = false; $("#out").innerHTML = "";
+
+  /* ก้อนที่จะยิง — เก็บ "ตำแหน่งจริงในตาราง" ติดไปด้วยเสมอ
+     ⚠️ ห้ามคิดตำแหน่งจาก index ของก้อน เพราะโหมดใส่บริบทจะจัดกลุ่มใหม่ตามหัวข้อ
+        ลำดับจึงไม่ตรงกับตารางอีกต่อไป — เคยเป็นบั๊กแบบเงียบที่สุดที่เจอในงานนี้ */
+  const useCtx = $("#ctx").checked && !$("#ctxwrap").hidden;
+  const groups = new Map();
+  rows.forEach((r, i) => {
+    const key = useCtx ? String(r.topic || "ไม่ระบุ") : "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(i);
+  });
+  const chunks = [];
+  for (const [topic, idxs] of groups) {
+    for (let i = 0; i < idxs.length; i += BATCH) {
+      chunks.push({ idx: idxs.slice(i, i + BATCH), topic });
+    }
+  }
+  const preds = new Array(rows.length).fill(null);
+  const errors = [];        // เก็บข้อความ error จริงไว้โชว์ — ไม่งั้นได้แต่เดาว่าพลาดเพราะอะไร
+  /* นับโทเคนที่ใช้จริงต่อรอบ — รวมก้อนที่พลาดด้วย
+     ⚠️ ก้อนที่ถูกตัดกลางคัน "คิดเงินเต็ม" ทั้งที่ไม่ได้ผลอะไรกลับมา
+        ไม่โชว์ตรงนี้ = ค่าใช้จ่ายจะไปโผล่ในบิลทีหลังโดยไม่มีใครทันเห็น */
+  const tok = { input: 0, output: 0 };
+  let done = 0, failed = 0;
+  const t0 = Date.now();
+
+  const tick = () => {
+    $("#prog").value = Math.round((done / rows.length) * 100);
+    const sec = Math.round((Date.now() - t0) / 1000);
+    $("#progtxt").innerHTML = `<span class="spin"></span>${done}/${rows.length} คอมเมนต์ · ${sec} วิ` +
+      (failed ? ` · <span style="color:var(--neg)">ก้อนที่พลาด ${failed}</span>` : "");
+  };
+  tick();
+
+  let next = 0;
+  async function worker() {
+    while (next < chunks.length && !stopped) {
+      const ci = next++;
+      const chunk = chunks[ci];
+      try {
+        const body = { texts: chunk.idx.map((i) => String(rows[i].message)) };
+        if ($("#model").value) body.model = $("#model").value;
+        if (useCtx && chunk.topic) {
+          body.context = `คอมเมนต์เหล่านี้อยู่ใต้โพส/ข่าวที่เกี่ยวกับเครือ CP/CPF หัวข้อ "${chunk.topic}"`;
+        }
+        const r = await fetch(WORKER + "/classify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (!r.ok || !Array.isArray(d.results)) throw new Error(d.detail || d.error || ("HTTP " + r.status));
+        if (d.ver != null) meta = { ver: d.ver, rubric: d.rubric ?? meta.rubric, model: d.model || meta.model };
+        if (d.tokens) { tok.input += d.tokens.input || 0; tok.output += d.tokens.output || 0; }
+        /* ⚠️ ข้อที่โมเดลไม่ได้ตอบ (missing) ห้ามนับเป็นคำตอบ "Neutral"
+           ไม่งั้นความล้มเหลวทางเทคนิคจะโผล่มาเป็นคะแนนที่ดูเหมือนผลจริง
+           เจอจริง 27 ส.ค. 2026: opus ถูกตัดคำตอบกลางคัน แล้วรายงานว่าความแม่น 10% */
+        d.results.forEach((res, j) => {
+          if (chunk.idx[j] !== undefined && res && !res.missing) preds[chunk.idx[j]] = res;
+        });
+      } catch (err) {
+        failed++;
+        // ก้อนที่พลาดปล่อยเป็น null — จะถูกนับแยกไว้ ไม่เอาไปปนกับผลที่ทายจริง
+        errors.push(String(err && err.message || err));
+        console.warn("batch", ci, err);
+      }
+      done += chunk.idx.length;
+      tick();
+    }
+  }
+  window.__usedCtx = useCtx;
+  await Promise.all(Array.from({ length: PARALLEL }, worker));
+
+  $("#stop").disabled = true; $("#run").disabled = false;
+  $("#progwrap").hidden = true;
+  window.__tok = tok;
+  render(preds, Math.round((Date.now() - t0) / 1000), failed, errors);
+});
+
+/* ── ดึงคอมเมนต์จากโพสจริง → CSV (ไม่เกี่ยวกับการวัดผล) ── */
+$("#grab").addEventListener("click", async () => {
+  const link = $("#posturl").value.trim();
+  if (!link) { $("#grabinfo").textContent = "ใส่ลิงก์โพสก่อน"; return; }
+  $("#grab").disabled = true;
+  $("#grabinfo").innerHTML = '<span class="spin"></span>กำลังดึงคอมเมนต์… (โพสใหญ่ๆ ใช้เวลาสักครู่)';
+  try {
+    const r = await fetch(WORKER + "/comments", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: link, limit: +$("#postlimit").value || 500 }),
+    });
+    const d = await r.json();
+    if (!r.ok || !Array.isArray(d.comments)) throw new Error(d.detail || d.error || ("HTTP " + r.status));
+    if (!d.comments.length) throw new Error("ดึงได้ 0 คอมเมนต์ (โพสอาจปิดคอมเมนต์ หรือลิงก์ไม่รองรับ)");
+
+    /* ใส่คอลัมน์ที่ต้องใช้ตอน label ไว้ให้เลย (ว่างไว้ให้กรอก)
+       ⚠️ ชื่อคอลัมน์ต้องตรงกับที่หน้านี้อ่านตอนวัดผล ไม่งั้น label เสร็จแล้วเอากลับมาใช้ไม่ได้ */
+    const head = ["id", "message", "topic", "sentiment_cp", "overall_cred", "is_sarcasm", "likes", "time"];
+    const lines = [head.join(",")].concat(d.comments.map((c, i) =>
+      [i + 1, c.text, "", "", "", "", c.likes, c.time].map(csvEsc).join(",")));
+    download(`comments-${d.platform}-${stamp()}.csv`, lines.join("\n"));
+
+    $("#grabinfo").innerHTML = `✅ ได้ <b>${d.comments.length}</b> คอมเมนต์` +
+      (d.post_title ? ` · โพส: ${esc(String(d.post_title).slice(0, 70))}` : "") +
+      (d.credits_remaining != null ? ` · เครดิต ScrapeCreators เหลือ <b>${d.credits_remaining}</b>` : "") +
+      `<br />ไฟล์ถูกดาวน์โหลดแล้ว — คอลัมน์ <code>sentiment_cp</code> · <code>overall_cred</code> · <code>is_sarcasm</code> เว้นว่างไว้ให้กรอก`;
+  } catch (err) {
+    $("#grabinfo").innerHTML = `<span style="color:var(--neg)">❌ ${esc(err.message)}</span>`;
+  }
+  $("#grab").disabled = false;
+});
+
+/* ── คำนวณตัวเลข ── */
+function confusion(pairs) {
+  const m = LABELS.map(() => LABELS.map(() => 0));
+  for (const [g, p] of pairs) {
+    const gi = LABELS.indexOf(g), pi = LABELS.indexOf(p);
+    if (gi >= 0 && pi >= 0) m[gi][pi]++;
+  }
+  return m;
+}
+function metrics(pairs) {
+  const m = confusion(pairs);
+  const n = pairs.length;
+  const acc = n ? pairs.filter(([g, p]) => g === p).length / n : 0;
+  const recall = {}, prec = {};
+  LABELS.forEach((l, i) => {
+    const rTot = m[i].reduce((a, b) => a + b, 0);
+    const cTot = m.reduce((a, r) => a + r[i], 0);
+    recall[l] = rTot ? m[i][i] / rTot : 0;
+    prec[l] = cTot ? m[i][i] / cTot : 0;
+  });
+  return { m, n, acc, recall, prec };
+}
+const pct = (x) => (x * 100).toFixed(1) + "%";
+
+function lensCard(title, r) {
+  const pass = r.recall.Negative >= PASS;
+  return `<div class="card">
+    <h2>${title} <span class="muted small">(n=${r.n})</span></h2>
+    <div><b>Accuracy ${pct(r.acc)}</b></div>
+    <table style="margin:10px 0">
+      <tr><th>เฉลย \\ ที่ AI ทาย</th>${LABELS.map((l) => `<th class="num">${l}</th>`).join("")}<th class="num">Recall</th></tr>
+      ${LABELS.map((l, i) => `<tr><th>${l}</th>${LABELS.map((_, j) =>
+        `<td class="num ${i === j ? "diag" : ""}">${r.m[i][j]}</td>`).join("")}<td class="num">${pct(r.recall[l])}</td></tr>`).join("")}
+      <tr><th>Precision</th>${LABELS.map((l) => `<td class="num">${pct(r.prec[l])}</td>`).join("")}<td></td></tr>
+    </table>
+    <div class="verdict ${pass ? "pass" : "fail"}">
+      Negative recall ${pct(r.recall.Negative)} → ${pass ? "ผ่านเกณฑ์ ✅" : "ยังไม่ผ่าน ❌ (ต้อง ≥ 85.0%)"}
+    </div>
+  </div>`;
+}
+
+function render(preds, sec, failedBatches, errors = []) {
+  const scored = rows.map((r, i) => ({ r, p: preds[i] })).filter((x) => x.p);
+  const missing = rows.length - scored.length;
+
+  if (!scored.length) {
+    $("#out").innerHTML = `<div class="card"><div class="warn">
+      <b>ไม่ได้ผลกลับมาเลยสักข้อ</b> — เช็คว่า Worker deploy รุ่นใหม่แล้วหรือยัง (ต้องมี <code>/classify</code>)
+      ${errors.length ? `<div style="margin-top:9px"><b>สาเหตุที่ยิงพลาด:</b><ul style="margin:5px 0 0;padding-left:20px">${
+        [...new Set(errors)].slice(0, 5).map((e) => `<li class="small"><code>${esc(e).slice(0, 300)}</code></li>`).join("")
+      }</ul></div>` : ""}
+    </div></div>`;
+    return;
+  }
+
+  const cp = metrics(scored.map((x) => [x.r.sentiment_cp, x.p.sentiment_cp]));
+  const oc = metrics(scored.map((x) => [x.r.overall_cred, x.p.overall_cred]));
+
+  /* แยก 2 ชุดตาม id คี่/คู่
+     ⚠️ ชุด "ออกแบบ" คือข้อที่เคยเอามาดู pattern ตอนแก้ prompt · ชุด "สอบไล่" ไม่เคยแตะเลย
+        ถ้า 2 ตัวนี้ห่างกันมาก = เก่งเฉพาะข้อที่เคยเห็น ไม่ใช่เก่งจริง
+        เจอมาแล้วกับ haiku: ออกแบบ 85.7% แต่สอบไล่ 73.2% */
+  const half = (odd) => {
+    const sub = scored.filter((x) => (+x.r.id % 2 === 1) === odd);
+    return sub.length ? {
+      n: sub.length,
+      cp: metrics(sub.map((x) => [x.r.sentiment_cp, x.p.sentiment_cp])),
+      oc: metrics(sub.map((x) => [x.r.overall_cred, x.p.overall_cred])),
+    } : null;
+  };
+  const dev = half(true), hold = half(false);
+
+  const sarRows = scored.filter((x) => String(x.r.is_sarcasm) === "1");
+  const sarHit = sarRows.filter((x) => x.p.is_sarcasm === 1).length;
+  const sarFalse = scored.filter((x) => String(x.r.is_sarcasm) !== "1" && x.p.is_sarcasm === 1).length;
+
+  const wrong = scored.filter((x) =>
+    x.r.sentiment_cp !== x.p.sentiment_cp || x.r.overall_cred !== x.p.overall_cred);
+
+  window.__last = { scored, cp, oc, sarRows, sarHit, sec };
+
+  $("#out").innerHTML =
+    (missing || failedBatches ? `<div class="card"><div class="warn">
+       ⚠️ มี <b>${missing}</b> ข้อที่ไม่ได้ผลกลับมา (ก้อนที่ยิงพลาด ${failedBatches} ก้อน)
+       ${missing > rows.length * 0.2 ? '<br /><b style="color:var(--neg)">เกิน 20% ของทั้งชุด — ตัวเลขข้างล่างเชื่อไม่ได้ ให้แก้ต้นเหตุก่อนแล้วรันใหม่</b>' : ""}
+       ${errors.length ? `<div style="margin-top:9px"><b>สาเหตุที่ยิงพลาด:</b><ul style="margin:5px 0 0;padding-left:20px">${
+         [...new Set(errors)].slice(0, 5).map((e) => `<li class="small"><code>${esc(e).slice(0, 300)}</code></li>`).join("")
+       }</ul></div>` : ""}
+       — ตัวเลขข้างล่างคิดจาก <b>${scored.length}</b> ข้อที่ได้ผลจริงเท่านั้น ไม่ได้เดาแทน
+     </div></div>` : "") +
+    `<div class="card">
+       <h2>สรุป</h2>
+       <div class="row small">
+         <span>ใช้เวลา <b>${sec}</b> วิ</span>·
+         <span>Worker <b>v${meta.ver}</b> · rubric <b>${meta.rubric}</b> · <b>${meta.model}</b></span>·
+         <span>วัดจริง <b>${scored.length}</b>/${rows.length} ข้อ</span>·
+         <span>โทเคนที่ใช้ <b>${fmtTok(window.__tok)}</b></span>
+       </div>
+       <div class="row" style="margin-top:10px">
+         <button id="expcsv">📥 บันทึกผลรายข้อเป็น CSV</button>
+       </div>
+     </div>` +
+    `<div class="lens">${lensCard("แกน 1 — ท่าทีต่อ CP (sentiment_cp)", cp)}${lensCard("แกน 2 — อารมณ์รวม (overall_cred)", oc)}</div>` +
+    (dev && hold ? `<div class="card">
+       <h2>ตัวเลขนี้เชื่อได้แค่ไหน — เทียบข้อที่เคยเห็น กับ ข้อที่ไม่เคยเห็น</h2>
+       <table>
+         <tr><th>ชุด</th><th class="num">จำนวน</th><th class="num">แกน 1 Negative recall</th><th class="num">แกน 2 Negative recall</th></tr>
+         <tr><td>ชุดออกแบบ <span class="muted small">(id คี่ — เคยเอามาดูตอนแก้ prompt)</span></td>
+             <td class="num">${dev.n}</td><td class="num">${pct(dev.cp.recall.Negative)}</td><td class="num">${pct(dev.oc.recall.Negative)}</td></tr>
+         <tr><td><b>ชุดสอบไล่</b> <span class="muted small">(id คู่ — ไม่เคยแตะเลย)</span></td>
+             <td class="num">${hold.n}</td><td class="num"><b>${pct(hold.cp.recall.Negative)}</b></td><td class="num"><b>${pct(hold.oc.recall.Negative)}</b></td></tr>
+       </table>
+       <div class="verdict ${Math.abs(dev.cp.recall.Negative - hold.cp.recall.Negative) <= 0.05 ? "pass" : "fail"}">
+         ห่างกัน ${((dev.cp.recall.Negative - hold.cp.recall.Negative) * 100).toFixed(1)} จุด →
+         ${Math.abs(dev.cp.recall.Negative - hold.cp.recall.Negative) <= 0.05
+           ? "ใกล้เคียงกัน เชื่อตัวเลขรวมได้ ✅"
+           : "ห่างเกินไป — ตัวเลขรวมสูงเกินจริง ให้ยึดเลขของชุดสอบไล่ ⚠️"}
+       </div>
+     </div>` : "") +
+    `<div class="card">
+       <h2>ประชด (is_sarcasm)</h2>
+       ${sarRows.length
+        ? `<div>จับถูก <b>${sarHit}/${sarRows.length}</b> = <b>${pct(sarHit / sarRows.length)}</b>
+             <span class="muted small">· ทายว่าประชดทั้งที่ไม่ใช่ ${sarFalse} ข้อ</span></div>`
+        : `<div class="muted">ไฟล์นี้ไม่มีข้อที่เฉลยว่าประชด</div>`}
+     </div>` +
+    `<div class="card">
+       <h2>ข้อที่ทายผิด <span class="muted small">(${wrong.length} ข้อ — ไว้ดู pattern ว่าพลาดแบบไหน)</span></h2>
+       <div class="scroll"><table>
+         <tr><th class="num">id</th><th>คอมเมนต์</th><th>CP เฉลย → ทาย</th><th>รวม เฉลย → ทาย</th><th>ประชด</th></tr>
+         ${wrong.map((x) => `<tr>
+           <td class="num">${x.r.id}</td>
+           <td>${esc(String(x.r.message).slice(0, 160))}</td>
+           <td>${cell(x.r.sentiment_cp, x.p.sentiment_cp)}</td>
+           <td>${cell(x.r.overall_cred, x.p.overall_cred)}</td>
+           <td class="small">${String(x.r.is_sarcasm) === "1" ? (x.p.is_sarcasm ? "✅" : "❌ ไม่จับ") : (x.p.is_sarcasm ? "⚠️ จับเกิน" : "")}</td>
+         </tr>`).join("")}
+       </table></div>
+     </div>`;
+
+  $("#expcsv").addEventListener("click", () => exportRows(scored));
+  saveLog({ cp, oc, sarRows: sarRows.length, sarHit, n: scored.length, sec, ctx: window.__usedCtx });
+}
+
+/* โทเคนที่ใช้ไปทั้งรอบ — ตัวเลขนี้คือสิ่งที่จะไปโผล่ในบิล */
+const fmtTok = (t) => t
+  ? `เข้า ${(t.input || 0).toLocaleString()} · ออก ${(t.output || 0).toLocaleString()}`
+  : "–";
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const cell = (g, p) => g === p
+  ? `<span class="${g}">${g}</span>`
+  : `<span class="${g}">${g}</span> → <span class="${p}">${p}</span>`;
+
+/* ── export ── */
+function csvEsc(v) { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportRows(scored) {
+  /* ⚠️ ต้องมี model / rubric / ctx ติดไปกับไฟล์เสมอ
+     ไม่งั้นเปิดไฟล์ทีหลังแล้วบอกไม่ได้ว่ามาจากรอบไหน ต้องไปนั่งเดาย้อนหลัง */
+  const head = ["id", "message", "gold_sentiment_cp", "pred_sentiment_cp", "gold_overall_cred", "pred_overall_cred",
+    "gold_is_sarcasm", "pred_is_sarcasm", "cp_ถูก", "oc_ถูก", "model", "worker_ver", "rubric", "ส่งบริบท"];
+  const lines = [head.join(",")].concat(scored.map((x) => [
+    x.r.id, x.r.message, x.r.sentiment_cp, x.p.sentiment_cp, x.r.overall_cred, x.p.overall_cred,
+    x.r.is_sarcasm ?? "", x.p.is_sarcasm,
+    x.r.sentiment_cp === x.p.sentiment_cp ? 1 : 0, x.r.overall_cred === x.p.overall_cred ? 1 : 0,
+    meta.model, meta.ver, meta.rubric, window.__usedCtx ? 1 : 0,
+  ].map(csvEsc).join(",")));
+  download(`sentiment-eval-v${meta.ver}-${stamp()}.csv`, lines.join("\n"));
+}
+function stamp() {
+  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * ชั้น ③ — กองรอตรวจ · เปิดดู / ส่งออก / ล้าง
+ * กฎ 6 ข้อที่ต้องผ่านก่อนกลายเป็นกฎจริง อยู่ที่ FEEDBACK.md
+ * ⚠️ หน้านี้แค่ "เปิดดู" ไม่ได้เอาไปสอน AI — การสอนเป็นงานที่คนทำในโค้ด
+ * 🔑 กุญแจเก็บใน localStorage ของเครื่องนี้เท่านั้น ไม่ส่งไปไหนนอกจากหลังบ้านของเราเอง
+ * ══════════════════════════════════════════════════════════════ */
+let fbItems = [];
+const FBK = "sentimentFeedbackKey";
+try { $("#fbkey").value = localStorage.getItem(FBK) || ""; } catch (e) {}
+
+async function fbFetch(qs) {
+  const key = $("#fbkey").value.trim();
+  if (!key) throw new Error("ใส่กุญแจก่อน");
+  try { localStorage.setItem(FBK, key); } catch (e) {}
+  const r = await fetch(`${WORKER.replace(/\/+$/, "")}/feedback?key=${encodeURIComponent(key)}${qs || ""}`);
+  const j = await r.json().catch(() => ({}));
+  if (j.error === "bad_key") throw new Error("กุญแจไม่ถูก");
+  if (j.error === "read_disabled") throw new Error("ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare");
+  if (!r.ok || j.ok !== true) throw new Error(j.detail || j.error || `หลังบ้านตอบ ${r.status}`);
+  return j;
+}
+
+/** จับกลุ่มว่า "แก้จากอะไรเป็นอะไร" — pattern ที่เจอซ้ำ ≥ 3 ครั้งคือตัวที่ควรเอาไปทำเป็นกฎ */
+function fbRender() {
+  if (!fbItems.length) { $("#fblist").innerHTML = '<p class="small muted">กองว่าง</p>'; return; }
+  const groups = new Map();
+  for (const it of fbItems) {
+    const k = `${it.target}|${it.was}→${it.now}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(it);
+  }
+  const LENS = { cp: "แกน CP", overall: "แกนอารมณ์รวม" };
+  const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+  $("#fblist").innerHTML = sorted.map(([k, list]) => {
+    const [target, move] = k.split("|");
+    /* กฎข้อ 3 ของ FEEDBACK.md — ต่ำกว่า 3 ครั้งยังเป็นรสนิยม ไม่ใช่ pattern */
+    const ready = list.length >= 3;
+    return `<details style="margin-bottom:7px;border:1px solid var(--border);border-radius:9px;padding:8px 11px">
+      <summary><b>${esc(LENS[target] || target)} · ${esc(move)}</b>
+        <span class="muted small"> — ${list.length} ใบ</span>
+        ${ready ? '<span class="small" style="color:var(--pos)"> ✔ ครบ 3 ใบ พอเอาไปทำเป็นกฎได้</span>'
+                : `<span class="small muted"> (ยังไม่ถึง 3 ใบ — ขาดอีก ${3 - list.length})</span>`}
+      </summary>
+      <ul style="margin:7px 0 0;padding-left:18px">
+        ${list.map((it) => `<li class="small">${esc(it.text)} <span class="muted">· ${esc(it.at || "")} · ${esc(it.model || "")} v${esc(String(it.ver ?? "?"))}</span></li>`).join("")}
+      </ul>
+    </details>`;
+  }).join("");
+}
+
+$("#fbload").onclick = async () => {
+  $("#fbinfo").innerHTML = '<span class="muted">กำลังเปิดกอง…</span>';
+  try {
+    const j = await fbFetch();
+    fbItems = j.items || [];
+    const pats = new Set(fbItems.map((it) => `${it.target}|${it.was}→${it.now}`)).size;
+    $("#fbinfo").innerHTML = `กองมี <b>${fbItems.length}</b> ใบ (เพดาน ${j.max}) · แยกได้ <b>${pats}</b> รูปแบบ` +
+      (fbItems.length ? ' · <b>ยังไม่มีผลกับ AI</b> จนกว่าจะเอาไปวัดแล้วเขียนเป็นกฎในโค้ด' : "");
+    $("#fbcsv").hidden = $("#fbclear").hidden = !fbItems.length;
+    fbRender();
+  } catch (e) {
+    $("#fbinfo").innerHTML = `<span style="color:var(--neg)">❌ ${esc(e.message)}</span>`;
+    $("#fbcsv").hidden = $("#fbclear").hidden = true;
+    $("#fblist").innerHTML = "";
+  }
+};
+
+$("#fbcsv").onclick = () => {
+  const head = ["ข้อความ", "แกน", "AI ตอบเดิม", "คนแก้เป็น", "วันที่", "โมเดล", "worker_ver", "rubric"];
+  download(`sentiment-feedback-${stamp()}.csv`,
+    [head.join(",")].concat(fbItems.map((it) =>
+      [it.text, it.target, it.was, it.now, it.at, it.model, it.ver, it.rubric].map(csvEsc).join(","))).join("\n"));
+};
+
+$("#fbclear").onclick = async () => {
+  if (!confirm(`ล้างกองทั้งหมด ${fbItems.length} ใบ? เอากลับไม่ได้ — บันทึก CSV ไว้ก่อนหรือยัง`)) return;
+  try {
+    const j = await fbFetch("&clear=1");
+    fbItems = [];
+    $("#fbinfo").innerHTML = `ล้างแล้ว ${j.cleared} ใบ`;
+    $("#fbcsv").hidden = $("#fbclear").hidden = true;
+    fbRender();
+  } catch (e) {
+    $("#fbinfo").innerHTML = `<span style="color:var(--neg)">❌ ${esc(e.message)}</span>`;
+  }
+};
+
+/* ── บันทึกผลแต่ละรอบ (เก็บแต่ตัวเลข ไม่มีข้อความคอมเมนต์) ── */
+function readLog() { try { return JSON.parse(localStorage.getItem(LOGKEY) || "[]"); } catch (e) { return []; } }
+function saveLog(m) {
+  const log = readLog();
+  log.unshift({
+    at: new Date().toISOString(), ver: meta.ver, rubric: meta.rubric, model: meta.model, ctx: m.ctx ? 1 : 0, n: m.n, sec: m.sec,
+    tok_in: (window.__tok || {}).input || 0, tok_out: (window.__tok || {}).output || 0,
+    cp_acc: +m.cp.acc.toFixed(4), cp_neg: +m.cp.recall.Negative.toFixed(4),
+    oc_acc: +m.oc.acc.toFixed(4), oc_neg: +m.oc.recall.Negative.toFixed(4),
+    sar: m.sarRows ? +(m.sarHit / m.sarRows).toFixed(4) : null,
+  });
+  localStorage.setItem(LOGKEY, JSON.stringify(log.slice(0, 100)));
+  renderLog();
+}
+function renderLog() {
+  const log = readLog();
+  if (!log.length) { $("#log").innerHTML = '<div class="muted small">ยังไม่มีผลรอบไหนถูกบันทึก</div>'; return; }
+  const f = (x) => x == null ? "–" : (x * 100).toFixed(1) + "%";
+  $("#log").innerHTML = `<div class="scroll"><table>
+    <tr><th>เมื่อไหร่</th><th class="num">Worker</th><th>rubric</th><th>บริบท</th><th class="num">CP acc</th>
+        <th class="num">CP neg</th><th class="num">รวม acc</th><th class="num">รวม neg</th>
+        <th class="num">ประชด</th><th class="num">n</th></tr>
+    ${log.map((r) => {
+      const ok = (v) => `<td class="num" style="color:${v >= PASS ? "var(--pos)" : "var(--neg)"};font-weight:700">${f(v)}</td>`;
+      return `<tr><td class="small">${new Date(r.at).toLocaleString("th-TH")}</td>
+        <td class="num">v${r.ver}</td><td class="small">${r.rubric}</td><td class="small">${r.ctx ? 'ส่ง' : '–'}</td>
+        <td class="num">${f(r.cp_acc)}</td>${ok(r.cp_neg)}
+        <td class="num">${f(r.oc_acc)}</td>${ok(r.oc_neg)}
+        <td class="num">${f(r.sar)}</td><td class="num">${r.n}</td></tr>`;
+    }).join("")}
+  </table></div>`;
+}
+$("#logcsv").addEventListener("click", () => {
+  const log = readLog();
+  if (!log.length) return;
+  const head = Object.keys(log[0]);
+  download(`sentiment-eval-log-${stamp()}.csv`,
+    [head.join(",")].concat(log.map((r) => head.map((h) => csvEsc(r[h])).join(","))).join("\n"));
+});
+$("#logclear").addEventListener("click", () => {
+  if (confirm("ล้างบันทึกผลทุกรอบในเครื่องนี้?")) { localStorage.removeItem(LOGKEY); renderLog(); }
+});
+renderLog();
+</script>
+</body>
+</html>

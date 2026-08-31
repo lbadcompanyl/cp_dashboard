@@ -23,7 +23,7 @@
 // เคยพลาดมาแล้ว: แก้วิธีเรียง + เพิ่มธง live แต่ผู้ใช้ยังเห็นของเก่าเรียงผิดอยู่ 1 ชม.
 import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 
-const DATA_VER = "8"; // bump: แยกชาร์ตข่าว/ทั่วไป (kind) + ฟิลด์ catFiltered
+const DATA_VER = "9"; // bump: เพิ่มวิว/ชม. (r{w} · rh{w} · rb{w}) ให้ "มาแรง" ใช้เรียง
 
 const FETCH_TIMEOUT = 7000;
 const EDGE_TTL = 1800;          // 30 นาที — คลิปมาแรงขยับช้า
@@ -175,9 +175,10 @@ export async function onRequest(context) {
 // YouTube ไม่บอกยอดวิวย้อนหลัง จึงต้องเก็บภาพยอดวิวเองทุกรอบแล้วเอามาลบกัน
 // คลิปที่เพิ่งลงหลังจุดเทียบ = วิวทั้งหมดคือวิวที่เพิ่มในช่วงนั้น
 // คลิปที่ไม่มีข้อมูลเทียบเลย = คืน null ไม่ใช่ 0 (0 แปลว่า "ไม่เพิ่ม" ซึ่งคนละเรื่องกับ "ไม่รู้")
-function withDeltas(items, hist, now) {
+export function withDeltas(items, hist, now) {
   return items.map((it) => {
     const d = {};
+    const ageH = it.published ? (now - it.published) / 3600000 : 0;
     for (const w of WINDOWS) {
       const target = now - w * 3600000;
       // ยอมให้ภาพที่ใช้เทียบเหลื่อมได้ 15% ของช่วง (อย่างน้อย 1.5 ชม.)
@@ -191,9 +192,48 @@ function withDeltas(items, hist, now) {
       } else {
         d["d" + w] = null; // ยังไม่รู้ ต้องรอสถิติสะสม
       }
+      Object.assign(d, rateFor(it, hist, now, w, ageH));
     }
     return { ...it, ...d };
   });
+}
+
+/* ---------- วิว/ชม. — ตัวเลขที่ "มาแรง" ใช้เรียงจริง ---------- */
+//
+// 🐞 **ทำไมต้องมีตัวนี้** (เจ้าของเจอ 27 ส.ค. 2026: "ทำไมหมวดข่าววิวเยอะกว่าทั่วไป")
+// `d24` ข้างบนมี 2 ทางที่คนละหน่วยกันแต่หน้าเว็บเขียนเหมือนกันว่า "+X ใน 24 ชม.":
+//   1. มีภาพยอดวิวเก่าให้ลบ  → วิวที่เพิ่มจริง
+//   2. คลิปเพิ่งลงในช่วงนั้น → **ยกยอดสะสมทั้งก้อนมาเป็น "วิวเพิ่ม"**
+// หมวดข่าวเป็นคลิปที่ลงวันนี้แทบทั้งหมด จึงตกทาง 2 ทุกใบ = ตัวเลขพองเทียบกับหมวดทั่วไป
+// ที่เป็น MV/หนัง/เกมอายุหลายวัน ซึ่งตกเป็น null แล้วถูกดันไปท้ายลิสต์ทั้งที่วิวเยอะกว่ามาก
+//
+// ✅ วิว/ชม. หารด้วย "ช่วงที่วัดได้จริง" เสมอ คลิปใหม่กับคลิปเก่าจึงเทียบกันได้ และ
+//    **ทุกใบมีตัวเลข** ไม่มีใบไหนตกท้ายเพราะ "ยังไม่รู้"
+// 🚫 ห้ามเอา `d{w}` ไปหาร `w` เองที่หน้าเว็บ — คลิปที่ลงมา 5 ชม. จะถูกหารด้วย 24 = ต่ำกว่าจริง 5 เท่า
+const RATE_MIN_GAP_MS = 0.75 * 3600000; // ภาพที่ใหม่กว่านี้ช่วงสั้นเกินไป หารแล้วตัวเลขเหวี่ยง
+const RATE_MIN_AGE_H = 0.25;            // คลิปที่เพิ่งลงไม่ถึง 15 นาที ยังหารไม่ได้
+
+export function rateFor(it, hist, now, w, ageH) {
+  const target = now - w * 3600000;
+  // ⚠️ ตัวนี้ **ไม่มีเพดานความเหลื่อม** ต่างจาก d{w} โดยตั้งใจ — เก็บสถิติมา 8 ชม.
+  // แล้วขอ 24 ชม. ก็ตอบว่า "วัดจาก 8 ชม." ได้ ซึ่งมีประโยชน์กว่าตอบว่าไม่รู้
+  let best = null, bestGap = Infinity;
+  for (const s of hist) {
+    if (!s || !Number.isFinite(s.v[it.id])) continue;
+    if (now - s.t < RATE_MIN_GAP_MS) continue;
+    const gap = Math.abs(s.t - target);
+    if (gap < bestGap) { bestGap = gap; best = s; }
+  }
+  if (best) {
+    const hours = (now - best.t) / 3600000;
+    return { ["r" + w]: Math.max(0, it.views - best.v[it.id]) / hours,
+             ["rh" + w]: hours, ["rb" + w]: "m" }; // m = วัดจากสถิติที่เก็บไว้
+  }
+  if (ageH >= RATE_MIN_AGE_H && it.views > 0) {
+    // ไม่มีภาพเก่าเลย → เฉลี่ยตั้งแต่คลิปลง · ไม่แม่นเท่าแต่ยังเป็นหน่วยเดียวกัน
+    return { ["r" + w]: it.views / ageH, ["rh" + w]: ageH, ["rb" + w]: "u" }; // u = ตั้งแต่ลง
+  }
+  return { ["r" + w]: null, ["rh" + w]: 0, ["rb" + w]: "" };
 }
 
 function nearestSnap(hist, target, tolerance) {
