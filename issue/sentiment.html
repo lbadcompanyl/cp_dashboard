@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="8" />
+<meta name="page-ver" content="9" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -117,6 +117,7 @@
   .sc-fix:hover { border-color: var(--sc-accent); color: var(--sc-accent); }
   .sc-fix.sc-on { background: var(--sc-ink2); color: #fff; border-color: transparent; cursor: default; }
   .sc-editmark { font-size: 11px; color: var(--sc-accent); white-space: nowrap; }
+  .sc-skip { color: var(--sc-muted); font-size: 12px; }
   /* กล่องส่งเข้ากองรอตรวจ — จอแคบให้ปุ่มลงมาอยู่บรรทัดล่างเต็มความกว้าง */
   .sc-teach { display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
               margin-top: 12px; padding: 11px 13px; border: 1px dashed var(--sc-border);
@@ -449,8 +450,18 @@ function renderResult(d, keepAudit){
   const pp = pct(s.positive,total), pnu = pct(s.neutral,total), pn = 100-pp-pnu;
 
   const isCP = d.target === "cp";
+  /* ⚠️ "ดึงมา" กับ "วิเคราะห์ได้" ไม่เท่ากัน ห้ามใช้เลขเดียวแทนกัน
+     ของเดิมเอา analyzed_count มาแปะป้ายว่า "ดึงมา" → ดึงมา 11 แต่ขึ้นว่า "ดึงมา 8"
+     ส่วนที่หายคือสติกเกอร์/รูปที่ไม่มีข้อความ **ต้องบอกว่าหายไปกี่ใบและเพราะอะไร**
+     ไม่งั้นคนอ่านจะสรุปว่า "โพสนี้มีคนคอมเมนต์แค่ 8 คน" ซึ่งผิด (เจ้าของถามเอง 29 ส.ค. 2026) */
+  const nAnalyzed = d.analyzed_count || total;
+  const nFetched = d.fetched_count || nAnalyzed;
+  const nSkipped = d.skipped_no_text != null ? d.skipped_no_text : Math.max(0, nFetched - nAnalyzed);
   el("resSub").innerHTML =
-    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ดึงมา ${d.analyzed_count||total} คอมเมนต์`) +
+    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ` +
+      (nSkipped ? `ดึงมา ${nFetched} · วิเคราะห์ได้ ${nAnalyzed} คอมเมนต์`
+                : `ดึงมา ${nFetched} คอมเมนต์`)) +
+    (nSkipped ? ` <span class="sc-skip" title="คอมเมนต์ที่เป็นสติกเกอร์ GIF หรือรูปล้วน ไม่มีตัวอักษรให้ตี sentiment">(${nSkipped} ใบเป็นสติกเกอร์/รูป ไม่มีข้อความ)</span>` : "") +
     (isCP ? ` · <b>พูดถึง CP ${total} คอมเมนต์</b> (ไม่เกี่ยว ${d.not_related||0})` : "") +
     (d.edited_count ? ` · <b style="color:var(--sc-accent)">✏️ คุณแก้เอง ${d.edited_count} ใบ</b>` : "") +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));

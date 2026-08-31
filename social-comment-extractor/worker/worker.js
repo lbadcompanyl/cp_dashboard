@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 20;
+const WORKER_VER = 21;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -457,7 +457,15 @@ async function analyze(opts, env) {
     (reply_count ? ` (เป็น reply ${reply_count})` : " (นับเฉพาะคอมเมนต์บนสุด ไม่รวม reply)"));
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
+  /* คอมเมนต์ที่เป็นสติกเกอร์ / GIF / รูปล้วน ไม่มีตัวอักษรให้ตี — ต้องคัดออก
+     ⚠️ แต่ **ห้ามคัดเงียบ** ต้องนับไว้แล้วส่งกลับให้หน้าเว็บบอกผู้ใช้
+        เจ้าของเจอเอง 29 ส.ค. 2026: ดึงมา 11 ใบ ขึ้นบนจอ 8 ใบ ไม่มีอะไรบอกว่า 3 ใบไปไหน
+        ถ้าไม่ทันสังเกต จะสรุปว่า "โพสนี้มีคนคอมเมนต์แค่ 8 คน" ซึ่งผิด
+        (กฎเดียวกับ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ใน CLAUDE.md) */
   const texts = comments.map(c => c.text).filter(Boolean);
+  const skipped_no_text = comments.length - texts.length;
+  if (skipped_no_text) logLine(`คัดออก ${skipped_no_text} รายการ (สติกเกอร์/รูป ไม่มีข้อความให้ตี)`);
+  if (!texts.length) throw new Error("คอมเมนต์ทั้งหมดเป็นสติกเกอร์/รูป ไม่มีข้อความให้วิเคราะห์");
 
   // ตัวสะสมการใช้ token ของ Claude
   const tokens = { input: 0, output: 0, rate_remaining: null };
@@ -533,6 +541,7 @@ async function analyze(opts, env) {
     post_thumb: collected.post_thumb || "",
     fetched_count: comments.length,
     reply_count,
+    skipped_no_text,          // สติกเกอร์/รูปที่ไม่มีข้อความ — หน้าเว็บต้องบอกผู้ใช้ ห้ามหายเงียบ
     analyzed_count: two.length,
     target,
     not_related,
