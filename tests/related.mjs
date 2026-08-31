@@ -204,5 +204,61 @@ console.log("\n[10] 🔒 การ์ด Issue บนหน้ารวม ต�
   ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 25, v ? v[1] : "-");
 }
 
+console.log("\n[12] 🔁 สรุปที่เอาข้อความก้อนเดิมมาซ้ำในตัวเอง = ลิสต์ข่าว ไม่ใช่สรุป");
+{
+  // เจ้าของส่งภาพมา 31 ส.ค. 2026: การ์ด "หวยออนไลน์พ่นพิษทำแม่ค้าเร่งขึ้ใจ …" (ข่าวหวย)
+  // อยู่ในคอลัมน์ "หัวข้อที่จับตามอง" เพราะสรุปเป็นบล็อกข่าวปลาหมอคางดำที่ซ้ำกัน 2 ครั้ง
+  const { looksLikeListing, decodeForTest } = await import("../functions/api/trend/_lib/parser.js");
+  const REAL_CASE =
+    '"ปลาหมอคางดำ" บุกทะเลระยอง! ชาวบ้านหวั่นระบบนิเวศถูก สังหลด &middot; ' +
+    '"ปลาหมอคางดำ" บุกทะเลระยอง! ชาวบ้านหวั...';
+  ok("🎯 เคสจริงจากภาพ: ถูกจับเป็นลิสต์แล้ว", looksLikeListing(REAL_CASE), "ยังหลุด");
+  ok("แบบคั่นด้วย · ที่ถอดรหัสแล้ว ก็จับได้", looksLikeListing(
+    'ซีพี ออลล์ เปิดสาขาใหม่ 100 แห่งทั่วประเทศในปีนี้ · ซีพี ออลล์ เปิดสาขาใหม่ 100 แห่ง…'));
+  ok("แบบคั่นด้วย | ก็จับได้", looksLikeListing(
+    'กรมประมงลงพื้นที่สำรวจปลาหมอคางดำ 4 จังหวัด | กรมประมงลงพื้นที่สำรวจปลาหมอคางดำ 4 จ…'));
+
+  // 🚫 ฝั่งที่ห้ามตัด — สรุปข่าวจริงที่มีตัวคั่นอยู่ข้างใน หรือมีคำซ้ำสั้นๆ
+  const KEEP12 = [
+    // มีตัวคั่นแต่แต่ละท่อนคนละเรื่อง = สรุปจริงของข่าวเดียว
+    "ซีพีเอฟ แจ้งผลประกอบการไตรมาส 2 · กำไรสุทธิ 8,900 ล้านบาท เพิ่มขึ้นจากปีก่อน 30%",
+    // คำซ้ำแต่สั้นกว่า 30 ตัวอักษร — ย่อหน้าจริงซ้ำคำแบบนี้ได้ปกติ
+    "ราคาน้ำมัน วันนี้ · ราคาน้ำมัน พรุ่งนี้ · ราคาทองคำล่าสุด",
+    "กรมประมงและหน่วยงานที่เกี่ยวข้อง ลงพื้นที่สำรวจปลาหมอคางดำในคลองสายหลัก 4 จังหวัด",
+  ];
+  for (const t of KEEP12) ok(`🚫 ห้ามตัดสรุปจริง: ${t.slice(0, 38)}`, !looksLikeListing(t), "ถูกตัดผิด");
+
+  // ⚠️ &middot; ต้องถูกแปลงเป็น · ไม่งั้นผู้ใช้เห็นโค้ดดิบบนการ์ด (เจ้าของเห็นในภาพ)
+  //    และตัวจับที่ดูตัวคั่น (SEP_DATE_RE ใช้ [·|]) ก็มองไม่เห็น
+  const parserSrc = fs.readFileSync(
+    new URL("../functions/api/trend/_lib/parser.js", import.meta.url), "utf8");
+  ok("decode() รู้จัก &middot; แล้ว", /middot:\s*"·"/.test(parserSrc));
+  ok("และ regex ของ decode ก็ครอบ middot ด้วย",
+    /replace\(\/&\([^)]*middot[^)]*\);\/g/.test(parserSrc), "regex ยังไม่ครอบ");
+
+  // กวาดของเก่าในคลัง — ของที่เก็บไว้ก่อนมีกฎนี้ต้องหายด้วย ไม่ใช่รอ 90 วัน
+  const { dropListingSnippets } = await import("../functions/api/_lib/noise.js");
+  const sources = { alert2: { items: [
+    { title: "หวยออนไลน์พ่นพิษทำแม่ค้าเร่งขึ้ใจ", link: "https://ch3plus.com/a", snippet: REAL_CASE },
+    { title: "กรมประมงลงพื้นที่", link: "https://x.com/b",
+      snippet: "กรมประมงและหน่วยงานที่เกี่ยวข้อง ลงพื้นที่สำรวจปลาหมอคางดำในคลอง 4 จังหวัด" },
+  ] } };
+  const n = dropListingSnippets(sources, {});
+  ok("กวาดคลัง: สรุปปลอมถูกตัด", sources.alert2.items[0].snippet === "" && n === 1, "n=" + n);
+  ok("🚫 กวาดคลัง: สรุปจริงยังอยู่ครบ", sources.alert2.items[1].snippet.length > 0);
+  ok("ติดธงไว้ให้ไล่ปัญหาได้", sources.alert2.items[0].listingSnip === true);
+
+  // ⚠️ ต้องเรียกทั้ง 2 จังหวะเหมือน dropSharedSnippets (ก่อน merge · หลังดึงคลัง)
+  for (const f of ["trend", "ir"]) {
+    const src = fs.readFileSync(
+      new URL(`../functions/api/${f}/feeds.js`, import.meta.url), "utf8");
+    ok(`${f}/feeds.js เรียก dropListingSnippets ครบ 2 จังหวะ`,
+      (src.match(/dropListingSnippets\(sources/g) || []).length === 2,
+      String((src.match(/dropListingSnippets\(sources/g) || []).length));
+    const m = src.match(/const CACHE_VER = "(\d+)"/);
+    ok(`${f}/feeds.js bump CACHE_VER แล้ว`, m && Number(m[1]) >= (f === "trend" ? 84 : 78), m ? m[1] : "-");
+  }
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);

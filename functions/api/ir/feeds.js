@@ -7,7 +7,7 @@ import { parseGeneric } from "../trend/_lib/parser.js";
 import { readDecisions } from "../allow.js";
 import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 import {
-  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
+  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, dropListingSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -34,7 +34,7 @@ const EDGE_TTL = 3600;
 //    · เทสต์ `syslog.mjs` มีด่านจับไม่ให้ลดกลับลงไปต่ำกว่า 10 นาที
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "77"; // bump: สรุปที่ขึ้นต้นด้วย "ข่าวที่เกี่ยวข้อง" = บล็อกแนะนำ ตัดทิ้ง
+const CACHE_VER = "78"; // bump: สรุปที่ซ้ำข้อความตัวเอง = ลิสต์ข่าว ตัดทิ้ง + แปลง &middot;
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้
@@ -463,6 +463,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   // ทำให้ข่าวคนละเรื่องถูกดูดเข้าคอลัมน์ (ดูเหตุผลเต็มใน _lib/noise.js)
   const shared = {};
   dropSharedSnippets(sources, shared);
+  try { dropListingSnippets(sources, shared); } catch {}
 
   mergeNewsIntoAlert(sources, "alert1", ["newsth", "newsintl"], CP_BRANDS);
   mergeNewsIntoAlert(sources, "alert2", ["newsth", "newsintl"], ALERT2_KEEP);
@@ -537,6 +538,7 @@ async function buildAndStore(cache, cacheKey, env, allowAI) {
   // (เหตุผลเดียวกับที่ dropNoiseAfterArchive ต้องมี — verify ทำงานก่อน mergeArchives)
   // · รอบนี้ข้อมูลเยอะกว่าเดิม การจับ "สรุปก้อนเดียวกันหลายใบ" จึงแม่นขึ้นด้วย
   try { dropSharedSnippets(sources, shared); } catch {}
+  try { dropListingSnippets(sources, shared); } catch {}
 
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   const pruned = {};

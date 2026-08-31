@@ -7,7 +7,7 @@ import { parseGeneric, parseTrends, unwrapRedirect } from "./_lib/parser.js";
 import { readDecisions } from "../allow.js";
 import { startLog, finishLog, resetLog } from "../_lib/syslog.js";
 import {
-  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
+  noiseReason, dropNoiseAfterArchive, dropSharedSnippets, dropListingSnippets, setAllowed, setBlocked, isAllowed, cpExamples, cpEvidence,
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
@@ -35,7 +35,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "83"; // bump: สรุปที่ขึ้นต้นด้วย "ข่าวที่เกี่ยวข้อง" = บล็อกแนะนำ ตัดทิ้ง
+const CACHE_VER = "84"; // bump: สรุปที่ซ้ำข้อความตัวเอง = ลิสต์ข่าว ตัดทิ้ง + แปลง &middot;
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -335,6 +335,7 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   // ถูกดึงเข้าคอลัมน์หัวข้อที่จับตามอง เพราะสรุปเป็นบล็อกข่าวปลาหมอคางดำของเว็บ
   const shared = {};
   dropSharedSnippets(sources, shared);
+  try { dropListingSnippets(sources, shared); } catch {}
 
   // ไฮบริด: บวกข่าว Google News ที่ match keyword ของคอลัมน์เข้ามา (เสถียรขึ้น ไม่พึ่ง Google Alert อย่างเดียว)
   mergeNewsIntoAlert(sources, "alert1", ["news"], CP_BRANDS);
@@ -394,6 +395,7 @@ async function buildAndStore(cache, cacheKey, allowVerify, env) {
   // (เหตุผลเดียวกับที่ dropNoiseAfterArchive ต้องมี — verify ทำงานก่อน mergeArchives)
   // · รอบนี้ข้อมูลเยอะกว่าเดิม การจับ "สรุปก้อนเดียวกันหลายใบ" จึงแม่นขึ้นด้วย
   try { dropSharedSnippets(sources, shared); } catch {}
+  try { dropListingSnippets(sources, shared); } catch {}
 
   // ตัดข่าว merge ที่ไม่ match แล้ว (กัน brand เก่าค้าง) + ไฮไลต์ keyword ให้สม่ำเสมอ — หลัง merge+archive
   const pruned = {};

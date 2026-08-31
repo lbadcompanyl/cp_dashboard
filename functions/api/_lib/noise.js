@@ -15,6 +15,9 @@
 //    Workers ใช้โมดูลเดิมซ้ำข้าม request ถ้าไม่ตั้งใหม่จะค้างรายชื่อของ request ก่อนหน้า
 
 import { allowKey } from "../allow.js";
+// ⚠️ ตัวจับ "สรุปนี้เป็นลิสต์ข่าว ไม่ใช่สรุป" อยู่ที่ parser (ใช้ตอนอ่านฟีด) — **มีชุดเดียว**
+// ห้ามก๊อปมาไว้ที่นี่ ไม่งั้นเกณฑ์ตอนอ่านฟีดกับตอนกวาดคลังจะเพี้ยนจากกันเหมือนที่เคยเจอ
+import { looksLikeListing } from "../trend/_lib/parser.js";
 
 // ---- คำตัดสินรายข่าวของเจ้าของ (เก็บที่ /api/allow ใช้ร่วมกันทุกแดชบอร์ด) ----
 // ↩ เอากลับ = ต้องรอดทุกด่าน · ⚑ สั่งตัด = ต้องหายทุกแดชบอร์ด
@@ -303,6 +306,27 @@ export function dropSharedSnippets(sources, diag) {
     n++;
   });
   if (diag) diag.sharedSnippets = n;
+  return n;
+}
+
+/* 🔁 **กวาดสรุปที่เป็น "ลิสต์ข่าว" ออกจากของเก่าในคลังด้วย**
+   `looksLikeListing()` ทำงานตอน **อ่านฟีด** เท่านั้น (ใน `parseGeneric`) ของที่เก็บไว้ใน KV
+   ตั้งแต่ก่อนมีกฎใหม่จึงยังพกสรุปปลอมติดมา แล้วไหลกลับเข้าคอลัมน์หลัง `mergeArchives`
+   — ปัญหาเดียวกับที่ `dropNoiseAfterArchive` กับ `dropSharedSnippets` ถูกสร้างมาแก้
+   ⚠️ ถ้าไม่กวาด ต้องรอ 90 วันกว่าคลังจะหมดอายุไปเอง
+   ⚠️ **ตัดแค่ "สรุป" ไม่ได้ลบข่าว** — ตัวที่ลบข่าวคือ `pruneStaleMerged` ที่รันต่อจากนี้
+      พอสรุปปลอมหายไป คำที่เคยดูดข่าวเข้ามาก็หายตาม ข่าวที่ไม่เกี่ยวจึงหลุดออกเอง */
+export function dropListingSnippets(sources, diag) {
+  let n = 0;
+  for (const b of Object.values(sources || {})) {
+    for (const it of (b && b.items) || []) {
+      if (!it.snippet || !looksLikeListing(it.snippet)) continue;
+      it.snippet = "";
+      it.listingSnip = true;   // ติดธงไว้ให้ไล่ปัญหาได้ ว่าสรุปหายเพราะอะไร
+      n++;
+    }
+  }
+  if (diag) diag.listingSnippets = n;
   return n;
 }
 
