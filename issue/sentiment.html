@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="9" />
+<meta name="page-ver" content="10" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -456,12 +456,12 @@ function renderResult(d, keepAudit){
      ไม่งั้นคนอ่านจะสรุปว่า "โพสนี้มีคนคอมเมนต์แค่ 8 คน" ซึ่งผิด (เจ้าของถามเอง 29 ส.ค. 2026) */
   const nAnalyzed = d.analyzed_count || total;
   const nFetched = d.fetched_count || nAnalyzed;
-  const nSkipped = d.skipped_no_text != null ? d.skipped_no_text : Math.max(0, nFetched - nAnalyzed);
+  /* ใบที่ไม่มีข้อความถูก **นับเป็นกลาง** แล้ว (เจ้าของสั่ง 31 ส.ค. 2026) จำนวนจึงตรงกับที่ดึงมา
+     แต่ยังต้องบอกว่ามีกี่ใบ — "กลาง" ตรงนี้แปลว่าไม่มีอะไรให้อ่าน ไม่ใช่ AI อ่านแล้วเห็นว่ากลาง */
+  const nNoText = d.no_text_count || 0;
   el("resSub").innerHTML =
-    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ` +
-      (nSkipped ? `ดึงมา ${nFetched} · วิเคราะห์ได้ ${nAnalyzed} คอมเมนต์`
-                : `ดึงมา ${nFetched} คอมเมนต์`)) +
-    (nSkipped ? ` <span class="sc-skip" title="คอมเมนต์ที่เป็นสติกเกอร์ GIF หรือรูปล้วน ไม่มีตัวอักษรให้ตี sentiment">(${nSkipped} ใบเป็นสติกเกอร์/รูป ไม่มีข้อความ)</span>` : "") +
+    escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ดึงมา ${nFetched} คอมเมนต์`) +
+    (nNoText ? ` <span class="sc-skip" title="สติกเกอร์ GIF หรือรูปล้วน — ไม่มีตัวอักษรให้ตี sentiment จึงนับเป็นกลาง">(${nNoText} ใบเป็นสติกเกอร์/รูป นับเป็นกลาง)</span>` : "") +
     (isCP ? ` · <b>พูดถึง CP ${total} คอมเมนต์</b> (ไม่เกี่ยว ${d.not_related||0})` : "") +
     (d.edited_count ? ` · <b style="color:var(--sc-accent)">✏️ คุณแก้เอง ${d.edited_count} ใบ</b>` : "") +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
@@ -574,7 +574,7 @@ function renderAudit(d){
                  title="แก้เป็น ${tagL[k]}">${tagL[k]}</button>`).join("");
       return `<div class="sc-arow">
         <span class="sc-atag" style="color:var(${tagC[a.sentiment]||'--sc-neu'});border-color:var(${tagC[a.sentiment]||'--sc-neu'})">${tagL[a.sentiment]||"?"}</span>
-        <span class="sc-atext">${escapeHtml(a.text)}${a.edited ? ' <span class="sc-editmark" title="คุณแก้ป้ายนี้เอง">✏️ แก้แล้ว</span>' : ""}</span>
+        <span class="sc-atext">${a.no_text ? '<i class="sc-skip">(สติกเกอร์/รูป — ไม่มีข้อความให้ตี)</i>' : escapeHtml(a.text)}${a.edited ? ' <span class="sc-editmark" title="คุณแก้ป้ายนี้เอง">✏️ แก้แล้ว</span>' : ""}</span>
         <span class="sc-fixrow">${pick}</span>
       </div>`;
     }).join("");

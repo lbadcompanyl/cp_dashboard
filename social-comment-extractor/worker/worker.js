@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 22;
+const WORKER_VER = 23;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -470,15 +470,24 @@ async function analyze(opts, env) {
     (reply_count ? ` (เป็น reply ${reply_count})` : " (นับเฉพาะคอมเมนต์บนสุด ไม่รวม reply)"));
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
-  /* คอมเมนต์ที่เป็นสติกเกอร์ / GIF / รูปล้วน ไม่มีตัวอักษรให้ตี — ต้องคัดออก
-     ⚠️ แต่ **ห้ามคัดเงียบ** ต้องนับไว้แล้วส่งกลับให้หน้าเว็บบอกผู้ใช้
-        เจ้าของเจอเอง 29 ส.ค. 2026: ดึงมา 11 ใบ ขึ้นบนจอ 8 ใบ ไม่มีอะไรบอกว่า 3 ใบไปไหน
-        ถ้าไม่ทันสังเกต จะสรุปว่า "โพสนี้มีคนคอมเมนต์แค่ 8 คน" ซึ่งผิด
-        (กฎเดียวกับ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ใน CLAUDE.md) */
-  const texts = comments.map(c => c.text).filter(Boolean);
-  const skipped_no_text = comments.length - texts.length;
-  if (skipped_no_text) logLine(`คัดออก ${skipped_no_text} รายการ (สติกเกอร์/รูป ไม่มีข้อความให้ตี)`);
-  if (!texts.length) throw new Error("คอมเมนต์ทั้งหมดเป็นสติกเกอร์/รูป ไม่มีข้อความให้วิเคราะห์");
+  /* คอมเมนต์ที่เป็นสติกเกอร์ / GIF / รูปล้วน — ไม่มีตัวอักษรให้ AI อ่าน
+     ✅ เจ้าของสั่ง 31 ส.ค. 2026: **ไม่ตัดทิ้ง ให้นับเป็น "กลาง"** จำนวนจะได้ตรงกับที่ดึงมา
+        (ของเดิมคัดทิ้ง แล้วเลขบนจอไม่ตรงกับจำนวนคอมเมนต์จริง ทำให้เข้าใจผิด)
+
+     ⚠️ แต่ยังต้องนับแยกและติดธงไว้ทุกใบ — "กลาง" ตรงนี้แปลว่า **ไม่มีอะไรให้อ่าน**
+        ไม่ใช่ "AI อ่านแล้วเห็นว่าเป็นกลาง" · คนละเรื่องกันสิ้นเชิง
+        ถ้าไม่แยก วันหนึ่งโพสที่มีแต่สติกเกอร์จะรายงานว่า "กลาง 100%" อย่างมั่นใจ
+        ทั้งที่ไม่ได้อ่านอะไรเลยสักใบ (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ใน CLAUDE.md)
+
+     🚫 ห้ามส่งใบพวกนี้ไปให้ AI — ข้อความว่างเปล่าไม่มีอะไรให้ตัดสิน เปลืองโทเคนฟรี */
+  /* ⚠️ ต้อง trim ก่อนเสมอ — "   " (ช่องว่างล้วน) ไม่ใช่ข้อความ แต่ผ่านเงื่อนไข if(t) ได้
+     เจอจริงตอนเขียนเทสต์ 31 ส.ค. 2026: ส่งบรรทัดว่างไปให้ AI แล้วมันตอบมั่วให้ 1 ใบ */
+  const texts = comments.map(c => String(c.text || "").trim());
+  const askIdx = [];                                  // ตำแหน่งของใบที่มีข้อความจริง
+  texts.forEach((t, i) => { if (t) askIdx.push(i); });
+  const skipped_no_text = texts.length - askIdx.length;
+  if (skipped_no_text) logLine(`ไม่มีข้อความ ${skipped_no_text} รายการ (สติกเกอร์/รูป) — นับเป็นกลาง ไม่ส่งให้ AI`);
+  if (!askIdx.length) throw new Error("คอมเมนต์ทั้งหมดเป็นสติกเกอร์/รูป ไม่มีข้อความให้วิเคราะห์");
 
   // ตัวสะสมการใช้ token ของ Claude
   const tokens = { input: 0, output: 0, rate_remaining: null };
@@ -486,13 +495,22 @@ async function analyze(opts, env) {
   /* 2) ตี sentiment ด้วยตัวจัดหมวด 2 แกน (rubric v5 — วัดได้ 94% กับ opus)
         ⚠️ ตัวเดียวกับที่หน้าวัดความแม่นใช้ ห้ามแยกเป็นคนละชุด ไม่งั้นตัวเลขที่วัดไว้ใช้อ้างอิงไม่ได้ */
   const modelUsed = env.CLAUDE_MODEL || DEFAULT_MODEL;
-  logLine(`ตี sentiment 2 แกน ด้วย ${modelUsed} · ${Math.ceil(texts.length / CHUNK)} batch (batch ละ ${CHUNK})`);
-  const two = [];
-  for (let i = 0; i < texts.length; i += CHUNK) {
-    const batch = texts.slice(i, i + CHUNK);
+  const nBatch = Math.ceil(askIdx.length / CHUNK);
+  logLine(`ตี sentiment 2 แกน ด้วย ${modelUsed} · ${nBatch} batch (batch ละ ${CHUNK})`);
+  const asked = [];
+  for (let i = 0; i < askIdx.length; i += CHUNK) {
+    const batch = askIdx.slice(i, i + CHUNK).map(j => texts[j]);
     const part = await classifyTwoLens(batch, env, tokens, opts.post_context || collected.post_title || "");
-    two.push(...part);
-    logLine(`  batch ${Math.floor(i / CHUNK) + 1}/${Math.ceil(texts.length / CHUNK)} เสร็จ (${batch.length} คอมเมนต์)`);
+    asked.push(...part);
+    logLine(`  batch ${Math.floor(i / CHUNK) + 1}/${nBatch} เสร็จ (${batch.length} คอมเมนต์)`);
+  }
+
+  /* เอาคำตอบกลับเข้าตำแหน่งเดิม แล้วเติมใบที่ไม่มีข้อความเป็น "กลาง" พร้อมติดธง
+     ⚠️ ต้องคืนตำแหน่งตามลำดับเดิม ไม่งั้นข้อความในรายการตรวจกับป้ายจะสลับกันทั้งกระดาน */
+  const two = texts.map(() => null);
+  askIdx.forEach((j, k) => { two[j] = asked[k]; });
+  for (let i = 0; i < two.length; i++) {
+    if (!two[i]) two[i] = { sentiment_cp: "Neutral", overall_cred: "Neutral", is_sarcasm: 0, no_text: 1 };
   }
 
   const count = (key) => {
@@ -527,14 +545,19 @@ async function analyze(opts, env) {
     sentiment_cp: two[i]?.sentiment_cp,
     overall_cred: two[i]?.overall_cred,
     is_sarcasm: two[i]?.is_sarcasm ? 1 : 0,
+    /* 🏷 ธงบอกว่าใบนี้ "ไม่มีข้อความให้อ่าน" ไม่ใช่ "AI อ่านแล้วเห็นว่ากลาง"
+       หน้าเว็บต้องเอาไปแสดงให้ต่างกัน ไม่งั้นดูเหมือน AI ตัดสินมาแล้วทั้งที่ไม่ได้อ่าน */
+    no_text: two[i]?.no_text ? 1 : 0,
   }));
 
   /* 3) สรุป + keyword + ตัวอย่าง
         โหมด CP: สรุปจากคอมเมนต์ที่มีท่าทีต่อ CP จริงๆ (ตัด Neutral ที่ไม่ได้แตะ CP ออก)
         ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
-  const synthPool = target === "cp"
-    ? texts.filter((_, i) => labels[i] === "positive" || labels[i] === "negative")
-    : texts;
+  /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
+        ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน (โหมดอารมณ์รวมของเดิมส่ง texts ทั้งก้อน) */
+  const synthPool = texts.filter((t, i) => t && (
+    target === "cp" ? (labels[i] === "positive" || labels[i] === "negative") : true
+  ));
   if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
   const synth = synthPool.length
     ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target)
@@ -554,7 +577,8 @@ async function analyze(opts, env) {
     post_thumb: collected.post_thumb || "",
     fetched_count: comments.length,
     reply_count,
-    skipped_no_text,          // สติกเกอร์/รูปที่ไม่มีข้อความ — หน้าเว็บต้องบอกผู้ใช้ ห้ามหายเงียบ
+    no_text_count: skipped_no_text,   // สติกเกอร์/รูป — นับเป็นกลางแล้ว แต่ต้องบอกผู้ใช้ว่ามีกี่ใบ
+    skipped_no_text: 0,               // ไม่ได้คัดทิ้งแล้ว (คงคีย์ไว้ให้หน้าเว็บรุ่นก่อนไม่พัง)
     analyzed_count: two.length,
     target,
     not_related,

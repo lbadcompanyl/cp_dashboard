@@ -14,6 +14,7 @@
 | `teachbox.cjs` · `fbreview.cjs` | ระบบเรียนรู้ชั้น ②/③ — ปุ่มส่งเข้ากอง (ห้ามส่งชื่อ/ลิงก์) · หน้าตรวจกอง | ต้องมีเซิร์ฟเวอร์ static |
 | `skipped.cjs` | คอมเมนต์ที่เป็นสติกเกอร์/รูปถูกคัดออก **ต้องไม่หายเงียบ** — ห้ามเอา analyzed_count มาแปะป้ายว่า "ดึงมา" | ต้องมีเซิร์ฟเวอร์ static |
 | `cache.mjs` · `effortpage.cjs` | แคชคำสั่ง (คำสั่งต้องเหมือนกันเป๊ะทุกก้อน) · ระดับการคิด (haiku ห้ามส่ง) · แคชไม่ทำงานต้องเตือน | `node cache.mjs` / ต้องมีเซิร์ฟเวอร์ static |
+| `notext.mjs` | สติกเกอร์/รูป **นับเป็นกลาง ไม่ตัดทิ้ง** · ห้ามส่งให้ AI · ต้องติดธง no_text · ลำดับห้ามสลับ | `node notext.mjs` |
 
 ```bash
 # เทสต์ฝั่ง worker ทุกตัว: ก๊อป worker.js เป็น .mjs แล้วเติม "export line" เดียวนี้
@@ -24,10 +25,10 @@ cat >> /tmp/w.mjs <<'EOF'
 export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonArray,
          nestedReplies, scComment, fetchYouTube, INCLUDE_REPLIES,
          feedbackRoute, fbClean, FB_MAX, FB_MAX_PER_REQ, FB_MAX_TEXT,
-         EFFORT_CHOICES, EFFORT_MODELS };
+         EFFORT_CHOICES, EFFORT_MODELS, analyze };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in twolens retry jsonparse replies lensconsistency feedback cache; do node $t.mjs; done
+for t in twolens retry jsonparse replies lensconsistency feedback cache notext; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
