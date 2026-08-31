@@ -34,7 +34,7 @@ const EDGE_TTL = 3600;
 //    · เทสต์ `syslog.mjs` มีด่านจับไม่ให้ลดกลับลงไปต่ำกว่า 10 นาที
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "76"; // bump: ตัดบล็อก "ข่าวที่เกี่ยวข้อง" ก่อนหา keyword + รหัสรุ่นสินค้า CP-60G + หน้ารวมแบบแบ่งหน้า
+const CACHE_VER = "77"; // bump: สรุปที่ขึ้นต้นด้วย "ข่าวที่เกี่ยวข้อง" = บล็อกแนะนำ ตัดทิ้ง
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้

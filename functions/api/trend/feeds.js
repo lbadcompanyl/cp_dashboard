@@ -35,7 +35,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "82"; // bump: ตัดบล็อก "ข่าวที่เกี่ยวข้อง" ก่อนหา keyword + รหัสรุ่นสินค้า CP-60G + หน้ารวมแบบแบ่งหน้า
+const CACHE_VER = "83"; // bump: สรุปที่ขึ้นต้นด้วย "ข่าวที่เกี่ยวข้อง" = บล็อกแนะนำ ตัดทิ้ง
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน

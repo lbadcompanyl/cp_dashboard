@@ -153,6 +153,28 @@ console.log("\n[7] ต่อสายในโค้ดจริง + หน้�
   ok("หน้า admin แปล paged-list เป็นภาษาคนแล้ว", /"paged-list":\s*"[^"]*[ก-๙]/.test(adm));
 }
 
+console.log("\n[11] 🔴 สรุปที่ขึ้นต้นด้วย 'ข่าวที่เกี่ยวข้อง' = บล็อกแนะนำ ไม่ใช่สรุปของข่าวใบนี้");
+{
+  // เจ้าของส่งภาพมา 29 ส.ค. 2026: การ์ดข่าววอลเลย์บอล "สาวไทยผงาดแชมป์เอเชีย AVC 2026"
+  // มีสรุปว่า "ข่าวที่เกี่ยวข้อง · ซีพี–ทรู เปิดดูฟรี ไทย-เวียดนาม …" → คำว่า ซีพี อยู่ในบล็อกแนะนำล้วนๆ
+  // ⚠️ ตัวจับเดิมดูสัญญาณ "วันที่" ซึ่งบล็อกนี้ไม่มีเลย จึงหลุดมาตลอด
+  const { looksLikeListing } = await import("../functions/api/trend/_lib/parser.js");
+  const REAL = [
+    "ข่าวที่เกี่ยวข้อง &middot; ซีพี–ทรู เปิดดูฟรี ไทย-เวียดนาม นัดชิง ASEAN Championship 2026",
+    "ข่าวที่เกี่ยวข้อง · ซีพี ออลล์ เปิดสาขาใหม่ 100 แห่ง",
+    "ข่าวแนะนำ ซีพีเอฟ กำไรโต 30%",
+    "เรื่องที่น่าสนใจ · เครือซีพี ลงทุนเพิ่ม",
+  ];
+  for (const t of REAL) ok(`ตัดสรุปทิ้ง: ${t.slice(0, 40)}`, looksLikeListing(t), "ไม่ถูกจับ");
+  // 🚫 "ที่เกี่ยวข้อง" กลางประโยคโผล่ในสรุปข่าวจริงได้ ตัดเพลินจะกินสรุปจริง
+  const KEEP = [
+    "ซีพีเอฟ แจ้งผลประกอบการไตรมาส 2 กำไรโต 30% จากธุรกิจอาหารสัตว์",
+    "หน่วยงานที่เกี่ยวข้องเร่งตรวจสอบโรงงานที่ปล่อยน้ำเสียลงคลอง",
+    "กรมประมงและหน่วยงานที่เกี่ยวข้อง ลงพื้นที่สำรวจปลาหมอคางดำ",
+  ];
+  for (const t of KEEP) ok(`🚫 ห้ามตัดสรุปจริง: ${t.slice(0, 38)}`, !looksLikeListing(t), "ถูกตัดผิด");
+}
+
 console.log("\n[10] 🔒 การ์ด Issue บนหน้ารวม ต้องมีป้ายบอกว่าต้องเข้าสู่ระบบ");
 {
   // เจ้าของสั่ง 29 ส.ค. 2026: "อยาก lock issue dashboard และเพิ่มไอคอน lock เล็กๆ ในหน้ารวม"
@@ -161,17 +183,20 @@ console.log("\n[10] 🔒 การ์ด Issue บนหน้ารวม ต�
   const html = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const at = html.indexOf('href="issue/"');
   const card = html.slice(at, at + 1400);
-  ok("การ์ด Issue มีไอคอน 🔒", /class="lock"[^>]*>🔒</.test(card));
-  ok("มีคำอธิบายตอนเอาเมาส์ชี้", /title="[^"]*เข้าสู่ระบบ/.test(card));
-  ok("คนใช้ screen reader ก็รู้", /aria-label="[^"]*เข้าสู่ระบบ/.test(card));
-  // ⚠️ .card เป็น flex column — วาง 🔒 เป็นลูกตรงๆ จะกลายเป็นแถวของตัวเองกว้างเต็มการ์ด (วัดจริง 233px)
-  ok("ห่อไว้ในแถวเดียวกับป้าย ISSUE", /<span class="tagrow">[\s\S]*?class="lock"/.test(card));
-  ok("มีสไตล์ของ .tagrow", /\.card \.tagrow \{[^}]*display:flex/.test(html));
+  ok("การ์ด Issue มีป้าย 🔒 ต้องเข้าสู่ระบบ", /class="lock-badge">🔒[^<]*เข้าสู่ระบบ/.test(card), card.slice(0, 160));
+  ok("มีกุญแจที่มุมไอคอนด้วย", /class="lock-corner"[^>]*>🔒</.test(card));
+  // เจ้าของสั่ง 29 ส.ค. 2026: "เอา under construct ออกและเอารูป Lock ไปไว้แทน"
+  ok("🚫 ไม่มี Under Construction บนการ์ดนี้แล้ว", !/wip-badge|wip-corner|card wip/.test(card), card.slice(0, 200));
+  ok("มีสไตล์ของ .lock-badge", /\.lock-badge \{[^}]*position:absolute/.test(html));
+  ok("กุญแจมุมไอคอนใหญ่กว่า 🚧 เดิม (18px)", (() => {
+    const m = html.match(/\.lock-corner \{[^}]*font-size:(\d+)px/);
+    return m && Number(m[1]) > 18;
+  })(), (html.match(/\.lock-corner \{[^}]*font-size:(\d+)px/) || [])[1]);
   // 🚫 การ์ดอื่นยังไม่ได้ล็อก ห้ามติดป้ายมั่ว
-  ok("🚫 มีป้ายล็อกใบเดียว (การ์ดอื่นยังเปิดอยู่)", (html.match(/class="lock"/g) || []).length === 1,
-    String((html.match(/class="lock"/g) || []).length));
+  ok("🚫 มีป้ายล็อกใบเดียว (การ์ดอื่นยังเปิดอยู่)", (html.match(/class="lock-badge"/g) || []).length === 1,
+    String((html.match(/class="lock-badge"/g) || []).length));
   const v = html.match(/name="page-ver" content="(\d+)"/);
-  ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 23, v ? v[1] : "-");
+  ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 24, v ? v[1] : "-");
 }
 
 console.log(`\n${fail === 0 ? "✅" : "❌"} ผ่าน ${pass} · ตก ${fail}\n`);
