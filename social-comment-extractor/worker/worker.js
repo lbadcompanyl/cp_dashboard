@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 21;
+const WORKER_VER = 22;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -73,6 +73,18 @@ const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูง
 /* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
    /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
 const MODEL_CHOICES = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5"];
+
+/* ⚙️ ระดับการคิดของโมเดล — วัดแล้วพบว่าโทเคนส่วนใหญ่หมดไปกับ "การคิด" ไม่ใช่คำตอบ
+   วัดจริง 31 ส.ค. 2026 (475 ใบ): คำตอบที่ต้องเขียนจริงราว 25 โทเคน/ใบ แต่ใช้จริง
+   opus 105 · sonnet 224 → ส่วนเกินคือการคิด (sonnet คิดเยอะกว่า opus ~2.5 เท่า)
+   ไม่ส่งค่านี้ = ใช้ค่าตั้งต้นของโมเดล ซึ่งคือคิดเต็มที่ (high)
+
+   🚫 **haiku ไม่รองรับ ส่งไปแล้วตอบ error** จึงมีรายชื่อรุ่นที่ส่งได้แยกไว้
+   ⚠️ ค่าตั้งต้นของระบบยัง **ไม่ส่ง** — ห้ามเปลี่ยนจนกว่าจะวัดกับชุดเฉลย 475 ใบแล้วเทียบ
+      ทั้ง 3 อย่าง: ความแม่น · ราคา · **เวลา** (เจ้าของสั่ง 31 ส.ค.: ช้าเกินไปก็ไม่เอา
+      ยกเว้นว่าลดแล้วความแม่นตก) */
+const EFFORT_CHOICES = ["low", "medium", "high", "xhigh", "max"];
+const EFFORT_MODELS = ["claude-opus-5", "claude-sonnet-5"];
 
 /* ============================================================
  * 📥 กองรอตรวจ (feedback queue) — ชั้น ② ของระบบเรียนรู้
@@ -216,7 +228,7 @@ function normLens(v) {
  * ตี 2 แกนให้คอมเมนต์ชุดหนึ่ง — คืน array ยาวเท่า texts เสมอ
  * ⚠️ ห้ามให้ความยาวไม่ตรง ไม่งั้นผลจะเลื่อนไปทั้งชุดแล้วตัวเลขวัดผลผิดโดยไม่มีอะไรเตือน
  */
-async function classifyTwoLens(texts, env, acc, context) {
+async function classifyTwoLens(texts, env, acc, context, effort) {
   const numbered = texts
     .map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 400)}`)
     .join("\n");
@@ -232,13 +244,13 @@ async function classifyTwoLens(texts, env, acc, context) {
   const prompt = ctx + "คอมเมนต์:\n" + numbered;
   const sys = systemTwoLens();
   let budget = Math.min(12000, 60 * texts.length + 4000);
-  let out = await callClaude(env, sys, prompt, budget, acc2);
+  let out = await callClaude(env, sys, prompt, budget, acc2, { effort });
 
   /* ถูกตัดกลางคัน = ลองใหม่อีกครั้งด้วยเพดาน 2 เท่า ก่อนจะยอมแพ้
      ดีกว่าโยน error ทันที เพราะความยาวของคำนำเดาไม่ได้และต่างกันไปในแต่ละก้อน */
   if (acc2.stop_reason === "max_tokens") {
     budget = Math.min(20000, budget * 2);
-    out = await callClaude(env, sys, prompt, budget, acc2);
+    out = await callClaude(env, sys, prompt, budget, acc2, { effort });
   }
   if (acc2.stop_reason === "max_tokens") {
     throw new Error(`คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว — ลดจำนวนข้อต่อก้อน`);
@@ -399,9 +411,10 @@ export default {
       const acc = { input: 0, output: 0 };
       try {
         const model = MODEL_CHOICES.includes(body.model) ? body.model : (env.CLAUDE_MODEL || DEFAULT_MODEL);
-        const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context);
+        const effort = EFFORT_CHOICES.includes(body.effort) ? body.effort : null;
+        const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context, effort);
         const missing = results.filter(r => r.missing).length;
-        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, missing, results, tokens: acc }), origin);
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, effort, missing, results, tokens: acc }), origin);
       } catch (e) {
         return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
       }
@@ -857,8 +870,26 @@ function aggregateTime(comments) {
 
 /* ---------------- Claude sentiment ---------------- */
 
-async function callClaude(env, system, userText, maxTokens, acc) {
+async function callClaude(env, system, userText, maxTokens, acc, opts = {}) {
   const model = env.CLAUDE_MODEL || DEFAULT_MODEL;
+  const body = {
+    model,
+    max_tokens: maxTokens,
+    /* 💾 คำสั่ง + ตัวอย่าง 22 ข้อ ยาว ~5,800 ตัวอักษร และ **เหมือนกันทุกครั้ง**
+       (systemTwoLens() ไม่รับพารามิเตอร์เลย · บริบทโพสอยู่ในข้อความของผู้ใช้ ไม่ได้อยู่ตรงนี้)
+       ของเดิมส่งซ้ำทุกก้อน — วิเคราะห์ 475 ใบ = ส่งคำสั่งชุดเดิมซ้ำ 12 รอบ
+       ทำเครื่องหมายให้ฝั่ง Anthropic เก็บไว้ใช้ซ้ำ → รอบถัดๆ ไปคิดถูกลงมาก
+       ⚠️ **ห้ามเอาอะไรที่เปลี่ยนทุกรอบมาใส่ใน system เด็ดขาด** (เวลา · ชื่อโพส · เลขรัน)
+          เปลี่ยนแม้แต่ตัวอักษรเดียว = แคชพังทั้งก้อน แล้วจะกลับไปจ่ายเต็มโดยไม่มีอะไรบอก
+          วิธีตรวจ: ดู cache_read ในผลลัพธ์ ถ้าเป็น 0 ตลอด แปลว่าแคชไม่ทำงาน */
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: userText }],
+  };
+  /* ระดับการคิด — ไม่ส่ง = ใช้ค่าตั้งต้นของโมเดล (คิดเต็มที่)
+     🚫 haiku ไม่รองรับ ส่งไปแล้วตอบ error — ต้องกันไว้ ไม่ใช่ปล่อยให้พังตอนรัน */
+  if (opts.effort && EFFORT_MODELS.includes(model)) {
+    body.output_config = { effort: opts.effort };
+  }
   const r = await fetch(ANTHROPIC_URL, {
     method: "POST",
     headers: {
@@ -866,17 +897,19 @@ async function callClaude(env, system, userText, maxTokens, acc) {
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: userText }],
-    }),
+    body: JSON.stringify(body),
   });
   const data = await r.json();
   if (!r.ok) throw new Error("Claude API: " + (data?.error?.message || ("HTTP " + r.status)));
   if (acc) {
-    if (data.usage) { acc.input += data.usage.input_tokens || 0; acc.output += data.usage.output_tokens || 0; }
+    if (data.usage) {
+      acc.input += data.usage.input_tokens || 0;
+      acc.output += data.usage.output_tokens || 0;
+      /* แยกนับโทเคนที่ "เขียนแคช" กับ "อ่านแคช" — คนละราคากัน
+         เขียน 1.25 เท่าของปกติ · อ่าน 0.1 เท่า · เอาไปรวมกับ input เฉยๆ จะคิดเงินผิด */
+      acc.cache_write = (acc.cache_write || 0) + (data.usage.cache_creation_input_tokens || 0);
+      acc.cache_read = (acc.cache_read || 0) + (data.usage.cache_read_input_tokens || 0);
+    }
     const rr = r.headers.get("anthropic-ratelimit-tokens-remaining");
     if (rr != null) acc.rate_remaining = +rr;
     /* ⚠️ "max_tokens" = โมเดลพูดไม่จบ คำตอบถูกตัดกลางคัน → JSON พัง

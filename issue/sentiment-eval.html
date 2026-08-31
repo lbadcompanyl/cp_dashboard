@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>วัดความแม่น sentiment — CP</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
-<meta name="page-ver" content="10" />
+<meta name="page-ver" content="11" />
 <meta name="robots" content="noindex" />
 <!--
   หน้าวัดความแม่นของตัวตี sentiment (เครื่องมือ QA — ไม่ใช่แดชบอร์ดให้คนทั่วไปดู)
@@ -90,6 +90,15 @@
       <button id="stop" disabled>■ หยุด</button>
       <label class="small muted">โมเดล
         <select id="model"><option value="">(ค่าตั้งต้นของ Worker)</option></select>
+      </label>
+      <label class="small muted" title="ยิ่งคิดมาก ยิ่งแม่นขึ้น(อาจ) แต่แพงและช้าขึ้น · haiku ไม่รองรับ">ระดับการคิด
+        <select id="effort">
+          <option value="">(ค่าตั้งต้น = high)</option>
+          <option value="low">low — คิดน้อย เร็ว ถูก</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh — คิดมาก ช้า แพง</option>
+        </select>
       </label>
     </div>
     <label class="row" style="margin-top:9px" id="ctxwrap" hidden>
@@ -177,7 +186,7 @@ let rows = [], stopped = false, meta = { ver: "?", rubric: "?", model: "?" };
 
 /* ── ถาม Worker ว่าเป็นเวอร์ชันไหน (กันการวัดผลแล้วไม่รู้ว่าวัดโค้ดตัวไหน) ── */
 fetch(WORKER + "/").then(r => r.json()).then(d => {
-  meta = { ver: d.ver ?? "?", rubric: d.rubric ?? "-", model: d.model || "?" };
+  meta = { ver: d.ver ?? "?", rubric: d.rubric ?? "-", model: d.model || "?", effort: "" };
   $("#wver").textContent = `Worker v${meta.ver} · rubric ${meta.rubric} · ${meta.model}`;
   for (const m of (d.models || [])) {
     const o = document.createElement("option");
@@ -257,6 +266,7 @@ $("#run").addEventListener("click", async () => {
       try {
         const body = { texts: chunk.idx.map((i) => String(rows[i].message)) };
         if ($("#model").value) body.model = $("#model").value;
+        if ($("#effort").value) body.effort = $("#effort").value;
         if (useCtx && chunk.topic) {
           body.context = `คอมเมนต์เหล่านี้อยู่ใต้โพส/ข่าวที่เกี่ยวกับเครือ CP/CPF หัวข้อ "${chunk.topic}"`;
         }
@@ -267,8 +277,14 @@ $("#run").addEventListener("click", async () => {
         });
         const d = await r.json();
         if (!r.ok || !Array.isArray(d.results)) throw new Error(d.detail || d.error || ("HTTP " + r.status));
-        if (d.ver != null) meta = { ver: d.ver, rubric: d.rubric ?? meta.rubric, model: d.model || meta.model };
-        if (d.tokens) { tok.input += d.tokens.input || 0; tok.output += d.tokens.output || 0; }
+        if (d.ver != null) meta = { ver: d.ver, rubric: d.rubric ?? meta.rubric, model: d.model || meta.model, effort: d.effort || meta.effort || "" };
+        if (d.tokens) {
+          tok.input += d.tokens.input || 0; tok.output += d.tokens.output || 0;
+          /* แยกนับโทเคนแคช — คนละราคากับ input ปกติ (เขียน 1.25 เท่า · อ่าน 0.1 เท่า)
+             ถ้า cache_read เป็น 0 ตลอดทั้งรอบ = แคชไม่ทำงาน ต้องไปหาว่าอะไรทำให้คำสั่งเปลี่ยน */
+          tok.cache_write = (tok.cache_write || 0) + (d.tokens.cache_write || 0);
+          tok.cache_read = (tok.cache_read || 0) + (d.tokens.cache_read || 0);
+        }
         /* ⚠️ ข้อที่โมเดลไม่ได้ตอบ (missing) ห้ามนับเป็นคำตอบ "Neutral"
            ไม่งั้นความล้มเหลวทางเทคนิคจะโผล่มาเป็นคะแนนที่ดูเหมือนผลจริง
            เจอจริง 27 ส.ค. 2026: opus ถูกตัดคำตอบกลางคัน แล้วรายงานว่าความแม่น 10% */
@@ -420,9 +436,9 @@ function render(preds, sec, failedBatches, errors = []) {
        <h2>สรุป</h2>
        <div class="row small">
          <span>ใช้เวลา <b>${sec}</b> วิ</span>·
-         <span>Worker <b>v${meta.ver}</b> · rubric <b>${meta.rubric}</b> · <b>${meta.model}</b></span>·
+         <span>Worker <b>v${meta.ver}</b> · rubric <b>${meta.rubric}</b> · <b>${meta.model}</b>${meta.effort ? ` · คิดระดับ <b>${meta.effort}</b>` : ""}</span>·
          <span>วัดจริง <b>${scored.length}</b>/${rows.length} ข้อ</span>·
-         <span>โทเคนที่ใช้ <b>${fmtTok(window.__tok)}</b></span>
+         <span>โทเคนที่ใช้ ${fmtTok(window.__tok)}</span>
        </div>
        <div class="row" style="margin-top:10px">
          <button id="expcsv">📥 บันทึกผลรายข้อเป็น CSV</button>
@@ -470,10 +486,21 @@ function render(preds, sec, failedBatches, errors = []) {
   saveLog({ cp, oc, sarRows: sarRows.length, sarHit, n: scored.length, sec, ctx: window.__usedCtx });
 }
 
-/* โทเคนที่ใช้ไปทั้งรอบ — ตัวเลขนี้คือสิ่งที่จะไปโผล่ในบิล */
-const fmtTok = (t) => t
-  ? `เข้า ${(t.input || 0).toLocaleString()} · ออก ${(t.output || 0).toLocaleString()}`
-  : "–";
+/* โทเคนที่ใช้ไปทั้งรอบ — ตัวเลขนี้คือสิ่งที่จะไปโผล่ในบิล
+   ⚠️ ต้องแยก 3 ก้อน เพราะ **คนละราคากัน** — เอามาบวกรวมกันแล้วจะประเมินค่าใช้จ่ายผิด
+      เข้าปกติ = ราคาเต็ม · เขียนแคช = 1.25 เท่า · อ่านแคช = 0.1 เท่า
+   🔍 ถ้า "อ่านแคช" เป็น 0 ตลอดทั้งรอบ = แคชไม่ทำงาน (มีอะไรทำให้คำสั่งเปลี่ยนทุกก้อน) */
+const fmtTok = (t) => {
+  if (!t) return "–";
+  const parts = [`เข้า ${(t.input || 0).toLocaleString()}`, `ออก ${(t.output || 0).toLocaleString()}`];
+  if (t.cache_write || t.cache_read) {
+    parts.push(`เขียนแคช ${(t.cache_write || 0).toLocaleString()}`,
+               `<b>อ่านแคช ${(t.cache_read || 0).toLocaleString()}</b>`);
+  } else {
+    parts.push('<span style="color:var(--neg)">แคชไม่ทำงาน</span>');
+  }
+  return parts.join(" · ");
+};
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const cell = (g, p) => g === p
   ? `<span class="${g}">${g}</span>`
@@ -597,8 +624,10 @@ function readLog() { try { return JSON.parse(localStorage.getItem(LOGKEY) || "[]
 function saveLog(m) {
   const log = readLog();
   log.unshift({
-    at: new Date().toISOString(), ver: meta.ver, rubric: meta.rubric, model: meta.model, ctx: m.ctx ? 1 : 0, n: m.n, sec: m.sec,
+    at: new Date().toISOString(), ver: meta.ver, rubric: meta.rubric, model: meta.model,
+    effort: meta.effort || "", ctx: m.ctx ? 1 : 0, n: m.n, sec: m.sec,
     tok_in: (window.__tok || {}).input || 0, tok_out: (window.__tok || {}).output || 0,
+    cache_w: (window.__tok || {}).cache_write || 0, cache_r: (window.__tok || {}).cache_read || 0,
     cp_acc: +m.cp.acc.toFixed(4), cp_neg: +m.cp.recall.Negative.toFixed(4),
     oc_acc: +m.oc.acc.toFixed(4), oc_neg: +m.oc.recall.Negative.toFixed(4),
     sar: m.sarRows ? +(m.sarHit / m.sarRows).toFixed(4) : null,
