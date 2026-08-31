@@ -236,6 +236,18 @@ console.log("\n[5b] 🔴 แนวโน้ม — วาดทีละเส�
   const grains = await pg.$$eval(".seg.grain button", (n) => n.map((x) => x.textContent.trim()));
   ok(grains.join("/") === "รายวัน/รายสัปดาห์/รายเดือน", `มีตัวเลือกวัน/สัปดาห์/เดือน (${grains.join(" ")})`);
   const pts = async () => pg.evaluate(() => (document.querySelector("svg.chart path").getAttribute("d").match(/[ML]/g) || []).length);
+
+  /* 🐞 ต้องขยายเป็น 3 เดือนก่อนกด "รายเดือน" — เจอจริง 31 ส.ค. 2026
+   *    ของเดิมกดบนช่วงตั้งต้น 30 วัน ซึ่ง **บางวันของเดือนตกอยู่ในเดือนเดียวกันหมด**
+   *    (เช่นวันที่ 31 ส.ค. ช่วงคือ 2–31 ส.ค. = เดือนเดียว) ปุ่มจึงถูกปิดตามกฎ
+   *    "ช่วงสั้นเกินไปสำหรับมุมมองนี้" แล้วเทสต์ค้างรอคลิกจนหมดเวลา
+   * ⚠️ เป็นเทสต์ที่ผลขึ้นกับวันที่ปัจจุบัน — ผ่านต้นเดือน ตกปลายเดือน
+   *    session อื่นเจอก่อนแล้วรายงานมาว่า "เมื่อวานยังผ่าน วันนี้ตก" ซึ่งถูกต้อง
+   * 🚫 ห้ามแก้ด้วยการเลิกปิดปุ่ม — การปิดปุ่มถูกแล้ว (เดือนเดียว = จุดเดียว วาดกราฟไม่ได้) */
+  await setPeriod(pg, 90);
+  await closePeriod(pg);
+  await pg.waitForTimeout(250);
+
   const pDay = await pts();
   await pg.click('[data-grain="week"]');
   await pg.waitForTimeout(200);
@@ -244,7 +256,14 @@ console.log("\n[5b] 🔴 แนวโน้ม — วาดทีละเส�
   await pg.waitForTimeout(200);
   const pMonth = await pts();
   ok(pDay > pWeek && pWeek > pMonth, `จุดลดลงตามความละเอียด (วัน ${pDay} > สัปดาห์ ${pWeek} > เดือน ${pMonth})`);
-  ok(pDay === 30, `รายวันได้ 1 จุดต่อวัน (${pDay} จุดใน 30 วัน)`);
+
+  // กลับมา 30 วันเพื่อเช็คว่ารายวันได้ 1 จุดต่อ 1 วันจริง
+  await pg.click('[data-grain="day"]');
+  await setPeriod(pg, 30);
+  await closePeriod(pg);
+  await pg.waitForTimeout(250);
+  const pDay30 = await pts();
+  ok(pDay30 === 30, `รายวันได้ 1 จุดต่อวัน (${pDay30} จุดใน 30 วัน)`);
 
   /* ⚠️ ช่วงสั้นๆ เลือก "รายเดือน" แล้วได้จุดเดียว วาดกราฟไม่ได้ → ต้องปิดปุ่มพร้อมบอกเหตุผล */
   await pg.click('[data-grain="day"]');
@@ -1506,12 +1525,39 @@ console.log("\n[36] 🔴 ปฏิทินเลือกช่วงวัน�
   ok(await pg.$eval(".pp-scroll", (e) => ["auto", "scroll"].includes(getComputedStyle(e).overflowY)),
      "ส่วนกลางเลื่อนได้");
 
-  /* 🔴 วันในอนาคตต้องกดไม่ได้จริง ไม่ใช่กดได้แล้วค่อยตัดทีหลัง — ไม่มีข้อมูลของพรุ่งนี้ */
-  const future = await pg.$$eval(".cal-d:disabled", (n) => n.map((x) => x.dataset.day));
-  ok(future.length > 0, `วันในอนาคตถูกปิด (${future.length} วัน)`);
-  const today = new Date();
-  const tk = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
-  ok(future.every((d) => d > tk), "ปิดเฉพาะวันหลังวันนี้ ไม่ได้ปิดวันนี้ด้วย");
+  /* 🔴 วันในอนาคตต้องกดไม่ได้จริง ไม่ใช่กดได้แล้วค่อยตัดทีหลัง — ไม่มีข้อมูลของพรุ่งนี้
+   *
+   * 🐞 ของเดิมนับ ".cal-d:disabled" แล้วบังคับว่าต้อง > 0 — **ผิดตั้งแต่แรก** (เจอจริง 31 ส.ค. 2026)
+   *    ปฏิทินโชว์ 2 เดือนจบที่เดือนปัจจุบัน และปุ่ม "เดือนถัดไป" ถูกปิดเมื่ออยู่เดือนนี้
+   *    (ถูกแล้ว — ไม่ให้เดินไปอนาคต) · พอวันนี้เป็น **วันสุดท้ายของเดือน**
+   *    จึงไม่มีวันในอนาคตอยู่ในจอเลยสักวัน → เทสต์ตกทั้งที่โค้ดถูก 100%
+   *    ⚠️ ตกปีละ 12 วัน หาเจอยากมากถ้าไม่บังเอิญรันตรงวัน
+   *
+   * ✅ วัด "กฎ" แทน "จำนวน": ไม่มีวันไหนที่กดได้แล้วเลยวันนี้ — จริงทุกวันของปี
+   *    แล้วค่อยเช็คจำนวนเฉพาะวันที่มีวันอนาคตอยู่ในจอจริงๆ
+   */
+  const cal = await pg.$$eval(".cal-d", (n) => n.map((x) => ({
+    day: x.dataset.day, off: x.disabled,
+  })));
+  const todayKey = new Date().toLocaleDateString("sv-SE");   // sv-SE = YYYY-MM-DD
+  const clickableFuture = cal.filter((d) => !d.off && d.day > todayKey);
+  ok(clickableFuture.length === 0,
+     `ไม่มีวันในอนาคตที่กดได้เลย (เจอ ${clickableFuture.length} วัน${clickableFuture[0] ? " เช่น " + clickableFuture[0].day : ""})`);
+
+  /* ⚠️ ข้อนี้ข้ามได้เฉพาะวันสุดท้ายของเดือน ซึ่งเป็นวันเดียวที่ในจอไม่มีอนาคตเลย
+     ต้องบอกไว้ในข้อความด้วย ไม่งั้นอ่าน log แล้วนึกว่าเทสต์หายไปเฉยๆ */
+  const inViewFuture = cal.filter((d) => d.day > todayKey);
+  if (inViewFuture.length) {
+    ok(inViewFuture.every((d) => d.off), `วันในอนาคตในจอถูกปิดครบ (${inViewFuture.length} วัน)`);
+  } else {
+    ok(true, "วันนี้เป็นวันสุดท้ายของเดือน — ในจอไม่มีวันอนาคตให้ปิด (ข้ามข้อนี้ตามเงื่อนไข)");
+  }
+  /* ⚠️ "วันนี้" ต้องกดได้เสมอ — ปิดวันนี้ไปด้วยคือตัดข้อมูลของวันนี้ทิ้งฟรี
+     เช็คตรงๆ ว่าปุ่มของวันนี้ไม่ถูกปิด แทนการไล่ดูรายการวันที่ถูกปิด
+     (ตัวเดิมพึ่ง future ซึ่งวันสุดท้ายของเดือนจะว่าง แล้วผ่านฟรีโดยไม่ได้ตรวจอะไร) */
+  const todayCell = cal.filter((d) => d.day === todayKey);
+  ok(todayCell.length > 0 && todayCell.every((d) => !d.off),
+     `วันนี้ (${todayKey}) ยังกดได้ ไม่ได้ถูกปิดไปด้วย`);
   ok(await pg.$eval('[data-cal="next"]', (e) => e.disabled), "เลื่อนไปเดือนหน้าไม่ได้");
 
   // ช่วงที่เลือกอยู่ต้องไฮไลต์ให้เห็น
