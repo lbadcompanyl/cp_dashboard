@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 24;
+const WORKER_VER = 25;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -562,9 +562,27 @@ async function analyze(opts, env) {
   });
   const synthPool = synthIdx.map(i => texts[i]);
   if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
+
+  /* 🎯 **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** (แก้ 31 ส.ค. 2026 รอบสอง)
+     ของเดิมให้ AI เลือกเองแล้วสั่งให้ตอบเลขข้อกลับมาด้วย — ถ้ามันไม่ตอบเลข
+     ตัวอย่างจะย้ายตามป้ายที่ผู้ใช้แก้ไม่ได้ **และไม่มีอะไรบอกว่าเพราะอะไร**
+     เจ้าของเจอเองว่า "เปลี่ยนแล้วก็ไม่อัพเดทอยู่ดี"
+     ตอนนี้ฝั่งเราชี้เลยว่าเอาใบไหน AI มีหน้าที่ถอดความอย่างเดียว
+     → รู้แน่นอนว่าตัวอย่างแต่ละอันมาจากคอมเมนต์ใบไหน ไม่ต้องเชื่อ AI
+
+     เกณฑ์เลือก: ถูกใจเยอะสุดก่อน แล้วค่อยยาวสุด (ตัวแทนที่คนเห็นด้วยมากที่สุด)
+     ⚠️ ต้องเรียงแบบตายตัว ไม่งั้นวิเคราะห์โพสเดิมซ้ำแล้วได้ตัวอย่างคนละใบทุกครั้ง */
+  const pickBy = (want, n) => synthIdx
+    .filter(i => labels[i] === want)
+    .sort((x, y) => (comments[y].likes || 0) - (comments[x].likes || 0) ||
+                    texts[y].length - texts[x].length || x - y)
+    .slice(0, n);
+  const pickIdx = wantSamples ? [...pickBy("positive", 2), ...pickBy("negative", 2)] : [];
+  if (pickIdx.length) logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
+
   const synth = synthPool.length
     ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target,
-                       synthIdx.slice(0, SYNTH_SAMPLE))
+                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]))
     : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
@@ -998,7 +1016,7 @@ function extractJsonArray(text) {
 }
 
 /** สรุปภาพรวม + keyword + ตัวอย่างคอมเมนต์ (ถอดความ) */
-async function synthesize(sampleTexts, wantSamples, env, acc, target, srcIdx) {
+async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
     ? "คอมเมนต์เหล่านี้คัดมาเฉพาะที่พูดถึงเครือเจริญโภคภัณฑ์ (CP) — ให้สรุปและหา keyword โดยโฟกัสที่ **ท่าทีและประเด็นที่คนพูดถึง CP** เท่านั้น "
@@ -1010,12 +1028,18 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, srcIdx) {
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
     '"keywords": [{"term":"คำ/หัวข้อ","count":จำนวนโดยประมาณ}], (8-12 รายการ เรียงจากมากไปน้อย) ' +
     (wantSamples
-      ? '"samples": [{"i":เลขข้อของคอมเมนต์ที่ถอดความมา,"sentiment":"positive|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] ' +
-        '(2-4 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 ถ้ามีในข้อมูล ไม่ต้องมี neutral) ' +
-        '⚠️ i ต้องเป็นเลขข้อตามที่ให้มา ห้ามเดา ห้ามรวมหลายข้อเป็นหนึ่ง'
+      ? '"samples": ["ถอดความข้อที่ 1", "ถอดความข้อที่ 2", ...] ' +
+        '⚠️ samples เป็น array ของ **สตริง** เท่านั้น · ' +
+        'ถอดความ "คอมเมนต์ที่ต้องถอดความ" ด้านล่างทีละข้อ **เรียงตามลำดับเดิม จำนวนต้องเท่ากันเป๊ะ** · ' +
+        'ห้ามสลับ ห้ามข้าม ห้ามรวบหลายข้อเป็นข้อเดียว ห้ามเพิ่มข้อใหม่'
       : '"samples": []') +
     "} ห้ามมีข้อความนอก JSON และห้ามคัดลอกข้อความต้นฉบับตรงๆ ในตัวอย่าง (ให้ถอดความ)";
-  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined, 1500, acc);
+  /* รายการที่ต้องถอดความส่งแยกจากกองที่ใช้สรุป — จะได้จับคู่กลับได้แน่นอน */
+  const toPara = (pickTexts && pickTexts.length)
+    ? "\n\nคอมเมนต์ที่ต้องถอดความ (" + pickTexts.length + " ข้อ เรียงตามนี้):\n" +
+      pickTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n")
+    : "";
+  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + toPara, 1500, acc);
   try {
     const obj = extractJson(out);
     return {
@@ -1027,11 +1051,18 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, srcIdx) {
             (PRIVACY_NOTE ข้อ 4 — ตัวอย่างไปอยู่ในรายงานที่แชร์กันได้)
          ⚠️ AI ไม่ตอบ i มา / ตอบเลขนอกช่วง = ปล่อย src เป็น null แล้วใช้ป้ายที่ AI ให้มาแทน
             ห้ามเดาตำแหน่ง ไม่งั้นตัวอย่างจะไปโผล่ผิดกลุ่มแบบเงียบๆ */
-      samples: Array.isArray(obj.samples) ? obj.samples.slice(0, 5).map(s => {
-        const k = Number.isFinite(+s.i) ? +s.i - 1 : -1;
-        const src = (srcIdx && k >= 0 && k < srcIdx.length) ? srcIdx[k] : null;
-        return { sentiment: String(s.sentiment || "neutral").toLowerCase(), text: String(s.text || "").slice(0, 300), src };
-      }) : [],
+      /* 🔗 จับคู่ด้วย "ลำดับ" ล้วนๆ — ข้อที่ i ของคำตอบ = ใบที่ i ที่เราเลือกส่งไป
+         ป้ายก็ใช้ของเราเอง ไม่ใช่ที่ AI บอก → ตัวอย่างจึงย้ายตามป้ายที่ผู้ใช้แก้ได้เสมอ
+         ⚠️ AI ตอบมาไม่ครบ/เกิน = เอาเท่าที่จับคู่ได้ ไม่เดาว่าตัวไหนคู่กับตัวไหน */
+      samples: (Array.isArray(obj.samples) && pickIdx && pickIdx.length)
+        ? obj.samples.slice(0, pickIdx.length).map((s, k) => ({
+            sentiment: pickLabels[k],
+            /* ⚠️ trim ก่อนเสมอ — "  " เป็นสตริงที่ truthy ผ่าน filter ไปได้
+               แล้วจะโชว์เป็นกล่องตัวอย่างว่างเปล่าบนจอ (บั๊กตระกูลเดียวกับสติกเกอร์) */
+            text: String(typeof s === "string" ? s : (s && s.text) || "").trim().slice(0, 300),
+            src: pickIdx[k],
+          })).filter(x => x.text)
+        : [],
     };
   } catch (e) {
     return { summary: "", keywords: [], samples: [] };
