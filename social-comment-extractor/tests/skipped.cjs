@@ -46,6 +46,9 @@ const NO_SKIP = { ...base, fetched_count: 8, no_text_count: 0, analyzed_count: 8
   let fail = 0;
   const ok = (n, c, x = "") => { console.log(`${c ? "✅" : "❌"} ${n}${x ? " — " + x : ""}`); if (!c) fail++; };
   const run = async () => {
+    /* ⚠️ ต้องล้างของรอบก่อนทิ้งก่อนเสมอ ไม่งั้น waitForFunction ผ่านทันทีจากข้อความเก่า
+       แล้วเทสต์จะอ่านผลรอบก่อน — เป็น race ที่ทำให้ตกๆ ผ่านๆ ตอนรันทั้งชุด */
+    await page.evaluate(() => { document.querySelector("#resSub").textContent = ""; });
     await page.fill("#url", "https://www.facebook.com/reel/1075429034954622");
     await page.click("#analyzeBtn");
     await page.waitForFunction(() => /คอมเมนต์/.test(document.querySelector("#resSub").textContent), null, { timeout: 8000 });
