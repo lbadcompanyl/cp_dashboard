@@ -1,14 +1,21 @@
 // ตัว parse RSS/Atom แบบเบา ไม่พึ่ง DOMParser (ใช้ได้ใน Cloudflare Workers)
 // รองรับ: RSS <item>, Atom <entry> และฟีด Google Trends (namespace ht:)
 
-const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+// ⚠️ `&middot;` ต้องแปลงด้วย — เจ้าของส่งภาพมา 31 ส.ค. 2026 เห็นคำว่า "&middot;" ดิบๆ
+// อยู่กลางสรุปบนการ์ดจริง · นอกจากอ่านไม่รู้เรื่องแล้ว ตัวจับ "รายการข่าวอื่น" ที่ดูตัวคั่น
+// (`SEP_DATE_RE` ใช้ `[·|]`) ก็มองไม่เห็นตัวคั่นตัวนี้ ฟีดที่ใช้ `&middot;` จึงรอดทุกใบ
+const ENTITIES = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  middot: "·", bull: "•", mdash: "—", ndash: "–", hellip: "…", laquo: "«", raquo: "»",
+};
 
 function decode(str = "") {
   return str
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
     .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
-    .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, n) => ENTITIES[n])
+    .replace(/&(amp|lt|gt|quot|apos|nbsp|middot|bull|mdash|ndash|hellip|laquo|raquo);/g,
+      (_, n) => ENTITIES[n])
     .trim();
 }
 
@@ -47,11 +54,48 @@ const LEAD_JUNK_RE = new RegExp(
 // เจอจริง 14 ส.ค. 2026 (ryt9): "...ซูเปอร์ทัวร์ 2026 ครั้งที่ 17 · 11 ส.ค. เซ็นทรัลเวิลด์ เปิดสถิติ..."
 const SEP_DATE_RE = new RegExp("[·|]\\s*\\d{1,2}\\s*" + TH_MONTH);
 
+/* 🔴 **สรุปที่ขึ้นต้นด้วยหัวข้อ "ข่าวที่เกี่ยวข้อง" = บล็อกข่าวแนะนำ ไม่ใช่สรุปของข่าวใบนี้**
+   เจ้าของส่งภาพมา 29 ส.ค. 2026: การ์ด "สาวไทยผงาดแชมป์เอเชีย AVC 2026 คว้าตั๋วโอลิมปิก"
+   (ข่าววอลเลย์บอล) มีสรุปว่า "ข่าวที่เกี่ยวข้อง · ซีพี–ทรู เปิดดูฟรี ไทย-เวียดนาม …"
+   → คำว่า ซีพี อยู่ในบล็อกแนะนำล้วนๆ แต่ถูกนับเป็นสรุปของข่าวใบนี้
+   ⚠️ ตัวจับเดิมดูสัญญาณ "วันที่" ซึ่งบล็อกนี้ไม่มีเลย จึงหลุดมาตลอด
+   ⚠️ ต้องเป็น **หัวบล็อกที่อยู่ต้นสรุป** เท่านั้น — คำว่า "ที่เกี่ยวข้อง" กลางประโยค
+      โผล่ในสรุปข่าวจริงได้ ("หน่วยงานที่เกี่ยวข้องเร่งตรวจสอบ") ตัดเพลินจะกินสรุปจริง */
+const RELATED_LEAD_RE =
+  /^\s*(?:ข่าว|เรื่อง|บทความ|คลิป)?\s*(?:ที่|อื่น)?\s*(?:เกี่ยวข้อง|แนะนำ|น่าสนใจ)\s*(?:[:·|–—-]|&middot;|\s)/i;
+
+/* 🔁 **สรุปที่เอาข้อความก้อนเดิมมาซ้ำในตัวเอง = ลิสต์ข่าว ไม่ใช่สรุป**
+   เจ้าของส่งภาพมา 31 ส.ค. 2026: การ์ด "หวยออนไลน์พ่นพิษทำแม่ค้าเร่งขึ้ใจ …" (ข่าวหวย)
+   ในคอลัมน์ "หัวข้อที่จับตามอง" มีสรุปว่า
+     «"ปลาหมอคางดำ" บุกทะเลระยอง! ชาวบ้านหวั่นระบบนิเวศถูก สังหลด · "ปลาหมอคางดำ" บุกทะเลระยอง! ชาวบ้านหวั…»
+   — พาดหัวเดียวกันซ้ำ 2 ครั้งคั่นด้วย · = บล็อกลิงก์ข่าวแนะนำที่ถูกดึงมาแทนสรุป
+   ⚠️ ด่านเดิมมองไม่เห็นเลยสักตัว: ไม่มีวันที่ (DATE_STAMP/SEP_DATE/LEAD_JUNK ไม่ยิง)
+      และไม่ได้ขึ้นต้นด้วย "ข่าวที่เกี่ยวข้อง" (RELATED_LEAD_RE ไม่ยิง)
+   ⚠️ ท่อนที่ซ้ำมักถูกตัดหางด้วย "…" จึงเทียบแบบ "ท่อนสั้นเป็นต้นของท่อนยาว" ไม่ใช่เท่ากันเป๊ะ
+   🚫 ต้องยาว ≥ 30 ตัวอักษรถึงนับ — วลีสั้นๆ ซ้ำกันในย่อหน้าจริงเป็นเรื่องปกติ
+      ("ราคาน้ำมัน … ราคาน้ำมัน") ตัดเพลินจะกินสรุปจริง */
+const LIST_SEP_RE = /&middot;|[·•|]|\s\|\s/;
+const REPEAT_MIN = 30;
+function repeatsItself(t = "") {
+  const parts = t
+    .split(LIST_SEP_RE)
+    .map((x) => x.replace(/[.…]+\s*$/, "").replace(/\s+/g, " ").trim())
+    .filter((x) => x.length >= REPEAT_MIN);
+  for (let i = 0; i < parts.length; i++)
+    for (let j = i + 1; j < parts.length; j++) {
+      const [a, b] = parts[i].length <= parts[j].length ? [parts[i], parts[j]] : [parts[j], parts[i]];
+      if (b.startsWith(a)) return true;
+    }
+  return false;
+}
+
 export function looksLikeListing(s = "") {
   const t = stripMarks(String(s || "")).trim();
   if (!t) return false;
+  if (RELATED_LEAD_RE.test(t)) return true;
   if (LEAD_JUNK_RE.test(t)) return true;
   if (SEP_DATE_RE.test(t)) return true;
+  if (repeatsItself(t)) return true;
   DATE_STAMP_RE.lastIndex = 0;
   return (t.match(DATE_STAMP_RE) || []).length >= 2;
 }
