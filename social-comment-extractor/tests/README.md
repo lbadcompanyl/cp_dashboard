@@ -16,6 +16,7 @@
 | `cache.mjs` · `effortpage.cjs` | แคชคำสั่ง (คำสั่งต้องเหมือนกันเป๊ะทุกก้อน) · ระดับการคิด (haiku ห้ามส่ง) · แคชไม่ทำงานต้องเตือน | `node cache.mjs` / ต้องมีเซิร์ฟเวอร์ static |
 | `notext.mjs` | สติกเกอร์/รูป **นับเป็นกลาง ไม่ตัดทิ้ง** · ห้ามส่งให้ AI · ต้องติดธง no_text · ลำดับห้ามสลับ | `node notext.mjs` |
 | `samplemove.cjs` | ตัวอย่างคอมเมนต์ต้องย้ายกลุ่มตามป้ายที่ผู้ใช้แก้เอง · หลังบ้านรุ่นเก่าต้องไม่พังและต้องบอกว่าไม่ย้าย | ต้องมีเซิร์ฟเวอร์ static |
+| `samplesrc.mjs` | **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** — src ต้องถูกเสมอไม่ว่า AI ตอบรูปแบบไหน · เลือกแบบตายตัว รันซ้ำได้ใบเดิม | `node samplesrc.mjs` |
 
 ```bash
 # เทสต์ฝั่ง worker ทุกตัว: ก๊อป worker.js เป็น .mjs แล้วเติม "export line" เดียวนี้
@@ -29,7 +30,7 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          EFFORT_CHOICES, EFFORT_MODELS, analyze };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in twolens retry jsonparse replies lensconsistency feedback cache notext; do node $t.mjs; done
+for t in twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
