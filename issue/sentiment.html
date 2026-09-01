@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="10" />
+<meta name="page-ver" content="11" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -520,15 +520,28 @@ function renderResult(d, keepAudit){
 
   const samples = d.samples || [];
   el("sampleCard").style.display = total ? "" : "none";
+  /* 🔗 จัดกลุ่มตามป้าย "ปัจจุบัน" ของคอมเมนต์ต้นทาง ไม่ใช่ป้ายที่ AI ให้มาตอนแรก
+     ผู้ใช้กดแก้ป้ายแล้วตัวอย่างต้องย้ายกลุ่มตาม (เจ้าของแจ้ง 31 ส.ค. 2026)
+     ⚠️ หลังบ้านรุ่นเก่าไม่ส่ง src มา → ตกกลับไปใช้ป้ายของ AI เหมือนเดิม ไม่พัง */
+  const auditNow = d.audit || [];
+  const sampleLabel = (x) => (x.src != null && auditNow[x.src])
+    ? String(auditNow[x.src].sentiment || "").toLowerCase()
+    : x.sentiment;
+  const unlinked = samples.some(x => x.src == null);
   const groups = [["positive","บวก 😊","เชิงบวก","--sc-pos","sc-pos",pp,s.positive],["negative","ลบ 😞","เชิงลบ","--sc-neg","sc-neg",pn,s.negative]];
   el("sampleList").innerHTML = groups.map(([key,label,word,color,cls,gp,gc]) => {
-    const items = gc > 0 ? samples.filter(x => x.sentiment === key) : [];
+    const items = gc > 0 ? samples.filter(x => sampleLabel(x) === key) : [];
     let body;
     if (gc === 0) body = `<div class="sc-nonemsg">— ไม่มีคอมเมนต์${word} —</div>`;
     else if (!items.length) body = `<div class="sc-nonemsg">— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —</div>`;
     else body = items.map(x => `<div class="sc-sample ${cls}">${escapeHtml(x.text)}</div>`).join("");
     return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>${body}</div>`;
-  }).join("");
+  }).join("") +
+    /* ⚠️ ถ้าผูกกับคอมเมนต์ต้นทางไม่ได้ ต้องบอกตรงๆ ว่าตัวอย่างไม่ขยับตามที่แก้
+       ไม่งั้นผู้ใช้จะเห็นตัวเลขขยับแต่ตัวอย่างค้าง แล้วนึกว่าหน้าเว็บพัง */
+    ((unlinked && d.edited_count)
+      ? `<div class="sc-nonemsg">⚠️ ตัวอย่างบางอันเป็นของรอบวิเคราะห์เดิม ไม่ได้ย้ายตามที่คุณแก้ (หลังบ้านรุ่นเก่ายังไม่ได้บอกว่าถอดความมาจากคอมเมนต์ใบไหน)</div>`
+      : "");
 
   if (!keepAudit) {
     renderAudit(d);
