@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 23;
+const WORKER_VER = 24;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -555,12 +555,16 @@ async function analyze(opts, env) {
         ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
   /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
         ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน (โหมดอารมณ์รวมของเดิมส่ง texts ทั้งก้อน) */
-  const synthPool = texts.filter((t, i) => t && (
-    target === "cp" ? (labels[i] === "positive" || labels[i] === "negative") : true
-  ));
+  const synthIdx = [];
+  texts.forEach((t, i) => {
+    if (!t) return;
+    if (target !== "cp" || labels[i] === "positive" || labels[i] === "negative") synthIdx.push(i);
+  });
+  const synthPool = synthIdx.map(i => texts[i]);
   if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
   const synth = synthPool.length
-    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target)
+    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target,
+                       synthIdx.slice(0, SYNTH_SAMPLE))
     : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
@@ -994,7 +998,7 @@ function extractJsonArray(text) {
 }
 
 /** สรุปภาพรวม + keyword + ตัวอย่างคอมเมนต์ (ถอดความ) */
-async function synthesize(sampleTexts, wantSamples, env, acc, target) {
+async function synthesize(sampleTexts, wantSamples, env, acc, target, srcIdx) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
     ? "คอมเมนต์เหล่านี้คัดมาเฉพาะที่พูดถึงเครือเจริญโภคภัณฑ์ (CP) — ให้สรุปและหา keyword โดยโฟกัสที่ **ท่าทีและประเด็นที่คนพูดถึง CP** เท่านั้น "
@@ -1006,8 +1010,9 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target) {
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
     '"keywords": [{"term":"คำ/หัวข้อ","count":จำนวนโดยประมาณ}], (8-12 รายการ เรียงจากมากไปน้อย) ' +
     (wantSamples
-      ? '"samples": [{"sentiment":"positive|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] ' +
-        '(2-4 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 ถ้ามีในข้อมูล ไม่ต้องมี neutral)'
+      ? '"samples": [{"i":เลขข้อของคอมเมนต์ที่ถอดความมา,"sentiment":"positive|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] ' +
+        '(2-4 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 ถ้ามีในข้อมูล ไม่ต้องมี neutral) ' +
+        '⚠️ i ต้องเป็นเลขข้อตามที่ให้มา ห้ามเดา ห้ามรวมหลายข้อเป็นหนึ่ง'
       : '"samples": []') +
     "} ห้ามมีข้อความนอก JSON และห้ามคัดลอกข้อความต้นฉบับตรงๆ ในตัวอย่าง (ให้ถอดความ)";
   const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined, 1500, acc);
@@ -1016,7 +1021,17 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target) {
     return {
       summary: obj.summary || "",
       keywords: Array.isArray(obj.keywords) ? obj.keywords.slice(0, 12).map(k => ({ term: String(k.term || "").slice(0, 40), count: +k.count || 0 })) : [],
-      samples: Array.isArray(obj.samples) ? obj.samples.slice(0, 5).map(s => ({ sentiment: String(s.sentiment || "neutral").toLowerCase(), text: String(s.text || "").slice(0, 300) })) : [],
+      /* 🔗 src = ตำแหน่งคอมเมนต์ต้นทางในรายการเต็ม — ผูกไว้เพื่อให้หน้าเว็บย้ายตัวอย่าง
+            ตามป้ายที่ผู้ใช้แก้เองได้ (เจ้าของแจ้ง 31 ส.ค. 2026: "ตัวอย่างไม่ปรับตามที่กดเปลี่ยน")
+         ⚠️ ตัวอย่างยังเป็นข้อความ **ถอดความ** เหมือนเดิม ไม่ได้เอาต้นฉบับมาแสดง
+            (PRIVACY_NOTE ข้อ 4 — ตัวอย่างไปอยู่ในรายงานที่แชร์กันได้)
+         ⚠️ AI ไม่ตอบ i มา / ตอบเลขนอกช่วง = ปล่อย src เป็น null แล้วใช้ป้ายที่ AI ให้มาแทน
+            ห้ามเดาตำแหน่ง ไม่งั้นตัวอย่างจะไปโผล่ผิดกลุ่มแบบเงียบๆ */
+      samples: Array.isArray(obj.samples) ? obj.samples.slice(0, 5).map(s => {
+        const k = Number.isFinite(+s.i) ? +s.i - 1 : -1;
+        const src = (srcIdx && k >= 0 && k < srcIdx.length) ? srcIdx[k] : null;
+        return { sentiment: String(s.sentiment || "neutral").toLowerCase(), text: String(s.text || "").slice(0, 300), src };
+      }) : [],
     };
   } catch (e) {
     return { summary: "", keywords: [], samples: [] };
