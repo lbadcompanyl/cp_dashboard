@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="11" />
+<meta name="page-ver" content="12" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -214,13 +214,15 @@
 
       <div class="sc-card">
         <h2>สรุปภาพรวม</h2>
-        <p class="sc-sub">สรุปโดย Claude จากคอมเมนต์ทั้งหมด</p>
+        <!-- ⚠️ ข้อความนี้ถูกเขียนทับตอนแสดงผลด้วยตัวเลขจริง — ห้ามเขียนกลับเป็น
+             "จากคอมเมนต์ทั้งหมด" เพราะโหมด CP สรุปจากเฉพาะใบที่พูดถึง CP -->
+        <p class="sc-sub" id="sumSub">สรุปโดย Claude</p>
         <div class="sc-summary" id="summaryBox">—</div>
       </div>
 
       <div class="sc-card">
         <h2>คำที่พูดถึงบ่อย</h2>
-        <p class="sc-sub">Top keywords / หัวข้อที่ถูกพูดถึง</p>
+        <p class="sc-sub" id="kwSub">คำที่ AI เสนอ · <b>ตัวเลขนับจากคอมเมนต์จริง</b></p>
         <div class="sc-kwlist" id="kwList"></div>
       </div>
 
@@ -508,6 +510,16 @@ function renderResult(d, keepAudit){
   el("statRow").innerHTML = stats.map(([k,v]) => `<div class="sc-stat"><div class="sc-k">${k}</div><div class="sc-v">${v}</div></div>`).join("");
 
   el("summaryBox").textContent = d.summary || "—";
+  /* ⚠️ บอกตรงๆ ว่าสรุปมาจากคอมเมนต์กี่ใบ — โหมด CP สรุปจากเฉพาะใบที่พูดถึง CP
+     ของเดิมเขียนว่า "จากคอมเมนต์ทั้งหมด" ซึ่งไม่จริง แล้วทำให้อ่านแล้วงงว่า
+     ทำไมสรุปดุเดือดทั้งที่ส่วนใหญ่เป็นกลาง (เจ้าของแจ้ง 31 ส.ค. 2026) */
+  if (el("sumSub")) {
+    const sf = d.summary_from, so = d.summary_of;
+    el("sumSub").innerHTML = (sf && so && sf < so)
+      ? escapeHtml(`สรุปโดย Claude จากคอมเมนต์ ${sf} ใบ จากทั้งหมด ${so} ใบ`) +
+        (isCP ? ' <span class="sc-skip">(เฉพาะใบที่แสดงท่าทีต่อ CP — ใบที่ไม่พูดถึง CP ไม่ได้เอามาสรุป)</span>' : "")
+      : "สรุปโดย Claude" + (so ? escapeHtml(` จากคอมเมนต์ ${so} ใบ`) : "");
+  }
 
   const kws = d.keywords || [];
   const maxN = kws.reduce((m,k)=>Math.max(m,k.count||0),0) || 1;

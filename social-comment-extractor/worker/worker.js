@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 25;
+const WORKER_VER = 26;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -582,7 +582,11 @@ async function analyze(opts, env) {
 
   const synth = synthPool.length
     ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target,
-                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]))
+                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
+                       /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
+                       { ...sentiment, total: texts.length },
+                       /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
+                       texts.filter(Boolean))
     : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
@@ -600,6 +604,12 @@ async function analyze(opts, env) {
     fetched_count: comments.length,
     reply_count,
     no_text_count: skipped_no_text,   // สติกเกอร์/รูป — นับเป็นกลางแล้ว แต่ต้องบอกผู้ใช้ว่ามีกี่ใบ
+    /* 📋 สรุปมาจากคอมเมนต์กี่ใบจากทั้งหมดกี่ใบ — หน้าเว็บต้องเขียนให้ตรง
+       ⚠️ ของเดิมหน้าเว็บเขียนว่า "สรุปโดย Claude จากคอมเมนต์ทั้งหมด" ซึ่ง **ไม่จริง**
+          โหมด CP สรุปจากเฉพาะใบที่แสดงท่าทีต่อ CP (ตัดกลางออก) และตัดที่ SYNTH_SAMPLE ด้วย
+          พอไม่บอก ผู้ใช้อ่านแล้วงงว่าทำไมสรุปดุเดือดทั้งที่ส่วนใหญ่เป็นกลาง */
+    summary_from: Math.min(synthPool.length, SYNTH_SAMPLE),
+    summary_of: texts.length,
     skipped_no_text: 0,               // ไม่ได้คัดทิ้งแล้ว (คงคีย์ไว้ให้หน้าเว็บรุ่นก่อนไม่พัง)
     analyzed_count: two.length,
     target,
@@ -1016,17 +1026,61 @@ function extractJsonArray(text) {
 }
 
 /** สรุปภาพรวม + keyword + ตัวอย่างคอมเมนต์ (ถอดความ) */
-async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels) {
+/**
+ * นับว่าแต่ละคำโผล่ในคอมเมนต์กี่ใบจริงๆ — **ไม่เอาเลขที่ AI เดามา**
+ * 🐞 เจ้าของเจอ 31 ส.ค. 2026: แถบ "คำที่พูดถึงบ่อย" มีเลข 24/20/12 ซึ่ง AI แต่งขึ้นทั้งหมด
+ *    (prompt เดิมสั่งว่า "count: จำนวนโดยประมาณ") ดูเหมือนตัวเลขที่นับมา แต่ไม่ใช่
+ *    และคำที่ได้เป็นประโยคยาวๆ ไม่ใช่คำ
+ *
+ * ⚠️ ใช้ includes() ตรงๆ ห้ามตัดคำด้วยช่องว่าง — ภาษาไทยไม่มีช่องว่างคั่นคำ
+ *    (กฎเดียวกับหน้า /archives/ ใน CLAUDE.md)
+ * ⚠️ คำที่นับได้ 0 = AI แต่งขึ้นเอง **ต้องตัดทิ้ง** ไม่ใช่โชว์เลข 0 ให้ดูเหมือนมีข้อมูล
+ */
+function countTerms(terms, texts) {
+  if (!Array.isArray(terms) || !texts || !texts.length) return [];
+  const low = texts.map(t => String(t).toLowerCase());
+  const seen = new Set();
+  const out = [];
+  for (const raw of terms.slice(0, 20)) {
+    const term = String(typeof raw === "string" ? raw : (raw && raw.term) || "").trim().slice(0, 40);
+    const q = term.toLowerCase();
+    if (q.length < 2 || seen.has(q)) continue;
+    seen.add(q);
+    let n = 0;
+    for (const t of low) if (t.includes(q)) n++;
+    if (n > 0) out.push({ term, count: n });
+  }
+  return out.sort((a, b) => b.count - a.count || a.term.localeCompare(b.term)).slice(0, 12);
+}
+
+async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels, dist, allTexts) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
     ? "คอมเมนต์เหล่านี้คัดมาเฉพาะที่พูดถึงเครือเจริญโภคภัณฑ์ (CP) — ให้สรุปและหา keyword โดยโฟกัสที่ **ท่าทีและประเด็นที่คนพูดถึง CP** เท่านั้น "
+    : "";
+  /* 📊 บอกสัดส่วนจริงให้โมเดลรู้ ไม่งั้นมันสรุปจากกองที่ส่งไปอย่างเดียว
+     แล้วได้สรุปที่ฟังดูดุเดือดทั้งที่ภาพรวมส่วนใหญ่เป็นกลาง
+     (เจ้าของแจ้ง 31 ส.ค. 2026: "สรุปมั่วไปเลย ทั้งที่ sentiment ส่วนใหญ่เป็นกลาง") */
+  const share = dist
+    ? `\n\nสัดส่วนจริงของ**คอมเมนต์ทั้งโพส ${dist.total} ใบ**: ` +
+      `บวก ${dist.positive} · กลาง ${dist.neutral} · ลบ ${dist.negative}` +
+      (target === "cp" ? " (กลาง = ไม่ได้พูดถึง CP โดยตรง)" : "") +
+      `\nแต่ข้อความที่ให้อ่านด้านล่างมีแค่ ${sampleTexts.length} ใบ` +
+      (target === "cp" ? " (เฉพาะที่แสดงท่าทีต่อ CP)" : " (บางส่วน)") + " · " +
+      "⚠️ **สรุปต้องสะท้อนสัดส่วนจริงข้างบน** ห้ามเขียนเหมือนว่าทั้งโพสเป็นแบบที่อ่านมา " +
+      "ถ้าส่วนใหญ่เป็นกลาง ต้องบอกไว้ในประโยคแรก"
     : "";
   const system =
     "คุณเป็นนักวิเคราะห์ social listening ภาษาไทย วิเคราะห์คอมเมนต์ที่ให้มาแล้วตอบเป็น JSON object เท่านั้น " +
     focus +
     "โครงสร้าง: {" +
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
-    '"keywords": [{"term":"คำ/หัวข้อ","count":จำนวนโดยประมาณ}], (8-12 รายการ เรียงจากมากไปน้อย) ' +
+    /* 🚫 ไม่ขอให้ AI นับให้ — เลขที่มันเดาดูเหมือนของจริงแต่ไม่ใช่ (เจ้าของเจอ 31 ส.ค. 2026)
+       เราไปนับเองจากข้อความจริงทีหลัง · ที่นี่ขอแค่ "คำ" ที่โผล่จริงในคอมเมนต์ */
+    '"keywords": ["คำสั้นๆ", ...] (10-14 คำ) ' +
+    '⚠️ keywords เป็น array ของ **สตริงสั้นๆ** เท่านั้น (1-3 คำ ไม่เกิน 20 ตัวอักษร) ' +
+    'ต้องเป็นคำที่ **ปรากฏอยู่จริงในคอมเมนต์แบบตรงตัวอักษร** ห้ามแต่งวลีขึ้นมาเอง ' +
+    'ห้ามเป็นประโยคหรือหัวข้อยาวๆ ห้ามใส่ตัวเลข ' +
     (wantSamples
       ? '"samples": ["ถอดความข้อที่ 1", "ถอดความข้อที่ 2", ...] ' +
         '⚠️ samples เป็น array ของ **สตริง** เท่านั้น · ' +
@@ -1039,12 +1093,12 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
     ? "\n\nคอมเมนต์ที่ต้องถอดความ (" + pickTexts.length + " ข้อ เรียงตามนี้):\n" +
       pickTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n")
     : "";
-  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + toPara, 1500, acc);
+  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, 1500, acc);
   try {
     const obj = extractJson(out);
     return {
       summary: obj.summary || "",
-      keywords: Array.isArray(obj.keywords) ? obj.keywords.slice(0, 12).map(k => ({ term: String(k.term || "").slice(0, 40), count: +k.count || 0 })) : [],
+      keywords: countTerms(obj.keywords, allTexts || sampleTexts),
       /* 🔗 src = ตำแหน่งคอมเมนต์ต้นทางในรายการเต็ม — ผูกไว้เพื่อให้หน้าเว็บย้ายตัวอย่าง
             ตามป้ายที่ผู้ใช้แก้เองได้ (เจ้าของแจ้ง 31 ส.ค. 2026: "ตัวอย่างไม่ปรับตามที่กดเปลี่ยน")
          ⚠️ ตัวอย่างยังเป็นข้อความ **ถอดความ** เหมือนเดิม ไม่ได้เอาต้นฉบับมาแสดง
