@@ -20,18 +20,24 @@ console.log("\n[2] คอลัมน์ CP ต้อง merge/prune ด้ว�
 for (const [name, f] of [["trend", "../functions/api/trend/feeds.js"],
                          ["ir", "../functions/api/ir/feeds.js"]]) {
   const src = fs.readFileSync(f, "utf8");
-  const hayRe = /const hay = \(alertSrc === "alert1" \? \(it\.title \|\| ""\) : \(it\.title \|\| ""\) \+ " " \+ \(it\.snippet \|\| ""\)\)/g;
-  ok(`${name}: เกณฑ์พาดหัวอย่างเดียว อยู่ทั้ง merge และ prune (2 ที่)`, (src.match(hayRe) || []).length === 2,
-     String((src.match(hayRe) || []).length));
-  ok(`${name}: ไม่เหลือเกณฑ์เก่าที่รวมสรุปแบบไม่มีเงื่อนไข`,
-     !/const hay = \(\(it\.title \|\| ""\) \+ " " \+ \(it\.snippet \|\| ""\)\)\.toLowerCase\(\)/.test(
-       src.slice(src.indexOf("function pruneStaleMerged"), src.indexOf("function pruneStaleMerged") + 900)));
+  // 🔄 แก้ 2 ก.ย. 2026: เดิมมีแต่ alert1 ที่ยึดพาดหัว · ตอนนี้ **ทุกคอลัมน์** ยึดพาดหัว
+  //    (เจ้าของสั่ง "ใน body ไม่เอาเลย" แล้วสั่งต่อว่า "คอลัมน์อื่นด้วย")
+  // ⚠️ ต้องตัดเฉพาะตัวฟังก์ชันมาดู — ที่อื่นในไฟล์ก็ใช้บรรทัดหน้าตาเดียวกันได้
+  for (const fn of ["function mergeNewsIntoAlert", "function pruneStaleMerged"]) {
+    const i = src.indexOf(fn);
+    const body = i < 0 ? "" : src.slice(i, src.indexOf("\n}", i));
+    ok(`${name}: ${fn.replace("function ", "")} เทียบคำจากพาดหัวอย่างเดียว`,
+      i >= 0 && /const hay = \(it\.title \|\| ""\)\.toLowerCase\(\)/.test(body)
+             && !/\(it\.snippet \|\| ""\)/.test(body),
+      i < 0 ? "ไม่เจอฟังก์ชัน" : "ยังเอาสรุปมาเทียบ");
+  }
 }
-{ // จำลองตรรกะ: สรุปมี "ซีพี" แต่พาดหัวไม่มี → alert1 ไม่ดึง · alert2 ยังดึงตามเดิม
+{ // จำลองตรรกะ: สรุปมี "ซีพี" แต่พาดหัวไม่มี → ต้องไม่ถูกดูดเข้าคอลัมน์ไหนเลย
   const it = { title: "ตลาดหุ้นไทยปิดบวก 1.74 จุด", snippet: "'ซีพี'สร้าง CP-CoEX" };
-  const hay = (s) => (s === "alert1" ? (it.title || "") : (it.title || "") + " " + (it.snippet || "")).toLowerCase();
-  ok("alert1: คำในสรุปไม่ดูดข่าวเข้าอีกแล้ว", !hay("alert1").includes("ซีพี"));
-  ok("alert2: ยังใช้สรุปได้ตามเดิม", hay("alert2").includes("ซีพี"));
+  const hay = (it.title || "").toLowerCase();
+  ok("คำในสรุปไม่ดูดข่าวเข้าอีกแล้ว (ทุกคอลัมน์)", !hay.includes("ซีพี"));
+  ok("ข่าวที่ชื่ออยู่ในพาดหัวจริง ยังเข้าได้",
+     "ซีพีเอฟ แจ้งผลประกอบการ".toLowerCase().includes("ซีพี"));
 }
 
 console.log("\n[3] AI อ่านพาดหัวตัดสินใบที่เปิดอ่านเนื้อไม่ได้");

@@ -19,7 +19,8 @@ for (const [name, f] of [["trend", "../functions/api/trend/feeds.js"],
   ok("มี VFY_VER", /const VFY_VER = \d+;/.test(src));
   ok("ผ่านชั้นพาดหัว (ชื่อเครือยืนเป็นคำ) → ติดธง", /if \(ev === "strong"\) return \{ ok: true, mark: true \};/.test(src));
   ok("เจ้าของสั่งคืน → ติดธง", /isAllowed\(it\)\) return \{ ok: true, mark: true \}/.test(src));
-  ok("อ่านเนื้อเจอคำ → ติดธง", /if \(hits\[k\] === true\) verdict\[i\]\.mark = true;/.test(src));
+  // 🔄 แก้ 2 ก.ย. 2026: ไม่มีการอ่านเนื้อข่าวแล้ว — ธงมาจากด่านพาดหัวกับชั้น AI เท่านั้น
+  ok("🚫 ไม่มีด่านอ่านเนื้อให้ติดธงแล้ว", !/hits\[k\] === true/.test(src));
   // 🔄 แก้ 2 ก.ย. 2026: ของเดิมวัดชั้น AI ที่ยิงหลังอ่านเนื้อ ซึ่งถูกถอดออกแล้ว
   // (คอลัมน์ CP ตัดที่พาดหัวเลย ไม่ไปอ่านเนื้อ — ดู cptitle.mjs)
   // ชั้น AI ที่ยังเหลือคือ "ชื่อเครือโผล่กลางคำอื่น" ซึ่งติดธงเหมือนกัน
@@ -28,10 +29,12 @@ for (const [name, f] of [["trend", "../functions/api/trend/feeds.js"],
   ok("อ่านไม่ได้/ยังไม่ตัดสิน → ไม่ติดธง (ต้องตรวจใหม่รอบหน้า)",
      !/verdict\[i\]\.ok = hits\[k\] !== false; verdict\[i\]\.mark/.test(src));
 
-  console.log(`[3-${name}] เพดานยิงอ่านเนื้อต่อ build`);
-  ok("มี BODY_FETCH_MAX", /const BODY_FETCH_MAX = \d+;/.test(src));
-  ok("ยิงแค่หัวคิว", /const toFetch = needBody\.slice\(0, BODY_FETCH_MAX\);/.test(src));
-  ok("เกินเพดาน = เก็บไว้ก่อน ไม่ตัดมั่ว", /needBody\.slice\(BODY_FETCH_MAX\)\.forEach\(\(i\) => \{ verdict\[i\]\.ok = true; \}\);/.test(src));
+  // 🔄 แก้ 2 ก.ย. 2026: ไม่มีการอ่านเนื้อข่าวแล้ว เพดาน BODY_FETCH_MAX จึงถูกถอดไปด้วย
+  //    เพดานที่ยังเหลือคือ AI_CP_MAX (ชั้น AI ที่ดูพาดหัว) ซึ่งยังต้องกันโควตาเหมือนเดิม
+  console.log(`[3-${name}] เพดานถามครั้งต่อ build`);
+  ok("🚫 ไม่เหลือคิวอ่านเนื้อข่าว", !/needBody/.test(src));
+  ok("มี AI_CP_MAX", /const AI_CP_MAX = \d+;/.test(src));
+  ok("เกินเพดาน = เก็บไว้ก่อน ไม่ตัดมั่ว", /needAI\.slice\(AI_CP_MAX\)\.forEach\(\(i\) => \{ verdict\[i\]\.ok = true; \}\);/.test(src));
 
   console.log(`[4-${name}] รอบสอง — ของเก่าจากคลังต้องผ่านด่านเดียวกัน`);
   ok("ตรวจเฉพาะใบที่ยังไม่มีธง", /filter\(\(it\) => it\.vfy !== VFY_VER\)/.test(src));
