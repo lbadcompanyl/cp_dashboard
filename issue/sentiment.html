@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="12" />
+<meta name="page-ver" content="13" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -295,16 +295,24 @@ function refreshPlatform(){
 }
 el("url").addEventListener("input", refreshPlatform);
 
-/* ---------------- ป้ายเวอร์ชันหลังบ้าน ----------------
-   ⚠️ ต้องมี — ไม่งั้นเวลาแก้ Worker แล้ว deploy จะเดาไม่ออกว่าโค้ดที่รันอยู่เป็นตัวไหน
-   (กฎเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md) */
+/* ---------------- ป้ายเวอร์ชัน ----------------
+   ⚠️ ต้องมี — ไม่งั้นเวลาแก้แล้ว deploy จะเดาไม่ออกว่าโค้ดที่รันอยู่เป็นตัวไหน
+   (กฎเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md)
+
+   🔴 ต้องโชว์ **เลขหน้าเว็บ (น) คู่กับเลขหลังบ้าน (ล)** ห้ามโชว์แค่ตัวใดตัวหนึ่ง
+   เจ้าของเจอจริง 2 ก.ย. 2026: ตัวอย่างคอมเมนต์ไม่ย้ายกลุ่มตามป้ายที่แก้
+   ป้ายบอกว่าหลังบ้าน v25 (ใหม่ ถูกต้อง) จึงไล่ผิดทางว่าเป็นที่หลังบ้าน
+   ต้นเหตุจริงคือ **หน้าเว็บที่เครื่องค้างอยู่ที่รุ่น 10** ซึ่งยังไม่มีโค้ดย้ายกลุ่มเลย
+   เสียเวลาไล่หลายรอบ เพราะป้ายไม่เคยบอกเลขฝั่งหน้าเว็บ */
+const PAGE_VER = document.querySelector('meta[name="page-ver"]')?.content || "?";
 function showWorkerVer(d){
   const b = el("verBadge");
   if (!b) return;
-  if (!d) { b.textContent = "⚙️ ต่อหลังบ้านไม่ได้"; b.title = "เรียก Worker ไม่สำเร็จ"; return; }
+  if (!d) { b.textContent = `⚙️ น${PAGE_VER} · ต่อหลังบ้านไม่ได้`; b.title = "เรียก Worker ไม่สำเร็จ"; return; }
   const model = String(d.model || "").replace("claude-", "").replace("-4-5", " 4.5").replace("-5", " 5");
-  b.textContent = `⚙️ v${d.ver ?? "?"} · ${model || "?"}`;
-  b.title = `Worker v${d.ver ?? "?"} · rubric ${d.rubric ?? "-"} · โมเดล ${d.model || "?"}`;
+  b.textContent = `⚙️ น${PAGE_VER} · ล${d.ver ?? "?"} · ${model || "?"}`;
+  b.title = `หน้าเว็บ v${PAGE_VER} · Worker v${d.ver ?? "?"} · rubric ${d.rubric ?? "-"} · โมเดล ${d.model || "?"}`
+    + "\n(น = เลขหน้าเว็บ · ล = เลขหลังบ้าน — ถ้าตัวอย่าง/ฟีเจอร์ใหม่ไม่ทำงาน ให้ดูว่าเลขไหนค้าง)";
 }
 if (!DEMO) {
   fetch(WORKER.replace(/\/+$/,"") + "/")
