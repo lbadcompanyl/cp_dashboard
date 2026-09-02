@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 26;
+const WORKER_VER = 28;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -617,6 +617,12 @@ async function analyze(opts, env) {
     sentiment,
     lenses,
     sarcasm_count,
+    /* 🔢 เลขเวอร์ชันหลังบ้าน — **ต้องติดมากับผลวิเคราะห์ทุกครั้ง**
+       ของเดิมส่งเฉพาะที่ endpoint สุขภาพ (`/`) ผลคือบันทึกการแก้ป้ายที่ส่งเข้าคิวรีวิว
+       เก็บ ver เป็น null ทุกใบ → ย้อนดูไม่ได้ว่าที่แก้มาจากหลังบ้านรุ่นไหน
+       และเวลาไล่ปัญหา "ตัวอย่างไม่ย้าย" ก็แยกไม่ออกว่าหลังบ้านเก่าหรือหน้าเว็บเก่า
+       (เจ้าของเจอจริง 2 ก.ย. 2026 — ต้นเหตุจริงคือหน้าเว็บรุ่น 10 ไม่ใช่หลังบ้าน) */
+    ver: WORKER_VER,
     rubric: RUBRIC_VER,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
@@ -955,8 +961,22 @@ async function callClaude(env, system, userText, maxTokens, acc, opts = {}) {
     },
     body: JSON.stringify(body),
   });
-  const data = await r.json();
-  if (!r.ok) throw new Error("Claude API: " + (data?.error?.message || ("HTTP " + r.status)));
+  const data = await r.json().catch(() => null);
+  /* 🔴 ข้อความ error ต้องบอก **เลขสถานะ + ชนิด** เสมอ ห้ามเหลือแต่ประโยคของต้นทาง
+     เจ้าของเจอ 2 ก.ย. 2026: หน้าเว็บขึ้นแค่ "Claude API: Request not allowed"
+     ซึ่งแยกไม่ออกเลยว่ากุญแจผิด (401) · สิทธิ์ไม่ถึง/ถูกบล็อก (403) · ยิงถี่ไป (429)
+     ทั้งที่ต้นทางส่งข้อมูลนั้นมาให้แล้ว — เราโยนทิ้งเอง แล้วไล่ปัญหาต่อไม่ได้
+     · 401 authentication_error = กุญแจผิด/ถูกลบ
+     · 403 permission_error     = กุญแจใช้โมเดลนี้ไม่ได้ · องค์กรจำกัดไว้ · ยิงจากที่ที่ไม่รองรับ
+     · 400 invalid_request_error = คำขอผิดรูป (เช่นส่ง effort ให้โมเดลที่ไม่รองรับ)
+     · 429 rate_limit_error / 529 overloaded_error = ลองใหม่ทีหลัง */
+  if (!r.ok) {
+    const kind = data?.error?.type || "";
+    const msg = data?.error?.message || "";
+    throw new Error(`Claude API ${r.status}${kind ? " " + kind : ""}: ${msg || "ต้นทางไม่ได้บอกเหตุผล"}`
+      + (r.status === 403 ? " · กุญแจนี้อาจใช้โมเดล " + model + " ไม่ได้ หรือองค์กรจำกัดสิทธิ์ไว้" : "")
+      + (r.status === 401 ? " · กุญแจ ANTHROPIC_API_KEY ผิดหรือถูกลบไปแล้ว" : ""));
+  }
   if (acc) {
     if (data.usage) {
       acc.input += data.usage.input_tokens || 0;
