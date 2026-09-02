@@ -373,9 +373,11 @@ async function runAsk() {
   //    ซึ่งผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย อ่านแล้วงงว่าจะให้ลดอะไร
   if (!filtered.length && !relaxNote) {
     // ⚠️ คำถามเรื่องช่วงเวลาล้วนๆ ไม่มีคำค้นเลย — ห้ามขึ้นว่า 'ไม่มีข่าวที่มีคำว่า ""'
+    const cov = coverage();
+    const span = cov ? ` (คลังมีข่าวตั้งแต่ ${dayOf(cov.lo)} ถึง ${dayOf(cov.hi)})` : "";
     relaxNote = state.q
       ? `ไม่มีข่าวที่มีคำว่า “${state.q.replace(/"/g, "")}” อยู่ในคลังเลย`
-      : `ไม่มีข่าวในช่วงวันที่ที่ถามมาเลย`;
+      : `ไม่มีข่าวในช่วงวันที่ที่ถามมาเลย${span}`;
   }
 
   syncURL(true);
@@ -428,11 +430,38 @@ function clearAsk() {
  * ⚠️ **ห้ามผ่อนเงียบๆ** — ต้องบอกทุกครั้งว่าตัดอะไรออก ไม่งั้นผู้ใช้จะนึกว่าผลที่เห็นตรงกับที่ถาม
  * ⚠️ ผ่อนตามลำดับ "ตัวที่น่าจะรัดเกินไปก่อน": ช่วงวันที่ → คำที่สั้นที่สุด (เจาะจงน้อยสุด)
  */
+/* 📅 คลังข่าวมีข่าวถึงแค่วันไหน — คิดจากแถวที่โหลดมาจริง ไม่ใช่เดาจากวันนี้
+   ⚠️ ข้อมูลเป็นไฟล์นิ่งที่ commit ไว้ ต้องสร้างใหม่ด้วยมือ (tools/build-archives.mjs)
+      ไม่ได้อัปเดตเองทุกวัน → มักเก่ากว่าวันนี้หลายวันเสมอ */
+const dayOf = (ts) => fmtDate(ts).slice(0, 10);
+function coverage() {
+  if (!rows.length) return null;
+  let lo = Infinity, hi = -Infinity;
+  for (const r of rows) { if (r.ts) { if (r.ts < lo) lo = r.ts; if (r.ts > hi) hi = r.ts; } }
+  return hi > 0 ? { lo, hi } : null;
+}
+
 function relaxIfEmpty() {
   if (filtered.length) return "";
 
+  // 🐞 **ถามถึงช่วงที่คลังยังไม่มีข่าว — ห้ามตัดวันที่ทิ้งแล้วโยนข่าวทั้งคลังมาให้**
+  //    (เจ้าของเจอจริง 28 ส.ค. 2026: ถาม "ข่าวเมื่อวาน" แล้วได้ข่าวของ 13-14 ส.ค. เป็นพรืด)
+  //    คำถามเรื่องเวลาล้วนๆ พอตัดวันที่ออกจะไม่เหลือเงื่อนไขอะไรเลย = ได้ทั้งคลัง
+  //    ซึ่งไม่เกี่ยวกับที่ถามสักนิด · ตอบว่า "คลังมีถึงแค่วันไหน" ตรงๆ มีประโยชน์กว่ามาก
+  //    ⚠️ ใช้ทางนี้ **เฉพาะคำถามที่ไม่มีคำค้น** — ถ้ามีคำค้นอยู่ด้วย การตัดวันที่ทิ้ง
+  //       ยังมีประโยชน์ (AI เดาเดือนพลาดบ่อย) และผู้ใช้ยังได้ของที่ถามอยู่
+  const cov = coverage();
+  const outside =
+    cov && !parseTerms(state.q).length &&
+    ((state.from && Date.parse(state.from + "T23:59:59") < cov.lo) ||
+     (state.to && Date.parse(state.to + "T00:00:00") > cov.hi));
+  if (outside) {
+    return `คลังข่าวมีข่าวถึงแค่ ${dayOf(cov.hi)} (ตั้งแต่ ${dayOf(cov.lo)}) — ยังไม่มีข่าวของช่วงที่ถามมา`;
+  }
+
   // 1) ช่วงวันที่ — AI เดาเดือนพลาดเจอบ่อยที่สุด และตัดออกแล้วผู้ใช้ยังได้ของที่ถามอยู่
-  if (state.from || state.to) {
+  //    ⚠️ ทำได้เฉพาะตอน **มีคำค้นอยู่ด้วย** — ไม่งั้นตัดแล้วไม่เหลือเงื่อนไขเลย
+  if ((state.from || state.to) && parseTerms(state.q).length) {
     const f = state.from, t = state.to;
     state.from = ""; state.to = "";
     applyFilters();
@@ -685,14 +714,16 @@ function renderList() {
 }
 
 // ---------- กล่องตัวกรอง (พับได้) ----------
-// ⚠️ จำสถานะไว้ใน localStorage ไม่ใช่ใน DOM อย่างเดียว — ไม่งั้นกดกางไว้แล้ว
-//    พอเปลี่ยนหน้า/รีเฟรช ต้องมากางใหม่ทุกครั้ง
-const FOPEN_KEY = "archivesFiltersOpen";
+// 🚫 **ไม่จำสถานะเปิด/ปิด — เปิดหน้ามาต้องพับไว้เสมอ** (เจ้าของสั่ง 28 ส.ค. 2026:
+//    "ตอนนี้ filter เปิดค้างไว้ ให้ collapse ทุกครั้งที่เปิดใหม่ ไม่ต้องจำตรงนี้")
+//    ของเดิมจำไว้ใน localStorage (`archivesFiltersOpen`) กางค้างครั้งเดียวแล้วค้างตลอดไป
+// ✅ ที่ไม่เสียอะไรเพราะ **ยังบอกอยู่เสมอว่ากรองอะไรไว้** ทั้งบรรทัดสรุป (#fsum "กรองอยู่: …")
+//    และเลขบนปุ่มตัวกรอง — พับแล้วจึงไม่มีทางงงว่าทำไมข่าวน้อยลง (ดู filterSummary)
+const FOPEN_KEY = "archivesFiltersOpen"; // เหลือไว้ล้างค่าเก่าที่ค้างในเครื่องผู้ใช้เท่านั้น
 function setFiltersOpen(open) {
   $("#filters").hidden = !open;
   $("#ftoggle").setAttribute("aria-expanded", open ? "true" : "false");
   $("#ftoggle .fcaret").textContent = open ? "▾" : "▸";
-  try { localStorage.setItem(FOPEN_KEY, open ? "1" : "0"); } catch {}
 }
 
 // สรุปว่ากรองอะไรไว้ — ต้องอ่านรู้เรื่องโดยไม่ต้องกางกล่อง
@@ -893,11 +924,10 @@ function fillInputs() {
   readQuery();
   applyMode();
   fillInputs();
-  // เปิด URL ที่มีตัวกรองติดมาแล้ว ให้กางกล่องให้เลย — ไม่งั้นเห็นผลถูกกรองอยู่แต่ไม่รู้ว่ากรองด้วยอะไร
-  const preset = !!(state.from || state.to || state.cats.size || state.srcs.size);
-  let saved = false;
-  try { saved = localStorage.getItem(FOPEN_KEY) === "1"; } catch {}
-  setFiltersOpen(preset || saved);
+  // 🚫 เปิดหน้ามา **พับไว้เสมอ** ไม่ว่าจะเคยกางไว้ หรือมีตัวกรองติดมากับ URL ก็ตาม
+  //    (เจ้าของสั่ง 28 ส.ค. 2026) · ที่กรองอยู่ยังอ่านได้จากบรรทัดสรุปกับเลขบนปุ่ม
+  setFiltersOpen(false);
+  try { localStorage.removeItem(FOPEN_KEY); } catch {}   // ล้างค่าเก่าที่ค้างอยู่ในเครื่อง
   $("#list").innerHTML = `<div class="loading"><span class="spin"></span>กำลังโหลดคลังข่าว…</div>`;
   try {
     INDEX = await fetch("data/index.json").then((r) => {
