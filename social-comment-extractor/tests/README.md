@@ -18,6 +18,7 @@
 | `samplemove.cjs` | ตัวอย่างคอมเมนต์ต้องย้ายกลุ่มตามป้ายที่ผู้ใช้แก้เอง · หลังบ้านรุ่นเก่าต้องไม่พังและต้องบอกว่าไม่ย้าย | ต้องมีเซิร์ฟเวอร์ static |
 | `samplesrc.mjs` | **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** — src ต้องถูกเสมอไม่ว่า AI ตอบรูปแบบไหน · เลือกแบบตายตัว รันซ้ำได้ใบเดิม | `node samplesrc.mjs` |
 | `keywords.mjs` | **เลข "คำที่พูดถึงบ่อย" ต้องนับจากคอมเมนต์จริง ไม่ใช่ที่ AI เดา** · คำที่แต่งขึ้นต้องถูกตัด · สรุปต้องรู้สัดส่วนจริงของทั้งโพส | `node keywords.mjs` |
+| `apierror.mjs` | **ข้อความ error จาก Claude API ต้องบอกเลขสถานะ + ชนิดเสมอ** — 401/403/429/500 ต้องอ่านแยกออก · ต้นทางไม่ตอบ JSON ก็ห้ามพัง | `node apierror.mjs` |
 | `verbadge.cjs` | **ป้ายเวอร์ชันต้องบอกทั้งเลขหน้าเว็บ (น) และเลขหลังบ้าน (ล)** · ผลวิเคราะห์ต้องแนบ `ver` มาด้วย · หลังบ้านล่มก็ยังต้องบอกเลขหน้าเว็บ | ต้องมีเซิร์ฟเวอร์ static |
 
 ```bash
@@ -32,7 +33,7 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          EFFORT_CHOICES, EFFORT_MODELS, analyze, countTerms };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc keywords; do node $t.mjs; done
+for t in twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc keywords apierror; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
