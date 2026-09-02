@@ -72,6 +72,7 @@ const OLD = { ...base, samples: [
     [...document.querySelectorAll(".sc-sgroup")].map(g => ({
       head: g.querySelector(".sc-shead").textContent.replace(/\s+/g, " ").trim(),
       items: [...g.querySelectorAll(".sc-sample")].map(x => x.textContent.trim()),
+      note: (g.querySelector(".sc-nonemsg")?.textContent || "").replace(/\s+/g, " ").trim(),
     })));
   const flip = (word, to) => page.evaluate(([w, t]) => {
     const row = [...document.querySelectorAll(".sc-arow")].find(r => r.textContent.includes(w));
@@ -107,6 +108,40 @@ const OLD = { ...base, samples: [
   await page.waitForTimeout(400);
   const back = await groups();
   ok("[3b] แก้กลับแล้วย้ายกลับ", back[0].items.some(t => t.includes("อร่อยมาก")));
+
+  /* ── [5] 🟡 แก้เป็น "กลาง" → ต้องมีช่องกลางให้ตัวอย่างไปอยู่ ─────
+     เจ้าของแจ้งรอบที่ 4 (2 ก.ย. 2026) ว่า "ก็ยังไม่อัพเดท"
+     จำลองภาพที่ส่งมาแล้วพบว่า **ตัวอย่างย้ายถูกแล้ว** — แต่การ์ดมีแค่ช่องบวก/ลบ
+     ใบที่ถูกแก้เป็นกลางจึงหายไปเฉยๆ อ่านแล้วเหมือนระบบไม่ทำงาน */
+  payload = LINKED;
+  await run();
+  const g0 = await groups();
+  ok("[5] ตอนแรกไม่มีตัวอย่างกลาง → 🚫 ห้ามขึ้นช่องกลางเปล่าๆ ให้รก",
+     g0.length === 2 && !g0.some(g => /กลาง/.test(g.head)), g0.map(g => g.head).join(" | "));
+
+  await flip("อร่อยมาก", "neutral");
+  await page.waitForTimeout(400);
+  const g1 = await groups();
+  console.log("   แก้เป็นกลาง: " + JSON.stringify(g1, null, 0));
+  const neu = g1.find(g => /กลาง/.test(g.head));
+  ok("[5b] ⚠️ แก้เป็นกลางแล้ว ช่องกลางโผล่ขึ้นมา", !!neu, g1.map(g => g.head).join(" | "));
+  ok("[5c] ⚠️ และตัวอย่างของใบนั้นย้ายเข้าไปอยู่ในช่องกลางจริง",
+     !!neu && neu.items.some(t => t.includes("อร่อยมาก")), JSON.stringify(neu?.items));
+  ok("[5d] หายจากช่องบวก", !g1[0].items.some(t => t.includes("อร่อยมาก")));
+
+  /* ย้ายตัวอย่างบวกออกให้หมด → ช่องบวกยังมีคอมเมนต์อยู่ 1 ใบ แต่ไม่มีตัวอย่างเหลือ
+     นี่คือหน้าตาที่เจ้าของเจอจริง ("บวก 7% (1 คอมเมนต์) — ไม่มีตัวอย่าง —") */
+  await flip("ดีจัง", "neutral");
+  await page.waitForTimeout(400);
+  const g2 = await groups();
+  console.log("   ย้ายตัวอย่างบวกออกหมด: " + JSON.stringify(g2[0], null, 0));
+  ok("[5e] ⚠️ ช่องบวกที่ว่างต้องบอกว่า 'ย้ายไปแล้ว' ไม่ใช่ 'ไม่มีตัวอย่าง' (อ่านแล้วเหมือนของหาย)",
+     /ย้ายไปตามป้ายที่คุณแก้/.test(g2[0].note), g2[0].note || "(ไม่มีข้อความ)");
+  ok("[5f] ยังมีคอมเมนต์บวกเหลืออยู่จริง (เลขไม่หาย)", /1 คอมเมนต์/.test(g2[0].head), g2[0].head);
+
+  // แก้กลับให้ครบก่อนไปเคสถัดไป
+  await flip("อร่อยมาก", "positive"); await page.waitForTimeout(200);
+  await flip("ดีจัง", "positive"); await page.waitForTimeout(200);
 
   // ── หลังบ้านรุ่นเก่า: ไม่มี src ──
   payload = OLD;
