@@ -11,7 +11,7 @@ import {
   hostOf, outletOf, termPattern, realCP, hasFalseCP, dropFalseCP,
   CP_BRANDS, CP_FALSE_RE, LATIN_TERM,
   stripMarks, normLink, buildMatchers, anyTermIn, highlightedTerms,
-  WEAK_TERMS, ROUNDUP_RE, hlWrap,,
+  WEAK_TERMS, ROUNDUP_RE, hlWrap,
   cutRelated,
 
   htmlToText,

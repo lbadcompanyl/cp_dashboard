@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="10" />
+<meta name="page-ver" content="14" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -104,6 +104,7 @@
   .sc-shead .sc-scnt { color: var(--sc-muted); font-weight: 400; }
   .sc-sample { border: 1px solid var(--sc-border); border-left-width: 3px; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: var(--sc-ink2); background: var(--sc-plane); }
   .sc-sample.sc-pos { border-left-color: var(--sc-pos); }
+  .sc-sample.sc-neu { border-left-color: var(--sc-neu); }
   .sc-sample.sc-neg { border-left-color: var(--sc-neg); }
   .sc-nonemsg { color: var(--sc-muted); font-size: 12.5px; padding: 5px 0; }
 
@@ -214,13 +215,15 @@
 
       <div class="sc-card">
         <h2>สรุปภาพรวม</h2>
-        <p class="sc-sub">สรุปโดย Claude จากคอมเมนต์ทั้งหมด</p>
+        <!-- ⚠️ ข้อความนี้ถูกเขียนทับตอนแสดงผลด้วยตัวเลขจริง — ห้ามเขียนกลับเป็น
+             "จากคอมเมนต์ทั้งหมด" เพราะโหมด CP สรุปจากเฉพาะใบที่พูดถึง CP -->
+        <p class="sc-sub" id="sumSub">สรุปโดย Claude</p>
         <div class="sc-summary" id="summaryBox">—</div>
       </div>
 
       <div class="sc-card">
         <h2>คำที่พูดถึงบ่อย</h2>
-        <p class="sc-sub">Top keywords / หัวข้อที่ถูกพูดถึง</p>
+        <p class="sc-sub" id="kwSub">คำที่ AI เสนอ · <b>ตัวเลขนับจากคอมเมนต์จริง</b></p>
         <div class="sc-kwlist" id="kwList"></div>
       </div>
 
@@ -293,16 +296,24 @@ function refreshPlatform(){
 }
 el("url").addEventListener("input", refreshPlatform);
 
-/* ---------------- ป้ายเวอร์ชันหลังบ้าน ----------------
-   ⚠️ ต้องมี — ไม่งั้นเวลาแก้ Worker แล้ว deploy จะเดาไม่ออกว่าโค้ดที่รันอยู่เป็นตัวไหน
-   (กฎเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md) */
+/* ---------------- ป้ายเวอร์ชัน ----------------
+   ⚠️ ต้องมี — ไม่งั้นเวลาแก้แล้ว deploy จะเดาไม่ออกว่าโค้ดที่รันอยู่เป็นตัวไหน
+   (กฎเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md)
+
+   🔴 ต้องโชว์ **เลขหน้าเว็บ (น) คู่กับเลขหลังบ้าน (ล)** ห้ามโชว์แค่ตัวใดตัวหนึ่ง
+   เจ้าของเจอจริง 2 ก.ย. 2026: ตัวอย่างคอมเมนต์ไม่ย้ายกลุ่มตามป้ายที่แก้
+   ป้ายบอกว่าหลังบ้าน v25 (ใหม่ ถูกต้อง) จึงไล่ผิดทางว่าเป็นที่หลังบ้าน
+   ต้นเหตุจริงคือ **หน้าเว็บที่เครื่องค้างอยู่ที่รุ่น 10** ซึ่งยังไม่มีโค้ดย้ายกลุ่มเลย
+   เสียเวลาไล่หลายรอบ เพราะป้ายไม่เคยบอกเลขฝั่งหน้าเว็บ */
+const PAGE_VER = document.querySelector('meta[name="page-ver"]')?.content || "?";
 function showWorkerVer(d){
   const b = el("verBadge");
   if (!b) return;
-  if (!d) { b.textContent = "⚙️ ต่อหลังบ้านไม่ได้"; b.title = "เรียก Worker ไม่สำเร็จ"; return; }
+  if (!d) { b.textContent = `⚙️ น${PAGE_VER} · ต่อหลังบ้านไม่ได้`; b.title = "เรียก Worker ไม่สำเร็จ"; return; }
   const model = String(d.model || "").replace("claude-", "").replace("-4-5", " 4.5").replace("-5", " 5");
-  b.textContent = `⚙️ v${d.ver ?? "?"} · ${model || "?"}`;
-  b.title = `Worker v${d.ver ?? "?"} · rubric ${d.rubric ?? "-"} · โมเดล ${d.model || "?"}`;
+  b.textContent = `⚙️ น${PAGE_VER} · ล${d.ver ?? "?"} · ${model || "?"}`;
+  b.title = `หน้าเว็บ v${PAGE_VER} · Worker v${d.ver ?? "?"} · rubric ${d.rubric ?? "-"} · โมเดล ${d.model || "?"}`
+    + "\n(น = เลขหน้าเว็บ · ล = เลขหลังบ้าน — ถ้าตัวอย่าง/ฟีเจอร์ใหม่ไม่ทำงาน ให้ดูว่าเลขไหนค้าง)";
 }
 if (!DEMO) {
   fetch(WORKER.replace(/\/+$/,"") + "/")
@@ -508,6 +519,16 @@ function renderResult(d, keepAudit){
   el("statRow").innerHTML = stats.map(([k,v]) => `<div class="sc-stat"><div class="sc-k">${k}</div><div class="sc-v">${v}</div></div>`).join("");
 
   el("summaryBox").textContent = d.summary || "—";
+  /* ⚠️ บอกตรงๆ ว่าสรุปมาจากคอมเมนต์กี่ใบ — โหมด CP สรุปจากเฉพาะใบที่พูดถึง CP
+     ของเดิมเขียนว่า "จากคอมเมนต์ทั้งหมด" ซึ่งไม่จริง แล้วทำให้อ่านแล้วงงว่า
+     ทำไมสรุปดุเดือดทั้งที่ส่วนใหญ่เป็นกลาง (เจ้าของแจ้ง 31 ส.ค. 2026) */
+  if (el("sumSub")) {
+    const sf = d.summary_from, so = d.summary_of;
+    el("sumSub").innerHTML = (sf && so && sf < so)
+      ? escapeHtml(`สรุปโดย Claude จากคอมเมนต์ ${sf} ใบ จากทั้งหมด ${so} ใบ`) +
+        (isCP ? ' <span class="sc-skip">(เฉพาะใบที่แสดงท่าทีต่อ CP — ใบที่ไม่พูดถึง CP ไม่ได้เอามาสรุป)</span>' : "")
+      : "สรุปโดย Claude" + (so ? escapeHtml(` จากคอมเมนต์ ${so} ใบ`) : "");
+  }
 
   const kws = d.keywords || [];
   const maxN = kws.reduce((m,k)=>Math.max(m,k.count||0),0) || 1;
@@ -520,15 +541,44 @@ function renderResult(d, keepAudit){
 
   const samples = d.samples || [];
   el("sampleCard").style.display = total ? "" : "none";
-  const groups = [["positive","บวก 😊","เชิงบวก","--sc-pos","sc-pos",pp,s.positive],["negative","ลบ 😞","เชิงลบ","--sc-neg","sc-neg",pn,s.negative]];
+  /* 🔗 จัดกลุ่มตามป้าย "ปัจจุบัน" ของคอมเมนต์ต้นทาง ไม่ใช่ป้ายที่ AI ให้มาตอนแรก
+     ผู้ใช้กดแก้ป้ายแล้วตัวอย่างต้องย้ายกลุ่มตาม (เจ้าของแจ้ง 31 ส.ค. 2026)
+     ⚠️ หลังบ้านรุ่นเก่าไม่ส่ง src มา → ตกกลับไปใช้ป้ายของ AI เหมือนเดิม ไม่พัง */
+  const auditNow = d.audit || [];
+  const sampleLabel = (x) => (x.src != null && auditNow[x.src])
+    ? String(auditNow[x.src].sentiment || "").toLowerCase()
+    : x.sentiment;
+  const unlinked = samples.some(x => x.src == null);
+  /* 🟡 ต้องมี **ช่องกลาง** ด้วย ไม่ใช่แค่บวก/ลบ (เจ้าของแจ้ง 2 ก.ย. 2026 — รอบที่ 4)
+     เจ้าของแก้ป้ายใบที่เป็นตัวอย่างจาก "บวก" เป็น "กลาง" → ตัวอย่างย้ายออกจากช่องบวกถูกต้องแล้ว
+     แต่ไม่มีช่องกลางให้ไปอยู่ **มันเลยหายไปเฉยๆ** อ่านแล้วเหมือนระบบไม่ทำงาน
+     (จำลองแล้วได้หน้าตาตรงกับภาพเป๊ะ: "บวก 7% (1 คอมเมนต์) — ไม่มีตัวอย่าง —")
+     🚫 แต่ห้ามโชว์ช่องกลางตลอดเวลา — ตอนวิเคราะห์เราเลือกมาถอดความเฉพาะใบบวก/ลบ
+        ช่องกลางจึงว่างเสมอถ้าไม่มีใครแก้ ขึ้นไว้เฉยๆ = รกโดยไม่ได้อะไร */
+  const byKey = (k) => samples.filter(x => sampleLabel(x) === k);
+  const groups = [
+    ["positive","บวก 😊","เชิงบวก","--sc-pos","sc-pos",pp,s.positive],
+    ["neutral","กลาง 😐","เป็นกลาง","--sc-neu","sc-neu",pnu,s.neutral],
+    ["negative","ลบ 😞","เชิงลบ","--sc-neg","sc-neg",pn,s.negative],
+  ].filter(([key]) => key !== "neutral" || byKey("neutral").length);
   el("sampleList").innerHTML = groups.map(([key,label,word,color,cls,gp,gc]) => {
-    const items = gc > 0 ? samples.filter(x => x.sentiment === key) : [];
+    const items = gc > 0 ? byKey(key) : [];
+    /* ตัวอย่างที่ AI จัดไว้กลุ่มนี้ตอนแรก แต่ตอนนี้ไม่อยู่แล้ว = ผู้ใช้ย้ายมันออกไปเอง
+       ต้องเขียนให้ตรงว่า "ย้ายออกไปแล้ว" ไม่ใช่ "ไม่มีตัวอย่าง" ซึ่งอ่านแล้วเหมือนของหาย */
+    const movedOut = samples.some(x => x.sentiment === key && sampleLabel(x) !== key);
     let body;
     if (gc === 0) body = `<div class="sc-nonemsg">— ไม่มีคอมเมนต์${word} —</div>`;
-    else if (!items.length) body = `<div class="sc-nonemsg">— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —</div>`;
+    else if (!items.length) body = `<div class="sc-nonemsg">${movedOut
+      ? `— ตัวอย่างที่เคยอยู่ตรงนี้ ย้ายไปตามป้ายที่คุณแก้แล้ว —`
+      : `— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —`}</div>`;
     else body = items.map(x => `<div class="sc-sample ${cls}">${escapeHtml(x.text)}</div>`).join("");
     return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>${body}</div>`;
-  }).join("");
+  }).join("") +
+    /* ⚠️ ถ้าผูกกับคอมเมนต์ต้นทางไม่ได้ ต้องบอกตรงๆ ว่าตัวอย่างไม่ขยับตามที่แก้
+       ไม่งั้นผู้ใช้จะเห็นตัวเลขขยับแต่ตัวอย่างค้าง แล้วนึกว่าหน้าเว็บพัง */
+    ((unlinked && d.edited_count)
+      ? `<div class="sc-nonemsg">⚠️ ตัวอย่างบางอันเป็นของรอบวิเคราะห์เดิม ไม่ได้ย้ายตามที่คุณแก้ (หลังบ้านรุ่นเก่ายังไม่ได้บอกว่าถอดความมาจากคอมเมนต์ใบไหน)</div>`
+      : "");
 
   if (!keepAudit) {
     renderAudit(d);

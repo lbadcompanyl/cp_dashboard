@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 23;
+const WORKER_VER = 28;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -555,12 +555,38 @@ async function analyze(opts, env) {
         ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
   /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
         ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน (โหมดอารมณ์รวมของเดิมส่ง texts ทั้งก้อน) */
-  const synthPool = texts.filter((t, i) => t && (
-    target === "cp" ? (labels[i] === "positive" || labels[i] === "negative") : true
-  ));
+  const synthIdx = [];
+  texts.forEach((t, i) => {
+    if (!t) return;
+    if (target !== "cp" || labels[i] === "positive" || labels[i] === "negative") synthIdx.push(i);
+  });
+  const synthPool = synthIdx.map(i => texts[i]);
   if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
+
+  /* 🎯 **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** (แก้ 31 ส.ค. 2026 รอบสอง)
+     ของเดิมให้ AI เลือกเองแล้วสั่งให้ตอบเลขข้อกลับมาด้วย — ถ้ามันไม่ตอบเลข
+     ตัวอย่างจะย้ายตามป้ายที่ผู้ใช้แก้ไม่ได้ **และไม่มีอะไรบอกว่าเพราะอะไร**
+     เจ้าของเจอเองว่า "เปลี่ยนแล้วก็ไม่อัพเดทอยู่ดี"
+     ตอนนี้ฝั่งเราชี้เลยว่าเอาใบไหน AI มีหน้าที่ถอดความอย่างเดียว
+     → รู้แน่นอนว่าตัวอย่างแต่ละอันมาจากคอมเมนต์ใบไหน ไม่ต้องเชื่อ AI
+
+     เกณฑ์เลือก: ถูกใจเยอะสุดก่อน แล้วค่อยยาวสุด (ตัวแทนที่คนเห็นด้วยมากที่สุด)
+     ⚠️ ต้องเรียงแบบตายตัว ไม่งั้นวิเคราะห์โพสเดิมซ้ำแล้วได้ตัวอย่างคนละใบทุกครั้ง */
+  const pickBy = (want, n) => synthIdx
+    .filter(i => labels[i] === want)
+    .sort((x, y) => (comments[y].likes || 0) - (comments[x].likes || 0) ||
+                    texts[y].length - texts[x].length || x - y)
+    .slice(0, n);
+  const pickIdx = wantSamples ? [...pickBy("positive", 2), ...pickBy("negative", 2)] : [];
+  if (pickIdx.length) logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
+
   const synth = synthPool.length
-    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target)
+    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target,
+                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
+                       /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
+                       { ...sentiment, total: texts.length },
+                       /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
+                       texts.filter(Boolean))
     : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
@@ -578,6 +604,12 @@ async function analyze(opts, env) {
     fetched_count: comments.length,
     reply_count,
     no_text_count: skipped_no_text,   // สติกเกอร์/รูป — นับเป็นกลางแล้ว แต่ต้องบอกผู้ใช้ว่ามีกี่ใบ
+    /* 📋 สรุปมาจากคอมเมนต์กี่ใบจากทั้งหมดกี่ใบ — หน้าเว็บต้องเขียนให้ตรง
+       ⚠️ ของเดิมหน้าเว็บเขียนว่า "สรุปโดย Claude จากคอมเมนต์ทั้งหมด" ซึ่ง **ไม่จริง**
+          โหมด CP สรุปจากเฉพาะใบที่แสดงท่าทีต่อ CP (ตัดกลางออก) และตัดที่ SYNTH_SAMPLE ด้วย
+          พอไม่บอก ผู้ใช้อ่านแล้วงงว่าทำไมสรุปดุเดือดทั้งที่ส่วนใหญ่เป็นกลาง */
+    summary_from: Math.min(synthPool.length, SYNTH_SAMPLE),
+    summary_of: texts.length,
     skipped_no_text: 0,               // ไม่ได้คัดทิ้งแล้ว (คงคีย์ไว้ให้หน้าเว็บรุ่นก่อนไม่พัง)
     analyzed_count: two.length,
     target,
@@ -585,6 +617,12 @@ async function analyze(opts, env) {
     sentiment,
     lenses,
     sarcasm_count,
+    /* 🔢 เลขเวอร์ชันหลังบ้าน — **ต้องติดมากับผลวิเคราะห์ทุกครั้ง**
+       ของเดิมส่งเฉพาะที่ endpoint สุขภาพ (`/`) ผลคือบันทึกการแก้ป้ายที่ส่งเข้าคิวรีวิว
+       เก็บ ver เป็น null ทุกใบ → ย้อนดูไม่ได้ว่าที่แก้มาจากหลังบ้านรุ่นไหน
+       และเวลาไล่ปัญหา "ตัวอย่างไม่ย้าย" ก็แยกไม่ออกว่าหลังบ้านเก่าหรือหน้าเว็บเก่า
+       (เจ้าของเจอจริง 2 ก.ย. 2026 — ต้นเหตุจริงคือหน้าเว็บรุ่น 10 ไม่ใช่หลังบ้าน) */
+    ver: WORKER_VER,
     rubric: RUBRIC_VER,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
@@ -923,8 +961,22 @@ async function callClaude(env, system, userText, maxTokens, acc, opts = {}) {
     },
     body: JSON.stringify(body),
   });
-  const data = await r.json();
-  if (!r.ok) throw new Error("Claude API: " + (data?.error?.message || ("HTTP " + r.status)));
+  const data = await r.json().catch(() => null);
+  /* 🔴 ข้อความ error ต้องบอก **เลขสถานะ + ชนิด** เสมอ ห้ามเหลือแต่ประโยคของต้นทาง
+     เจ้าของเจอ 2 ก.ย. 2026: หน้าเว็บขึ้นแค่ "Claude API: Request not allowed"
+     ซึ่งแยกไม่ออกเลยว่ากุญแจผิด (401) · สิทธิ์ไม่ถึง/ถูกบล็อก (403) · ยิงถี่ไป (429)
+     ทั้งที่ต้นทางส่งข้อมูลนั้นมาให้แล้ว — เราโยนทิ้งเอง แล้วไล่ปัญหาต่อไม่ได้
+     · 401 authentication_error = กุญแจผิด/ถูกลบ
+     · 403 permission_error     = กุญแจใช้โมเดลนี้ไม่ได้ · องค์กรจำกัดไว้ · ยิงจากที่ที่ไม่รองรับ
+     · 400 invalid_request_error = คำขอผิดรูป (เช่นส่ง effort ให้โมเดลที่ไม่รองรับ)
+     · 429 rate_limit_error / 529 overloaded_error = ลองใหม่ทีหลัง */
+  if (!r.ok) {
+    const kind = data?.error?.type || "";
+    const msg = data?.error?.message || "";
+    throw new Error(`Claude API ${r.status}${kind ? " " + kind : ""}: ${msg || "ต้นทางไม่ได้บอกเหตุผล"}`
+      + (r.status === 403 ? " · กุญแจนี้อาจใช้โมเดล " + model + " ไม่ได้ หรือองค์กรจำกัดสิทธิ์ไว้" : "")
+      + (r.status === 401 ? " · กุญแจ ANTHROPIC_API_KEY ผิดหรือถูกลบไปแล้ว" : ""));
+  }
   if (acc) {
     if (data.usage) {
       acc.input += data.usage.input_tokens || 0;
@@ -994,29 +1046,97 @@ function extractJsonArray(text) {
 }
 
 /** สรุปภาพรวม + keyword + ตัวอย่างคอมเมนต์ (ถอดความ) */
-async function synthesize(sampleTexts, wantSamples, env, acc, target) {
+/**
+ * นับว่าแต่ละคำโผล่ในคอมเมนต์กี่ใบจริงๆ — **ไม่เอาเลขที่ AI เดามา**
+ * 🐞 เจ้าของเจอ 31 ส.ค. 2026: แถบ "คำที่พูดถึงบ่อย" มีเลข 24/20/12 ซึ่ง AI แต่งขึ้นทั้งหมด
+ *    (prompt เดิมสั่งว่า "count: จำนวนโดยประมาณ") ดูเหมือนตัวเลขที่นับมา แต่ไม่ใช่
+ *    และคำที่ได้เป็นประโยคยาวๆ ไม่ใช่คำ
+ *
+ * ⚠️ ใช้ includes() ตรงๆ ห้ามตัดคำด้วยช่องว่าง — ภาษาไทยไม่มีช่องว่างคั่นคำ
+ *    (กฎเดียวกับหน้า /archives/ ใน CLAUDE.md)
+ * ⚠️ คำที่นับได้ 0 = AI แต่งขึ้นเอง **ต้องตัดทิ้ง** ไม่ใช่โชว์เลข 0 ให้ดูเหมือนมีข้อมูล
+ */
+function countTerms(terms, texts) {
+  if (!Array.isArray(terms) || !texts || !texts.length) return [];
+  const low = texts.map(t => String(t).toLowerCase());
+  const seen = new Set();
+  const out = [];
+  for (const raw of terms.slice(0, 20)) {
+    const term = String(typeof raw === "string" ? raw : (raw && raw.term) || "").trim().slice(0, 40);
+    const q = term.toLowerCase();
+    if (q.length < 2 || seen.has(q)) continue;
+    seen.add(q);
+    let n = 0;
+    for (const t of low) if (t.includes(q)) n++;
+    if (n > 0) out.push({ term, count: n });
+  }
+  return out.sort((a, b) => b.count - a.count || a.term.localeCompare(b.term)).slice(0, 12);
+}
+
+async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels, dist, allTexts) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
     ? "คอมเมนต์เหล่านี้คัดมาเฉพาะที่พูดถึงเครือเจริญโภคภัณฑ์ (CP) — ให้สรุปและหา keyword โดยโฟกัสที่ **ท่าทีและประเด็นที่คนพูดถึง CP** เท่านั้น "
+    : "";
+  /* 📊 บอกสัดส่วนจริงให้โมเดลรู้ ไม่งั้นมันสรุปจากกองที่ส่งไปอย่างเดียว
+     แล้วได้สรุปที่ฟังดูดุเดือดทั้งที่ภาพรวมส่วนใหญ่เป็นกลาง
+     (เจ้าของแจ้ง 31 ส.ค. 2026: "สรุปมั่วไปเลย ทั้งที่ sentiment ส่วนใหญ่เป็นกลาง") */
+  const share = dist
+    ? `\n\nสัดส่วนจริงของ**คอมเมนต์ทั้งโพส ${dist.total} ใบ**: ` +
+      `บวก ${dist.positive} · กลาง ${dist.neutral} · ลบ ${dist.negative}` +
+      (target === "cp" ? " (กลาง = ไม่ได้พูดถึง CP โดยตรง)" : "") +
+      `\nแต่ข้อความที่ให้อ่านด้านล่างมีแค่ ${sampleTexts.length} ใบ` +
+      (target === "cp" ? " (เฉพาะที่แสดงท่าทีต่อ CP)" : " (บางส่วน)") + " · " +
+      "⚠️ **สรุปต้องสะท้อนสัดส่วนจริงข้างบน** ห้ามเขียนเหมือนว่าทั้งโพสเป็นแบบที่อ่านมา " +
+      "ถ้าส่วนใหญ่เป็นกลาง ต้องบอกไว้ในประโยคแรก"
     : "";
   const system =
     "คุณเป็นนักวิเคราะห์ social listening ภาษาไทย วิเคราะห์คอมเมนต์ที่ให้มาแล้วตอบเป็น JSON object เท่านั้น " +
     focus +
     "โครงสร้าง: {" +
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
-    '"keywords": [{"term":"คำ/หัวข้อ","count":จำนวนโดยประมาณ}], (8-12 รายการ เรียงจากมากไปน้อย) ' +
+    /* 🚫 ไม่ขอให้ AI นับให้ — เลขที่มันเดาดูเหมือนของจริงแต่ไม่ใช่ (เจ้าของเจอ 31 ส.ค. 2026)
+       เราไปนับเองจากข้อความจริงทีหลัง · ที่นี่ขอแค่ "คำ" ที่โผล่จริงในคอมเมนต์ */
+    '"keywords": ["คำสั้นๆ", ...] (10-14 คำ) ' +
+    '⚠️ keywords เป็น array ของ **สตริงสั้นๆ** เท่านั้น (1-3 คำ ไม่เกิน 20 ตัวอักษร) ' +
+    'ต้องเป็นคำที่ **ปรากฏอยู่จริงในคอมเมนต์แบบตรงตัวอักษร** ห้ามแต่งวลีขึ้นมาเอง ' +
+    'ห้ามเป็นประโยคหรือหัวข้อยาวๆ ห้ามใส่ตัวเลข ' +
     (wantSamples
-      ? '"samples": [{"sentiment":"positive|negative","text":"ถอดความคอมเมนต์ตัวแทน ตัดข้อมูลระบุตัวตนออก"}] ' +
-        '(2-4 รายการ ต้องมี positive อย่างน้อย 1 และ negative อย่างน้อย 1 ถ้ามีในข้อมูล ไม่ต้องมี neutral)'
+      ? '"samples": ["ถอดความข้อที่ 1", "ถอดความข้อที่ 2", ...] ' +
+        '⚠️ samples เป็น array ของ **สตริง** เท่านั้น · ' +
+        'ถอดความ "คอมเมนต์ที่ต้องถอดความ" ด้านล่างทีละข้อ **เรียงตามลำดับเดิม จำนวนต้องเท่ากันเป๊ะ** · ' +
+        'ห้ามสลับ ห้ามข้าม ห้ามรวบหลายข้อเป็นข้อเดียว ห้ามเพิ่มข้อใหม่'
       : '"samples": []') +
     "} ห้ามมีข้อความนอก JSON และห้ามคัดลอกข้อความต้นฉบับตรงๆ ในตัวอย่าง (ให้ถอดความ)";
-  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined, 1500, acc);
+  /* รายการที่ต้องถอดความส่งแยกจากกองที่ใช้สรุป — จะได้จับคู่กลับได้แน่นอน */
+  const toPara = (pickTexts && pickTexts.length)
+    ? "\n\nคอมเมนต์ที่ต้องถอดความ (" + pickTexts.length + " ข้อ เรียงตามนี้):\n" +
+      pickTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n")
+    : "";
+  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, 1500, acc);
   try {
     const obj = extractJson(out);
     return {
       summary: obj.summary || "",
-      keywords: Array.isArray(obj.keywords) ? obj.keywords.slice(0, 12).map(k => ({ term: String(k.term || "").slice(0, 40), count: +k.count || 0 })) : [],
-      samples: Array.isArray(obj.samples) ? obj.samples.slice(0, 5).map(s => ({ sentiment: String(s.sentiment || "neutral").toLowerCase(), text: String(s.text || "").slice(0, 300) })) : [],
+      keywords: countTerms(obj.keywords, allTexts || sampleTexts),
+      /* 🔗 src = ตำแหน่งคอมเมนต์ต้นทางในรายการเต็ม — ผูกไว้เพื่อให้หน้าเว็บย้ายตัวอย่าง
+            ตามป้ายที่ผู้ใช้แก้เองได้ (เจ้าของแจ้ง 31 ส.ค. 2026: "ตัวอย่างไม่ปรับตามที่กดเปลี่ยน")
+         ⚠️ ตัวอย่างยังเป็นข้อความ **ถอดความ** เหมือนเดิม ไม่ได้เอาต้นฉบับมาแสดง
+            (PRIVACY_NOTE ข้อ 4 — ตัวอย่างไปอยู่ในรายงานที่แชร์กันได้)
+         ⚠️ AI ไม่ตอบ i มา / ตอบเลขนอกช่วง = ปล่อย src เป็น null แล้วใช้ป้ายที่ AI ให้มาแทน
+            ห้ามเดาตำแหน่ง ไม่งั้นตัวอย่างจะไปโผล่ผิดกลุ่มแบบเงียบๆ */
+      /* 🔗 จับคู่ด้วย "ลำดับ" ล้วนๆ — ข้อที่ i ของคำตอบ = ใบที่ i ที่เราเลือกส่งไป
+         ป้ายก็ใช้ของเราเอง ไม่ใช่ที่ AI บอก → ตัวอย่างจึงย้ายตามป้ายที่ผู้ใช้แก้ได้เสมอ
+         ⚠️ AI ตอบมาไม่ครบ/เกิน = เอาเท่าที่จับคู่ได้ ไม่เดาว่าตัวไหนคู่กับตัวไหน */
+      samples: (Array.isArray(obj.samples) && pickIdx && pickIdx.length)
+        ? obj.samples.slice(0, pickIdx.length).map((s, k) => ({
+            sentiment: pickLabels[k],
+            /* ⚠️ trim ก่อนเสมอ — "  " เป็นสตริงที่ truthy ผ่าน filter ไปได้
+               แล้วจะโชว์เป็นกล่องตัวอย่างว่างเปล่าบนจอ (บั๊กตระกูลเดียวกับสติกเกอร์) */
+            text: String(typeof s === "string" ? s : (s && s.text) || "").trim().slice(0, 300),
+            src: pickIdx[k],
+          })).filter(x => x.text)
+        : [],
     };
   } catch (e) {
     return { summary: "", keywords: [], samples: [] };
