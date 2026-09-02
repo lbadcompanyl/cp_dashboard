@@ -57,10 +57,13 @@ for (const [name, f, model] of [["trend", "../functions/api/trend/feeds.js", "AI
   ok("ไม่มีพาดหัว = null", (await aiHeadlineIsCP(env("y"), [])) === null);
 
   const src = fs.readFileSync(f, "utf8");
-  ok("เรียกเฉพาะคอลัมน์ CP + เฉพาะใบที่อ่านเนื้อไม่ได้ (null)",
-     /if \(src === "alert1"\) \{\s*\n\s*const blind = toFetch\.filter\(\(_, k\) => hits\[k\] === null\);/.test(src));
-  ok("AI บอกไม่ใช่ → ตัดด้วยเหตุผล ai-no-cp", /verdict\[i\]\.why = "ai-no-cp";/.test(src));
-  ok("AI ตอบไม่ได้ → ไม่แตะคำตัดสินเดิม (เก็บไว้)", /if \(ans\) blind\.forEach/.test(src));
+  // 🔄 แก้ 2 ก.ย. 2026 (เจ้าของสั่ง "เอาเฉพาะ keyword อยู่ในพาดหัว ใน body ไม่เอาเลย")
+  // ของเดิม 3 ข้อนี้วัดชั้น AI ที่ยิงหลังอ่านเนื้อข่าว ซึ่งถูกถอดออกไปทั้งบล็อกแล้ว
+  // เพราะคอลัมน์ CP ไม่เดินไปถึงการอ่านเนื้ออีกต่อไป — วัดกฎใหม่แทน (ชุดเต็มอยู่ที่ cptitle.mjs)
+  ok("คอลัมน์ CP ตัดที่พาดหัวเลย ไม่ไปอ่านเนื้อ",
+     /return \{ ok: false, why: "ไม่มีชื่อเครือ CP ในพาดหัว"/.test(src));
+  ok("🚫 ไม่เหลือชั้น AI ที่ผูกกับการอ่านเนื้อ", !/const blind = toFetch/.test(src));
+  ok("ชั้น AI ที่ดูพาดหัว (ชื่อเครือกลางคำอื่น) ยังอยู่", /ok: "ai", why: "ai-weak-cp"/.test(src));
   ok("ส่ง env เข้า verifyAlertItems แล้ว", /verifyAlertItems\(cache, sources, alertVerify, \w+, env\b/.test(src));
 }
 

@@ -20,7 +20,10 @@ for (const [name, f] of [["trend", "../functions/api/trend/feeds.js"],
   ok("ผ่านชั้นพาดหัว (ชื่อเครือยืนเป็นคำ) → ติดธง", /if \(ev === "strong"\) return \{ ok: true, mark: true \};/.test(src));
   ok("เจ้าของสั่งคืน → ติดธง", /isAllowed\(it\)\) return \{ ok: true, mark: true \}/.test(src));
   ok("อ่านเนื้อเจอคำ → ติดธง", /if \(hits\[k\] === true\) verdict\[i\]\.mark = true;/.test(src));
-  ok("AI ตอบ 'ใช่' → ติดธง", /else \{ verdict\[i\]\.mark = true; \}/.test(src));
+  // 🔄 แก้ 2 ก.ย. 2026: ของเดิมวัดชั้น AI ที่ยิงหลังอ่านเนื้อ ซึ่งถูกถอดออกแล้ว
+  // (คอลัมน์ CP ตัดที่พาดหัวเลย ไม่ไปอ่านเนื้อ — ดู cptitle.mjs)
+  // ชั้น AI ที่ยังเหลือคือ "ชื่อเครือโผล่กลางคำอื่น" ซึ่งติดธงเหมือนกัน
+  ok("AI ตอบ 'ใช่' → ติดธง", /if \(ans\[k\]\) verdict\[i\]\.mark = true;/.test(src));
   ok("ธงลงที่ item ตอนเก็บ (ติดไปกับคลังเอง)", /if \(v\.mark\) items\[i\]\.vfy = VFY_VER;/.test(src));
   ok("อ่านไม่ได้/ยังไม่ตัดสิน → ไม่ติดธง (ต้องตรวจใหม่รอบหน้า)",
      !/verdict\[i\]\.ok = hits\[k\] !== false; verdict\[i\]\.mark/.test(src));
