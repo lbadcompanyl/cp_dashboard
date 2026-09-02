@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="13" />
+<meta name="page-ver" content="14" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -104,6 +104,7 @@
   .sc-shead .sc-scnt { color: var(--sc-muted); font-weight: 400; }
   .sc-sample { border: 1px solid var(--sc-border); border-left-width: 3px; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: var(--sc-ink2); background: var(--sc-plane); }
   .sc-sample.sc-pos { border-left-color: var(--sc-pos); }
+  .sc-sample.sc-neu { border-left-color: var(--sc-neu); }
   .sc-sample.sc-neg { border-left-color: var(--sc-neg); }
   .sc-nonemsg { color: var(--sc-muted); font-size: 12.5px; padding: 5px 0; }
 
@@ -548,12 +549,28 @@ function renderResult(d, keepAudit){
     ? String(auditNow[x.src].sentiment || "").toLowerCase()
     : x.sentiment;
   const unlinked = samples.some(x => x.src == null);
-  const groups = [["positive","บวก 😊","เชิงบวก","--sc-pos","sc-pos",pp,s.positive],["negative","ลบ 😞","เชิงลบ","--sc-neg","sc-neg",pn,s.negative]];
+  /* 🟡 ต้องมี **ช่องกลาง** ด้วย ไม่ใช่แค่บวก/ลบ (เจ้าของแจ้ง 2 ก.ย. 2026 — รอบที่ 4)
+     เจ้าของแก้ป้ายใบที่เป็นตัวอย่างจาก "บวก" เป็น "กลาง" → ตัวอย่างย้ายออกจากช่องบวกถูกต้องแล้ว
+     แต่ไม่มีช่องกลางให้ไปอยู่ **มันเลยหายไปเฉยๆ** อ่านแล้วเหมือนระบบไม่ทำงาน
+     (จำลองแล้วได้หน้าตาตรงกับภาพเป๊ะ: "บวก 7% (1 คอมเมนต์) — ไม่มีตัวอย่าง —")
+     🚫 แต่ห้ามโชว์ช่องกลางตลอดเวลา — ตอนวิเคราะห์เราเลือกมาถอดความเฉพาะใบบวก/ลบ
+        ช่องกลางจึงว่างเสมอถ้าไม่มีใครแก้ ขึ้นไว้เฉยๆ = รกโดยไม่ได้อะไร */
+  const byKey = (k) => samples.filter(x => sampleLabel(x) === k);
+  const groups = [
+    ["positive","บวก 😊","เชิงบวก","--sc-pos","sc-pos",pp,s.positive],
+    ["neutral","กลาง 😐","เป็นกลาง","--sc-neu","sc-neu",pnu,s.neutral],
+    ["negative","ลบ 😞","เชิงลบ","--sc-neg","sc-neg",pn,s.negative],
+  ].filter(([key]) => key !== "neutral" || byKey("neutral").length);
   el("sampleList").innerHTML = groups.map(([key,label,word,color,cls,gp,gc]) => {
-    const items = gc > 0 ? samples.filter(x => sampleLabel(x) === key) : [];
+    const items = gc > 0 ? byKey(key) : [];
+    /* ตัวอย่างที่ AI จัดไว้กลุ่มนี้ตอนแรก แต่ตอนนี้ไม่อยู่แล้ว = ผู้ใช้ย้ายมันออกไปเอง
+       ต้องเขียนให้ตรงว่า "ย้ายออกไปแล้ว" ไม่ใช่ "ไม่มีตัวอย่าง" ซึ่งอ่านแล้วเหมือนของหาย */
+    const movedOut = samples.some(x => x.sentiment === key && sampleLabel(x) !== key);
     let body;
     if (gc === 0) body = `<div class="sc-nonemsg">— ไม่มีคอมเมนต์${word} —</div>`;
-    else if (!items.length) body = `<div class="sc-nonemsg">— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —</div>`;
+    else if (!items.length) body = `<div class="sc-nonemsg">${movedOut
+      ? `— ตัวอย่างที่เคยอยู่ตรงนี้ ย้ายไปตามป้ายที่คุณแก้แล้ว —`
+      : `— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —`}</div>`;
     else body = items.map(x => `<div class="sc-sample ${cls}">${escapeHtml(x.text)}</div>`).join("");
     return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>${body}</div>`;
   }).join("") +
