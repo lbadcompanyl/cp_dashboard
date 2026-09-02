@@ -1,0 +1,91 @@
+/**
+ * samplemid.mjs — ช่อง "กลาง" ต้องมีตัวอย่างของตัวเองด้วย
+ *
+ * 🐞 เจ้าของเจอ 2 ก.ย. 2026 (โพส 23 คอมเมนต์ · กลาง 20 ใบ = 87%)
+ *      "แล้วคอมเมนต์อื่นๆ ก็หายหมด เอาแต่ตัวที่ย้ายมาแสดง"
+ *
+ *    ช่องกลางขึ้นว่า 20 คอมเมนต์ แต่มีตัวอย่างใบเดียว — ซึ่งเป็นใบที่เจ้าของ
+ *    ย้ายเข้ามาเอง อีก 19 ใบไม่มีอะไรให้ดูเลย
+ *
+ *    ต้นเหตุ: `pickBy` เลือกจาก `synthIdx` ซึ่งโหมด CP **ตัดใบกลางทิ้งไปแล้ว**
+ *    และถึงโหมดอารมณ์รวมก็เลือกแค่ `positive` 2 + `negative` 2 — ไม่มีกลางเลย
+ *
+ * ✅ ตอนนี้เลือกจากทุกใบที่มีข้อความ ครบทั้ง 3 ช่อง ช่องละ 2 ใบ
+ *
+ * [1] และ [3] คือข้อสำคัญที่สุด — โพสจริงส่วนใหญ่เป็นกลางท่วม
+ */
+import { analyze } from "./w.mjs";
+
+let fail = 0;
+const ok = (n, c, x = "") => { console.log(`${c ? "✅" : "❌"} ${n}${x ? " — " + x : ""}`); if (!c) fail++; };
+
+/* เลียนแบบโพสจริงของเจ้าของ: กลางท่วม · บวก 1 · ลบ 2 */
+const COMMENTS = [
+  { text: "ซีพี ทำดีมากครับ", likes: 4 },              // 0 บวก
+  { text: "แซวว่าขนาดเท่านี้ยังไม่ถึงขั้นสัตว์ประหลาด", likes: 9 },  // 1 กลาง · ถูกใจเยอะสุด
+  { text: "ปลาชนิดนี้มาจากไหน", likes: 3 },            // 2 กลาง
+  { text: "ดูจบแล้ว", likes: 0 },                      // 3 กลาง · ถูกใจน้อยสุด
+  { text: "ไม่เอาสม่ำจริงๆ", likes: 6 },                // 4 ลบ
+  { text: "มีแต่คลิปเก่าๆ", likes: 1 },                 // 5 ลบ
+  { text: "เกี่ยวอะไรกับ CP", likes: 0 },              // 6 ไม่เกี่ยว — ห้ามถูกเลือก
+];
+const LABEL = ["Positive", "Neutral", "Neutral", "Neutral", "Negative", "Negative", "not_related"];
+
+let synthPrompt = "";
+globalThis.fetch = async (u, o) => {
+  const url = String(u);
+  const res = (j) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => j });
+  if (url.includes("scrapecreators")) {
+    if (url.includes("/comments")) return res({ comments: COMMENTS, credits_remaining: 9 });
+    return res({});
+  }
+  if (url.includes("anthropic")) {
+    const ut = JSON.parse(o.body).messages[0].content;
+    if (ut.includes("คอมเมนต์:\n")) {
+      const lines = ut.split("คอมเมนต์:\n")[1].split("\n").filter(Boolean);
+      return res({ content: [{ text: JSON.stringify(lines.map((_, i) => ({ i: i + 1, cp: LABEL[i], oc: LABEL[i], s: 0 }))) }],
+                   usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: "end_turn" });
+    }
+    synthPrompt = ut;
+    const n = (ut.match(/ต้องถอดความ \((\d+) ข้อ/) || [])[1] || 0;
+    return res({ content: [{ text: JSON.stringify({ summary: "-", keywords: [],
+                   samples: Array.from({ length: +n }, (_, k) => "ถอดความ " + (k + 1)) }) }],
+                 usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: "end_turn" });
+  }
+  return res({});
+};
+const run = (target) => analyze({ url: "https://www.facebook.com/reel/1", target, samples: true },
+  { ANTHROPIC_API_KEY: "k", CLAUDE_MODEL: "claude-opus-5", SCRAPECREATORS_API_KEY: "s" });
+
+/* ── [1] ⚠️ โหมดอารมณ์รวม: ต้องมีตัวอย่างครบทั้ง 3 ช่อง ───── */
+let r = await run("overall");
+const bySent = (s) => r.samples.filter(x => x.sentiment === s);
+console.log("   ตัวอย่างที่ได้: " + r.samples.map(x => `${x.sentiment}#${x.src}`).join(" · "));
+ok("[1] ⚠️ ช่องกลางมีตัวอย่างของตัวเอง", bySent("neutral").length > 0,
+   `บวก ${bySent("positive").length} · กลาง ${bySent("neutral").length} · ลบ ${bySent("negative").length}`);
+ok("[1b] ครบทั้ง 3 ช่อง", bySent("positive").length && bySent("neutral").length && bySent("negative").length);
+ok("[1c] ช่องกลางได้ 2 ใบ (ไม่ใช่ใบเดียว)", bySent("neutral").length === 2);
+
+/* ── [2] เลือกใบถูกใจเยอะสุดของช่องกลาง ไม่ใช่สุ่ม ───────── */
+ok("[2] ใบกลางที่ถูกใจเยอะสุด (#1) ถูกเลือก", bySent("neutral").some(x => x.src === 1),
+   JSON.stringify(bySent("neutral").map(x => x.src)));
+ok("[2b] ใบกลางที่ถูกใจน้อยสุด (#3) ไม่ถูกเลือก", !bySent("neutral").some(x => x.src === 3));
+
+/* ── [3] ⚠️ โหมด CP ก็ต้องมีตัวอย่างกลาง ────────────────────
+   synthIdx ของโหมด CP ตัดใบกลางทิ้ง — ถ้า pickBy ยังผูกกับ synthIdx อยู่ ข้อนี้จะตก */
+r = await run("cp");
+const cpNeu = r.samples.filter(x => x.sentiment === "neutral");
+console.log("   โหมด CP: " + r.samples.map(x => `${x.sentiment}#${x.src}`).join(" · "));
+ok("[3] ⚠️ โหมด CP ช่องกลางก็มีตัวอย่าง (ห้ามผูกกับ synthIdx)", cpNeu.length > 0,
+   `ได้ ${cpNeu.length} ใบ`);
+
+/* ── [4] 🚫 ใบ "ไม่เกี่ยวกับ CP" ห้ามถูกเลือกมาเป็นตัวอย่าง ── */
+ok("[4] 🚫 ใบ not_related ไม่ถูกเลือก", !r.samples.some(x => x.src === 6) && !/เกี่ยวอะไรกับ CP/.test(synthPrompt),
+   JSON.stringify(r.samples.map(x => x.src)));
+
+/* ── [5] จำนวนใบที่ส่งไปถอดความ — คุมราคาไว้ ────────────── */
+const asked = +((synthPrompt.match(/ต้องถอดความ \((\d+) ข้อ/) || [])[1] || 0);
+ok("[5] ส่งไปถอดความไม่เกิน 6 ใบ (3 ช่อง × 2)", asked > 0 && asked <= 6, `ส่งไป ${asked} ใบ`);
+
+console.log(fail ? `\n❌ ตก ${fail} ข้อ` : "\n✅ ผ่านหมด");
+process.exit(fail ? 1 : 0);

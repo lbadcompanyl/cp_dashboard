@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 28;
+const WORKER_VER = 29;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -572,12 +572,24 @@ async function analyze(opts, env) {
 
      เกณฑ์เลือก: ถูกใจเยอะสุดก่อน แล้วค่อยยาวสุด (ตัวแทนที่คนเห็นด้วยมากที่สุด)
      ⚠️ ต้องเรียงแบบตายตัว ไม่งั้นวิเคราะห์โพสเดิมซ้ำแล้วได้ตัวอย่างคนละใบทุกครั้ง */
-  const pickBy = (want, n) => synthIdx
+  /* 🟡 เลือกจาก **ทุกใบที่มีข้อความ** ไม่ใช่จาก synthIdx
+     synthIdx ของโหมด CP ตัดใบกลางทิ้ง → ช่องกลางบนหน้าเว็บจึงไม่เคยมีตัวอย่างเลย
+     (เจ้าของเจอ 2 ก.ย. 2026: "กลาง 87% (20 คอมเมนต์)" แต่มีตัวอย่างใบเดียว
+      ซึ่งเป็นใบที่ตัวเองย้ายเข้ามา — ที่เหลืออีก 19 ใบไม่มีอะไรให้ดูเลย)
+     ⚠️ `not_related` ไม่โดนเลือก เพราะ want เป็น positive/neutral/negative เท่านั้น */
+  const pickPool = [];
+  texts.forEach((t, i) => { if (t) pickPool.push(i); });
+  const pickBy = (want, n) => pickPool
     .filter(i => labels[i] === want)
     .sort((x, y) => (comments[y].likes || 0) - (comments[x].likes || 0) ||
                     texts[y].length - texts[x].length || x - y)
     .slice(0, n);
-  const pickIdx = wantSamples ? [...pickBy("positive", 2), ...pickBy("negative", 2)] : [];
+  /* ถอดความครบทั้ง 3 ช่อง ช่องละ 2 ใบ — ราคาที่จ่ายเพิ่มคือ 2 ใบต่อการวิเคราะห์ 1 ครั้ง
+     🚫 ห้ามตัดช่องกลางออกเพื่อประหยัด — มันคือช่องที่คอมเมนต์เยอะที่สุดในโพสทั่วไป
+        (โพสนี้ 20 จาก 23 ใบ) ตัดออก = ช่องที่ใหญ่ที่สุดไม่มีอะไรให้ดู */
+  const pickIdx = wantSamples
+    ? [...pickBy("positive", 2), ...pickBy("neutral", 2), ...pickBy("negative", 2)]
+    : [];
   if (pickIdx.length) logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
 
   const synth = synthPool.length
