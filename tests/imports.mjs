@@ -39,11 +39,14 @@ const walk = (dir, out = []) => {
 
 /* ต้องก๊อปไปที่อื่นแล้วใส่ package.json {"type":"module"} ก่อน
    ไม่งั้น node มองไฟล์ .js เป็น CommonJS แล้วบ่นเรื่อง import ทุกไฟล์ (ผลลวง)
-   ⚠️ ต้องเอา *-feeds.config.js ที่รากไปด้วย — feeds.js import ข้ามขึ้นไปหามัน */
+   ⚠️ ต้องเอา *.config.js ที่รากไปด้วย — ไฟล์ใน functions/ import ข้ามขึ้นไปหามัน
+   (`trend-feeds.config.js` · `ir-feeds.config.js` · `followers.config.js`)
+   🚫 อย่าเจาะจงเป็น `-feeds.config.js` — config ตัวใหม่ที่ไม่ได้ลงท้ายแบบนั้นจะขาดไป
+      แล้วด่านนี้จะขึ้น ❌ ทั้งที่โค้ดถูก = ผลลวงที่ทำให้คนไม่กล้า push (เจอจริง 2 ก.ย. 2026) */
 const tmp = mkdtempSync(join(tmpdir(), "impchk-"));
 cpSync(join(ROOT, "functions"), join(tmp, "functions"), { recursive: true });
 for (const f of readdirSync(ROOT)) {
-  if (/-feeds\.config\.js$/.test(f)) cpSync(join(ROOT, f), join(tmp, f));
+  if (/\.config\.js$/.test(f)) cpSync(join(ROOT, f), join(tmp, f));
 }
 writeFileSync(join(tmp, "package.json"), '{"type":"module"}\n');
 
