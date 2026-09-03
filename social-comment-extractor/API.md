@@ -67,6 +67,42 @@ Worker: `https://comment-sentiment.s3445028.workers.dev`
 > ย้ายไป Pages Function ได้ แต่ต้องยก secret/KV/ขั้นตอน deploy ตามไปทั้งชุด
 > → ถ้าอยากได้ path นั้นจริงๆ ทำ proxy บางๆ ที่ Pages ทีหลังได้
 
+### 🔐 ต้องมีกุญแจ
+
+`/sentiment` เป็น endpoint เดียวที่บังคับกุญแจ — เพราะเรียกจาก **เซิร์ฟเวอร์ถึงเซิร์ฟเวอร์**
+กุญแจจึงเก็บเป็น Secret ได้จริง ไม่หลุดเหมือนของที่ฝังในหน้าเว็บ
+
+```
+x-worker-key: <WORKER_KEY>        # หรือ ?key=<WORKER_KEY>
+```
+
+| | |
+|---|---|
+| ไม่ตั้ง `WORKER_KEY` ที่ Cloudflare | **endpoint ปิด** (403 `endpoint_disabled`) — ไม่ใช่เปิดให้ทุกคน |
+| ไม่ส่ง / ส่งผิด | 403 `bad_key` · **ไม่ยิงออกไปข้างนอกเลย ไม่เผาเงิน** |
+
+> ⚠️ **ตั้ง `WORKER_KEY` ที่ Cloudflare เป็น Secret ก่อนเรียก** ไม่งั้นได้ 403 ตลอด
+> 🚫 **ห้าม commit กุญแจลง repo — repo เป็น public**
+>
+> 🌐 **`ALLOW_ORIGIN`** (ไม่บังคับ) — ตั้งไว้แล้วจะ**บล็อกจริง** ถ้าคำขอมี `Origin` ไม่ตรง
+> · กันได้แค่เบราว์เซอร์จากเว็บอื่น · `curl` ไม่ส่ง Origin มา จึงผ่าน — **ตัวที่กันสคริปต์คือ `WORKER_KEY`**
+> · คำขอที่ไม่มี Origin ผ่านเสมอ ไม่งั้น server-to-server พังหมด
+
+### 🚫 endpoint อื่นยังไม่มีกุญแจ — ตั้งใจ และต้องรู้ความเสี่ยง
+
+`/analyze` `/resynth` `/paraphrase` `/comments` `/classify` `/credits` **ใครก็ยิงได้**
+เพราะหน้าเว็บ `/issue/sentiment*.html` เรียกจากเบราว์เซอร์ — ใส่กุญแจแล้วต้องฝังในโค้ด
+ที่ใครก็เปิดดูได้ = **ไม่ใช่ความลับตั้งแต่แรก** แถมหน้าเว็บพังทันที
+(ปัญหาเดียวกับปุ่ม ⚑ กับ `/api/flags` ที่จดไว้ใน `CLAUDE.md`)
+
+| ยิงแล้วเสียอะไร | |
+|---|---|
+| `/analyze` · `/comments` | 🔴 เครดิต ScrapeCreators (จ่ายเงิน) |
+| `/classify` · `/resynth` · `/paraphrase` | 🔴 โควตา Claude (จ่ายเงิน) |
+| `POST /feedback` | 🔴 เขียน KV — โควตา 1,000/วัน **ใช้ร่วมทั้งโปรเจกต์** |
+
+**ที่ยังทำได้และยังไม่ได้ทำ:** ตั้ง Rate Limiting Rules ที่ Cloudflare (ไม่ต้องแก้โค้ด)
+
 ## 1b. `POST /classify` — ของเดิม ยังใช้ได้
 
 หน้า `sentiment-eval.html` ใช้อยู่ · คืน 2 แกนดิบ (`sentiment_cp` · `overall_cred` · `is_sarcasm`)
@@ -160,4 +196,4 @@ Worker: `https://comment-sentiment.s3445028.workers.dev`
 > ⚠️ **ต้องเก็บว่าแถวไหนตีด้วยโมเดลอะไร** (`model` + `ver` + `rubric`) ไม่งั้นข้อมูลข้ามวัน
 >    จะมี 2 โมเดลปนกันโดยไม่มีใครรู้ แล้วเทียบตัวเลขข้ามช่วงไม่ได้
 
-_เขียน 3 ก.ย. 2026 · worker v35 (profile-based)_
+_เขียน 3 ก.ย. 2026 · worker v36 (profile-based + shared secret)_

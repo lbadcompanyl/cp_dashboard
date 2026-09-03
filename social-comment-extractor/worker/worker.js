@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 35;
+const WORKER_VER = 36;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -408,6 +408,18 @@ async function feedbackRoute(request, url, env) {
 export default {
   async fetch(request, env) {
     const origin = env.ALLOW_ORIGIN || "*";
+    /* 🌐 ตั้ง ALLOW_ORIGIN ไว้ = **บล็อกจริง** ไม่ใช่แค่ตั้ง header ตอบกลับ
+       ของเดิมเอาค่านี้ไปใส่ Access-Control-Allow-Origin อย่างเดียว ซึ่ง**ไม่ได้กันอะไรเลย**
+       — CORS เป็นกฎที่เบราว์เซอร์บังคับใช้ ส่วนเซิร์ฟเวอร์เราตอบไปแล้วเรียบร้อย
+       (เผาเครดิตไปแล้วด้วย) เบราว์เซอร์แค่ไม่ให้ JS ฝั่งนั้นอ่านผล
+
+       ⚠️ กันได้แค่ **เบราว์เซอร์จากเว็บอื่น** — `curl`/สคริปต์ไม่ส่ง Origin มา หรือปลอมได้
+          คำขอที่ไม่มี Origin จึงปล่อยผ่าน (ไม่งั้น server-to-server พังหมด)
+          ตัวที่กันสคริปต์จริงๆ คือ WORKER_KEY ที่ /sentiment */
+    const reqOrigin = request.headers.get("Origin");
+    if (env.ALLOW_ORIGIN && reqOrigin && reqOrigin !== env.ALLOW_ORIGIN) {
+      return cors(json({ error: "origin_not_allowed", got: reqOrigin }, 403), origin);
+    }
     if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }), origin);
 
     const url = new URL(request.url);
@@ -558,6 +570,25 @@ export default {
           ย้ายไป Pages Function ได้แต่ต้องยก secret/KV/ขั้นตอน deploy ตามไปทั้งชุด
           → เลือกทางที่ไม่ต้องรื้อ ถ้าอยากได้ path นั้นจริงๆ ค่อยทำ proxy บาง ๆ ที่ Pages ทีหลัง */
     if (request.method === "POST" && url.pathname === "/sentiment") {
+      /* 🔐 endpoint นี้เรียกจาก **เซิร์ฟเวอร์ถึงเซิร์ฟเวอร์** เท่านั้น (ห้องอื่นเรียกจาก
+         Pages Function) กุญแจจึงเก็บเป็น Secret ได้จริง ไม่หลุดเหมือนของที่ฝังในหน้าเว็บ
+
+         ⚠️ **ไม่ตั้ง `WORKER_KEY` = ปิด endpoint** ไม่ใช่เปิดให้ทุกคน
+            (กฎเดียวกับ `FEEDBACK_KEY` — ค่าปริยายต้องปลอดภัย ลืมตั้งแล้วต้องไม่หลุด)
+
+         🚫 **ห้ามเอากฎนี้ไปใช้กับ endpoint ที่หน้าเว็บเรียก** (`/analyze` `/resynth`
+            `/paraphrase` `/comments` `/classify` `/credits`) — กุญแจจะต้องฝังอยู่ในโค้ด
+            หน้าเว็บที่ใครก็เปิดดูได้ = ไม่ใช่ความลับตั้งแต่แรก แถมหน้าเว็บพังทันที
+            (บทเรียนเดียวกับปุ่ม ⚑ กับ `/api/flags` ที่จดไว้ใน CLAUDE.md)
+
+         📌 precedent ที่ทำให้ต้องมีข้อนี้: `/debugmeta` ที่เคยหลุด production
+            แล้วเปิดให้ใครก็ได้ยิงจนเผาเครดิต ScrapeCreators ที่จ่ายเงิน */
+      if (!env.WORKER_KEY) {
+        return cors(json({ error: "endpoint_disabled",
+          detail: "ยังไม่ได้ตั้ง WORKER_KEY ที่ Cloudflare — /sentiment ปิดอยู่" }, 403), origin);
+      }
+      const given = request.headers.get("x-worker-key") || url.searchParams.get("key") || "";
+      if (given !== env.WORKER_KEY) return cors(json({ error: "bad_key" }, 403), origin);
       let body;
       try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
       /* รับ profile ได้ทั้งใน body และ query string (`?profile=cp_comment`) */

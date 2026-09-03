@@ -2,6 +2,7 @@
 
 | ไฟล์ | คุมอะไร | รันยังไง |
 |---|---|---|
+| `authguard.mjs` | 🔐 **กันคนนอกยิงเข้า worker** — ไม่ตั้ง `WORKER_KEY` = **ปิด** ไม่ใช่เปิด · กุญแจผิดต้องไม่ยิงออกไปข้างนอกเลย · 🚫 endpoint ที่หน้าเว็บเรียกห้ามถูกบังคับกุญแจ · `ALLOW_ORIGIN` ต้องบล็อกจริง | `node authguard.mjs` |
 | `profiles.mjs` | 🔒 **profile-based rubric + REGRESSION ของ `cp_comment`** — เก็บ sha256 ของ prompt/few-shot ไว้ ขยับ 1 ตัวอักษรก็ตก · ชื่อ profile ที่ไม่รู้จักห้ามตกกลับไปตัวปริยาย · เกณฑ์งานอื่นห้ามปนเข้ามา | `node profiles.mjs` |
 | `twolens.mjs` | ตัวจัดหมวด 2 แกนใน `worker.js` — **แถวต้องไม่เลื่อน** เมื่อโมเดลตอบสลับลำดับ / ตอบไม่ครบ / ตอบเป็นขยะ · ค่าเพี้ยนต้องกลายเป็น Neutral ไม่ใช่ Negative | ดูข้างล่าง |
 | `retry.mjs` | ถูกตัดกลางคัน → ลองใหม่เพดาน 2 เท่า · พลาดซ้ำต้องโยน error ไม่ใช่คืน Neutral |  |
@@ -41,7 +42,7 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          PROFILES, getProfile, DEFAULT_PROFILE };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in profiles twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid keywords apierror synthbudget airetry; do node $t.mjs; done
+for t in authguard profiles twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid keywords apierror synthbudget airetry; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
