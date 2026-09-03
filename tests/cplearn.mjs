@@ -103,7 +103,9 @@ for (const [name, f, model] of [["trend", "../functions/api/trend/feeds.js", "AI
      /const d = await readDecisions\(env\); setAllowed\(d\.allowed\); setBlocked\(d\.blocked\); cpEx = cpExamples\(d\);/.test(src));
   ok("อ่าน KV ที่เดียวเหมือนเดิม", (src.match(/readDecisions\(/g) || []).length === 1);
   ok("ส่งตัวอย่างเข้า verifyAlertItems", /verifyAlertItems\(cache, sources, alertVerify, \w+, env, cpEx\)/.test(src));
-  ok("ส่งต่อถึง AI", /aiHeadlineIsCP\(env, blind\.map\(\(i\) => verdict\[i\]\.bare\), cpEx\)/.test(src));
+  // 🔄 แก้ 2 ก.ย. 2026: ตัวอย่างที่เจ้าของสอนไว้ ตอนนี้ส่งผ่านชั้น AI ที่ดู "พาดหัว"
+  // (ชื่อเครือโผล่กลางคำอื่น) — ชั้นที่ยิงหลังอ่านเนื้อข่าวถูกถอดออกแล้ว ดู cptitle.mjs
+  ok("ส่งต่อถึง AI", /cachedHeadlineIsCP\(cache, env, pick\.map\(\(i\) => verdict\[i\]\.bare\),[\s\S]{0,140}cpEx\)/.test(src));
   ok("อ่าน blob ล้ม → ตัวอย่างว่าง ไม่ใช่ค้างของเก่า", /let cpEx = \[\];/.test(src));
   ok("ไม่ก๊อป cpExamples มาไว้ในแดชบอร์ด", !/function cpExamples\(/.test(src));
 }

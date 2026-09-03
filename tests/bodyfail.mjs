@@ -14,9 +14,14 @@ for (const [tag, file] of [["trend", "../functions/api/trend/feeds.js"],
   const body = src.slice(at, src.indexOf("\n}", at) + 2);
   ok("อ่านไม่ได้ → คืน null (ไม่ใช่ false)", /if \(!body\) return null;/.test(body), body.slice(-160));
   ok("อ่านได้แล้วค่อยตัดสินจากคำ", /return keep\.some\(/.test(body));
-  ok("null = เก็บไว้ ไม่ตัด", /verdict\[i\]\.ok = hits\[k\] !== false;/.test(src));
-  ok("รอบที่ยังยิงเน็ตไม่ได้ ก็ไม่ตัด", /needBody\.forEach\(\(i\) => \{ verdict\[i\]\.ok = true; \}\);/.test(src));
-  ok("ไม่เหลือโค้ดเดิมที่ตัดทิ้ง", !/verdict\[i\]\.ok = hits\[k\] === true/.test(src) && !/needBody\.forEach\(\(i\) => \{ verdict\[i\]\.ok = false; \}\)/.test(src));
+  // 🔄 แก้ 2 ก.ย. 2026 — เจ้าของสั่งให้ **ตัดสินที่พาดหัวอย่างเดียวทุกคอลัมน์**
+  //    ("ตัดยังไงก็ไม่หมด … ใน body ไม่เอาเลย" -> "คอลัมน์อื่นด้วย")
+  //    ด่านอ่านเนื้อจึงถูกถอดออกจากสายงาน · ตัวฟังก์ชันยังอยู่เผื่อเจ้าของเปลี่ยนใจ
+  //    ของเดิม 3 ข้อนี้วัดจุดที่เรียกใช้ ซึ่งไม่มีแล้ว — เปลี่ยนเป็นวัดว่าถูกถอดจริง
+  ok("🚫 ไม่มีใครเรียก bodyHasKeep แล้ว (ตัดที่พาดหัวแทน)",
+    !/bodyHasKeep\(cache, items\[/.test(src));
+  ok("ไม่อยู่ในพาดหัว = ตัดทันที", /return \{ ok: false, why: "ไม่อยู่ในพาดหัว"/.test(src));
+  ok("🚫 ไม่เหลือ verdict ที่รอไปอ่านเนื้อ", !/ok: "body"/.test(src));
 
   // จำลองตรรกะการตัดสิน
   const decide = (hit, allowFetch = true) => (allowFetch ? hit !== false : true);

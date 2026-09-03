@@ -35,7 +35,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "84"; // bump: สรุปที่ซ้ำข้อความตัวเอง = ลิสต์ข่าว ตัดทิ้ง + แปลง &middot;
+const CACHE_VER = "86"; // bump: ทุกคอลัมน์ตัดสินที่พาดหัวอย่างเดียว ไม่อ่านเนื้อ ไม่ดูสรุป
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -155,8 +155,8 @@ function pruneStaleMerged(sources, alertSrc, terms) {
   const matchers = buildMatchers(terms);
   s.items = s.items.filter((it) => {
     if (!it.fromNews) return true;
-    // alert1 ยึดพาดหัวอย่างเดียว — เกณฑ์เดียวกับ mergeNewsIntoAlert (ดูหมายเหตุที่นั่น)
-    const hay = (alertSrc === "alert1" ? (it.title || "") : (it.title || "") + " " + (it.snippet || "")).toLowerCase().replace(/\[\[\/?hl\]\]/g, "");
+    // ⚠️ ทุกคอลัมน์ยึดพาดหัวอย่างเดียว — เกณฑ์เดียวกับ mergeNewsIntoAlert (ดูหมายเหตุที่นั่น)
+    const hay = (it.title || "").toLowerCase().replace(/\[\[\/?hl\]\]/g, "");
     if (anyTermIn(hay, matchers)) return true;
     if (cut.length < 40) cut.push({ title: (it.title || "").replace(/\[\[\/?hl\]\]/g, ""), link: it.link });
     return false;
@@ -240,10 +240,12 @@ function mergeNewsIntoAlert(sources, alertSrc, newsKeys, terms, excludes) {
   const have = new Set(sources[alertSrc].items.map((it) => normLink(it.link)));
   let added = 0;
   for (const nk of newsKeys) for (const it of (sources[nk]?.items || [])) {
-    // ⚠️ คอลัมน์ CP (alert1) ตัดสินจาก "พาดหัว" เท่านั้น — สรุปของฟีดเป็น "ข่าวที่เกี่ยวข้อง"
-    // ของใบอื่น (เจอจริง: ข่าวตลาดหุ้นของเดลินิวส์ถูกดูดเข้ามาเพราะสรุปมีพาดหัวข่าว 'ซีพี' ใบอื่นพ่วงมา)
+    // ⚠️ **ทุกคอลัมน์ตัดสินจาก "พาดหัว" เท่านั้น** (เจ้าของสั่ง 2 ก.ย. 2026 — CP ก่อน แล้ว "คอลัมน์อื่นด้วย")
+    // สรุปของฟีดเป็น "ข่าวที่เกี่ยวข้อง" ของใบอื่นได้ (เจอจริง: ข่าวตลาดหุ้นของเดลินิวส์ถูกดูดเข้ามา
+    // เพราะสรุปมีพาดหัวข่าว 'ซีพี' ใบอื่นพ่วงมา · ข่าวหวยถูกดูดเข้าคอลัมน์จับตามองเพราะสรุปเป็น
+    // บล็อกข่าวปลาหมอคางดำ) — เชื่อสรุปไม่ได้เลย
     // เกณฑ์นี้ต้องตรงกับ pruneStaleMerged เป๊ะ ไม่งั้นดึงเข้า-ลบทิ้งสลับกันทุกรอบ
-    const hay = (alertSrc === "alert1" ? (it.title || "") : (it.title || "") + " " + (it.snippet || "")).toLowerCase();
+    const hay = (it.title || "").toLowerCase();
     const matched = anyTermIn(hay, matchers);
     if (!matched) continue;
     if (anyTermIn(hay, blockers)) continue;
@@ -771,8 +773,7 @@ async function mapPoolResults(items, limit, fn) {
 }
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch)
-const BODY_FETCH_MAX = 12; // เพดานยิงอ่านเนื้อข่าวต่อ 1 build — กันชนโควตา subrequest 50 ของ Cloudflare
-const VFY_VER = 6; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const VFY_VER = 8; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
 const AI_CP_MAX = 12; // เพดานใบที่ถาม AI ต่อ 1 build — คำตอบถูกจำไว้ ใบเดิมจึงถามครั้งเดียวตลอด
 
 // ถาม AI แล้ว "จำคำตอบไว้ 7 วัน" ต่อข่าว 1 ใบ — ไม่งั้นทุก build จะถามซ้ำทั้งคอลัมน์
@@ -839,7 +840,6 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
       if (ROUNDUP_RE.test(title)) return { ok: false, why: "roundup", terms: [], bare, link: it.link };
       if (isOldRepost(it)) return { ok: false, why: "old-content", terms: [], bare, link: it.link };
       // CP มาจากชื่อลวงล้วน ๆ (บีแอลซีพี/ซีพีเอ็น) → ไม่ใช่ข่าวเครือ CP
-      const rawHay = bare + " " + (it.snippet || "");
       // ยึดพาดหัวอย่างเดียวเหมือน noiseReason — สรุปของฟีดเป็น "ข่าวที่เกี่ยวข้อง" เชื่อไม่ได้
       if (src === "alert1" && hasFalseCP(bare) && !realCP(bare)) return { ok: false, why: "false-cp", terms: [], bare, link: it.link };
       // ⚠️ คอลัมน์ CP ไม่เข้าข่ายทางลัดนี้ — ของที่ดึงมาจากคอลัมน์ข่าว match ได้จาก "สรุป"
@@ -861,41 +861,33 @@ async function verifyAlertItems(cache, sources, diag, allowFetch, env, cpEx) {
         // จึงไม่ได้แปลว่าข่าวใบนี้เป็นข่าวของเครือ (เจอจริง: "7 ยักษ์ผูกเหลาฟาม์าห์ เขย่าธุรกิจร้านยา"
         // กับข่าวมรณกรรม "จูหรงจี้ อดีตนายกฯ จีน" หลุดเข้าคอลัมน์ CP เพราะชื่อเครืออยู่ในสรุป)
         // ตกลงกันว่า **ให้ไปอ่านเนื้อข่าวจริงแทน** (ชั้น 3 — bodyHasKeep ยิงเปิดหน้าข่าวเอง)
-        return { ok: "body", why: "ไม่มีชื่อเครือ CP ในพาดหัว", terms, bare, link: it.link };
+        // 🔴 **ไม่มีชื่อเครือในพาดหัว = ตัดทิ้งเลย ไม่ไปอ่านเนื้อข่าวแล้ว** (เจ้าของสั่ง 2 ก.ย. 2026:
+        // "ตัดยังไงก็ไม่หมด คิดว่าเอาเฉพาะ keyword อยู่ในพาดหัวเลยดีกว่า ใน body ไม่เอาเลย")
+        // ของเดิมไปเปิดหน้าข่าวอ่าน แต่ชื่อเครือโผล่ใน "เนื้อ" ได้โดยข่าวไม่ใช่ข่าวของเครือ —
+        // ข่าวหุ้นที่ไล่ชื่อบริษัทเป็นพรืด ("ชู 7 หุ้น Defensive" ที่มี CPALL/CPF ในลิสต์) หรือ
+        // ข่าวการเมืองที่เอ่ยถึงเครือผ่านๆ · ไล่ปิดทีละรูมา 4 รอบแล้วยังไม่หมด จึงตัดที่ต้นทาง
+        // ⚠️ **แลกกับ: พาดหัวที่ฟีดตัดสั้นจนชื่อเครือหลุดออกไป จะถูกตัดทิ้งด้วย**
+        //    ตาข่ายที่เหลือ: ข่าวจากคอลัมน์ News ยัง merge เข้ามาด้วยพาดหัวเหมือนเดิม ·
+        //    กด ↩ เอากลับ ที่หน้า /admin/ ได้ทันที (แล้วระบบเรียนรู้จากที่กดด้วย)
+        // ⚠️ **ใช้กับคอลัมน์ CP เท่านั้น** — คอลัมน์จับตามองยังต้องอ่านเนื้อ เพราะเคยตัดข่าวจริง
+        //    หายไป 9 ใบมาแล้วตอนที่ด่านอ่านเนื้อไม่ทำงาน (20 ส.ค. 2026)
+        return { ok: false, why: "ไม่มีชื่อเครือ CP ในพาดหัว", terms, bare, link: it.link };
       }
       // เช็คทั้ง title ดิบ + แบบแปลงเครื่องหมายเป็นช่องว่าง — พาดหัวแบบ 'TU'อัพเป้า ให้คำอย่าง "tu " match ติด
       const ntitle = " " + title.replace(/[^\p{L}\p{N}]+/gu, " ") + " ";
       if (terms.some((t) => title.includes(t) || ntitle.includes(t)) || extra.some((t) => title.includes(t) || ntitle.includes(t))) return { ok: true, mark: true }; // ชั้น 1
-      return { ok: "body", why: "ไม่อยู่ในพาดหัว/เนื้อ", terms, bare, link: it.link };
+      // 🔴 **ไม่อยู่ในพาดหัว = ตัดทิ้งเลย** (เจ้าของสั่ง 2 ก.ย. 2026 — สั่งคอลัมน์ CP ก่อน
+      // แล้วสั่งต่อว่า "คอลัมน์อื่นด้วย") · ของเดิมไปเปิดหน้าข่าวอ่านเนื้อ แต่คำ keyword โผล่ใน
+      // เนื้อได้โดยข่าวไม่ได้เกี่ยวกับเรื่องนั้นจริง (บล็อกข่าวแนะนำ · ข่าวที่เอ่ยผ่านๆ)
+      return { ok: false, why: "ไม่อยู่ในพาดหัว", terms, bare, link: it.link };
     });
-    const needBody = [];
-    const needAI = []; // ชื่อเครือโผล่กลางคำอื่น — ข้ามการอ่านเนื้อ ให้ AI ดูพาดหัวพอ
-    verdict.forEach((v, i) => { if (v.ok === "body") needBody.push(i); else if (v.ok === "ai") needAI.push(i); });
-    if (allowFetch && needBody.length) {
-      // เพดานต่อ build — ด่านนี้ตรวจของเก่าจากคลังด้วย (รอบสอง) รอบแรกหลัง release มี backlog
-      // เยอะ ยิงหมดทีเดียวจะชนโควตา subrequest ของ Cloudflare · เกินเพดาน = เก็บไว้ก่อน
-      // "โดยไม่ติดธง" รอบถัดไปค่อยตรวจต่อ จนกว่าจะหมด
-      const toFetch = needBody.slice(0, BODY_FETCH_MAX);
-      needBody.slice(BODY_FETCH_MAX).forEach((i) => { verdict[i].ok = true; });
-      // ⚠️ **คำที่ใช้หาในเนื้อข่าว ต้องเป็นคำของคอลัมน์นั้นจริงๆ**
-      // คอลัมน์ CP มีลิสต์ชื่อเครือ (`extra`) แต่คอลัมน์อื่นไม่มีลิสต์ประจำคอลัมน์
-      // ต้องใช้ "คำที่ Google ไฮไลต์ไว้ในข่าวใบนั้น" แทน
-      // ของเดิมส่ง `extra` ไปทุกคอลัมน์ ซึ่งคอลัมน์อื่นเป็น [] → ด่านอ่านเนื้อข่าว
-      // ไม่เคยทำงานเลย ตัดทิ้งทุกใบที่คำไม่อยู่ในพาดหัว (เจอจริง 20 ส.ค. 2026)
-      const hits = await mapPoolResults(toFetch, 6, (i) =>
-        bodyHasKeep(cache, items[i].link, extra.length ? extra : verdict[i].terms));
-      // อ่านไม่ได้ (null) = ไม่รู้ → เก็บไว้โดยไม่ติดธง · เจอคำ = เก็บ+ติดธง · อ่านแล้วไม่เจอ = ตัด
-      toFetch.forEach((i, k) => { verdict[i].ok = hits[k] !== false; if (hits[k] === true) verdict[i].mark = true; });
-      // ชั้น 4 — เฉพาะคอลัมน์ CP: ใบที่เปิดอ่านเนื้อไม่ได้ ให้ AI อ่านพาดหัวตัดสินแทนการปล่อยผ่าน
-      if (src === "alert1") {
-        const blind = toFetch.filter((_, k) => hits[k] === null);
-        const ans = blind.length ? await aiHeadlineIsCP(env, blind.map((i) => verdict[i].bare), cpEx) : null;
-        if (ans) blind.forEach((i, k) => { if (!ans[k]) { verdict[i].ok = false; verdict[i].why = "ai-no-cp"; } else { verdict[i].mark = true; } });
-      }
-    } else {
-      // รอบนี้ยังไม่มีสิทธิ์ยิงอ่านเนื้อข่าว — เก็บไว้ก่อน รอบเบื้องหลังจะมาตัดสินให้เอง
-      needBody.forEach((i) => { verdict[i].ok = true; });
-    }
+    // 🗑 (ถอดออก 2 ก.ย. 2026) ของเดิมมี "ชั้น 3" ไปเปิดหน้าข่าวอ่านเนื้อ แล้ว "ชั้น 4" ให้ AI
+    // ตัดสินใบที่อ่านไม่ได้ · เจ้าของสั่งให้ **ตัดสินที่พาดหัวอย่างเดียวทุกคอลัมน์** จึงไม่มีใบไหน
+    // เดินมาถึงอีกแล้ว ("ตัดยังไงก็ไม่หมด … ใน body ไม่เอาเลย" → "คอลัมน์อื่นด้วย")
+    // · `bodyHasKeep()` / `articleBodyText()` **ยังอยู่ในไฟล์แต่ไม่มีใครเรียก** — เก็บไว้เผื่อ
+    //   เจ้าของเปลี่ยนใจ จะได้ต่อกลับได้ทันที · เทสต์ `cptitle.mjs` มีด่านกันไม่ให้แอบต่อกลับเงียบๆ
+    const needAI = []; // ชื่อเครือโผล่กลางคำอื่น — ให้ AI ดู "พาดหัว" ตัดสิน (ชั้นเดียวที่เหลือ)
+    verdict.forEach((v, i) => { if (v.ok === "ai") needAI.push(i); });
     // ใบที่ชื่อเครืออยู่กลางคำอื่น — ถาม AI (จำคำตอบไว้ ถามครั้งเดียวต่อข่าว 1 ใบ)
     if (needAI.length) {
       if (allowFetch) {
