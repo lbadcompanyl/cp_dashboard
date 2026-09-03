@@ -415,6 +415,11 @@ export function normalizeRows(rows, opts = {}) {
       sentimentRaw: String(get(r, "sentimentRaw") ?? "").trim() || null,
       // 🔴 ยังไม่มีตัวตัดสินของเรา — ต้องเป็น null ห้ามเติม "neu" ให้เงียบๆ
       sentimentFinal: null,
+      // ข้อตกลงกับห้อง sentiment (3 ก.ย. 2026): ระยะแรกใช้ค่าดิบของ Zocial ไปก่อน
+      // แต่ต้องติดธงไว้ว่า "ยังไม่ผ่านตัวตัดสินของเรา" ทุกแถว ไม่งั้นแยกไม่ออกทีหลังว่าใบไหนตรวจแล้ว
+      sentimentChecked: false,
+      sentimentProfile: null,   // 'news_post' | 'cp_comment' — คนละเกณฑ์ ห้ามเอามาเทียบกันตรงๆ
+      rubricVersion: null,      // ⚠️ ต้องมาจากคำตอบของ worker ห้ามเราเขียนเอง
       campaign: opts.campaign || String(get(r, "campaign") ?? "").trim() || null,
     });
   });

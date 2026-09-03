@@ -28,13 +28,18 @@ CREATE TABLE IF NOT EXISTS upload_batch (
 );
 
 -- ── 2. แถวดิบจากไฟล์ — ลบทั้งหมดตาม retention ────────────────────────────
-CREATE TABLE IF NOT EXISTS raw_post (
+-- 🔴 เก็บ "คอมเมนต์และคำตอบกลับ" ตั้งแต่วันแรกด้วย ถึงจะยังไม่เอาขึ้นหน้าจอ
+--    (สั่งโดยห้องกรองข่าว 3 ก.ย. 2026) — ไม่เก็บตอนนี้ = กู้ย้อนหลังไม่ได้เลยเมื่อไฟล์ต้นทางหาย
+--    ในไฟล์จริง 12,004 แถว เป็นคอมเมนต์ 7,062 + ตอบกลับ 1,394 = เกินครึ่งของไฟล์
+CREATE TABLE IF NOT EXISTS raw_messages (
   id           TEXT PRIMARY KEY,          -- rowId() = ลิงก์ + เวลา · upload ไฟล์ซ้ำจึงไม่เกิดแถวซ้ำ
   batch_id     TEXT NOT NULL REFERENCES upload_batch(id) ON DELETE CASCADE,
   campaign     TEXT NOT NULL,
   date         TEXT NOT NULL,             -- 'YYYY-MM-DD' ปฏิทินไทย = คีย์ที่แดชบอร์ดใช้
   posted_at    TEXT NOT NULL,             -- ISO 8601 พร้อม offset (ห้ามเก็บเป็นข้อความไทย)
-  source       TEXT NOT NULL,             -- facebook|x|instagram|tiktok|youtube|forum|news
+  source       TEXT NOT NULL,             -- facebook|x|instagram|tiktok|youtube|forum|news|other
+  kind         TEXT NOT NULL,             -- post|comment|reply  ⚠️ ไฟล์เอามาปนกันในชีตเดียว
+  post_url     TEXT,                      -- คอมเมนต์อยู่ใต้โพสต์ไหน (ใช้จับกลุ่มตอนทำการ์ด)
   account      TEXT,
   account_type TEXT NOT NULL,             -- page|person|unknown
   expires      INTEGER NOT NULL,          -- 1 = ลบตาม retention · 0 = เก็บถาวร (เพจเท่านั้น)
@@ -42,10 +47,15 @@ CREATE TABLE IF NOT EXISTS raw_post (
   url          TEXT NOT NULL,
   engagement   INTEGER, comments INTEGER, likes INTEGER, shares INTEGER,
   sentiment_raw   TEXT,                   -- ค่าดิบจาก Zocial · ⚠️ ผิดบ่อยและผิดแรง ห้ามโชว์โดยไม่บอกที่มา
-  sentiment_final TEXT                    -- ของเราเอง · 🔴 คำนวณไม่ได้ต้องเป็น NULL ห้ามเติม 'neu'
+  sentiment_final TEXT,                   -- ของเราเอง · 🔴 คำนวณไม่ได้ต้องเป็น NULL ห้ามเติม 'neu'
+  -- 3 ช่องล่างมาจากข้อตกลงกับห้อง sentiment (3 ก.ย. 2026)
+  sentiment_checked  INTEGER NOT NULL DEFAULT 0,  -- 0 = ยังใช้ค่าดิบของ Zocial อยู่ ยังไม่ผ่านตัวตัดสินของเรา
+  sentiment_profile  TEXT,                -- 'news_post' | 'cp_comment' — คนละเกณฑ์กัน ห้ามเอามาเทียบกันตรงๆ
+  rubric_version     TEXT                 -- ⚠️ ต้องเอามาจากคำตอบของ worker ห้ามเราเขียนเอง ไม่งั้นเป็นเลขที่โกหก
 );
-CREATE INDEX IF NOT EXISTS raw_post_day   ON raw_post (campaign, date);
-CREATE INDEX IF NOT EXISTS raw_post_purge ON raw_post (expires, date);
+CREATE INDEX IF NOT EXISTS raw_messages_day   ON raw_messages (campaign, date);
+CREATE INDEX IF NOT EXISTS raw_messages_purge ON raw_messages (expires, date);
+CREATE INDEX IF NOT EXISTS raw_messages_post  ON raw_messages (post_url);
 
 -- ── 3. การ์ดที่แดชบอร์ดหยิบไปแสดง ────────────────────────────────────────
 --    เพจ = เก็บถาวร (นิติบุคคล + ต้องย้อนดู monitoring ได้)
@@ -62,22 +72,32 @@ CREATE TABLE IF NOT EXISTS daily_news (
   snippet      TEXT NOT NULL,
   url          TEXT NOT NULL,
   engagement   INTEGER,
-  comments     INTEGER,                   -- ⚠️ นับเฉพาะที่อยู่ในไฟล์ ไม่ใช่ยอดจริงบนโพสต์ (§7.1)
-  sent_neg INTEGER, sent_neu INTEGER, sent_pos INTEGER,   -- ของคอมเมนต์ใต้โพสต์ · NULL = ยังไม่รู้
-  post_sent    TEXT                       -- ของตัวโพสต์เอง · NULL = ยังไม่รู้
+  comment_count INTEGER,                  -- ⚠️ นับเฉพาะที่อยู่ในไฟล์ ไม่ใช่ยอดจริงบนโพสต์ (§7.1)
+  -- ของคอมเมนต์ใต้โพสต์ · ปล่อย NULL ไว้ก่อนได้ แต่ต้องมีช่องไว้ตั้งแต่วันแรก
+  comment_sent_neg INTEGER, comment_sent_neu INTEGER, comment_sent_pos INTEGER,
+  post_sent    TEXT,                      -- ของตัวโพสต์เอง · NULL = ยังไม่รู้ ห้ามเติม 'neu'
+  post_sent_src TEXT,                     -- 'zocial' = ค่าดิบ · 'ours' = ผ่านตัวตัดสินของเราแล้ว
+  sentiment_checked INTEGER NOT NULL DEFAULT 0,
+  sentiment_profile TEXT,
+  rubric_version    TEXT
 );
 CREATE INDEX IF NOT EXISTS daily_news_day   ON daily_news (campaign, date, engagement DESC);
 CREATE INDEX IF NOT EXISTS daily_news_purge ON daily_news (expires, date);
 
 -- ── 4. ตัวเลขล้วน ไม่มีอะไรระบุตัวบุคคล → เก็บถาวร ──────────────────────
 --    🚫 ตัวลบ retention ห้ามแตะตารางนี้เด็ดขาด
+-- 🔴 ต้องคำนวณ "ตอน upload" ไม่ใช่คำนวณตอนเปิดหน้าเว็บ
+--    คอมเมนต์เกือบทั้งหมดเป็นของบุคคล = ถูกลบเมื่อครบกำหนด ถ้ารอไปคำนวณทีหลัง
+--    พอถึงวันที่ 181 จะไม่เหลืออะไรให้นับ แล้วกราฟย้อนหลังจะกลายเป็นศูนย์ทั้งแถบ
 CREATE TABLE IF NOT EXISTS daily_aggregate (
   campaign   TEXT NOT NULL,
   date       TEXT NOT NULL,
   source     TEXT NOT NULL,
   posts      INTEGER NOT NULL,
+  comments   INTEGER,
   engagement INTEGER,
-  neg INTEGER, neu INTEGER, pos INTEGER,
+  neg INTEGER, neu INTEGER, pos INTEGER,                        -- ของโพสต์
+  comment_neg INTEGER, comment_neu INTEGER, comment_pos INTEGER, -- ของคอมเมนต์
   updated_at TEXT NOT NULL,
   PRIMARY KEY (campaign, date, source)
 );

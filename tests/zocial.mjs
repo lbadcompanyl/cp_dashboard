@@ -116,6 +116,9 @@ console.log("\n[6] 🔴 'ไม่รู้' ห้ามกลืนเป็�
   ok("sentimentFinal ต้องเป็น null เสมอในเฟสนี้", r.sentimentFinal === null, String(r.sentimentFinal));
   const withRaw = one({ "Sentiment": "Negative" }).records[0];
   ok("มีค่าดิบก็ยังห้ามเอามาเป็นคำตอบของเรา", withRaw.sentimentRaw === "Negative" && withRaw.sentimentFinal === null);
+  // ข้อตกลงกับห้อง sentiment: ใช้ค่าดิบไปก่อนได้ แต่ต้องติดธงว่ายังไม่ตรวจ ทุกแถว
+  ok("ทุกแถวติดธงว่ายังไม่ผ่านตัวตัดสินของเรา", withRaw.sentimentChecked === false && r.sentimentChecked === false);
+  ok("ยังไม่มี profile / rubric version", withRaw.sentimentProfile === null && withRaw.rubricVersion === null);
 
   const bad = Z.buildPreview([row({ "Post time": "เมื่อวาน" })], HEAD);
   ok("แถวที่อ่านเวลาไม่ได้ ต้องเข้ากองตัดทิ้ง ไม่ใช่เดาเป็นวันนี้", bad.counts.kept === 0 && bad.dropped[0].why === "no-time");
