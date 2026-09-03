@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 28;
+const WORKER_VER = 33;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -69,6 +69,15 @@ const SYNTH_SAMPLE = 120;    // จำนวนคอมเมนต์ที่
  * ============================================================ */
 const RUBRIC_VER = "v6";
 const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูงสุดต่อ 1 คำขอ /classify (หน้าเว็บเป็นคนวนเอง)
+/* เพดานของ /resynth (กดปุ่ม "สรุปใหม่") — ต้องคุมไว้เพราะ endpoint นี้ยิงได้โดยไม่มีกุญแจ
+   ตั้งให้เท่ากับจำนวนคอมเมนต์สูงสุดที่หน้าเว็บดึงได้ ไม่งั้นโพสใหญ่กดปุ่มแล้วโดนปฏิเสธ */
+const RESYNTH_MAX = 500;
+/* ลองใหม่กี่ครั้งเมื่อต้นทาง Claude ล่มชั่วคราว (429 · 529 · 5xx)
+   🚫 มากกว่านี้ไม่ควร — โพสใหญ่ยิง 24 ก้อน ถ้าล่มยาวจะกลายเป็นรอเป็นนาที */
+const AI_RETRY_MAX = 2;
+/* จำนวนใบสูงสุดต่อ 1 คำขอ /paraphrase (กด ✕ ขอตัวอย่างใหม่) — กดทีละใบอยู่แล้ว
+   เผื่อไว้เล็กน้อยเผื่อวันหน้าอยากขอทีเดียวหลายช่อง */
+const PARA_MAX = 6;
 
 /* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
    /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
@@ -419,6 +428,89 @@ export default {
         return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
       }
     }
+    /* 🔄 สรุปใหม่หลังผู้ใช้แก้ป้ายเอง — ยิง Claude รอบ "สรุป" อย่างเดียว
+       **ไม่ตี sentiment ใหม่** (ป้ายมาจากผู้ใช้แล้ว) และ **ไม่แตะ ScrapeCreators**
+       จึงไม่กินเครดิตที่จ่ายเงิน · วัดจริง: โพส 39 ใบ = 32% ของงานทั้งการวิเคราะห์
+       โพส 200 ใบ = 19% (ยิ่งโพสใหญ่ยิ่งคุ้ม เพราะส่วนที่แพงคือการตี sentiment)
+
+       ⚠️ หน้าเว็บเป็นคนส่งข้อความคอมเมนต์กลับมาให้ — worker ไม่เก็บ state ของโพสไว้
+       🚫 ห้ามให้ endpoint นี้เขียน KV หรือแตะเครดิต ScrapeCreators เด็ดขาด
+          มันเปิดให้ยิงได้โดยไม่มีกุญแจเหมือน /analyze · สิ่งที่เสียได้คือโควตา Claude
+          จึงต้องมีเพดานจำนวนใบและขนาดคำขอคุมไว้ทุกครั้ง */
+    if (request.method === "POST" && url.pathname === "/resynth") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const items = Array.isArray(body?.items) ? body.items : null;
+      if (!items || !items.length) return cors(json({ error: "no_items" }, 400), origin);
+      if (items.length > RESYNTH_MAX) {
+        return cors(json({ error: "too_many", max: RESYNTH_MAX, got: items.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const target = body.target === "cp" ? "cp" : "overall";
+      const texts = items.map(it => String(it && it.text || "").trim().slice(0, 400));
+      /* ป้ายที่ยอมรับมีแค่ 4 ค่า — ค่าอื่นตกเป็น neutral ห้ามเชื่อค่าที่ส่งมาดิบๆ */
+      const OKL = ["positive", "neutral", "negative", "not_related"];
+      const labels = items.map(it => {
+        const s = String(it && it.sentiment || "").toLowerCase();
+        return OKL.includes(s) ? s : "neutral";
+      });
+      const likes = items.map(it => Number(it && it.likes) || 0);
+      const sentiment = { positive: 0, neutral: 0, negative: 0 };
+      labels.forEach(l => { if (sentiment[l] != null) sentiment[l]++; });
+      const acc = { input: 0, output: 0 };
+      try {
+        const { synth, synthPool, synthError } = await buildSynth(
+          { texts, labels, likes, target, wantSamples: true, sentiment }, env, acc);
+        /* 🚫 สรุปพัง = ห้ามตอบ 200 พร้อมของว่าง — หน้าเว็บจะเอา [] ไปทับของเดิม
+           แล้วคำกับตัวอย่างหายเกลี้ยงโดยไม่มีอะไรบอก (บั๊กที่เจ้าของเจอ 2 ก.ย. 2026) */
+        if (synthError) {
+          return cors(json({ error: "resynth_failed", detail: synthError }, 502), origin);
+        }
+        return cors(json({
+          ok: true, ver: WORKER_VER, rubric: RUBRIC_VER,
+          target,
+          summary: synth.summary || "",
+          keywords: synth.keywords || [],
+          samples: synth.samples || [],
+          summary_from: Math.min(synthPool.length, SYNTH_SAMPLE),
+          summary_of: texts.length,
+          claude_usage: { input: acc.input, output: acc.output, total: acc.input + acc.output },
+          model: env.CLAUDE_MODEL || DEFAULT_MODEL,
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "resynth_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
+    /* ✂️ ถอดความใบใหม่ — ใช้ตอนผู้ใช้กด ✕ ตัดตัวอย่างที่ไม่ตรงประเด็นออก
+       แล้วขอใบถัดไปของกลุ่มเดียวกันมาแทน (เจ้าของสั่ง 2 ก.ย. 2026)
+
+       🎯 ตั้งใจให้เป็นคำขอที่ **เล็กที่สุด** — ไม่มีกองสรุป ไม่มี keyword ไม่มีตัวอย่างอื่น
+          ส่งไปแค่ข้อความที่จะถอดความ จ่ายเฉพาะตอนกดจริง
+       🚫 ทางเลือกที่ไม่เอา: ถอดความสำรองไว้ล่วงหน้าทุกครั้งที่วิเคราะห์
+          (จ่ายเพิ่มทุกโพสแม้ไม่มีใครกด — ผิดหลัก "จ่ายเมื่อใช้" ที่ตกลงกันไว้)
+       🚫 ไม่เขียน KV ไม่แตะ ScrapeCreators */
+    if (request.method === "POST" && url.pathname === "/paraphrase") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const raw = Array.isArray(body?.texts) ? body.texts : null;
+      if (!raw || !raw.length) return cors(json({ error: "no_texts" }, 400), origin);
+      if (raw.length > PARA_MAX) {
+        return cors(json({ error: "too_many", max: PARA_MAX, got: raw.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const items = raw.map(t => String(t || "").replace(/\s+/g, " ").trim().slice(0, 400)).filter(Boolean);
+      if (!items.length) return cors(json({ error: "no_texts" }, 400), origin);
+      const acc = { input: 0, output: 0 };
+      try {
+        const texts = await paraphraseOnly(items, env, acc);
+        return cors(json({
+          ok: true, ver: WORKER_VER, texts,
+          claude_usage: { input: acc.input, output: acc.output, total: acc.input + acc.output },
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "paraphrase_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
     /* 🚫 เคยมี `/debugmeta` ตรงนี้ — ถอดออกทั้งเส้นทางและฟังก์ชันแล้ว (เจ้าของสั่ง 20 ส.ค. 2026)
        ตอนนั้นทำไว้ไล่ปัญหาเรื่อง map field รูปปก ซึ่งแก้จบไปแล้ว
        ⚠️ ห้ามเอากลับมาแบบเปิดค้างไว้ ไม่ว่ากรณีใด — ไม่มีการตรวจสิทธิ์เลย
@@ -548,6 +640,10 @@ async function analyze(opts, env) {
     /* 🏷 ธงบอกว่าใบนี้ "ไม่มีข้อความให้อ่าน" ไม่ใช่ "AI อ่านแล้วเห็นว่ากลาง"
        หน้าเว็บต้องเอาไปแสดงให้ต่างกัน ไม่งั้นดูเหมือน AI ตัดสินมาแล้วทั้งที่ไม่ได้อ่าน */
     no_text: two[i]?.no_text ? 1 : 0,
+    /* 👍 ยอดถูกใจ — ใช้เลือกใบตัวอย่างตอนกด "สรุปใหม่" (`/resynth`)
+       ไม่มีค่านี้ การเลือกใบจะเรียงตามความยาวแทน แล้วได้คนละใบกับตอนวิเคราะห์ครั้งแรก
+       ⚠️ เป็นตัวเลขล้วน ไม่ใช่ข้อมูลของผู้คอมเมนต์ จึงไม่ขัด PRIVACY_NOTE */
+    likes: comments[i]?.likes || 0,
   }));
 
   /* 3) สรุป + keyword + ตัวอย่าง
@@ -555,39 +651,9 @@ async function analyze(opts, env) {
         ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
   /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
         ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน (โหมดอารมณ์รวมของเดิมส่ง texts ทั้งก้อน) */
-  const synthIdx = [];
-  texts.forEach((t, i) => {
-    if (!t) return;
-    if (target !== "cp" || labels[i] === "positive" || labels[i] === "negative") synthIdx.push(i);
-  });
-  const synthPool = synthIdx.map(i => texts[i]);
-  if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
-
-  /* 🎯 **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** (แก้ 31 ส.ค. 2026 รอบสอง)
-     ของเดิมให้ AI เลือกเองแล้วสั่งให้ตอบเลขข้อกลับมาด้วย — ถ้ามันไม่ตอบเลข
-     ตัวอย่างจะย้ายตามป้ายที่ผู้ใช้แก้ไม่ได้ **และไม่มีอะไรบอกว่าเพราะอะไร**
-     เจ้าของเจอเองว่า "เปลี่ยนแล้วก็ไม่อัพเดทอยู่ดี"
-     ตอนนี้ฝั่งเราชี้เลยว่าเอาใบไหน AI มีหน้าที่ถอดความอย่างเดียว
-     → รู้แน่นอนว่าตัวอย่างแต่ละอันมาจากคอมเมนต์ใบไหน ไม่ต้องเชื่อ AI
-
-     เกณฑ์เลือก: ถูกใจเยอะสุดก่อน แล้วค่อยยาวสุด (ตัวแทนที่คนเห็นด้วยมากที่สุด)
-     ⚠️ ต้องเรียงแบบตายตัว ไม่งั้นวิเคราะห์โพสเดิมซ้ำแล้วได้ตัวอย่างคนละใบทุกครั้ง */
-  const pickBy = (want, n) => synthIdx
-    .filter(i => labels[i] === want)
-    .sort((x, y) => (comments[y].likes || 0) - (comments[x].likes || 0) ||
-                    texts[y].length - texts[x].length || x - y)
-    .slice(0, n);
-  const pickIdx = wantSamples ? [...pickBy("positive", 2), ...pickBy("negative", 2)] : [];
-  if (pickIdx.length) logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
-
-  const synth = synthPool.length
-    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target,
-                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
-                       /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
-                       { ...sentiment, total: texts.length },
-                       /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
-                       texts.filter(Boolean))
-    : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
+  const { synth, synthPool, synthError } = await buildSynth(
+    { texts, labels, likes: comments.map(c => c.likes || 0), target, wantSamples, sentiment },
+    env, tokens, logLine);
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
 
@@ -629,6 +695,9 @@ async function analyze(opts, env) {
     keywords: synth.keywords || [],
     summary: synth.summary || "",
     samples: wantSamples ? (synth.samples || []) : [],
+    /* ⚠️ สรุปพังแต่ตัวเลข/audit ยังใช้ได้ → ส่งผลกลับไปตามปกติ **แต่ต้องบอกว่าสรุปพัง**
+       ไม่งั้นหน้าเว็บจะขึ้นสรุปว่างเปล่ากับคำ 0 คำ เหมือนโพสนี้ไม่มีอะไรจะพูดถึง */
+    synth_failed: synthError || null,
     credits_remaining: collected.credits_remaining ?? null,
     claude_usage: { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output },
     claude_rate_remaining: tokens.rate_remaining,
@@ -952,16 +1021,32 @@ async function callClaude(env, system, userText, maxTokens, acc, opts = {}) {
   if (opts.effort && EFFORT_MODELS.includes(model)) {
     body.output_config = { effort: opts.effort };
   }
-  const r = await fetch(ANTHROPIC_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await r.json().catch(() => null);
+  /* 🔁 ต้นทางล่มชั่วคราว = **ลองใหม่ให้เอง** ไม่ใช่โยนกลับให้ผู้ใช้กด
+     เจ้าของเจอ 2 ก.ย. 2026: กดปุ่มสรุปใหม่แล้วได้ `529 overloaded_error`
+     ซึ่งเป็นอาการที่หายเองภายในไม่กี่วินาที — ให้คนมานั่งกดซ้ำเองไม่มีเหตุผล
+     · ลองเฉพาะที่ลองแล้วมีโอกาสหาย: 429 (ยิงถี่) · 5xx/529 (ต้นทางล่ม)
+     🚫 ห้ามลองใหม่กับ 400/401/403 — คำขอผิดหรือสิทธิ์ไม่ถึง ลองกี่ครั้งก็เหมือนเดิม
+        เปลืองเวลาผู้ใช้เปล่าๆ แถมถ้าเป็น 429 อยู่แล้วยิ่งยิงยิ่งแย่
+     ⚠️ เคารพ `retry-after` ที่ต้นทางบอกมาก่อนเสมอ (แต่ไม่เกิน 8 วิ กันหน้าเว็บค้าง) */
+  const RETRY_ON = (s) => s === 429 || s === 529 || (s >= 500 && s < 600);
+  let r, data = null;
+  for (let attempt = 0; ; attempt++) {
+    r = await fetch(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (r.ok || attempt >= AI_RETRY_MAX || !RETRY_ON(r.status)) break;
+    const ra = Number(r.headers.get("retry-after"));
+    const waitMs = Math.min(8000, ra > 0 ? ra * 1000 : 1000 * Math.pow(2, attempt));
+    if (acc) acc.retries = (acc.retries || 0) + 1;
+    await new Promise(res => setTimeout(res, waitMs));
+  }
+  data = await r.json().catch(() => null);
   /* 🔴 ข้อความ error ต้องบอก **เลขสถานะ + ชนิด** เสมอ ห้ามเหลือแต่ประโยคของต้นทาง
      เจ้าของเจอ 2 ก.ย. 2026: หน้าเว็บขึ้นแค่ "Claude API: Request not allowed"
      ซึ่งแยกไม่ออกเลยว่ากุญแจผิด (401) · สิทธิ์ไม่ถึง/ถูกบล็อก (403) · ยิงถี่ไป (429)
@@ -1073,6 +1158,119 @@ function countTerms(terms, texts) {
   return out.sort((a, b) => b.count - a.count || a.term.localeCompare(b.term)).slice(0, 12);
 }
 
+/**
+ * เลือกกองที่จะสรุป + เลือกใบตัวอย่าง แล้วยิงขอสรุปจาก Claude 1 ครั้ง
+ *
+ * 🔁 **แยกออกมาเป็นฟังก์ชันเพราะใช้ 2 ที่** — ตอนวิเคราะห์ครั้งแรก (`analyze`)
+ *    และตอนผู้ใช้กด "สรุปใหม่" หลังแก้ป้ายเอง (`/resynth`)
+ *    🚫 ห้ามก๊อปโค้ดนี้ไปวางซ้ำ — แก้ที่เดียวต้องมีผลทั้ง 2 ทาง ไม่งั้นสรุปกับตัวอย่าง
+ *       ที่ได้จาก 2 ทางจะไม่เหมือนกัน แล้วผู้ใช้จะงงว่าทำไมกดปุ่มแล้วได้คนละแบบ
+ *
+ * @param inp.texts   ข้อความคอมเมนต์ (ใบที่ไม่มีข้อความเป็นสตริงว่าง)
+ * @param inp.labels  ป้ายปัจจุบันของแต่ละใบ — **ตอน /resynth คือป้ายที่ผู้ใช้แก้แล้ว**
+ * @param inp.likes   ยอดถูกใจ ใช้เลือกใบตัวอย่าง (ไม่มีก็ได้ จะเรียงตามความยาวแทน)
+ */
+/**
+ * ✂️ ถอดความคอมเมนต์อย่างเดียว — ไม่สรุป ไม่หา keyword
+ * ใช้ตอนผู้ใช้กด ✕ ตัดตัวอย่างทิ้งแล้วขอใบใหม่มาแทน
+ *
+ * ⚠️ ต้องคืน **จำนวนเท่าที่ขอไป และเรียงตามลำดับเดิม** — ฝั่งหน้าเว็บจับคู่ด้วยลำดับ
+ *    ตอบไม่ครบ = เอาเท่าที่ได้ ห้ามเดาว่าอันไหนคู่กับอันไหน (กฎเดียวกับ synthesize)
+ */
+async function paraphraseOnly(items, env, acc) {
+  const system =
+    "You paraphrase Thai social media comments for an anonymized report.\n" +
+    "Rules:\n" +
+    "- Write in Thai, one short sentence per comment (max 40 words).\n" +
+    "- Never copy the original wording verbatim — restate the point.\n" +
+    "- Never include names, @handles, phone numbers, or links.\n" +
+    "- Keep the commenter's stance and tone.\n" +
+    'Return JSON only: {"texts":["...","..."]} with exactly the same number of items, in the same order.';
+  const user = "คอมเมนต์ที่ต้องถอดความ (" + items.length + " ข้อ เรียงตามนี้):\n" +
+    items.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  /* เผื่อเยอะกว่าที่คำตอบต้องการจริงมาก เพราะ opus เขียนความคิดก่อนตอบ
+     (บทเรียนเดียวกับ synthesize — เพดานตายตัวน้อยๆ ทำให้ถูกตัดกลางคันแล้ว JSON พัง) */
+  const out = await callClaude(env, system, user, 2000 + 400 * items.length, acc);
+  if (acc && acc.stop_reason === "max_tokens") {
+    throw new Error("ถอดความ: คำตอบถูกตัดกลางคัน");
+  }
+  let obj;
+  try { obj = extractJson(out); }
+  catch (e) { throw new Error("ถอดความ: แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160)); }
+  const arr = Array.isArray(obj && obj.texts) ? obj.texts : null;
+  /* 🚫 แกะได้แต่ไม่มี texts = ต้องบอกว่าไม่สำเร็จ ห้ามคืน [] เหมือนสำเร็จ
+     (กับดัก "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" — เคยพลาดมาแล้วที่ synthesize) */
+  if (!arr || !arr.length) throw new Error("ถอดความ: โมเดลไม่ได้ตอบรายการมา: " + String(out).slice(0, 160));
+  return arr.slice(0, items.length)
+    .map(s => String(typeof s === "string" ? s : (s && s.text) || "").trim().slice(0, 300));
+}
+
+async function buildSynth(inp, env, acc, logLine = () => {}) {
+  const { texts, labels, target, wantSamples, sentiment } = inp;
+  const likes = inp.likes || [];
+
+  /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
+        ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน
+     โหมด CP: สรุปจากคอมเมนต์ที่มีท่าทีต่อ CP จริงๆ (ตัด Neutral ที่ไม่ได้แตะ CP ออก)
+        ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
+  const synthIdx = [];
+  texts.forEach((t, i) => {
+    if (!t) return;
+    if (target !== "cp" || labels[i] === "positive" || labels[i] === "negative") synthIdx.push(i);
+  });
+  const synthPool = synthIdx.map(i => texts[i]);
+  if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
+
+  /* 🎯 **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** (แก้ 31 ส.ค. 2026 รอบสอง)
+     ของเดิมให้ AI เลือกเองแล้วสั่งให้ตอบเลขข้อกลับมาด้วย — ถ้ามันไม่ตอบเลข
+     ตัวอย่างจะย้ายตามป้ายที่ผู้ใช้แก้ไม่ได้ **และไม่มีอะไรบอกว่าเพราะอะไร**
+     ตอนนี้ฝั่งเราชี้เลยว่าเอาใบไหน AI มีหน้าที่ถอดความอย่างเดียว
+
+     เกณฑ์เลือก: ถูกใจเยอะสุดก่อน แล้วค่อยยาวสุด (ตัวแทนที่คนเห็นด้วยมากที่สุด)
+     ⚠️ ต้องเรียงแบบตายตัว ไม่งั้นวิเคราะห์โพสเดิมซ้ำแล้วได้ตัวอย่างคนละใบทุกครั้ง
+
+     🟡 เลือกจาก **ทุกใบที่มีข้อความ** ไม่ใช่จาก synthIdx
+     synthIdx ของโหมด CP ตัดใบกลางทิ้ง → ช่องกลางบนหน้าเว็บจึงไม่เคยมีตัวอย่างเลย
+     (เจ้าของเจอ 2 ก.ย. 2026: "กลาง 87% (20 คอมเมนต์)" แต่มีตัวอย่างใบเดียว)
+     ⚠️ `not_related` ไม่โดนเลือก เพราะ want เป็น positive/neutral/negative เท่านั้น */
+  const pickPool = [];
+  texts.forEach((t, i) => { if (t) pickPool.push(i); });
+  const pickBy = (want, n) => pickPool
+    .filter(i => labels[i] === want)
+    .sort((x, y) => (likes[y] || 0) - (likes[x] || 0) ||
+                    texts[y].length - texts[x].length || x - y)
+    .slice(0, n);
+  /* ถอดความครบทั้ง 3 ช่อง ช่องละ 2 ใบ
+     🚫 ห้ามตัดช่องกลางออกเพื่อประหยัด — มันคือช่องที่คอมเมนต์เยอะที่สุดในโพสทั่วไป */
+  const pickIdx = wantSamples
+    ? [...pickBy("positive", 2), ...pickBy("neutral", 2), ...pickBy("negative", 2)]
+    : [];
+  if (pickIdx.length) logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
+
+  /* ⚠️ สรุปพังไม่ควรทำให้ทั้งการวิเคราะห์พัง (ตัวเลข/audit ยังใช้ได้)
+     แต่ **ต้องบอกผู้เรียกว่าพัง** ไม่ใช่กลืนแล้วส่งของว่างไปเหมือนสำเร็จ
+     · `analyze` เอาไปติดธง `synth_failed` ให้หน้าเว็บเห็น
+     · `/resynth` ตอบ error กลับไปเลย เพราะสรุปคือของชิ้นเดียวที่ผู้ใช้กดขอ */
+  let synth, synthError = null;
+  if (!synthPool.length) {
+    synth = { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
+  } else {
+    try {
+      synth = await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, acc, target,
+                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
+                       /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
+                       { ...sentiment, total: texts.length },
+                       /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
+                       texts.filter(Boolean));
+    } catch (e) {
+      synthError = String(e && e.message || e);
+      logLine("⚠️ สรุปไม่สำเร็จ: " + synthError);
+      synth = { summary: "", keywords: [], samples: [] };
+    }
+  }
+  return { synth, synthPool, synthError };
+}
+
 async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels, dist, allTexts) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
@@ -1113,7 +1311,27 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
     ? "\n\nคอมเมนต์ที่ต้องถอดความ (" + pickTexts.length + " ข้อ เรียงตามนี้):\n" +
       pickTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n")
     : "";
-  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, 1500, acc);
+  /* 🔴 เพดานคำตอบต้องคิดตามจำนวนใบที่ต้องถอดความ **ห้ามตั้งตายตัว**
+     ของเดิมตายตัวที่ 1,500 · พอเพิ่มใบถอดความจาก 4 เป็น 6 ใบ (2 ก.ย. 2026)
+     คำตอบถูกตัดกลางคัน → แกะ JSON ไม่ได้ → คืนค่าว่างทั้งก้อนเงียบๆ
+     เจ้าของเห็นเป็น "กดสรุปใหม่แล้วคำกับตัวอย่างหายหมด สรุปเหมือนเดิมเป๊ะ"
+
+     ⚠️ เผื่อเยอะกว่าที่ JSON ต้องการจริงมาก เพราะ **opus เขียนความคิดก่อนตอบ**
+        และส่วนนั้นกินโทเคนก่อนถึง JSON (บทเรียนที่จดไว้ใน BASELINE.md:
+        ก้อน 6 ข้อ ต้องการ JSON จริง ~150 แต่เพดาน 1,140 ยังไม่พอ)
+     🚫 ห้ามลดกลับเป็นค่าตายตัว — เทสต์ synthbudget.mjs มีด่านจับ */
+  const nPara = (pickTexts && pickTexts.length) || 0;
+  let budget = 2500 + 400 * nPara;
+  let out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, budget, acc);
+  /* ถูกตัดกลางคัน = ลองใหม่ด้วยเพดาน 2 เท่าก่อนยอมแพ้ (ท่าเดียวกับ classifyTwoLens)
+     ความยาวของคำนำเดาไม่ได้ ต่างกันไปทุกครั้ง */
+  if (acc && acc.stop_reason === "max_tokens") {
+    budget = Math.min(16000, budget * 2);
+    out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, budget, acc);
+  }
+  if (acc && acc.stop_reason === "max_tokens") {
+    throw new Error(`สรุป: คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว`);
+  }
   try {
     const obj = extractJson(out);
     return {
@@ -1139,7 +1357,12 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
         : [],
     };
   } catch (e) {
-    return { summary: "", keywords: [], samples: [] };
+    /* 🚫 ห้ามคืนค่าว่างเงียบๆ — เป็นกับดัก "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ตรงๆ
+       ของเดิมคืน { summary:"", keywords:[], samples:[] } แล้วหน้าเว็บเอาไปแสดง
+       ผลคือ **คำกับตัวอย่างหายเกลี้ยง ส่วนสรุปคงของเก่าไว้** โดยไม่มีอะไรบอกว่าพัง
+       (เจ้าของเจอ 2 ก.ย. 2026 ตอนกดปุ่มสรุปใหม่)
+       ผู้เรียกเป็นคนตัดสินเองว่าจะกลืนหรือจะบอกผู้ใช้ — ที่นี่มีหน้าที่บอกความจริง */
+    throw new Error("สรุป: แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160));
   }
 }
 

@@ -16,8 +16,14 @@
 | `cache.mjs` · `effortpage.cjs` | แคชคำสั่ง (คำสั่งต้องเหมือนกันเป๊ะทุกก้อน) · ระดับการคิด (haiku ห้ามส่ง) · แคชไม่ทำงานต้องเตือน | `node cache.mjs` / ต้องมีเซิร์ฟเวอร์ static |
 | `notext.mjs` | สติกเกอร์/รูป **นับเป็นกลาง ไม่ตัดทิ้ง** · ห้ามส่งให้ AI · ต้องติดธง no_text · ลำดับห้ามสลับ | `node notext.mjs` |
 | `samplemove.cjs` | ตัวอย่างคอมเมนต์ต้องย้ายกลุ่มตามป้ายที่ผู้ใช้แก้เอง · หลังบ้านรุ่นเก่าต้องไม่พังและต้องบอกว่าไม่ย้าย | ต้องมีเซิร์ฟเวอร์ static |
+| `cpcount.cjs` | 🔴 **ป้ายในโหมด CP ต้องไม่โกหก** — 🚫 ห้ามมี "พูดถึงเครือ CP"/"ไม่เกี่ยวกับ CP" (นับทุกใบ = 48/0 เสมอ) · "เอ่ยชื่อเครือ CP" นับจากข้อความจริง · คำจับต้องไม่โดนทรูธโซเชียล/CPU | ต้องมีเซิร์ฟเวอร์ static |
+| `swapsample.cjs` | ✂️ **ปุ่ม ✕ ตัดตัวอย่างที่ไม่ตรงประเด็น** — ต้องเอาใบ**ในกลุ่มเดียวกัน**มาแทน · กดซ้ำต้องเดินหน้า · ไม่มีใบเหลือ/ถอดความไม่สำเร็จ = **เก็บใบเดิมไว้** ห้ามปล่อยช่องว่าง | ต้องมีเซิร์ฟเวอร์ static |
+| `resynth.cjs` | 🔄 **ปุ่ม "สรุปใหม่ตามป้ายที่แก้"** — ยังไม่แก้ป้ายห้ามมีปุ่ม · ต้องส่งป้ายที่แก้แล้ว+ยอดถูกใจ · **ยิงไม่สำเร็จห้ามลบสรุป/ตัวอย่างเดิมทิ้ง** · การ์ด keyword ห้ามมีปุ่มนี้ | ต้องมีเซิร์ฟเวอร์ static |
+| `samplemid.mjs` | 🟡 **ช่อง "กลาง" ต้องมีตัวอย่างของตัวเอง** — โพสจริงส่วนใหญ่เป็นกลางท่วม · โหมด CP ก็ต้องมี (ห้ามผูกกับ synthIdx) · `not_related` ห้ามถูกเลือก | `node samplemid.mjs` |
 | `samplesrc.mjs` | **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** — src ต้องถูกเสมอไม่ว่า AI ตอบรูปแบบไหน · เลือกแบบตายตัว รันซ้ำได้ใบเดิม | `node samplesrc.mjs` |
 | `keywords.mjs` | **เลข "คำที่พูดถึงบ่อย" ต้องนับจากคอมเมนต์จริง ไม่ใช่ที่ AI เดา** · คำที่แต่งขึ้นต้องถูกตัด · สรุปต้องรู้สัดส่วนจริงของทั้งโพส | `node keywords.mjs` |
+| `synthbudget.mjs` | 🔴 **สรุปพังต้องไม่หายเงียบ** — เพดานคำตอบคิดตามจำนวนใบถอดความ (ห้ามตายตัว) · ถูกตัดกลางคันต้องลองใหม่ · แกะไม่ได้ต้องติดธง **ห้ามคืนของว่างเงียบ** | `node synthbudget.mjs` |
+| `airetry.mjs` | 🔁 **ต้นทาง Claude ล่มชั่วคราวต้องลองใหม่ให้เอง** (429 · 529 · 5xx) · เคารพ `retry-after` · 🚫 **403/401 ห้ามลองใหม่** ลองกี่ครั้งก็เหมือนเดิม | `node airetry.mjs` |
 | `apierror.mjs` | **ข้อความ error จาก Claude API ต้องบอกเลขสถานะ + ชนิดเสมอ** — 401/403/429/500 ต้องอ่านแยกออก · ต้นทางไม่ตอบ JSON ก็ห้ามพัง | `node apierror.mjs` |
 | `verbadge.cjs` | **ป้ายเวอร์ชันต้องบอกทั้งเลขหน้าเว็บ (น) และเลขหลังบ้าน (ล)** · ผลวิเคราะห์ต้องแนบ `ver` มาด้วย · หลังบ้านล่มก็ยังต้องบอกเลขหน้าเว็บ | ต้องมีเซิร์ฟเวอร์ static |
 
@@ -33,7 +39,7 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          EFFORT_CHOICES, EFFORT_MODELS, analyze, countTerms };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc keywords apierror; do node $t.mjs; done
+for t in twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid keywords apierror synthbudget airetry; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
