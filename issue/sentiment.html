@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="17" />
+<meta name="page-ver" content="18" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -443,9 +443,11 @@ async function demoResult(opts){
   await new Promise(r => setTimeout(r, 700));
   const fetched = Math.min(opts.limit, 214);
   const isCP = opts.target === "cp";
-  const notRel = isCP ? Math.round(fetched*0.72) : 0;   // ส่วนใหญ่ไม่ได้พูดถึง CP
-  const total = fetched - notRel;
-  const pos = Math.round(total*0.58), neg = Math.round(total*0.16), neu = total-pos-neg;
+  /* 🚫 เลิกหัก not_related ออกแล้ว — ระบบจริงนับทุกใบ (ไม่แตะ CP = กลาง)
+     ถ้าเดโมยังหักอยู่ หน้าตาจะไม่ตรงกับของจริง แล้วเอาไปตรวจอะไรไม่ได้ */
+  const notRel = 0;
+  const total = fetched;
+  const pos = Math.round(total*(isCP?0.18:0.58)), neg = Math.round(total*0.16), neu = total-pos-neg;
   return {
     platform: opts.platform, source_url: opts.url, demo: true,
     target: opts.target, not_related: notRel,
@@ -498,10 +500,16 @@ function renderResult(d, keepAudit){
   el("resSub").innerHTML =
     escapeHtml(`${PLAT_LABEL[d.platform]||d.platform} · ดึงมา ${nFetched} คอมเมนต์`) +
     (nNoText ? ` <span class="sc-skip" title="สติกเกอร์ GIF หรือรูปล้วน — ไม่มีตัวอักษรให้ตี sentiment จึงนับเป็นกลาง">(${nNoText} ใบเป็นสติกเกอร์/รูป นับเป็นกลาง)</span>` : "") +
-    (isCP ? ` · <b>พูดถึง CP ${total} คอมเมนต์</b> (ไม่เกี่ยว ${d.not_related||0})` : "") +
+    /* 🔴 ของเดิม: "พูดถึง CP 48 คอมเมนต์ (ไม่เกี่ยว 0)" — โกหก
+       ระบบไม่ได้แยกว่าใบไหนพูดถึง CP อีกแล้ว (ไม่แตะ CP = กลาง) จึงเขียนแบบนั้นไม่ได้ */
+    (isCP ? ` · <b>วัดท่าทีต่อ CP</b>` : "") +
     (d.edited_count ? ` · <b style="color:var(--sc-accent)">✏️ คุณแก้เอง ${d.edited_count} ใบ</b>` : "") +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
-  el("donutCap").textContent = isCP ? "% ของคอมเมนต์ที่พูดถึงเครือ CP เท่านั้น" : "";
+  /* ⚠️ % คิดจากคอมเมนต์ **ทุกใบ** ไม่ใช่เฉพาะใบที่พูดถึง CP
+     ของเดิมเขียนว่า "เฉพาะใบที่พูดถึงเครือ CP" ซึ่งไม่จริงตั้งแต่เลิกใช้ not_related */
+  el("donutCap").textContent = isCP
+    ? "% ของคอมเมนต์ทั้งหมด · ใบที่ไม่แตะ CP นับเป็นกลาง"
+    : "";
   if (!d.demo && d.credits_remaining!=null) showCredits(d.credits_remaining);
 
   const hasPost = d.post_title || d.post_thumb;
@@ -530,10 +538,22 @@ function renderResult(d, keepAudit){
     </div>`).join("");
 
   const eng = d.engagement || {};
+  /* 🏷 นับใบที่ "เอ่ยชื่อเครือ CP จริงๆ" จากข้อความตรงๆ ในเบราว์เซอร์
+     ฟรี · ไม่ต้องยิงอะไรเพิ่ม · เจ้าของเปิด CSV เทียบเองได้
+     ⚠️ ตัวเลขนี้ **คนละเรื่องกับ sentiment** — เป็นแค่ "มีคำนี้ในข้อความไหม"
+        ไม่ได้แปลว่าคอมเมนต์นั้นมีท่าทีต่อ CP
+     🚫 ห้ามเอาไปกรอง/ตัดคอมเมนต์ — ข่าวที่ด่าเครือโดยไม่เอ่ยชื่อก็มี */
+  const CP_RE = /(ซี\.?พี|เครือซีพี|cpf|cp\s*all|cp\s*axtra|แม็คโคร|makro|โลตัส|lotus'?s|ทรู(?!ธ)|true\s*(corp|move|online)|เจริญโภคภัณฑ์|charoen\s*pokphand|\bcp\b)/i;
+  const cpMentions = (d.audit || []).filter(a => CP_RE.test(String(a.text || ""))).length;
   const stats = isCP ? [
     ["คอมเมนต์ทั้งหมด", d.analyzed_count||total],
-    ["พูดถึงเครือ CP", total],
-    ["ไม่เกี่ยวกับ CP", d.not_related||0],
+    /* 🔴 ของเดิมเขียนว่า "พูดถึงเครือ CP" กับ "ไม่เกี่ยวกับ CP" — **โกหกทั้งคู่**
+       เป็นป้ายที่ค้างมาจากตอนที่ระบบยังมีหมวด not_related
+       พอเลิกใช้ (26 ส.ค. 2026 · "ไม่แตะ CP = กลาง") มันเลยกลายเป็น "48 / 0" เสมอ
+       เจ้าของอ่านแล้วเข้าใจว่าทั้ง 48 ใบพูดถึง CP ทั้งที่จริงมีแค่ไม่กี่ใบ (2 ก.ย. 2026)
+       🚫 ห้ามเอาป้ายคู่นั้นกลับมา จนกว่าจะมีหมวด not_related จริงๆ อีกครั้ง */
+    ["แสดงท่าทีต่อ CP", (s.positive||0) + (s.negative||0)],
+    ["เอ่ยชื่อเครือ CP", cpMentions],
     ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
   ] : [
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
@@ -557,7 +577,7 @@ function renderResult(d, keepAudit){
     const sf = d.summary_from, so = d.summary_of;
     el("sumSub").innerHTML = (sf && so && sf < so)
       ? escapeHtml(`สรุปโดย Claude จากคอมเมนต์ ${sf} ใบ จากทั้งหมด ${so} ใบ`) +
-        (isCP ? ' <span class="sc-skip">(เฉพาะใบที่แสดงท่าทีต่อ CP — ใบที่ไม่พูดถึง CP ไม่ได้เอามาสรุป)</span>' : "")
+        (isCP ? ' <span class="sc-skip">(เฉพาะใบที่แสดงท่าทีต่อ CP — ใบที่เป็นกลางไม่ได้เอามาสรุป)</span>' : "")
       : "สรุปโดย Claude" + (so ? escapeHtml(` จากคอมเมนต์ ${so} ใบ`) : "");
   }
 
@@ -902,7 +922,9 @@ function buildSheets(d){
     ["หัวข้อโพส", d.post_title||""],
     ["วัดท่าทีต่อ", d.target==="cp" ? "เครือ CP" : "อารมณ์รวม"],
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],["คอมเมนต์ที่ดึงมา", d.fetched_count||""],
-    ...(d.target==="cp" ? [["พูดถึงเครือ CP", total],["ไม่เกี่ยวกับ CP", d.not_related||0]] : []),
+    /* ⚠️ ต้องตรงกับป้ายบนหน้าจอเสมอ — ของเดิมเขียน "พูดถึงเครือ CP / ไม่เกี่ยวกับ CP"
+       ซึ่งเป็น 48/0 ทุกครั้งตั้งแต่เลิกใช้ not_related แล้วอ่านผิดความหมาย */
+    ...(d.target==="cp" ? [["แสดงท่าทีต่อ CP (บวก+ลบ)", (s.positive||0)+(s.negative||0)]] : []),
     ["ยอดถูกใจ/รีแอกชัน", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
     ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
     ["สรุปภาพรวม", d.summary||""],
