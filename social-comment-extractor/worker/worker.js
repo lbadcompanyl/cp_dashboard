@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 31;
+const WORKER_VER = 32;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -72,6 +72,9 @@ const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูง
 /* เพดานของ /resynth (กดปุ่ม "สรุปใหม่") — ต้องคุมไว้เพราะ endpoint นี้ยิงได้โดยไม่มีกุญแจ
    ตั้งให้เท่ากับจำนวนคอมเมนต์สูงสุดที่หน้าเว็บดึงได้ ไม่งั้นโพสใหญ่กดปุ่มแล้วโดนปฏิเสธ */
 const RESYNTH_MAX = 500;
+/* ลองใหม่กี่ครั้งเมื่อต้นทาง Claude ล่มชั่วคราว (429 · 529 · 5xx)
+   🚫 มากกว่านี้ไม่ควร — โพสใหญ่ยิง 24 ก้อน ถ้าล่มยาวจะกลายเป็นรอเป็นนาที */
+const AI_RETRY_MAX = 2;
 
 /* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
    /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
@@ -985,16 +988,32 @@ async function callClaude(env, system, userText, maxTokens, acc, opts = {}) {
   if (opts.effort && EFFORT_MODELS.includes(model)) {
     body.output_config = { effort: opts.effort };
   }
-  const r = await fetch(ANTHROPIC_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await r.json().catch(() => null);
+  /* 🔁 ต้นทางล่มชั่วคราว = **ลองใหม่ให้เอง** ไม่ใช่โยนกลับให้ผู้ใช้กด
+     เจ้าของเจอ 2 ก.ย. 2026: กดปุ่มสรุปใหม่แล้วได้ `529 overloaded_error`
+     ซึ่งเป็นอาการที่หายเองภายในไม่กี่วินาที — ให้คนมานั่งกดซ้ำเองไม่มีเหตุผล
+     · ลองเฉพาะที่ลองแล้วมีโอกาสหาย: 429 (ยิงถี่) · 5xx/529 (ต้นทางล่ม)
+     🚫 ห้ามลองใหม่กับ 400/401/403 — คำขอผิดหรือสิทธิ์ไม่ถึง ลองกี่ครั้งก็เหมือนเดิม
+        เปลืองเวลาผู้ใช้เปล่าๆ แถมถ้าเป็น 429 อยู่แล้วยิ่งยิงยิ่งแย่
+     ⚠️ เคารพ `retry-after` ที่ต้นทางบอกมาก่อนเสมอ (แต่ไม่เกิน 8 วิ กันหน้าเว็บค้าง) */
+  const RETRY_ON = (s) => s === 429 || s === 529 || (s >= 500 && s < 600);
+  let r, data = null;
+  for (let attempt = 0; ; attempt++) {
+    r = await fetch(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (r.ok || attempt >= AI_RETRY_MAX || !RETRY_ON(r.status)) break;
+    const ra = Number(r.headers.get("retry-after"));
+    const waitMs = Math.min(8000, ra > 0 ? ra * 1000 : 1000 * Math.pow(2, attempt));
+    if (acc) acc.retries = (acc.retries || 0) + 1;
+    await new Promise(res => setTimeout(res, waitMs));
+  }
+  data = await r.json().catch(() => null);
   /* 🔴 ข้อความ error ต้องบอก **เลขสถานะ + ชนิด** เสมอ ห้ามเหลือแต่ประโยคของต้นทาง
      เจ้าของเจอ 2 ก.ย. 2026: หน้าเว็บขึ้นแค่ "Claude API: Request not allowed"
      ซึ่งแยกไม่ออกเลยว่ากุญแจผิด (401) · สิทธิ์ไม่ถึง/ถูกบล็อก (403) · ยิงถี่ไป (429)
