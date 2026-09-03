@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="15" />
+<meta name="page-ver" content="16" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -540,6 +540,12 @@ function renderResult(d, keepAudit){
   /* ⚠️ บอกตรงๆ ว่าสรุปมาจากคอมเมนต์กี่ใบ — โหมด CP สรุปจากเฉพาะใบที่พูดถึง CP
      ของเดิมเขียนว่า "จากคอมเมนต์ทั้งหมด" ซึ่งไม่จริง แล้วทำให้อ่านแล้วงงว่า
      ทำไมสรุปดุเดือดทั้งที่ส่วนใหญ่เป็นกลาง (เจ้าของแจ้ง 31 ส.ค. 2026) */
+  /* ⚠️ สรุปพังต้องขึ้นให้เห็น ไม่ใช่โชว์กล่องว่างเปล่า
+     กล่องเปล่ากับ "โพสนี้ไม่มีอะไรจะสรุป" หน้าตาเหมือนกันเป๊ะ (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง") */
+  if (d.synth_failed && !d.summary) {
+    el("summaryBox").innerHTML = `<b style="color:var(--sc-neg)">สรุปไม่สำเร็จ</b> — ${escapeHtml(String(d.synth_failed).slice(0, 200))}`
+      + `<br><span class="sc-sub">ตัวเลขกับรายการตรวจด้านล่างยังใช้ได้ตามปกติ · กดปุ่ม 🔄 ลองใหม่ได้</span>`;
+  }
   if (el("sumSub")) {
     const sf = d.summary_from, so = d.summary_of;
     el("sumSub").innerHTML = (sf && so && sf < so)

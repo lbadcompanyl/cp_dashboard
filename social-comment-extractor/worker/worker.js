@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 30;
+const WORKER_VER = 31;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -453,8 +453,13 @@ export default {
       labels.forEach(l => { if (sentiment[l] != null) sentiment[l]++; });
       const acc = { input: 0, output: 0 };
       try {
-        const { synth, synthPool } = await buildSynth(
+        const { synth, synthPool, synthError } = await buildSynth(
           { texts, labels, likes, target, wantSamples: true, sentiment }, env, acc);
+        /* 🚫 สรุปพัง = ห้ามตอบ 200 พร้อมของว่าง — หน้าเว็บจะเอา [] ไปทับของเดิม
+           แล้วคำกับตัวอย่างหายเกลี้ยงโดยไม่มีอะไรบอก (บั๊กที่เจ้าของเจอ 2 ก.ย. 2026) */
+        if (synthError) {
+          return cors(json({ error: "resynth_failed", detail: synthError }, 502), origin);
+        }
         return cors(json({
           ok: true, ver: WORKER_VER, rubric: RUBRIC_VER,
           target,
@@ -610,7 +615,7 @@ async function analyze(opts, env) {
         ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
   /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
         ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน (โหมดอารมณ์รวมของเดิมส่ง texts ทั้งก้อน) */
-  const { synth, synthPool } = await buildSynth(
+  const { synth, synthPool, synthError } = await buildSynth(
     { texts, labels, likes: comments.map(c => c.likes || 0), target, wantSamples, sentiment },
     env, tokens, logLine);
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
@@ -654,6 +659,9 @@ async function analyze(opts, env) {
     keywords: synth.keywords || [],
     summary: synth.summary || "",
     samples: wantSamples ? (synth.samples || []) : [],
+    /* ⚠️ สรุปพังแต่ตัวเลข/audit ยังใช้ได้ → ส่งผลกลับไปตามปกติ **แต่ต้องบอกว่าสรุปพัง**
+       ไม่งั้นหน้าเว็บจะขึ้นสรุปว่างเปล่ากับคำ 0 คำ เหมือนโพสนี้ไม่มีอะไรจะพูดถึง */
+    synth_failed: synthError || null,
     credits_remaining: collected.credits_remaining ?? null,
     claude_usage: { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output },
     claude_rate_remaining: tokens.rate_remaining,
@@ -1152,15 +1160,28 @@ async function buildSynth(inp, env, acc, logLine = () => {}) {
     : [];
   if (pickIdx.length) logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
 
-  const synth = synthPool.length
-    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, acc, target,
+  /* ⚠️ สรุปพังไม่ควรทำให้ทั้งการวิเคราะห์พัง (ตัวเลข/audit ยังใช้ได้)
+     แต่ **ต้องบอกผู้เรียกว่าพัง** ไม่ใช่กลืนแล้วส่งของว่างไปเหมือนสำเร็จ
+     · `analyze` เอาไปติดธง `synth_failed` ให้หน้าเว็บเห็น
+     · `/resynth` ตอบ error กลับไปเลย เพราะสรุปคือของชิ้นเดียวที่ผู้ใช้กดขอ */
+  let synth, synthError = null;
+  if (!synthPool.length) {
+    synth = { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
+  } else {
+    try {
+      synth = await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, acc, target,
                        pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
                        /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
                        { ...sentiment, total: texts.length },
                        /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
-                       texts.filter(Boolean))
-    : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
-  return { synth, synthPool };
+                       texts.filter(Boolean));
+    } catch (e) {
+      synthError = String(e && e.message || e);
+      logLine("⚠️ สรุปไม่สำเร็จ: " + synthError);
+      synth = { summary: "", keywords: [], samples: [] };
+    }
+  }
+  return { synth, synthPool, synthError };
 }
 
 async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels, dist, allTexts) {
@@ -1203,7 +1224,27 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
     ? "\n\nคอมเมนต์ที่ต้องถอดความ (" + pickTexts.length + " ข้อ เรียงตามนี้):\n" +
       pickTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n")
     : "";
-  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, 1500, acc);
+  /* 🔴 เพดานคำตอบต้องคิดตามจำนวนใบที่ต้องถอดความ **ห้ามตั้งตายตัว**
+     ของเดิมตายตัวที่ 1,500 · พอเพิ่มใบถอดความจาก 4 เป็น 6 ใบ (2 ก.ย. 2026)
+     คำตอบถูกตัดกลางคัน → แกะ JSON ไม่ได้ → คืนค่าว่างทั้งก้อนเงียบๆ
+     เจ้าของเห็นเป็น "กดสรุปใหม่แล้วคำกับตัวอย่างหายหมด สรุปเหมือนเดิมเป๊ะ"
+
+     ⚠️ เผื่อเยอะกว่าที่ JSON ต้องการจริงมาก เพราะ **opus เขียนความคิดก่อนตอบ**
+        และส่วนนั้นกินโทเคนก่อนถึง JSON (บทเรียนที่จดไว้ใน BASELINE.md:
+        ก้อน 6 ข้อ ต้องการ JSON จริง ~150 แต่เพดาน 1,140 ยังไม่พอ)
+     🚫 ห้ามลดกลับเป็นค่าตายตัว — เทสต์ synthbudget.mjs มีด่านจับ */
+  const nPara = (pickTexts && pickTexts.length) || 0;
+  let budget = 2500 + 400 * nPara;
+  let out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, budget, acc);
+  /* ถูกตัดกลางคัน = ลองใหม่ด้วยเพดาน 2 เท่าก่อนยอมแพ้ (ท่าเดียวกับ classifyTwoLens)
+     ความยาวของคำนำเดาไม่ได้ ต่างกันไปทุกครั้ง */
+  if (acc && acc.stop_reason === "max_tokens") {
+    budget = Math.min(16000, budget * 2);
+    out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, budget, acc);
+  }
+  if (acc && acc.stop_reason === "max_tokens") {
+    throw new Error(`สรุป: คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว`);
+  }
   try {
     const obj = extractJson(out);
     return {
@@ -1229,7 +1270,12 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
         : [],
     };
   } catch (e) {
-    return { summary: "", keywords: [], samples: [] };
+    /* 🚫 ห้ามคืนค่าว่างเงียบๆ — เป็นกับดัก "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ตรงๆ
+       ของเดิมคืน { summary:"", keywords:[], samples:[] } แล้วหน้าเว็บเอาไปแสดง
+       ผลคือ **คำกับตัวอย่างหายเกลี้ยง ส่วนสรุปคงของเก่าไว้** โดยไม่มีอะไรบอกว่าพัง
+       (เจ้าของเจอ 2 ก.ย. 2026 ตอนกดปุ่มสรุปใหม่)
+       ผู้เรียกเป็นคนตัดสินเองว่าจะกลืนหรือจะบอกผู้ใช้ — ที่นี่มีหน้าที่บอกความจริง */
+    throw new Error("สรุป: แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160));
   }
 }
 

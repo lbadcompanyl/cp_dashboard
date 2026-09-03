@@ -20,6 +20,7 @@
 | `samplemid.mjs` | 🟡 **ช่อง "กลาง" ต้องมีตัวอย่างของตัวเอง** — โพสจริงส่วนใหญ่เป็นกลางท่วม · โหมด CP ก็ต้องมี (ห้ามผูกกับ synthIdx) · `not_related` ห้ามถูกเลือก | `node samplemid.mjs` |
 | `samplesrc.mjs` | **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** — src ต้องถูกเสมอไม่ว่า AI ตอบรูปแบบไหน · เลือกแบบตายตัว รันซ้ำได้ใบเดิม | `node samplesrc.mjs` |
 | `keywords.mjs` | **เลข "คำที่พูดถึงบ่อย" ต้องนับจากคอมเมนต์จริง ไม่ใช่ที่ AI เดา** · คำที่แต่งขึ้นต้องถูกตัด · สรุปต้องรู้สัดส่วนจริงของทั้งโพส | `node keywords.mjs` |
+| `synthbudget.mjs` | 🔴 **สรุปพังต้องไม่หายเงียบ** — เพดานคำตอบคิดตามจำนวนใบถอดความ (ห้ามตายตัว) · ถูกตัดกลางคันต้องลองใหม่ · แกะไม่ได้ต้องติดธง **ห้ามคืนของว่างเงียบ** | `node synthbudget.mjs` |
 | `apierror.mjs` | **ข้อความ error จาก Claude API ต้องบอกเลขสถานะ + ชนิดเสมอ** — 401/403/429/500 ต้องอ่านแยกออก · ต้นทางไม่ตอบ JSON ก็ห้ามพัง | `node apierror.mjs` |
 | `verbadge.cjs` | **ป้ายเวอร์ชันต้องบอกทั้งเลขหน้าเว็บ (น) และเลขหลังบ้าน (ล)** · ผลวิเคราะห์ต้องแนบ `ver` มาด้วย · หลังบ้านล่มก็ยังต้องบอกเลขหน้าเว็บ | ต้องมีเซิร์ฟเวอร์ static |
 
@@ -35,7 +36,7 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          EFFORT_CHOICES, EFFORT_MODELS, analyze, countTerms };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid keywords apierror; do node $t.mjs; done
+for t in twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid keywords apierror synthbudget; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
