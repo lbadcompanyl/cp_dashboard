@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="16" />
+<meta name="page-ver" content="17" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -111,6 +111,12 @@
   .sc-shead .sc-scnt { color: var(--sc-muted); font-weight: 400; }
   .sc-sample { border: 1px solid var(--sc-border); border-left-width: 3px; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; color: var(--sc-ink2); background: var(--sc-plane); }
   .sc-sample.sc-pos { border-left-color: var(--sc-pos); }
+  .sc-sample { position: relative; padding-right: 34px; }   /* เว้นที่ให้ปุ่ม ✕ ไม่ทับข้อความ */
+  .sc-swap { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; line-height: 1;
+             border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-muted);
+             border-radius: 6px; font-size: 12px; cursor: pointer; padding: 0; font-family: inherit; }
+  .sc-swap:hover:not(:disabled) { border-color: var(--sc-neg); color: var(--sc-neg); }
+  .sc-swap:disabled { opacity: .5; cursor: default; }
   .sc-sample.sc-neu { border-left-color: var(--sc-neu); }
   .sc-sample.sc-neg { border-left-color: var(--sc-neg); }
   .sc-nonemsg { color: var(--sc-muted); font-size: 12.5px; padding: 5px 0; }
@@ -393,6 +399,7 @@ async function analyze(){
     renderResult(data);
     syncTeachBox();
     syncResynth();          // โพสใหม่ = ยังไม่มีใครแก้ป้าย → ซ่อนปุ่มสรุปใหม่
+    droppedSrc.clear();     // โพสใหม่ = ใบที่เคยตัดของโพสก่อนไม่เกี่ยวกับรอบนี้
   } catch (e){
     /* กดหยุดเองไม่ใช่ error — ไม่ต้องขึ้นแถบแดงให้ตกใจ */
     if (e && e.name === "AbortError") toast("หยุดแล้ว");
@@ -595,14 +602,25 @@ function renderResult(d, keepAudit){
     else if (!items.length) body = `<div class="sc-nonemsg">${movedOut
       ? `— ตัวอย่างที่เคยอยู่ตรงนี้ ย้ายไปตามป้ายที่คุณแก้แล้ว —`
       : `— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —`}</div>`;
-    else body = items.map(x => `<div class="sc-sample ${cls}">${escapeHtml(x.text)}</div>`).join("");
+    /* ✂️ ปุ่ม ✕ ตัดตัวอย่างที่ไม่ตรงประเด็นออก แล้วขอใบถัดไปของกลุ่มเดียวกันมาแทน
+       (เจ้าของสั่ง 2 ก.ย. 2026: "บางสรุปไม่ตรงประเด็น")
+       ⚠️ ต้องผูกกับ src เท่านั้น — ไม่มี src = ไม่รู้ว่าตัดใบไหน จึงไม่ขึ้นปุ่ม */
+    else body = items.map((x) => {
+      const canSwap = x.src != null;
+      return `<div class="sc-sample ${cls}">${escapeHtml(x.text)}` +
+        (canSwap ? `<button class="sc-swap" data-src="${x.src}" data-key="${key}" type="button"
+                     title="ไม่ตรงประเด็น — เอาใบอื่นมาแทน">✕</button>` : "") +
+        `</div>`;
+    }).join("");
     return `<div class="sc-sgroup"><div class="sc-shead" style="color:var(${color})">${label} · ${gp}% <span class="sc-scnt">(${gc} คอมเมนต์)</span></div>${body}</div>`;
   }).join("") +
     /* ⚠️ ถ้าผูกกับคอมเมนต์ต้นทางไม่ได้ ต้องบอกตรงๆ ว่าตัวอย่างไม่ขยับตามที่แก้
        ไม่งั้นผู้ใช้จะเห็นตัวเลขขยับแต่ตัวอย่างค้าง แล้วนึกว่าหน้าเว็บพัง */
     ((unlinked && d.edited_count)
       ? `<div class="sc-nonemsg">⚠️ ตัวอย่างบางอันเป็นของรอบวิเคราะห์เดิม ไม่ได้ย้ายตามที่คุณแก้ (หลังบ้านรุ่นเก่ายังไม่ได้บอกว่าถอดความมาจากคอมเมนต์ใบไหน)</div>`
-      : "");
+      : "")
+    + `<div class="sc-sub" id="swapMsg"></div>`;
+  el("sampleList").querySelectorAll(".sc-swap").forEach(b => b.onclick = () => swapSample(+b.dataset.src, b.dataset.key, b));
 
   if (!keepAudit) {
     renderAudit(d);
@@ -683,6 +701,67 @@ function applyEdits(){
   renderResult(lastResult, true);
   syncTeachBox();
   syncResynth();
+}
+
+/* ══════════════════════════════════════════════════════════════
+ * ✂️ ตัดตัวอย่างที่ไม่ตรงประเด็นออก แล้วเอาใบถัดไปมาแทน
+ * เจ้าของสั่ง 2 ก.ย. 2026: "อยากได้ปุ่มตัดตัวอย่างออกแล้วเปลี่ยนเป็นอันใหม่
+ *   เพราะบางสรุปไม่ตรงประเด็น"
+ *
+ * เลือกใบถัดไปด้วยเกณฑ์เดียวกับหลังบ้าน (ถูกใจเยอะสุด → ยาวสุด)
+ * 🚫 ห้ามสุ่ม — กดซ้ำต้องเดินหน้าไปเรื่อยๆ ไม่ใช่วนกลับมาใบเดิม
+ * ══════════════════════════════════════════════════════════════ */
+const droppedSrc = new Set();     // ใบที่ผู้ใช้ตัดทิ้งไปแล้ว ห้ามเอากลับมาอีก
+
+async function swapSample(src, key, btn){
+  if (!lastResult || !lastResult.audit) return;
+  const audit = lastResult.audit;
+  const msg = el("swapMsg");
+  const used = new Set((lastResult.samples || []).map(x => x.src).filter(v => v != null));
+  droppedSrc.add(src);
+
+  /* ใบถัดไปของกลุ่มเดียวกัน: ยังไม่ถูกใช้ · ยังไม่ถูกตัด · มีข้อความ · ป้ายตรงกับช่องนี้ */
+  const next = audit
+    .map((a, i) => ({ a, i }))
+    .filter(({ a, i }) => !used.has(i) && !droppedSrc.has(i) && !a.no_text
+                          && String(a.sentiment || "").toLowerCase() === key && (a.text || "").trim())
+    .sort((x, y) => (y.a.likes || 0) - (x.a.likes || 0)
+                 || (y.a.text || "").length - (x.a.text || "").length || x.i - y.i)[0];
+
+  if (!next) {
+    /* ⚠️ ไม่มีใบเหลือ = ต้องบอกตรงๆ และ **เอาใบเดิมไว้ก่อน** ไม่ใช่ลบทิ้งให้ช่องว่าง
+       ตัดทิ้งแล้วไม่มีอะไรมาแทน = ผู้ใช้เสียของโดยไม่ได้อะไรกลับมา */
+    droppedSrc.delete(src);
+    if (msg) msg.textContent = "ไม่มีคอมเมนต์ใบอื่นในกลุ่มนี้ให้เปลี่ยนแล้ว";
+    return;
+  }
+
+  const old = btn.textContent;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  if (msg) msg.textContent = "";
+  try {
+    const r = await fetch(WORKER.replace(/\/+$/,"") + "/paraphrase", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ texts: [next.a.text] }),
+    });
+    const d = await r.json().catch(() => null);
+    const text = d && Array.isArray(d.texts) ? String(d.texts[0] || "").trim() : "";
+    /* ⚠️ ถอดความไม่สำเร็จ = **ห้ามเปลี่ยน** ต้องคืนใบเดิมไว้ แล้วบอกเหตุผล
+       ไม่งั้นผู้ใช้กดแล้วตัวอย่างหายไปเฉยๆ (บั๊กตระกูลเดียวกับที่เพิ่งแก้ไป) */
+    if (!r.ok || !d || d.error || !text) throw new Error(d?.detail || d?.error || ("HTTP " + r.status));
+    const list = lastResult.samples || [];
+    const at = list.findIndex(x => x.src === src);
+    const item = { sentiment: key, text, src: next.i };
+    if (at >= 0) list[at] = item; else list.push(item);
+    lastResult.samples = list;
+    renderResult(lastResult, true);
+    const m2 = el("swapMsg");
+    if (m2) m2.textContent = "เปลี่ยนเป็นคอมเมนต์ใบอื่นแล้ว ✓";
+  } catch (e) {
+    droppedSrc.delete(src);
+    btn.disabled = false; btn.textContent = old;
+    if (msg) msg.textContent = "เปลี่ยนไม่สำเร็จ: " + String(e && e.message || e);
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════

@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 32;
+const WORKER_VER = 33;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -75,6 +75,9 @@ const RESYNTH_MAX = 500;
 /* ลองใหม่กี่ครั้งเมื่อต้นทาง Claude ล่มชั่วคราว (429 · 529 · 5xx)
    🚫 มากกว่านี้ไม่ควร — โพสใหญ่ยิง 24 ก้อน ถ้าล่มยาวจะกลายเป็นรอเป็นนาที */
 const AI_RETRY_MAX = 2;
+/* จำนวนใบสูงสุดต่อ 1 คำขอ /paraphrase (กด ✕ ขอตัวอย่างใหม่) — กดทีละใบอยู่แล้ว
+   เผื่อไว้เล็กน้อยเผื่อวันหน้าอยากขอทีเดียวหลายช่อง */
+const PARA_MAX = 6;
 
 /* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
    /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
@@ -476,6 +479,36 @@ export default {
         }), origin);
       } catch (e) {
         return cors(json({ error: "resynth_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
+    /* ✂️ ถอดความใบใหม่ — ใช้ตอนผู้ใช้กด ✕ ตัดตัวอย่างที่ไม่ตรงประเด็นออก
+       แล้วขอใบถัดไปของกลุ่มเดียวกันมาแทน (เจ้าของสั่ง 2 ก.ย. 2026)
+
+       🎯 ตั้งใจให้เป็นคำขอที่ **เล็กที่สุด** — ไม่มีกองสรุป ไม่มี keyword ไม่มีตัวอย่างอื่น
+          ส่งไปแค่ข้อความที่จะถอดความ จ่ายเฉพาะตอนกดจริง
+       🚫 ทางเลือกที่ไม่เอา: ถอดความสำรองไว้ล่วงหน้าทุกครั้งที่วิเคราะห์
+          (จ่ายเพิ่มทุกโพสแม้ไม่มีใครกด — ผิดหลัก "จ่ายเมื่อใช้" ที่ตกลงกันไว้)
+       🚫 ไม่เขียน KV ไม่แตะ ScrapeCreators */
+    if (request.method === "POST" && url.pathname === "/paraphrase") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const raw = Array.isArray(body?.texts) ? body.texts : null;
+      if (!raw || !raw.length) return cors(json({ error: "no_texts" }, 400), origin);
+      if (raw.length > PARA_MAX) {
+        return cors(json({ error: "too_many", max: PARA_MAX, got: raw.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const items = raw.map(t => String(t || "").replace(/\s+/g, " ").trim().slice(0, 400)).filter(Boolean);
+      if (!items.length) return cors(json({ error: "no_texts" }, 400), origin);
+      const acc = { input: 0, output: 0 };
+      try {
+        const texts = await paraphraseOnly(items, env, acc);
+        return cors(json({
+          ok: true, ver: WORKER_VER, texts,
+          claude_usage: { input: acc.input, output: acc.output, total: acc.input + acc.output },
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "paraphrase_failed", detail: String(e && e.message || e) }, 502), origin);
       }
     }
     /* 🚫 เคยมี `/debugmeta` ตรงนี้ — ถอดออกทั้งเส้นทางและฟังก์ชันแล้ว (เจ้าของสั่ง 20 ส.ค. 2026)
@@ -1137,6 +1170,41 @@ function countTerms(terms, texts) {
  * @param inp.labels  ป้ายปัจจุบันของแต่ละใบ — **ตอน /resynth คือป้ายที่ผู้ใช้แก้แล้ว**
  * @param inp.likes   ยอดถูกใจ ใช้เลือกใบตัวอย่าง (ไม่มีก็ได้ จะเรียงตามความยาวแทน)
  */
+/**
+ * ✂️ ถอดความคอมเมนต์อย่างเดียว — ไม่สรุป ไม่หา keyword
+ * ใช้ตอนผู้ใช้กด ✕ ตัดตัวอย่างทิ้งแล้วขอใบใหม่มาแทน
+ *
+ * ⚠️ ต้องคืน **จำนวนเท่าที่ขอไป และเรียงตามลำดับเดิม** — ฝั่งหน้าเว็บจับคู่ด้วยลำดับ
+ *    ตอบไม่ครบ = เอาเท่าที่ได้ ห้ามเดาว่าอันไหนคู่กับอันไหน (กฎเดียวกับ synthesize)
+ */
+async function paraphraseOnly(items, env, acc) {
+  const system =
+    "You paraphrase Thai social media comments for an anonymized report.\n" +
+    "Rules:\n" +
+    "- Write in Thai, one short sentence per comment (max 40 words).\n" +
+    "- Never copy the original wording verbatim — restate the point.\n" +
+    "- Never include names, @handles, phone numbers, or links.\n" +
+    "- Keep the commenter's stance and tone.\n" +
+    'Return JSON only: {"texts":["...","..."]} with exactly the same number of items, in the same order.';
+  const user = "คอมเมนต์ที่ต้องถอดความ (" + items.length + " ข้อ เรียงตามนี้):\n" +
+    items.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  /* เผื่อเยอะกว่าที่คำตอบต้องการจริงมาก เพราะ opus เขียนความคิดก่อนตอบ
+     (บทเรียนเดียวกับ synthesize — เพดานตายตัวน้อยๆ ทำให้ถูกตัดกลางคันแล้ว JSON พัง) */
+  const out = await callClaude(env, system, user, 2000 + 400 * items.length, acc);
+  if (acc && acc.stop_reason === "max_tokens") {
+    throw new Error("ถอดความ: คำตอบถูกตัดกลางคัน");
+  }
+  let obj;
+  try { obj = extractJson(out); }
+  catch (e) { throw new Error("ถอดความ: แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160)); }
+  const arr = Array.isArray(obj && obj.texts) ? obj.texts : null;
+  /* 🚫 แกะได้แต่ไม่มี texts = ต้องบอกว่าไม่สำเร็จ ห้ามคืน [] เหมือนสำเร็จ
+     (กับดัก "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" — เคยพลาดมาแล้วที่ synthesize) */
+  if (!arr || !arr.length) throw new Error("ถอดความ: โมเดลไม่ได้ตอบรายการมา: " + String(out).slice(0, 160));
+  return arr.slice(0, items.length)
+    .map(s => String(typeof s === "string" ? s : (s && s.text) || "").trim().slice(0, 300));
+}
+
 async function buildSynth(inp, env, acc, logLine = () => {}) {
   const { texts, labels, target, wantSamples, sentiment } = inp;
   const likes = inp.likes || [];
