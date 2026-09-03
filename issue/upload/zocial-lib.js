@@ -30,7 +30,7 @@ export const FIELDS = [
   { key: "account", label: "ชื่อบัญชี/เพจ", required: false,
     aliases: ["account name", "account", "author", "author name", "username", "user name", "page name", "channel name", "ชื่อบัญชี", "ผู้โพสต์", "เพจ"] },
   { key: "accountType", label: "ประเภทบัญชี", required: false,
-    aliases: ["account type", "author type", "type", "ประเภทบัญชี", "ประเภท"] },
+    aliases: ["account label type", "account type", "author type", "type", "ประเภทบัญชี", "ประเภท"] },
   { key: "engagement", label: "Engagement", required: false,
     aliases: ["engagement", "engagements", "total engagement", "interaction", "interactions", "การมีส่วนร่วม"] },
   { key: "comments", label: "คอมเมนต์", required: false,
@@ -44,7 +44,24 @@ export const FIELDS = [
   { key: "category", label: "หมวด", required: false,
     aliases: ["category", "categories", "tag", "tags", "หมวด", "หมวดหมู่"] },
   { key: "campaign", label: "แคมเปญ", required: false,
-    aliases: ["campaign", "campaign id", "campaign name", "keyword", "แคมเปญ"] },
+    // 🚫 ห้ามใส่ "keyword" — ไฟล์จริงมีคอลัมน์ Main keyword / Sub keyword ซึ่งเป็น "คำที่ตรง"
+    //    ไม่ใช่ชื่อแคมเปญ · ชื่อแคมเปญมาจากชื่อไฟล์/ที่ผู้ใช้พิมพ์เท่านั้น
+    aliases: ["campaign", "campaign id", "campaign name", "แคมเปญ"] },
+
+  // ── 3 ช่องนี้คือตัวบอกว่า "แถวนี้เป็นโพสต์ หรือคอมเมนต์ หรือคำตอบกลับ" ──
+  // ⚠️ สำคัญมาก: ไฟล์ export ของจริงเอาทั้ง 3 อย่างมาปนกันในชีตเดียว
+  //    (วัดจากไฟล์จริง 12,004 แถว = โพสต์ 3,548 · คอมเมนต์ 7,062 · ตอบกลับ 1,394)
+  //    ถ้านับทุกแถวเป็น "โพสต์" ตัวเลขบนแดชบอร์ดจะเกินจริงเกือบ 3 เท่า
+  { key: "postUrl", label: "ลิงก์โพสต์ต้นทาง", required: false,
+    aliases: ["post url", "post link"] },
+  { key: "commentUrl", label: "ลิงก์คอมเมนต์", required: false,
+    aliases: ["comment url", "comment link"] },
+  { key: "replyUrl", label: "ลิงก์คำตอบกลับ", required: false,
+    aliases: ["reply comment url", "reply url"] },
+  // id ของ Zocial เอง — ไฟล์จริงมีครบทุกแถวและไม่ซ้ำเลย (12,004/12,004)
+  // 🔴 จำเป็นจริงๆ: ลิงก์อย่างเดียวใช้แทนไม่ได้ ไฟล์จริงมี Direct URL ซ้ำกันเหลือ 6,349 ค่า
+  { key: "zid", label: "id ของ Zocial", required: false,
+    aliases: ["_id", "message id", "post id"] },
 ];
 
 /** ยุบชื่อหัวตารางให้เทียบกันได้ — ตัดวรรค เครื่องหมาย และตัวพิมพ์ */
@@ -72,9 +89,10 @@ export function mapHeaders(headers) {
     if (hit < 0) {                                     // รอบสอง: ชื่อในไฟล์มีคำนั้นอยู่ข้างใน
       for (const a of f.aliases) {
         const na = normHeader(a);
-        // 🚫 คำสั้นห้ามใช้แบบ "มีอยู่ข้างใน" — "type" ไปคว้า "Content Type" มาเป็นประเภทบัญชี
-        //    (เจอจริงตอนเขียนเทสต์) คำสั้นจึงจับได้เฉพาะตอนชื่อตรงทั้งช่องเท่านั้น
-        if (na.length < 6) continue;
+        // 🚫 คำสั้นห้ามใช้แบบ "มีอยู่ข้างใน" — เจอจริง 2 เคส:
+        //    "type" ไปคว้า "Content Type" · "comment" ไปคว้า "Comment URL" มาเป็นจำนวนคอมเมนต์
+        //    คำสั้นจึงจับได้เฉพาะตอนชื่อตรงทั้งช่องเท่านั้น (เกณฑ์ 8 ตัวอักษรมาจากไฟล์ export จริง)
+        if (na.length < 8) continue;
         const i = norm.findIndex((n, j) => !taken.has(j) && n.includes(na));
         if (i >= 0) { hit = i; guessed.push(f.key); break; }
       }
@@ -197,7 +215,8 @@ export function wallText(wallMs) {
 
 /* ── 3. ช่องทาง ─────────────────────────────────────────────────────────── */
 
-export const SOURCES = ["facebook", "x", "instagram", "tiktok", "youtube", "forum", "news"];
+// ⚠️ "other" มีจริงในไฟล์ export (ชีตชื่อ other) — ไม่ใช่ค่าที่เราคิดเอง
+export const SOURCES = ["facebook", "x", "instagram", "tiktok", "youtube", "forum", "news", "other"];
 
 const SOURCE_ALIAS = [
   [/facebook|\bfb\b|เฟส|เฟซ/i,                    "facebook"],
@@ -207,6 +226,7 @@ const SOURCE_ALIAS = [
   [/youtube|\byt\b|ยูทู?บ/i,                        "youtube"],
   [/pantip|forum|webboard|blog|reddit|กระทู้|เว็บบอร์ด|บล็อก/i, "forum"],
   [/news|website|online|ข่าว|เว็บไซต์|สื่อ/i,       "news"],
+  [/^other$|^อื่น/i,                                "other"],
 ];
 
 const HOST_SOURCE = [
@@ -253,8 +273,13 @@ export function cleanUrl(u) {
 
 /* ── 4. เพจ หรือ บุคคล — ตัวนี้ตัดสินว่าข้อมูลจะถูกลบเมื่อไหร่ (§5 ของ handoff) ── */
 
+// ⚠️ ค่าที่พบจริงในไฟล์ export คือ "Brand" · "Public Figure" · ว่าง — ไม่มีคำว่า page/person เลย
 const TYPE_PAGE   = /^(page|brand|official|media|news|publisher|organization|organisation|company|business|channel|เพจ|สื่อ|องค์กร|บริษัท|ทางการ)$/i;
 const TYPE_PERSON = /^(person|people|user|profile|individual|บุคคล|ผู้ใช้|ส่วนตัว)$/i;
+// 🔴 "Public Figure" ตัดสินไม่ได้ และห้ามเดา — เป็นคนจริง (= ข้อมูลส่วนบุคคล) แต่บนเฟซบุ๊ก
+//    มักเป็น "เพจ" · จึงคืน unknown ซึ่งแปลว่า "ลบตามกำหนด" ไว้ก่อน แล้วรอเจ้าของเคาะ
+//    (ไฟล์จริงมี 8,308 แถวเป็นค่านี้ — ไม่ใช่จำนวนที่มองข้ามได้)
+const TYPE_UNSURE = /^(public figure|celebrity|influencer|kol)$/i;
 
 /**
  * → "page" | "person" | "unknown"
@@ -263,6 +288,7 @@ const TYPE_PERSON = /^(person|people|user|profile|individual|บุคคล|ผ
  */
 export function accountTypeOf({ accountType, source, url } = {}) {
   const t = String(accountType ?? "").trim();
+  if (TYPE_UNSURE.test(t)) return "unknown";           // ต้องอยู่ก่อน 2 บรรทัดล่าง ห้ามสลับ
   if (TYPE_PAGE.test(t)) return "page";
   if (TYPE_PERSON.test(t)) return "person";
 
@@ -278,6 +304,17 @@ export function accountTypeOf({ accountType, source, url } = {}) {
 /** ข้อมูลแถวนี้ต้องถูกลบตาม retention ไหม — เพจเก็บถาวร นอกนั้นลบหมด */
 export function shouldExpire(accountTypeValue) {
   return accountTypeValue !== "page";
+}
+
+/* ── 4b. แถวนี้เป็นโพสต์ หรือคอมเมนต์ ────────────────────────────────────
+   วัดจากไฟล์จริงแล้วแม่น 100%: แถวคอมเมนต์มี Direct URL ตรงกับ Comment URL ทุกใบ
+   และแถวโพสต์มี Direct URL ตรงกับ Post URL ทุกใบ                                */
+
+/** → "post" | "comment" | "reply" · ไม่มี 3 คอลัมน์นั้นเลยก็ถือว่าเป็นโพสต์ */
+export function rowKind({ postUrl, commentUrl, replyUrl } = {}) {
+  if (String(replyUrl ?? "").trim()) return "reply";
+  if (String(commentUrl ?? "").trim()) return "comment";
+  return "post";
 }
 
 /* ── 5. แถวที่ไม่เอา ───────────────────────────────────────────────────── */
@@ -344,15 +381,23 @@ export function normalizeRows(rows, opts = {}) {
     if (!source) return drop("no-source", String(get(r, "source") ?? "").slice(0, 40));
 
     const instant = wallToInstant(wall, tz);
-    const id = rowId(url, instant);
-    if (seen.has(id)) return drop("dup", url.slice(0, 60));
+    // 🔴 ใช้ id ของ Zocial ก่อนเสมอถ้ามี — ไฟล์จริงมี Direct URL ซ้ำกันเยอะมาก
+    //    (12,004 แถว เหลือลิงก์ไม่ซ้ำแค่ 6,349) ถ้าใช้ลิงก์เป็นตัวกันซ้ำ คอมเมนต์จะหายเป็นพัน
+    const zid = String(get(r, "zid") ?? "").trim();
+    const id = zid || rowId(url, instant);
+    if (seen.has(id)) return drop("dup", zid || url.slice(0, 60));
     seen.add(id);
+
+    const postUrl = cleanUrl(get(r, "postUrl"));
+    const kind = rowKind({ postUrl: get(r, "postUrl"), commentUrl: get(r, "commentUrl"), replyUrl: get(r, "replyUrl") });
 
     const account = String(get(r, "account") ?? "").trim();
     const type = accountTypeOf({ accountType: get(r, "accountType"), source, url });
 
     records.push({
-      id, source, url,
+      id, source, url, kind,
+      // ลิงก์โพสต์ต้นทาง = ตัวจับกลุ่มว่าคอมเมนต์ใบนี้อยู่ใต้โพสต์ไหน (ใช้ตอนทำการ์ดในเฟสถัดไป)
+      postUrl: postUrl || (kind === "post" ? url : null),
       account: account || null,
       accountType: type,
       expires: shouldExpire(type),
@@ -391,6 +436,14 @@ export function buildPreview(rows, headers, opts = {}) {
   const accounts = { page: 0, person: 0, unknown: 0 };
   for (const r of records) accounts[r.accountType]++;
 
+  // ⚠️ 2 ตัวนี้มีไว้ให้ "มองเห็นทันทีว่าอ่านชีตผิด" — ไฟล์ export มี 9 ชีต
+  //    ชีตแรกชื่อ all (ของครบ) ที่เหลือเป็นชีตแยกรายช่อง ถ้าเผลออ่านชีต facebook
+  //    จะเห็นช่องเดียวโด่ขึ้นมาทันที แทนที่จะเงียบแล้วได้ข้อมูลไม่ครบ
+  const kinds = { post: 0, comment: 0, reply: 0 };
+  for (const r of records) kinds[r.kind]++;
+  const sources = {};
+  for (const r of records) sources[r.source] = (sources[r.source] || 0) + 1;
+
   const byWhy = new Map();
   for (const d of dropped) {
     if (!byWhy.has(d.why)) byWhy.set(d.why, { why: d.why, label: DROP_WHY_TH[d.why] || d.why, count: 0, samples: [] });
@@ -405,6 +458,7 @@ export function buildPreview(rows, headers, opts = {}) {
     counts,
     records,
     dropped: [...byWhy.values()].sort((a, b) => b.count - a.count),
+    kinds, sources,
     days: [...byDay.entries()].map(([date, count]) => ({ date, count })).sort((a, b) => a.date < b.date ? -1 : 1),
     accounts,
     // แถวแรกที่อ่านเวลาได้ — ไว้ให้เจ้าของเทียบกับเว็บจริงว่าตีความ timezone ถูกไหม
@@ -418,6 +472,10 @@ export function buildPreview(rows, headers, opts = {}) {
  */
 export function campaignFromFilename(name) {
   let s = String(name ?? "").replace(/\.(xlsx|xlsm|csv)$/i, "");
+  // ชื่อไฟล์จริงที่ Zocial Eye ตั้งให้: ZE_all_message_on_<campaign><ช่วงวันที่>_<เลขรัน>
+  // 🚫 ห้ามเขียน campaign id ตัวจริงไว้ในโค้ดหรือในเทสต์ — repo เป็น public
+  const ze = s.match(/^ZE_.*?_on_(\d+?)(\d{8}T\d{2}_\d{2}_\d{2})_to_/i);
+  if (ze) return ze[1];
   s = s.replace(/[_\s]*\d{4}[-_]?\d{2}[-_]?\d{2}([-_ ]+(to|ถึง)?[-_ ]*\d{4}[-_]?\d{2}[-_]?\d{2})?[_\s]*$/i, "");
   s = s.replace(/[_\s]*\(?\d+\)?$/,"").replace(/[_\-\s]+$/,"").trim();
   return s || "";

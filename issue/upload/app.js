@@ -59,6 +59,7 @@ function render() {
     fileBox(p),
     p.ok ? timeBox(p) : "",
     headerBox(p),
+    p.ok ? kindBox(p) : "",
     p.ok ? daysBox(p) : "",
     p.ok ? peopleBox(p) : "",
     p.ok ? droppedBox(p) : "",
@@ -130,6 +131,24 @@ function headerBox(p) {
     ${unused}</div>`;
 }
 
+const KIND_TH = { post: "โพสต์", comment: "คอมเมนต์ใต้โพสต์", reply: "ตอบกลับคอมเมนต์" };
+
+function kindBox(p) {
+  const kinds = ["post", "comment", "reply"].filter((k) => p.kinds[k])
+    .map((k) => `<div class="kv"><span>${KIND_TH[k]}</span><b>${p.kinds[k].toLocaleString("th-TH")}</b></div>`).join("");
+  const srcs = Object.entries(p.sources).sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => `<div class="kv"><span>${esc(k)}</span><b>${n.toLocaleString("th-TH")}</b></div>`).join("");
+  return `<div class="card"><h2>ในไฟล์มีอะไรบ้าง</h2>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1;min-width:230px"><div class="muted" style="margin-bottom:4px">ชนิดของแถว</div>${kinds}
+        <div class="muted" style="margin-top:6px">⚠️ ไฟล์ export เอาโพสต์ คอมเมนต์ และคำตอบกลับ <b>มาปนกันในชีตเดียว</b>
+        — นับทุกแถวเป็น "โพสต์" ไม่ได้</div></div>
+      <div style="flex:1;min-width:200px"><div class="muted" style="margin-bottom:4px">ช่องทาง</div>${srcs}
+        <div class="muted" style="margin-top:6px">💡 ไฟล์มีหลายชีต (all + แยกรายช่อง) — ถ้าตรงนี้ขึ้นช่องเดียว
+        แปลว่าอ่านชีตแยกมา ไม่ใช่ชีตรวม</div></div>
+    </div></div>`;
+}
+
 function daysBox(p) {
   if (!p.days.length) return "";
   const max = Math.max(...p.days.map((d) => d.count));
@@ -153,6 +172,7 @@ function peopleBox(p) {
       แต่เก็บข้อมูลบุคคลเกินกำหนดคือความเสี่ยงทางกฎหมาย
       <br />สรุป: เก็บถาวร ${keep.toLocaleString("th-TH")} ใบ · ลบตามกำหนด ${gone.toLocaleString("th-TH")} ใบ
       ${a.unknown && !p.header.map.accountType ? '<br />💡 ถ้าไฟล์มีคอลัมน์บอกประเภทบัญชี ให้เลือกในตารางข้างบน จำนวน "บอกไม่ได้" จะลดลง' : ""}
+      ${a.unknown && p.header.map.accountType ? '<br />❓ ไฟล์ของ Zocial ใช้ป้าย <b>Public Figure</b> ซึ่งบอกไม่ได้ว่าเป็นเพจหรือคนจริง — ตอนนี้นับเป็น "บอกไม่ได้" ไว้ก่อน <b>รอเจ้าของเคาะ</b>' : ""}
     </div></div>`;
 }
 

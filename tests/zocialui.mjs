@@ -86,6 +86,14 @@ await upload(page, CSV);
   ok("บอกว่ายังไม่มี sentiment ของเราเอง", t.includes("ยังไม่เอาขึ้นการ์ด"));
 }
 
+console.log("\n[2b] แยกโพสต์ / คอมเมนต์ / ช่องทาง");
+{
+  const t = await page.textContent("#out");
+  ok("บอกชนิดของแถว", t.includes("ชนิดของแถว") && t.includes("โพสต์"));
+  ok("เตือนว่าโพสต์กับคอมเมนต์ปนกันมาในชีตเดียว", t.includes("มาปนกันในชีตเดียว"));
+  ok("บอกช่องทางที่พบ (ไว้จับว่าอ่านชีตผิด)", t.includes("ช่องทาง") && t.includes("facebook"));
+}
+
 console.log("\n[3] สลับ timezone แล้ววันที่ต้องเปลี่ยนจริง (§7.3)");
 {
   const dateNow = () => page.evaluate(() => {

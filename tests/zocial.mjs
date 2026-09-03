@@ -151,6 +151,40 @@ console.log("\n[8] ช่องทาง + ชื่อแคมเปญจา�
   ok("ตัด (1) ที่เบราว์เซอร์เติมให้", Z.campaignFromFilename("brand (1).xlsx") === "brand", Z.campaignFromFilename("brand (1).xlsx"));
 }
 
+console.log("\n[8b] เรื่องที่รู้จากไฟล์ export ของจริง (3 ก.ย. 2026)");
+{
+  // ไฟล์จริง 12,004 แถว = โพสต์ 3,548 · คอมเมนต์ 7,062 · ตอบกลับ 1,394 → ต้องแยกออกจากกัน
+  ok("มี Comment URL = คอมเมนต์", Z.rowKind({ postUrl: "https://a/p", commentUrl: "https://a/c" }) === "comment");
+  ok("มี Reply comment URL = คำตอบกลับ", Z.rowKind({ commentUrl: "https://a/c", replyUrl: "https://a/r" }) === "reply");
+  ok("ไม่มีทั้งคู่ = โพสต์", Z.rowKind({ postUrl: "https://a/p" }) === "post");
+
+  const HEAD2 = ["Post time", "Source", "Message", "Direct URL", "Post URL", "Comment URL", "Reply comment URL", "Account", "Account label type", "_id"];
+  const m = Z.mapHeaders(HEAD2);
+  ok("หัวตารางจริงของ Zocial จับคู่ได้ครบ", m.missing.length === 0, m.missing.join(","));
+  ok("Account label type → ประเภทบัญชี", m.map.accountType === "Account label type", String(m.map.accountType));
+  // 🚫 เคยพลาด: คำว่า "comment" ไปคว้า "Comment URL" มาเป็นจำนวนคอมเมนต์
+  ok("Comment URL ต้องไม่ถูกอ่านเป็นจำนวนคอมเมนต์", m.map.comments === null, String(m.map.comments));
+  ok("_id ถูกจับเป็น id ของ Zocial", m.map.zid === "_id");
+
+  const mk = (o) => ({ "Post time": "2026-06-15 09:00", "Source": "facebook", "Message": "ข้อความ",
+    "Direct URL": "https://www.facebook.com/x/1", "Post URL": "https://www.facebook.com/x/1",
+    "Comment URL": "", "Reply comment URL": "", "Account": "ก", "Account label type": "", "_id": "a1", ...o });
+
+  // 🔴 ไฟล์จริงมีลิงก์ซ้ำกันเยอะ (12,004 แถว เหลือลิงก์ไม่ซ้ำ 6,349) — กันซ้ำด้วยลิงก์ = คอมเมนต์หายเป็นพัน
+  const same = Z.buildPreview([mk({ _id: "a1" }), mk({ _id: "a2", "Comment URL": "https://www.facebook.com/x/1" })], HEAD2);
+  ok("ลิงก์ซ้ำแต่ _id ต่างกัน ต้องเก็บทั้งคู่", same.counts.kept === 2, JSON.stringify(same.counts));
+  ok("และแยกชนิดถูก", same.kinds.post === 1 && same.kinds.comment === 1, JSON.stringify(same.kinds));
+  ok("_id ซ้ำจริงถึงจะตัด", Z.buildPreview([mk({}), mk({})], HEAD2).counts.kept === 1);
+  ok("ใช้ _id เป็น id ของแถว", same.records[0].id === "a1");
+
+  // ค่าจริงในคอลัมน์ประเภทบัญชี: Brand / Public Figure / ว่าง
+  ok("Brand → เพจ (เก็บถาวร)", Z.accountTypeOf({ accountType: "Brand" }) === "page");
+  ok("Public Figure → บอกไม่ได้ (ยังไม่เดา)", Z.accountTypeOf({ accountType: "Public Figure" }) === "unknown");
+  ok("และยังถูกลบตามกำหนดไว้ก่อน", Z.shouldExpire(Z.accountTypeOf({ accountType: "Public Figure" })) === true);
+  ok("ช่อง other ไม่ถูกทิ้ง", Z.normSource("other") === "other");
+  ok("นับช่องทางให้ด้วย", same.sources.facebook === 2, JSON.stringify(same.sources));
+}
+
 console.log("\n[9] ด่านกันแก้กลับ — พิสูจน์ว่าเทสต์จับของพังได้จริง");
 {
   // จำลอง "โค้ดเติมค่าให้เงียบๆ" แบบที่เคยทำให้ตัวเลขทั้งหน้าผิด แล้วดูว่าด่านข้อ [6] จับได้ไหม
