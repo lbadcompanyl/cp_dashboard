@@ -203,16 +203,71 @@ function sampleBox(p) {
 
 function saveBox(p) {
   return `<div class="card">
-    <button class="btn primary" disabled>บันทึกลงฐานข้อมูล</button>
+    <button id="save" class="btn primary"${p.ok ? "" : " disabled"}>บันทึกลงฐานข้อมูล</button>
+    <span id="savemsg" class="muted" style="margin-left:10px"></span>
     <div class="muted" style="margin-top:8px">
-      ปุ่มนี้ยังกดไม่ได้เพราะ <b>ยังไม่ได้เปิด D1</b> — ต้องให้เจ้าของสร้าง database + binding ที่ Cloudflare ก่อน
-      (ทั้ง Production และ Preview แล้ว Retry deployment)
-      ${p.ok ? "" : "<br />และไฟล์นี้ยังจับคู่คอลัมน์ไม่ครบด้วย"}
-    </div></div>`;
+      ${p.ok ? `จะบันทึก <b>${p.counts.kept.toLocaleString("th-TH")}</b> แถว
+        (โพสต์ ${p.kinds.post.toLocaleString("th-TH")} ใบขึ้นการ์ด · คอมเมนต์กับคำตอบกลับเก็บไว้เบื้องหลัง)
+        <br />ส่งไฟล์เดิมซ้ำได้ ไม่เกิดข้อมูลซ้ำ — และ<b>ผลตรวจ sentiment ที่เคยทำไว้จะไม่ถูกลบ</b>`
+        : "ไฟล์นี้ยังจับคู่คอลัมน์ไม่ครบ จึงยังบันทึกไม่ได้"}
+    </div>
+    <div id="savedone" class="note" hidden></div></div>`;
+}
+
+/** ส่งขึ้นเซิร์ฟเวอร์เป็น 3 จังหวะ — begin → rows ทีละก้อน → finish */
+async function doSave(p) {
+  const btn = $("save"), msg = $("savemsg"), done = $("savedone");
+  btn.disabled = true;
+  done.hidden = true;
+  const say = (t) => { msg.innerHTML = `<span class="spin"></span>${t}`; };
+
+  const call = async (body) => {
+    const r = await fetch("/issue/api/upload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    // 🔒 Access หมดอายุจะตอบหน้าล็อกอินเป็น HTML — เอาไป .json() จะพังแล้วรายงานผิดเรื่อง
+    //    (บทเรียนเดียวกับ apiGet() ของ /social/ ใน CLAUDE.md)
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("json")) throw new Error("เซสชันหมดอายุ — กดรีเฟรชหน้านี้เพื่อเข้าสู่ระบบใหม่");
+    const j = await r.json();
+    if (j.ok === false) throw new Error(j.message || "บันทึกไม่สำเร็จ");
+    return j;
+  };
+
+  try {
+    const dates = [...new Set(p.records.map((r) => r.date))].sort();
+    say("กำลังเริ่ม…");
+    const b = await call({ op: "begin", campaign: OPTS.campaign, tz: OPTS.tz,
+      total: p.counts.total, kept: p.counts.kept, dropped: p.counts.dropped,
+      dateFrom: dates[0], dateTo: dates.at(-1) });
+
+    const step = Math.min(b.maxRows || 500, 500);
+    for (let i = 0; i < p.records.length; i += step) {
+      say(`กำลังบันทึก ${Math.min(i + step, p.records.length).toLocaleString("th-TH")} / ${p.records.length.toLocaleString("th-TH")} แถว`);
+      await call({ op: "rows", batchId: b.batchId, rows: p.records.slice(i, i + step) });
+    }
+
+    say("กำลังสรุปตัวเลขรายวัน…");
+    const f = await call({ op: "finish", batchId: b.batchId, campaign: OPTS.campaign, dates });
+
+    msg.textContent = "";
+    done.hidden = false;
+    done.innerHTML = `✅ <b>บันทึกแล้ว ${p.counts.kept.toLocaleString("th-TH")} แถว</b> · สรุปตัวเลขให้ ${f.dates} วัน
+      <br />ลบข้อมูลที่เกินกำหนด ${f.retentionDays} วัน (เก่ากว่า ${f.cutoff}) ไปแล้ว ${Number(f.removed || 0).toLocaleString("th-TH")} แถว
+      <br /><span class="muted">เพจ / สื่อ / องค์กร ไม่ถูกลบ — เก็บถาวร</span>`;
+  } catch (e) {
+    msg.textContent = "";
+    done.hidden = false;
+    done.className = "note bad";
+    done.textContent = "❌ " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ── ผูกปุ่ม — เปลี่ยนค่าแล้ววาดใหม่ทันที ไม่ต้องเลือกไฟล์ซ้ำ ──────────── */
 function wire(p) {
+  const save = $("save");
+  if (save) save.addEventListener("click", () => doSave(p));
+
   const tz = $("tz");
   if (tz) tz.addEventListener("change", () => {
     OPTS.tz = tz.value;

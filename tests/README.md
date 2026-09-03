@@ -94,6 +94,7 @@ const browser = await launch();
 | `imports.mjs` | 🔥 **ไฟล์ใน `functions/` ต้องประกอบขึ้นได้ทุกไฟล์** — ไฟล์เดียวพัง = Cloudflare สร้างเว็บไม่ได้ทั้งโปรเจกต์ · `node --check` จับไม่ได้ **ห้ามใช้เป็นด่านเดียว** | `node imports.mjs` |
 | `zocial.mjs` | **Zocial Eye phase 1** — จับคู่หัวตาราง · อ่านเวลา (Excel serial · พ.ศ. · dd/mm/yyyy) · ตีความ timezone แล้ววันที่ต้องเปลี่ยนจริง · เพจ vs บุคคล (ตัวตัดสิน retention — **unknown = บุคคล**) · กันแถวซ้ำ · 🔴 **"ไม่รู้" ห้ามกลืนเป็นค่าใดค่าหนึ่ง** | |
 | `zocialui.mjs` | หน้า `/issue/upload/` — ป้อนไฟล์จริง (ทั้ง .csv และ .xlsx ที่สร้างในเทสต์) แล้ววัดว่าเห็นผล ไม่ใช่หน้าว่าง · สลับ timezone แล้ววันที่เปลี่ยน · ขาดคอลัมน์ต้องบอก · ปุ่มบันทึกต้องกดไม่ได้ตราบใดที่ยังไม่มี D1 | ✔ |
+| `zocialdb.mjs` | ท่อนบันทึกลง **D1** — คอมเมนต์เก็บแต่ไม่ขึ้นการ์ด · upload ซ้ำห้ามลบผลตรวจ sentiment · 🚫 ตัวลบ retention **ห้ามแตะ `daily_aggregate`** และลบเฉพาะ `expires=1` · ไม่มีข้อมูลต้องตอบ `hasData:false` · เพดานรายวันของ D1 ต้องแยกจาก error อื่น · `schema.sql` ต้องตรงกับโค้ด | |
 
 > ⚠️ `archives.mjs` มีด่านคอยจับ **ข้อห้ามเรื่อง search library** — ถ้าวันไหนมีใครเอา
 > Lunr/Fuse/MiniSearch/FlexSearch เข้ามา หรือเปลี่ยนจาก `includes()` ไปเป็นการตัดคำ

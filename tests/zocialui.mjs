@@ -121,10 +121,50 @@ console.log("\n[4] จับคู่คอลัมน์เองได้");
   await page.waitForTimeout(120);
 }
 
-console.log("\n[5] ยังบันทึกไม่ได้ ต้องบอกให้ชัด");
+console.log("\n[5] ปุ่มบันทึก — ต้องส่งจริง และรายงานผลจริง");
 {
-  ok("ปุ่มบันทึกกดไม่ได้", await page.isDisabled('button:has-text("บันทึกลงฐานข้อมูล")'));
-  ok("บอกเหตุผลว่าเพราะยังไม่ได้เปิด D1", (await page.textContent("#out")).includes("ยังไม่ได้เปิด D1"));
+  ok("ปุ่มกดได้เมื่อไฟล์อ่านได้ครบ", !(await page.isDisabled("#save"))); 
+  const t = await page.textContent("#out");
+  ok("บอกว่าจะบันทึกกี่แถว และคอมเมนต์ไปอยู่ไหน", t.includes("ขึ้นการ์ด") && t.includes("เก็บไว้เบื้องหลัง"));
+  ok("บอกว่าส่งซ้ำแล้วผลตรวจ sentiment ไม่หาย", t.includes("จะไม่ถูกลบ"));
+
+  // ปลอมเซิร์ฟเวอร์ — วัดว่าหน้าเว็บส่งครบ 3 จังหวะและรายงานผลถูก
+  const seen = [];
+  await page.route("**/issue/api/upload", async (route) => {
+    const b = JSON.parse(route.request().postData() || "{}");
+    seen.push(b.op);
+    const out = b.op === "begin" ? { ok: true, batchId: "b1", maxRows: 500 }
+      : b.op === "rows" ? { ok: true, received: (b.rows || []).length }
+      : { ok: true, dates: (b.dates || []).length, retentionDays: 180, cutoff: "2026-03-06", removed: 4 };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(out) });
+  });
+  await page.click("#save");
+  await page.waitForSelector("#savedone:not([hidden])", { timeout: 8000 });
+  const done = await page.textContent("#savedone");
+  ok("ส่งครบ 3 จังหวะ", seen[0] === "begin" && seen.includes("rows") && seen.at(-1) === "finish", seen.join(","));
+  ok("รายงานว่าบันทึกแล้วกี่แถว", done.includes("บันทึกแล้ว"));
+  ok("บอกด้วยว่าลบของเกินกำหนดไปเท่าไร", done.includes("4") && done.includes("2026-03-06"), done.replace(/\s+/g, " ").slice(0, 120));
+  ok("ย้ำว่าเพจไม่ถูกลบ", done.includes("เก็บถาวร"));
+}
+
+console.log("\n[5b] เซิร์ฟเวอร์ตอบไม่ดี ต้องบอกให้ถูกเรื่อง");
+{
+  await page.unroute("**/issue/api/upload");
+  await page.route("**/issue/api/upload", (route) => route.fulfill({ status: 503, contentType: "application/json",
+    body: JSON.stringify({ ok: false, error: "no-binding", message: "ยังไม่ได้ผูกฐานข้อมูล D1 ... ZOCIAL_DB ..." }) }));
+  await page.click("#save");
+  await page.waitForFunction(() => document.getElementById("savedone")?.textContent.includes("❌"), { timeout: 8000 });
+  ok("ยกข้อความจากเซิร์ฟเวอร์มาบอกตรงๆ", (await page.textContent("#savedone")).includes("ZOCIAL_DB"));
+
+  // 🔒 Access หมดอายุจะตอบหน้าล็อกอินเป็น HTML ไม่ใช่ JSON
+  await page.unroute("**/issue/api/upload");
+  await page.route("**/issue/api/upload", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<html>login</html>" }));
+  await page.click("#save");
+  await page.waitForFunction(() => document.getElementById("savedone")?.textContent.includes("เซสชัน"), { timeout: 8000 });
+  ok("เซสชันหมดอายุ ต้องบอกให้ไปเข้าสู่ระบบใหม่ ไม่ใช่ 'บันทึกไม่สำเร็จ'",
+     (await page.textContent("#savedone")).includes("เข้าสู่ระบบใหม่"));
+  await page.unroute("**/issue/api/upload");
+  ok("ปุ่มกลับมากดได้หลังพลาด", !(await page.isDisabled("#save")));
 }
 
 console.log("\n[6] ไฟล์ที่ขาดคอลัมน์จำเป็น — ห้ามเงียบ");
