@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 33;
+const WORKER_VER = 34;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -297,12 +297,23 @@ function fbClean(o) {
   if (!text) return null;
   if (!FB_LABELS.includes(was) || !FB_LABELS.includes(now)) return null;
   if (was === now) return null;                                  // ไม่ได้แก้อะไร ไม่ต้องเก็บ
+  /* 🏷 ป้ายจากต้นทางอื่นที่ตีมาก่อนเรา (ตอนนี้คือ Zocial Eye)
+     เจ้าของสั่ง 3 ก.ย. 2026: **"ต้องให้จำ pattern ที่ social มันจะผิดด้วย"**
+     ไม่มีช่องนี้ = รู้แค่ว่า "AI ผิด" แต่ไม่รู้ว่า **ต้นทางผิดแบบไหน**
+     ซึ่งเป็นข้อมูลที่เอาไปคัดกรองได้ว่าใบไหนต้องส่งให้ AI ตรวจซ้ำ (ประหยัดเงิน)
+     ⚠️ ไม่มีก็ไม่พัง — ของเดิมที่อยู่ในกองแล้วยังอ่านได้เหมือนเดิม */
+  const from = String(o.from || "").toLowerCase().slice(0, 20);
+  const src = String(o.src || "").toLowerCase();
   return {
     text, was, now,
     target: o.target === "cp" ? "cp" : "overall",                // แก้แกนไหน
     model: String(o.model || "").slice(0, 40),
     ver: Number.isFinite(+o.ver) ? +o.ver : null,
     rubric: String(o.rubric || "").slice(0, 10),
+    /* ป้ายเดิมจากต้นทาง (เช่น Zocial) — เก็บเฉพาะค่าที่รู้จัก ห้ามเชื่อค่าดิบ */
+    ...(FB_LABELS.includes(from) ? { from } : {}),
+    /* ป้ายที่ถูกแก้มาจากชั้นไหน: "zocial" (ยังไม่ผ่าน AI) หรือ "ai" (AI ตรวจแล้ว) */
+    ...(src === "zocial" || src === "ai" ? { src } : {}),
     at: new Date().toISOString().slice(0, 10),                   // วันที่พอ ไม่ต้องละเอียดถึงวินาที
   };
 }

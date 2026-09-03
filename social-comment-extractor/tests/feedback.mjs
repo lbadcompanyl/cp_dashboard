@@ -118,5 +118,30 @@ ok("[2] ไม่เก็บชื่อ/ลิงก์ แม้ถูกส�
   ok("[9] ส่งแต่ของเสีย → 400 และไม่แตะ KV", r.status === 400 && kv.n.put === 0 && kv.n.get === 0);
 }
 
+
+/* ══════════════════════════════════════════════════════════════
+ * 🏷 ป้ายจากต้นทางอื่น (Zocial Eye) — เจ้าของสั่ง 3 ก.ย. 2026
+ *    "ต้องให้จำ pattern ที่ social มันจะผิดด้วย"
+ *    ห้องใหม่ (news feed จาก Zocial) จะยืม /feedback ตัวนี้ไปใช้
+ *    ไม่มีช่องนี้ = รู้แค่ว่า AI ผิด แต่ไม่รู้ว่าต้นทางผิดแบบไหน
+ * ══════════════════════════════════════════════════════════════ */
+{
+  const keep = fbClean({ text: "ขอบคุณที่ดูแลผืนป่าให้พวกเรา", was: "neutral", now: "positive",
+                         from: "neutral", src: "zocial", model: "zocial", target: "overall" });
+  ok("[10] เก็บป้ายเดิมของ Zocial (from) ไว้ด้วย", keep && keep.from === "neutral", JSON.stringify(keep));
+  ok("[10b] เก็บว่าแก้มาจากชั้นไหน (src)", keep && keep.src === "zocial");
+
+  /* 🚫 ห้ามเชื่อค่าดิบ — ค่าที่ไม่รู้จักต้องถูกทิ้ง ไม่ใช่เก็บลง KV ทั้งดุ้น */
+  const bad = fbClean({ text: "ทดสอบ", was: "neutral", now: "positive",
+                        from: "<script>", src: "อะไรก็ไม่รู้" });
+  ok("[10c] 🚫 ค่า from/src ที่ไม่รู้จักถูกตัดทิ้ง ไม่เก็บลง KV",
+     bad && bad.from === undefined && bad.src === undefined, JSON.stringify(bad));
+
+  /* ของเดิมที่ไม่ส่ง from/src มา ต้องยังใช้ได้เหมือนเดิม */
+  const old = fbClean({ text: "ทดสอบเก่า", was: "negative", now: "positive", target: "cp" });
+  ok("[10d] ผู้เรียกรุ่นเก่า (ไม่ส่ง from/src) ต้องไม่พัง",
+     old && old.now === "positive" && old.from === undefined);
+}
+
 console.log(fail ? `\n❌ ตก ${fail} ข้อ` : "\n✅ ผ่านหมด");
 process.exit(fail ? 1 : 0);
