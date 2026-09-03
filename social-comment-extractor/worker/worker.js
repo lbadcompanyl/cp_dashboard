@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 34;
+const WORKER_VER = 35;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -155,6 +155,50 @@ const TWO_LENS_SHOTS = [
   { t: "แค่ 395 มึงไม่ดูกันก่อนค่อยเม้นท์แหะเขาวะ", cp: "Positive", oc: "Neutral", s: 0 },
   { t: "ฟังคลิปให้จบก่อน", cp: "Positive", oc: "Neutral", s: 0 },
 ];
+
+/* ============================================================
+ * 🎛 PROFILE — งานคนละอย่างใช้ rubric คนละชุด แต่ใช้ engine ร่วมกัน
+ * ------------------------------------------------------------
+ * เจ้าของเคาะ 3 ก.ย. 2026 (หลังห้อง Zocial ถาม):
+ *   "ใช้ตัวเดียวกัน แต่แยกเป็น profile (ไม่ใช่ rubric รวมก้อนเดียว
+ *    และไม่ใช่แยก worker)"
+ *
+ * เหตุผล: engine เรียก LLM · แคช · ลองใหม่ · FEEDBACK · โครง BASELINE
+ *   **ควรใช้ร่วม** — แต่ rubric ต้องแยกต่องาน เพราะคนละ input คนละคำถาม
+ *   (คอมเมนต์ต่อ CP  vs  โพสข่าวโทนรวม) · เขียนรวมก้อนเดียวจะเบลอทั้งคู่
+ *
+ * ✅ ใช้ร่วม : engine · brands.json · labels.md · แคช · retry · FEEDBACK loop
+ * ✅ แยกกัน : rubric/prompt · few-shot · ชุดวัดผล (BASELINE set)
+ *
+ * 🚫 **ห้ามแก้ `cp_comment` โดยไม่ตั้งใจ** — เทสต์ `profiles.mjs` เก็บ sha256
+ *    ของ prompt กับ few-shot ไว้ ถ้าขยับแม้แต่ตัวอักษรเดียวจะตกทันที
+ *    (ตัวเลขบนหน้า sentiment ที่วัดไว้ 92.8% ผูกกับ prompt ชุดนี้)
+ *
+ * ➕ **เพิ่ม profile ใหม่ยังไง** — ใส่ใน PROFILES แล้วเขียน rubric เป็นเอกสาร
+ *    ของตัวเอง + ชุดวัดผลของตัวเอง · ห้ามยัดกฎของงานใหม่ลงใน systemTwoLens()
+ * ============================================================ */
+const PROFILES = {
+  /* คอมเมนต์โซเชียล → ท่าทีต่อเครือ CP + อารมณ์รวม (2 แกนในการยิงครั้งเดียว)
+     เอกสารเกณฑ์: RUBRIC-CP.md · ชุดวัดผล: 475 ใบ (BASELINE.md) */
+  cp_comment: {
+    rubric_version: "cp-v6",        // ⚠️ ผูกกับ RUBRIC_VER เดิม — ขยับเมื่อเกณฑ์เปลี่ยนเท่านั้น
+    input: "comment",
+    system: () => systemTwoLens(),
+    shots: () => TWO_LENS_SHOTS,
+    lenses: ["cp", "overall"],
+    default_lens: "cp",
+    doc: "RUBRIC-CP.md",
+  },
+  /* 🚧 news_post — ยังไม่ทำ (เจ้าของสั่ง 3 ก.ย. 2026: รอห้อง Zocial ตั้งต้น rubric
+     แล้วส่งมา review ก่อน) · ใส่ที่นี่เมื่อเคาะแล้ว ห้ามเดาเกณฑ์เอาเอง */
+};
+const DEFAULT_PROFILE = "cp_comment";
+/** คืน profile ที่ขอ · ชื่อที่ไม่รู้จัก = null (ห้ามตกกลับไปตัวปริยายเงียบๆ
+    ไม่งั้นห้องอื่นพิมพ์ผิดแล้วได้ผลจาก rubric คนละตัวโดยไม่รู้) */
+function getProfile(name) {
+  const id = String(name || DEFAULT_PROFILE);
+  return PROFILES[id] ? { id, ...PROFILES[id] } : null;
+}
 
 function systemTwoLens() {
   const ex = TWO_LENS_SHOTS
@@ -368,7 +412,11 @@ export default {
 
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") {
-      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, rubric: RUBRIC_VER, models: MODEL_CHOICES, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
+      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, rubric: RUBRIC_VER,
+        /* ให้ห้องอื่นถามได้ว่ามี profile อะไรให้เรียกบ้าง โดยไม่ต้องเปิดโค้ดดู */
+        profiles: Object.fromEntries(Object.entries(PROFILES).map(([k, v]) =>
+          [k, { rubric_version: v.rubric_version, input: v.input, lenses: v.lenses, doc: v.doc }])),
+        models: MODEL_CHOICES, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
@@ -434,7 +482,11 @@ export default {
         const effort = EFFORT_CHOICES.includes(body.effort) ? body.effort : null;
         const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context, effort);
         const missing = results.filter(r => r.missing).length;
-        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, effort, missing, results, tokens: acc }), origin);
+        /* ⚠️ ติด profile + rubric_version ทุกครั้ง — เก็บผลไว้ข้ามเดือนแล้วต้องรู้ว่า
+           ตัวเลขนั้นมาจากเกณฑ์เวอร์ชันไหน ไม่งั้นเทียบข้ามเวลาไม่ได้ (เจ้าของสั่ง 3 ก.ย. 2026) */
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER,
+          profile: DEFAULT_PROFILE, rubric_version: PROFILES[DEFAULT_PROFILE].rubric_version,
+          model, effort, missing, results, tokens: acc }), origin);
       } catch (e) {
         return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
       }
@@ -490,6 +542,70 @@ export default {
         }), origin);
       } catch (e) {
         return cors(json({ error: "resynth_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
+    /* 🎛 endpoint กลางสำหรับห้องอื่นเรียกใช้ — contract ที่เจ้าของเคาะ 3 ก.ย. 2026
+       ขอ  : { texts[], profile, context?, lens? }
+       ตอบ: { profile, rubric_version, results:[{ label, confidence, lenses, is_sarcasm }] }
+
+       🎯 ต่างจาก /classify ตรงที่ **ผูกกับ profile และติด rubric_version มาด้วยเสมอ**
+          → เก็บผลไว้ข้ามเดือนแล้วยังรู้ว่าตัวเลขนั้นมาจากเกณฑ์เวอร์ชันไหน เทียบข้ามเวลาได้
+       ⚠️ `/classify` เดิมยังอยู่ ไม่ถอด — หน้า sentiment-eval ใช้อยู่
+          และตอนนี้ก็ติด profile/rubric_version กลับไปด้วยเหมือนกัน
+
+       📌 ทำไมไม่ใช่ `/api/sentiment` ตามที่เขียนมา — worker ตัวนี้เป็น Cloudflare **Worker**
+          แยกจาก Pages (`comment-sentiment.s3445028.workers.dev`) ไม่ได้อยู่ใต้ `/api/` ของเว็บ
+          ย้ายไป Pages Function ได้แต่ต้องยก secret/KV/ขั้นตอน deploy ตามไปทั้งชุด
+          → เลือกทางที่ไม่ต้องรื้อ ถ้าอยากได้ path นั้นจริงๆ ค่อยทำ proxy บาง ๆ ที่ Pages ทีหลัง */
+    if (request.method === "POST" && url.pathname === "/sentiment") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      /* รับ profile ได้ทั้งใน body และ query string (`?profile=cp_comment`) */
+      const prof = getProfile(body?.profile || url.searchParams.get("profile"));
+      if (!prof) {
+        /* 🚫 ชื่อไม่รู้จัก = ตอบ error ห้ามตกกลับไปตัวปริยายเงียบๆ
+           ไม่งั้นห้องอื่นพิมพ์ผิดแล้วได้ผลจาก rubric คนละตัวโดยไม่มีใครรู้ */
+        return cors(json({ error: "unknown_profile",
+          got: String(body?.profile || url.searchParams.get("profile") || ""),
+          known: Object.keys(PROFILES) }, 400), origin);
+      }
+      const texts = Array.isArray(body?.texts) ? body.texts
+                  : (typeof body?.text === "string" ? [body.text] : null);
+      if (!texts || !texts.length) return cors(json({ error: "no_texts" }, 400), origin);
+      if (texts.length > CLASSIFY_MAX) {
+        return cors(json({ error: "too_many", max: CLASSIFY_MAX, got: texts.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const lens = prof.lenses.includes(body?.lens) ? body.lens : prof.default_lens;
+      const acc = { input: 0, output: 0 };
+      try {
+        const model = MODEL_CHOICES.includes(body.model) ? body.model : (env.CLAUDE_MODEL || DEFAULT_MODEL);
+        const effort = EFFORT_CHOICES.includes(body.effort) ? body.effort : null;
+        const raw = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context, effort);
+        const key = lens === "cp" ? "sentiment_cp" : "overall_cred";
+        const results = raw.map(r => ({
+          /* ป้ายของแกนที่ขอ — ตัวหลักที่ผู้เรียกเอาไปใช้ */
+          label: r.missing ? null : String(r[key] || "").toLowerCase(),
+          /* 🚫 confidence: ระบบ **ยังไม่มี** ตัวเลขนี้ — คืน null ตรงๆ ห้ามแต่งค่าขึ้นมา
+             (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" — เคยเจ็บมาแล้ว 3 รอบ ดู HANDOFF.md)
+             จะมีได้ต้องให้โมเดลตอบเพิ่ม = แก้ prompt = กระทบตัวเลขที่วัดไว้ 92.8% */
+          confidence: null,
+          /* ค่าทุกแกนที่ profile นี้มี — ผู้เรียกเลือกใช้เองได้โดยไม่ต้องยิงซ้ำ */
+          lenses: { cp: r.sentiment_cp, overall: r.overall_cred },
+          is_sarcasm: r.is_sarcasm ? 1 : 0,
+          /* ⚠️ โมเดลไม่ตอบใบนี้ — ผู้เรียก **ต้องเช็ค** ห้ามนับเป็น neutral */
+          missing: r.missing ? 1 : 0,
+        }));
+        return cors(json({
+          ok: true, ver: WORKER_VER,
+          profile: prof.id, rubric_version: prof.rubric_version, lens,
+          model, effort,
+          missing: results.filter(r => r.missing).length,
+          results, tokens: acc,
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "sentiment_failed", profile: prof.id,
+                           detail: String(e && e.message || e) }, 502), origin);
       }
     }
     /* ✂️ ถอดความใบใหม่ — ใช้ตอนผู้ใช้กด ✕ ตัดตัวอย่างที่ไม่ตรงประเด็นออก
@@ -701,6 +817,10 @@ async function analyze(opts, env) {
        (เจ้าของเจอจริง 2 ก.ย. 2026 — ต้นเหตุจริงคือหน้าเว็บรุ่น 10 ไม่ใช่หลังบ้าน) */
     ver: WORKER_VER,
     rubric: RUBRIC_VER,
+    /* 🎛 เกณฑ์ที่ใช้ตีผลชุดนี้ — ต้องติดไปกับผลลัพธ์เสมอ ไม่งั้นย้อนดูไม่ได้ว่า
+       ตัวเลขเก่ามาจาก rubric เวอร์ชันไหน (เจ้าของสั่ง 3 ก.ย. 2026 ข้อ 4) */
+    profile: DEFAULT_PROFILE,
+    rubric_version: PROFILES[DEFAULT_PROFILE].rubric_version,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
     keywords: synth.keywords || [],

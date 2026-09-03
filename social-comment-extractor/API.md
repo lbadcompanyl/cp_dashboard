@@ -14,37 +14,64 @@ Worker: `https://comment-sentiment.s3445028.workers.dev`
 
 ---
 
-## 1. ตี sentiment — `POST /classify`
+## 1. 🎛 ตี sentiment ตาม profile — `POST /sentiment` ← **ใช้อันนี้สำหรับงานใหม่**
+
+เจ้าของเคาะโครงนี้ 3 ก.ย. 2026: **ใช้ worker ตัวเดียวกัน แต่แยกเป็น profile**
+(ไม่ใช่ rubric รวมก้อนเดียว และไม่ใช่แยก worker)
+
+| ใช้ร่วมกัน | แยกตาม profile |
+|---|---|
+| engine เรียก LLM · แคช · retry · FEEDBACK loop · โครง BASELINE · `brands.json` · `labels.md` | rubric/prompt · few-shot · ชุดวัดผล |
 
 ```jsonc
 // ขอ
-{ "texts": ["คอมเมนต์ 1", "คอมเมนต์ 2"],   // ≤ 50 ใบต่อคำขอ (CLASSIFY_MAX)
-  "model": "claude-opus-5",                 // ไม่ใส่ = ใช้ค่าที่ตั้งไว้ที่ Cloudflare
-  "effort": "low",                          // ไม่ใส่ = คิดเต็มที่ · haiku ไม่รองรับ (ระบบกันให้แล้ว)
-  "context": "โพสข่าวปลาหมอคางดำ" }         // ไม่บังคับ — ช่วยให้ตีแม่นขึ้นมาก
+{ "texts": ["คอมเมนต์ 1", "คอมเมนต์ 2"],   // ≤ 50 ใบ · ส่ง "text" เดี่ยวก็ได้
+  "profile": "cp_comment",                  // ใส่ใน body หรือ ?profile= ก็ได้
+  "context": "โพสข่าวปลาหมอคางดำ",          // ไม่บังคับ — ช่วยให้แม่นขึ้นมาก
+  "lens": "cp",                             // ไม่ใส่ = ใช้แกนหลักของ profile
+  "model": "claude-opus-5", "effort": "low" }
 
 // ตอบ
-{ "ok": true, "ver": 34, "rubric": "v6", "model": "claude-opus-5",
-  "missing": 0,                             // จำนวนใบที่โมเดลไม่ตอบ — ต้องเช็คทุกครั้ง
-  "results": [ { "sentiment_cp": "Neutral", "overall_cred": "Negative", "is_sarcasm": 0 } ],
+{ "ok": true, "ver": 35,
+  "profile": "cp_comment", "rubric_version": "cp-v6", "lens": "cp",
+  "model": "claude-opus-5",
+  "missing": 0,
+  "results": [{
+    "label": "negative",                    // ป้ายของแกนที่ขอ
+    "confidence": null,                     // ⚠️ ระบบยังไม่มีค่านี้ — คืน null ตรงๆ
+    "lenses": { "cp": "Negative", "overall": "Negative" },
+    "is_sarcasm": 0,
+    "missing": 0                            // 1 = โมเดลไม่ตอบใบนี้
+  }],
   "tokens": { "input": 1234, "output": 567 } }
 ```
 
-**ได้ 2 แกนพร้อมกันในการยิงครั้งเดียว — ไม่ได้จ่าย 2 เท่า**
+**profile ที่มีตอนนี้** — ถามได้จาก `GET /` (คืน `profiles` มาให้)
 
-| แกน | ตอบคำถาม | เหมาะกับ |
-|---|---|---|
-| `sentiment_cp` | มองแบรนด์ CP ยังไง (ด่ารัฐ = กลาง) | หน้า `/issue/sentiment` |
-| `overall_cred` | **โทนรวม (ด่ารัฐ = ลบ)** | ✅ **news feed น่าจะใช้อันนี้** |
-| `is_sarcasm` | ธงประชด — กำกับเฉยๆ ไม่เปลี่ยนป้าย | |
+| profile | input | rubric_version | เกณฑ์อยู่ที่ | สถานะ |
+|---|---|---|---|---|
+| `cp_comment` | คอมเมนต์โซเชียล | `cp-v6` | `RUBRIC-CP.md` | ✅ วัดแล้ว 92.8% |
+| `news_post` | โพสข่าวจาก Zocial | — | — | 🚧 รอห้อง Zocial ตั้งต้นแล้วส่ง review |
 
-> 🔴 **ต้องเคาะก่อนเขียนโค้ดว่าใช้แกนไหน** แล้วเขียนกำกับบนหน้าเว็บ
-> ถ้า 2 หน้าใช้คนละแกนแล้วไม่บอก คนจะเอา % มาเทียบกันแล้วสรุปผิด
+> 🚫 **ชื่อ profile ที่ไม่รู้จัก = ตอบ 400 ไม่ใช่ตกกลับไปตัวปริยาย**
+> ไม่งั้นพิมพ์ผิดแล้วได้ผลจาก rubric คนละตัวโดยไม่มีใครรู้
 >
-> ⚠️ **`missing > 0` = โมเดลไม่ตอบบางใบ ห้ามเติมค่าเอง** ("ไม่รู้ ≠ กลาง")
-> ต้องแยกไว้แล้วบอกผู้ใช้ — บทเรียนที่แพงที่สุดของโปรเจกต์นี้อยู่ใน `CLAUDE.md` หัวข้อ 🧠 ข้อ 4
+> 🚫 **`confidence` คืน `null` เสมอ — ระบบยังไม่มีตัวเลขนี้จริง**
+> จะมีได้ต้องให้โมเดลตอบเพิ่ม = แก้ prompt = กระทบตัวเลข 92.8% ที่วัดไว้
+> **ห้ามแต่งค่าขึ้นมาให้ดูมี** (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง")
+>
+> ⚠️ **`missing` = โมเดลไม่ตอบใบนั้น ผู้เรียกต้องเช็คทุกครั้ง ห้ามนับเป็น neutral**
+>
+> 📌 **ทำไมไม่ใช่ `/api/sentiment`** — worker ตัวนี้เป็น Cloudflare **Worker** แยกจาก Pages
+> (`comment-sentiment.s3445028.workers.dev`) ไม่ได้อยู่ใต้ `/api/` ของเว็บ
+> ย้ายไป Pages Function ได้ แต่ต้องยก secret/KV/ขั้นตอน deploy ตามไปทั้งชุด
+> → ถ้าอยากได้ path นั้นจริงๆ ทำ proxy บางๆ ที่ Pages ทีหลังได้
 
----
+## 1b. `POST /classify` — ของเดิม ยังใช้ได้
+
+หน้า `sentiment-eval.html` ใช้อยู่ · คืน 2 แกนดิบ (`sentiment_cp` · `overall_cred` · `is_sarcasm`)
+ตอนนี้ติด `profile` + `rubric_version` กลับมาด้วยเหมือนกัน · **งานใหม่ควรใช้ `/sentiment`**
+
 
 ## 2. 🧠 ระบบเรียนรู้ — `POST /feedback`
 
@@ -133,4 +160,4 @@ Worker: `https://comment-sentiment.s3445028.workers.dev`
 > ⚠️ **ต้องเก็บว่าแถวไหนตีด้วยโมเดลอะไร** (`model` + `ver` + `rubric`) ไม่งั้นข้อมูลข้ามวัน
 >    จะมี 2 โมเดลปนกันโดยไม่มีใครรู้ แล้วเทียบตัวเลขข้ามช่วงไม่ได้
 
-_เขียน 3 ก.ย. 2026 · worker v34_
+_เขียน 3 ก.ย. 2026 · worker v35 (profile-based)_
