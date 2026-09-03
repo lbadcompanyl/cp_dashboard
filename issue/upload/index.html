@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="page-ver" content="1" />
+<title>อัปโหลดไฟล์ Zocial · CP Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📥</text></svg>" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<!-- ป้ายเลขเวอร์ชัน + ตัวเช็คของใหม่ — ก๊อปทั้งก้อนจาก sd.html ห้ามแก้เลขซ้ำไว้ในโค้ด อ่านจาก <meta> เอง -->
+<script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){var __verEvery=864e5,__verKey="swChkAt";function __verDue(){try{return Date.now()-(+localStorage.getItem(__verKey)||0)>__verEvery;}catch(x){return true;}}function __verMark(){try{localStorage.setItem(__verKey,String(Date.now()));}catch(x){}}addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;function chk(force){if(!force&&!__verDue())return;__verMark();r.update();}chk(false);document.addEventListener("visibilitychange",function(){if(!document.hidden)chk(false);});var vt=document.getElementById("vtag");if(vt){vt.style.cursor="pointer";vt.title="แตะเพื่อเช็คเวอร์ชันใหม่เดี๋ยวนี้ (ปกติเช็คให้เองวันละครั้ง)";vt.addEventListener("click",function(){var t=vt.textContent;vt.textContent="กำลังเช็ค…";setTimeout(function(){if(vt.textContent==="กำลังเช็ค…")vt.textContent=t;},1500);chk(true);});}}).catch(function(){});});var __hadCtrl=!!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;if(!__hadCtrl)return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="🔄 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
+<style>
+/* ชุดสีกลางของแดชบอร์ด — ต้องตรงกับ /trend/ /ir/ /issue/ /social/ (ดู CLAUDE.md หัวข้อ 🎨) */
+:root{--bg:#f4f6fb;--surface:#fff;--border:#e4e8f0;--text:#1f2937;--muted:#6b7280;--accent:#2563eb;--warn:#b45309;--warnbg:#fffbeb;--bad:#b91c1c}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+.appbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+.appbar h1{margin:0;font-size:17px;font-weight:700}
+.appbar a{color:var(--accent);text-decoration:none;font-weight:600;font-size:14px}
+.spacer{flex:1}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:15px;font-weight:700}
+.muted{color:var(--muted);font-size:13px}
+.drop{border:2px dashed var(--border);border-radius:12px;padding:28px 16px;text-align:center;background:var(--surface);cursor:pointer}
+.drop.on{border-color:var(--accent);background:#eff6ff}
+.drop b{display:block;font-size:16px;margin-bottom:4px}
+button{font:inherit}
+.btn{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;padding:8px 14px;cursor:pointer;font-weight:600}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+select,input[type=text]{font:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);max-width:100%}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.scroll{overflow-x:auto}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:12px;font-weight:600}
+.tag.warn{background:var(--warnbg);color:var(--warn)}
+.tag.bad{background:#fef2f2;color:var(--bad)}
+.note{background:var(--warnbg);border:1px solid #fde68a;color:#78350f;border-radius:9px;padding:10px 12px;font-size:13.5px;margin:10px 0}
+.note.bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+.row label{display:block;font-size:13px;color:var(--muted);margin-bottom:3px}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+.big{font-size:22px;font-weight:700}
+details{margin-top:6px}
+summary{cursor:pointer;font-size:13.5px}
+/* ไอคอนหมุน — ใช้ทุกจุดที่แปลว่า "ยังโหลดอยู่" (ฟีเจอร์มาตรฐานข้อ 6) */
+.spin{display:inline-block;width:13px;height:13px;margin-right:7px;vertical-align:-2px;
+  border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+[hidden]{display:none!important}
+.foot{max-width:900px;margin:0 auto;padding:0 16px 30px;color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<header class="appbar">
+  <h1>📥 อัปโหลดไฟล์ Zocial</h1>
+  <span class="spacer"></span>
+  <a href="/issue/">← Issue Dashboard</a>
+  <a href="/">🏠 หน้าหลัก</a>
+</header>
+
+<div class="wrap">
+  <div class="note">
+    ⚠️ <b>ยังบันทึกลงฐานข้อมูลไม่ได้</b> — โปรเจกต์นี้ยังไม่ได้เปิด D1 (ต้องให้เจ้าของกดสร้างที่ Cloudflare ก่อน)
+    หน้านี้จึง <b>อ่านไฟล์และตรวจให้ดูอย่างเดียว ทุกอย่างทำในเครื่องคุณ ไม่มีอะไรถูกส่งออกไปไหน</b>
+  </div>
+
+  <div id="drop" class="drop" tabindex="0" role="button" aria-label="เลือกไฟล์ที่ export จาก Zocial Eye">
+    <b>ลากไฟล์มาวางที่นี่ หรือกดเพื่อเลือก</b>
+    <span class="muted">รับ .xlsx และ .csv ที่ export จาก Zocial Eye</span>
+    <input id="file" type="file" accept=".xlsx,.xlsm,.csv" hidden />
+  </div>
+
+  <div id="busy" class="card" hidden><span class="spin"></span>กำลังอ่านไฟล์…</div>
+  <div id="err" class="note bad" hidden></div>
+  <div id="out" hidden></div>
+</div>
+
+<footer class="foot">
+  เครื่องมือภายใน — ไม่มีลิงก์จากหน้าหลักโดยตั้งใจ · <span id="vtag" style="opacity:.6"></span>
+</footer>
+
+<script src="/issue/xlsxread.js"></script>
+<script type="module" src="./app.js?v=1"></script>
+</body>
+</html>
