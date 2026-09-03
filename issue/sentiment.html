@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="14" />
+<meta name="page-ver" content="15" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -89,6 +89,13 @@
   .sc-posthead .sc-thumb { width: 140px; height: auto; max-height: 120px; object-fit: contain; border-radius: 8px; border: 1px solid var(--sc-border); background: var(--sc-surface2); flex: none; }
   .sc-posthead .sc-ptitle { font-size: 13.5px; font-weight: 600; color: var(--sc-ink); line-height: 1.4; }
   .sc-summary { background: var(--sc-plane); border: 1px solid var(--sc-border); border-radius: 10px; padding: 14px; font-size: 13.5px; color: var(--sc-ink2); }
+  /* แถวปุ่ม "สรุปใหม่" — wrap ได้ ไม่งั้นจอแคบข้อความราคาจะดันปุ่มตกขอบ */
+  .sc-resynth { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .sc-resynth .sc-sub { margin: 0; }
+  .sc-btn2 { border: 1px solid var(--sc-border); background: var(--sc-surface); color: var(--sc-ink2);
+             border-radius: 8px; padding: 7px 13px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .sc-btn2:hover:not(:disabled) { border-color: var(--sc-accent); color: var(--sc-accent); }
+  .sc-btn2:disabled { opacity: .55; cursor: default; }
 
 
   .sc-kwlist { display: flex; flex-direction: column; gap: 8px; }
@@ -219,6 +226,16 @@
              "จากคอมเมนต์ทั้งหมด" เพราะโหมด CP สรุปจากเฉพาะใบที่พูดถึง CP -->
         <p class="sc-sub" id="sumSub">สรุปโดย Claude</p>
         <div class="sc-summary" id="summaryBox">—</div>
+        <!-- 🔄 สรุปใหม่หลังผู้ใช้แก้ป้ายเอง
+             ⚠️ ขึ้นเฉพาะตอนมีการแก้จริง (edited_count > 0) — ไม่งั้นกดไปก็ได้ของเดิม
+             🚫 ห้ามยิงเองอัตโนมัติทุกครั้งที่แก้ป้าย: แก้ทีละใบ 10 ใบ = ยิง 10 ครั้ง
+                เจ้าของเลือกให้เป็นปุ่มกดเอง จะได้คุมได้ว่าจ่ายเมื่อไหร่ (2 ก.ย. 2026)
+             🚫 ไม่มีปุ่มแบบนี้ที่การ์ด "คำที่พูดถึงบ่อย" โดยตั้งใจ — ตัวเลขตรงนั้น
+                นับจากข้อความคอมเมนต์ ไม่ได้ขึ้นกับป้าย กดไปก็ได้เลขเดิมเป๊ะ -->
+        <div class="sc-resynth" id="resynthWrap" hidden>
+          <button class="sc-btn2" id="resynthBtn" type="button">🔄 สรุปใหม่ตามป้ายที่แก้</button>
+          <span class="sc-sub" id="resynthNote"></span>
+        </div>
       </div>
 
       <div class="sc-card">
@@ -375,6 +392,7 @@ async function analyze(){
     el("teachMsg").hidden = true;
     renderResult(data);
     syncTeachBox();
+    syncResynth();          // โพสใหม่ = ยังไม่มีใครแก้ป้าย → ซ่อนปุ่มสรุปใหม่
   } catch (e){
     /* กดหยุดเองไม่ใช่ error — ไม่ต้องขึ้นแถบแดงให้ตกใจ */
     if (e && e.name === "AbortError") toast("หยุดแล้ว");
@@ -658,7 +676,62 @@ function applyEdits(){
   lastResult.edited_count = (lastResult.audit || []).filter(a => a.edited).length;
   renderResult(lastResult, true);
   syncTeachBox();
+  syncResynth();
 }
+
+/* ══════════════════════════════════════════════════════════════
+ * 🔄 สรุปใหม่ตามป้ายที่แก้
+ * ยิงเฉพาะรอบ "สรุป" ไม่ตี sentiment ใหม่ (ป้ายมาจากผู้ใช้แล้ว)
+ * และไม่แตะ ScrapeCreators จึงไม่กินเครดิตที่จ่ายเงิน
+ *
+ * 🚫 ห้ามยิงเองอัตโนมัติตอนกดแก้ป้าย — แก้ทีละใบ 10 ใบ = ยิง 10 ครั้ง
+ *    เจ้าของเลือกให้เป็นปุ่มกดเอง (2 ก.ย. 2026) จะได้คุมได้ว่าจ่ายเมื่อไหร่
+ * ══════════════════════════════════════════════════════════════ */
+function syncResynth(){
+  const wrap = el("resynthWrap");
+  if (!wrap) return;
+  const n = lastResult?.edited_count || 0;
+  wrap.hidden = !n;
+  const note = el("resynthNote");
+  if (note && n) note.textContent = `คุณแก้ป้ายไว้ ${n} ใบ — สรุปกับตัวอย่างยังเป็นของรอบที่แล้ว`;
+}
+
+async function runResynth(){
+  if (!lastResult || !lastResult.audit) return;
+  const btn = el("resynthBtn"), note = el("resynthNote");
+  const items = lastResult.audit.map(a => ({
+    text: a.text || "", sentiment: a.sentiment, likes: a.likes || 0,
+  }));
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> กำลังสรุปใหม่…';
+  if (note) note.textContent = "";
+  try {
+    const r = await fetch(WORKER.replace(/\/+$/,"") + "/resynth", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ target: lastResult.target === "cp" ? "cp" : "overall", items }),
+    });
+    const d = await r.json().catch(() => null);
+    /* ⚠️ ไม่สำเร็จ = **ห้ามเขียนทับของเดิม** ต้องบอกตรงๆ ว่าไม่สำเร็จ
+       ไม่งั้นสรุปจะหายไปเฉยๆ แล้วผู้ใช้ไม่รู้ว่าเกิดอะไรขึ้น */
+    if (!r.ok || !d || d.error) throw new Error(d?.detail || d?.error || ("HTTP " + r.status));
+    lastResult.summary = d.summary || lastResult.summary;
+    lastResult.keywords = d.keywords || lastResult.keywords;
+    lastResult.samples = d.samples || [];
+    lastResult.summary_from = d.summary_from;
+    lastResult.summary_of = d.summary_of;
+    /* ตัวอย่างชุดใหม่ตรงกับป้ายปัจจุบันแล้ว — ธง "แก้แล้ว" ยังอยู่ใน audit เหมือนเดิม
+       (ผู้ใช้ยังต้องเห็นว่าตัวเองแก้ใบไหนไว้ และปุ่มส่งเข้ากองรอตรวจยังต้องทำงาน) */
+    renderResult(lastResult, true);
+    if (note) note.textContent = "สรุปใหม่แล้ว ✓";
+    toast("สรุปใหม่ตามป้ายที่คุณแก้แล้ว ✓");
+  } catch (e) {
+    if (note) note.textContent = "สรุปใหม่ไม่สำเร็จ: " + String(e && e.message || e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔄 สรุปใหม่ตามป้ายที่แก้";
+  }
+}
+if (el("resynthBtn")) el("resynthBtn").onclick = runResynth;
 
 /* ══════════════════════════════════════════════════════════════
  * ชั้น ② ของระบบเรียนรู้ — ส่งที่แก้ไว้เข้ากองรอตรวจ
