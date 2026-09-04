@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="18" />
+<meta name="page-ver" content="19" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -68,6 +68,8 @@
   .sc-stat { background: var(--sc-surface); border: 1px solid var(--sc-border); border-radius: 11px; padding: 14px 15px; }
   .sc-stat .sc-k { font-size: 10.5px; color: var(--sc-muted); text-transform: uppercase; letter-spacing: .04em; }
   .sc-stat .sc-v { font-size: 22px; font-weight: 700; margin-top: 5px; }
+  /* บรรทัดเล็กใต้ตัวเลข — บอกว่าตัวเลขนั้นนับอะไรบ้าง / ทำไมถึงเป็น "—" */
+  .sc-stat .sc-note { font-size: 10.5px; color: var(--sc-muted); margin-top: 3px; line-height: 1.35; }
 
   .sc-senti { display: grid; grid-template-columns: 170px 1fr; gap: 24px; align-items: center; }
   @media (max-width: 560px) { .sc-senti { grid-template-columns: 1fr; justify-items: center; } }
@@ -453,6 +455,8 @@ async function demoResult(opts){
     target: opts.target, not_related: notRel,
     post_title: "ตัวอย่าง: รีวิวร้านอาหารเปิดใหม่ อร่อยจริงหรือแค่กระแส?", post_thumb: "",
     fetched_count: fetched, analyzed_count: fetched,
+    /* ตัวอย่างจงใจให้ shares เป็น null — จะได้เห็นว่าหน้าเว็บบอกไหมว่ายอดรวมขาดชนิดไหน */
+    post_stats: { views: 128400, likes: 5210, comments: 612, shares: null },
     sentiment: { positive: pos, neutral: neu, negative: neg },
     engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
     time_range: { earliest: "2026-08-10", latest: "2026-08-19" },
@@ -543,25 +547,46 @@ function renderResult(d, keepAudit){
      ⚠️ ตัวเลขนี้ **คนละเรื่องกับ sentiment** — เป็นแค่ "มีคำนี้ในข้อความไหม"
         ไม่ได้แปลว่าคอมเมนต์นั้นมีท่าทีต่อ CP
      🚫 ห้ามเอาไปกรอง/ตัดคอมเมนต์ — ข่าวที่ด่าเครือโดยไม่เอ่ยชื่อก็มี */
-  const CP_RE = /(ซี\.?พี|เครือซีพี|cpf|cp\s*all|cp\s*axtra|แม็คโคร|makro|โลตัส|lotus'?s|ทรู(?!ธ)|true\s*(corp|move|online)|เจริญโภคภัณฑ์|charoen\s*pokphand|\bcp\b)/i;
+  /* 🏷 คำที่นับว่า "กล่าวถึง CP และเครือ" — เจ้าของสั่งเอง 4 ก.ย. 2026
+        "นับเฉพาะที่ชัดๆ เช่น ซีพี, เจ้าสัว, นายทุนใหญ่, cp"
+     ⚠️ เจ้าสัว/นายทุนใหญ่ เป็นการ **เรียกแทน** ไม่ใช่ชื่อแบรนด์ ใต้โพสของเครือคนใช้คำนี้แทนชื่อ
+        แต่ในโพสอื่นอาจหมายถึงเจ้าสัวรายอื่น — ป้ายจึงเขียนว่า "กล่าวถึง" ไม่ใช่ "เอ่ยชื่อ" */
+  const CP_RE = /(ซี\.?พี|เครือซีพี|cpf|cp\s*all|cp\s*axtra|แม็คโคร|makro|โลตัส|lotus'?s|ทรู(?!ธ)|true\s*(corp|move|online)|เจริญโภคภัณฑ์|charoen\s*pokphand|เจ้าสัว|นายทุนใหญ่|\bcp\b)/i;
   const cpMentions = (d.audit || []).filter(a => CP_RE.test(String(a.text || ""))).length;
+  /* 📊 ยอดของ "ตัวโพส" — คนละเรื่องกับยอดถูกใจของคอมเมนต์ที่ดึงมาได้
+     🔴 หลังบ้านรุ่นเก่าไม่ส่ง post_stats มา → ต้องขึ้น "—" ไม่ใช่ 0 */
+  const ps = d.post_stats || {};
+  /* 🔴 ผลรวมที่ "ขาดบางชนิด" ต้องบอกว่าขาดอะไร — ไม่งั้นเอา Engagement ของ YouTube (ไม่มีแชร์)
+     ไปเทียบกับของ Facebook (มีแชร์) แล้วสรุปว่าคลิปแย่กว่า ทั้งที่คนละหน่วยกัน */
+  const ENG_TH = { likes: "ถูกใจ", comments: "คอมเมนต์", shares: "แชร์" };
+  const engLabel = (p) => {
+    const have = ["likes","comments","shares"].filter(k => p[k] != null).map(k => ENG_TH[k]);
+    const miss = ["likes","comments","shares"].filter(k => p[k] == null).map(k => ENG_TH[k]);
+    return have.join(" + ") + (miss.length ? ` (ไม่มียอด${miss.join("/")})` : "");
+  };
+  const engParts = ["likes","comments","shares"].map(k => ps[k]).filter(v => v != null);
+  const postEng = engParts.length ? engParts.reduce((a,b) => a+b, 0) : null;
+  const num = (v) => v == null ? "—" : Number(v).toLocaleString();
   const stats = isCP ? [
-    ["คอมเมนต์ทั้งหมด", d.analyzed_count||total],
+    ["คอมเมนต์", d.analyzed_count||total],
     /* 🔴 ของเดิมเขียนว่า "พูดถึงเครือ CP" กับ "ไม่เกี่ยวกับ CP" — **โกหกทั้งคู่**
        เป็นป้ายที่ค้างมาจากตอนที่ระบบยังมีหมวด not_related
        พอเลิกใช้ (26 ส.ค. 2026 · "ไม่แตะ CP = กลาง") มันเลยกลายเป็น "48 / 0" เสมอ
        เจ้าของอ่านแล้วเข้าใจว่าทั้ง 48 ใบพูดถึง CP ทั้งที่จริงมีแค่ไม่กี่ใบ (2 ก.ย. 2026)
        🚫 ห้ามเอาป้ายคู่นั้นกลับมา จนกว่าจะมีหมวด not_related จริงๆ อีกครั้ง */
-    ["แสดงท่าทีต่อ CP", (s.positive||0) + (s.negative||0)],
-    ["เอ่ยชื่อเครือ CP", cpMentions],
-    ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
+    ["กล่าวถึง CP และเครือ", cpMentions, `จาก ${d.analyzed_count||total} ใบ · นับจากข้อความจริง`],
+    /* ⚠️ ต้องบอกว่ารวมอะไรบ้าง — YouTube ไม่เปิดเผยยอดแชร์ ตัวเลขจึงเป็นผลรวมไม่ครบชนิด
+       เขียนไว้ดีกว่าปล่อยให้เอาไปเทียบข้ามแพลตฟอร์มแล้วสรุปผิด */
+    ["Engagement (โพส)", num(postEng), postEng == null ? "หลังบ้านยังไม่ส่งยอดของโพสมา" : engLabel(ps)],
+    ["ยอดดู (โพส)", num(ps.views), ps.views == null ? "แพลตฟอร์มนี้ไม่เปิดเผยยอดดู" : ""],
   ] : [
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
     ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
     ["จำนวน Reply", (eng.total_replies!=null? Number(eng.total_replies).toLocaleString() : "—")],
     ["ผู้คอมเมนต์ (ไม่ซ้ำ)", (eng.unique_commenters!=null? Number(eng.unique_commenters).toLocaleString() : "—")],
   ];
-  el("statRow").innerHTML = stats.map(([k,v]) => `<div class="sc-stat"><div class="sc-k">${k}</div><div class="sc-v">${v}</div></div>`).join("");
+  el("statRow").innerHTML = stats.map(([k,v,note]) => `<div class="sc-stat"><div class="sc-k">${k}</div><div class="sc-v">${v}</div>`
+    + (note ? `<div class="sc-note">${escapeHtml(note)}</div>` : "") + `</div>`).join("");
 
   el("summaryBox").textContent = d.summary || "—";
   /* ⚠️ บอกตรงๆ ว่าสรุปมาจากคอมเมนต์กี่ใบ — โหมด CP สรุปจากเฉพาะใบที่พูดถึง CP
@@ -925,7 +950,12 @@ function buildSheets(d){
     /* ⚠️ ต้องตรงกับป้ายบนหน้าจอเสมอ — ของเดิมเขียน "พูดถึงเครือ CP / ไม่เกี่ยวกับ CP"
        ซึ่งเป็น 48/0 ทุกครั้งตั้งแต่เลิกใช้ not_related แล้วอ่านผิดความหมาย */
     ...(d.target==="cp" ? [["แสดงท่าทีต่อ CP (บวก+ลบ)", (s.positive||0)+(s.negative||0)]] : []),
-    ["ยอดถูกใจ/รีแอกชัน", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
+    /* 📊 ยอดของ "ตัวโพส" — ต้องแยกให้ชัดจากยอดของคอมเมนต์ที่ดึงมาได้ ไม่งั้นเปิดไฟล์แล้วอ่านสลับกัน
+       🔴 ไม่มีข้อมูล = เว้นว่าง **ห้ามใส่ 0** (ใน Excel 0 อ่านเป็นตัวเลขจริงทันที) */
+    ["ยอดดู (โพส)", (d.post_stats||{}).views ?? ""],
+    ["ยอดถูกใจ (โพส)", (d.post_stats||{}).likes ?? ""],
+    ["ยอดแชร์ (โพส)", (d.post_stats||{}).shares ?? ""],
+    ["ยอดถูกใจ/รีแอกชัน (รวมจากคอมเมนต์ที่ดึงมา)", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
     ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
     ["สรุปภาพรวม", d.summary||""],
   ];

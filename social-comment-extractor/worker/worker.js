@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 36;
+const WORKER_VER = 37;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -461,6 +461,7 @@ export default {
         return cors(json({
           ok: true, ver: WORKER_VER, platform,
           post_title: got.post_title || "",
+          post_stats: got.post_stats || emptyPostStats(),
           count: got.comments.length,
           reply_count: got.comments.filter(c => c.is_reply).length,
           credits_remaining: got.credits_remaining ?? null,
@@ -825,6 +826,9 @@ async function analyze(opts, env) {
     source_url: url,
     post_title: collected.post_title || "",
     post_thumb: collected.post_thumb || "",
+    /* 📊 ยอดของ "ตัวโพส" — engagement / ยอดดู ที่หน้าเว็บเอาไปขึ้นการ์ด
+       ⚠️ คนละเรื่องกับ `engagement` ข้างล่าง ซึ่งเป็นยอดรวมของ "คอมเมนต์" ที่ดึงมาได้เท่านั้น */
+    post_stats: collected.post_stats || emptyPostStats(),
     fetched_count: comments.length,
     reply_count,
     no_text_count: skipped_no_text,   // สติกเกอร์/รูป — นับเป็นกลางแล้ว แต่ต้องบอกผู้ใช้ว่ามีกี่ใบ
@@ -970,14 +974,23 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
   }
 
   // ดึงหัวข้อ + รูปปกของคลิป (สำหรับใส่ในรายงาน) — base64 กัน CORS ตอนวาดลง canvas
-  let post_title = "", post_thumb = "";
+  let post_title = "", post_thumb = "", post_stats = emptyPostStats();
   try {
     const metaApi = new URL("https://www.googleapis.com/youtube/v3/videos");
-    metaApi.searchParams.set("part", "snippet");
+    /* ⚠️ ขอ statistics มาด้วย — YouTube คิดโควตาเป็น "ต่อคำขอ" ไม่ใช่ต่อ part
+       เพิ่มคำนี้จึงได้ยอดดู/ยอดถูกใจของคลิปมาฟรี ไม่เปลืองโควตาเพิ่มเลย */
+    metaApi.searchParams.set("part", "snippet,statistics");
     metaApi.searchParams.set("id", vid);
     metaApi.searchParams.set("key", env.YOUTUBE_API_KEY);
     const mr = await fetch(metaApi.toString());
     const md = await mr.json();
+    const st = md.items && md.items[0] && md.items[0].statistics;
+    if (st) post_stats = {
+      views:    numOrNull(st.viewCount),
+      likes:    numOrNull(st.likeCount),      // คลิปที่ปิดยอดถูกใจจะไม่มีคีย์นี้ → null ไม่ใช่ 0
+      comments: numOrNull(st.commentCount),
+      shares:   null,                         // YouTube ไม่เปิดเผยยอดแชร์ — ห้ามเดาเป็น 0
+    };
     const sn = md.items && md.items[0] && md.items[0].snippet;
     if (sn) {
       post_title = sn.title || "";
@@ -993,7 +1006,17 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
     }
   } catch (e) { /* รูป/หัวข้อไม่มาก็ไม่เป็นไร */ }
 
-  return { comments: out, post_title, post_thumb };
+  return { comments: out, post_title, post_thumb, post_stats };
+}
+
+/* 📊 ยอดของ "ตัวโพส" (คนละเรื่องกับยอดถูกใจของคอมเมนต์)
+   🔴 ไม่รู้ = null เสมอ **ห้ามเติม 0** — 0 แปลว่า "ไม่มีใครดูเลย" ซึ่งคนละความหมาย
+      (กฎเดียวกับ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ที่โปรเจกต์นี้เจ็บมาแล้ว 3 รอบ) */
+function emptyPostStats() { return { views: null, likes: null, comments: null, shares: null }; }
+function numOrNull(v) {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
 function toB64(bytes) {
@@ -1077,7 +1100,7 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
   }
 
   // หัวข้อ + รูปปกของโพส (best-effort, +1 credit) — เผื่อ field ต่างกันจึงค้นแบบยืดหยุ่น
-  let post_title = "", post_thumb = "";
+  let post_title = "", post_thumb = "", post_stats = emptyPostStats();
   try {
     const metaEp = kind === "facebook"
       ? "https://api.scrapecreators.com/v1/facebook/post"
@@ -1089,6 +1112,14 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
       const md = await mr.json();
       const c2 = findCredits(md); if (c2 != null) credits_remaining = c2;
       post_title = String(deepFindStr(md, ["desc", "message", "title", "caption", "text", "content", "description"]) || "").slice(0, 300);
+      /* ยอดของตัวโพส — อยู่ใน response ก้อนเดียวกับที่ขอหัวข้อ/รูปปกอยู่แล้ว **ไม่เสียเครดิตเพิ่ม**
+         ⚠️ ชื่อคีย์ต่างกันตามแพลตฟอร์ม/รุ่นของ API จึงค้นแบบยืดหยุ่น หาไม่เจอ = null */
+      post_stats = {
+        views:    deepFindNum(md, ["play_count", "playcount", "view_count", "viewcount", "video_view_count", "views"]),
+        likes:    deepFindNum(md, ["digg_count", "diggcount", "reaction_count", "reactioncount", "like_count", "likecount", "likes"]),
+        comments: deepFindNum(md, ["comment_count", "commentcount", "comments_count"]),
+        shares:   deepFindNum(md, ["share_count", "sharecount", "shares", "repost_count"]),
+      };
       const turl = deepFindUrl(md, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "picture", "photo", "image", "display_url"]);
       if (turl) {
         const ir = await fetch(turl);
@@ -1100,7 +1131,22 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
     }
   } catch (e) { /* meta ไม่มาก็ไม่เป็นไร */ }
 
-  return { comments: out, credits_remaining, post_title, post_thumb };
+  return { comments: out, credits_remaining, post_title, post_thumb, post_stats };
+}
+
+/** ค้นตัวเลขจาก response ที่ไม่รู้โครงสร้างแน่ชัด — คีย์ต้อง "ตรงชื่อ" ไม่ใช่แค่มีคำนั้นอยู่
+ *  (`includes` จะไปจับ `comment_count_hidden` หรือ `like_count_str` ที่ความหมายคนละอย่าง) */
+function deepFindNum(obj, names, depth = 0) {
+  if (obj == null || depth > 6 || typeof obj !== "object") return null;
+  for (const [k, v] of Object.entries(obj)) {
+    if (!names.includes(k.toLowerCase())) continue;
+    const n = numOrNull(typeof v === "object" && v ? (v.count ?? v.total_count ?? v.value) : v);
+    if (n != null) return n;
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object") { const r = deepFindNum(v, names, depth + 1); if (r != null) return r; }
+  }
+  return null;
 }
 
 /** ค้นหาสตริง (หัวข้อ) จาก response ที่ไม่รู้โครงสร้างแน่ชัด */
