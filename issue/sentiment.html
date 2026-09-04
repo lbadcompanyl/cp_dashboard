@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="19" />
+<meta name="page-ver" content="20" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -556,6 +556,16 @@ function renderResult(d, keepAudit){
   /* 📊 ยอดของ "ตัวโพส" — คนละเรื่องกับยอดถูกใจของคอมเมนต์ที่ดึงมาได้
      🔴 หลังบ้านรุ่นเก่าไม่ส่ง post_stats มา → ต้องขึ้น "—" ไม่ใช่ 0 */
   const ps = d.post_stats || {};
+  /* 🔴 แยกให้ออกระหว่าง 2 สาเหตุที่ทำให้ขึ้น "—" — คนละเรื่องกันสิ้นเชิง
+       (ก) หลังบ้านยังไม่ได้อัปเดต จึงไม่ส่ง post_stats มาเลย → **เจ้าของต้องไปวาง worker ใหม่**
+       (ข) ส่งมาแล้วแต่แพลตฟอร์มนั้นไม่เปิดเผยค่านั้น → **ทำอะไรไม่ได้ ไม่ต้องไปหาสาเหตุต่อ**
+     🐞 เจ้าของเจอ 4 ก.ย. 2026: การ์ด 2 ใบข้างกันบอกคนละสาเหตุทั้งที่ต้นเหตุเดียวกัน
+        (Engagement บอก "หลังบ้านยังไม่ส่ง" · ยอดดูบอก "แพลตฟอร์มไม่เปิดเผย") อ่านแล้วสับสน
+        แล้วยังพาไปแก้ผิดทางด้วย — ข้อความหนึ่งบอกว่าต้องไปทำอะไรต่อ อีกข้อความบอกว่าจบแล้ว */
+  const noStats = !d.post_stats;
+  /* ⚠️ ต้องบอกให้ถึงขั้น "ต้องทำอะไร" ไม่ใช่แค่ "ไม่มีข้อมูล"
+     เจ้าของอ่านแล้วต้องรู้ทันทีว่าต้องไปวาง worker ใหม่ ไม่ต้องมาถามซ้ำ */
+  const OLD_WORKER_NOTE = "ต้องอัปเดตหลังบ้านก่อน (worker ≥ v37)";
   /* 🔴 ผลรวมที่ "ขาดบางชนิด" ต้องบอกว่าขาดอะไร — ไม่งั้นเอา Engagement ของ YouTube (ไม่มีแชร์)
      ไปเทียบกับของ Facebook (มีแชร์) แล้วสรุปว่าคลิปแย่กว่า ทั้งที่คนละหน่วยกัน */
   const ENG_TH = { likes: "ถูกใจ", comments: "คอมเมนต์", shares: "แชร์" };
@@ -577,8 +587,10 @@ function renderResult(d, keepAudit){
     ["กล่าวถึง CP และเครือ", cpMentions, `จาก ${d.analyzed_count||total} ใบ · นับจากข้อความจริง`],
     /* ⚠️ ต้องบอกว่ารวมอะไรบ้าง — YouTube ไม่เปิดเผยยอดแชร์ ตัวเลขจึงเป็นผลรวมไม่ครบชนิด
        เขียนไว้ดีกว่าปล่อยให้เอาไปเทียบข้ามแพลตฟอร์มแล้วสรุปผิด */
-    ["Engagement (โพส)", num(postEng), postEng == null ? "หลังบ้านยังไม่ส่งยอดของโพสมา" : engLabel(ps)],
-    ["ยอดดู (โพส)", num(ps.views), ps.views == null ? "แพลตฟอร์มนี้ไม่เปิดเผยยอดดู" : ""],
+    ["Engagement (โพส)", num(postEng),
+      noStats ? OLD_WORKER_NOTE : postEng == null ? "แพลตฟอร์มนี้ไม่ส่งยอดของโพสมา" : engLabel(ps)],
+    ["ยอดดู (โพส)", num(ps.views),
+      noStats ? OLD_WORKER_NOTE : ps.views == null ? "แพลตฟอร์มนี้ไม่เปิดเผยยอดดู" : ""],
   ] : [
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
     ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
