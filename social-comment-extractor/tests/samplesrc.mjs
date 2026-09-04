@@ -15,14 +15,21 @@ import { analyze } from "./w.mjs";
 let fail = 0;
 const ok = (n, c, x = "") => { console.log(`${c ? "✅" : "❌"} ${n}${x ? " — " + x : ""}`); if (!c) fail++; };
 
+/* ⚠️ ตั้งแต่ 4 ก.ย. 2026 จำนวนใบต่อช่องขึ้นกับสัดส่วน (2–4 ใบ · ดู `samplequota.mjs`)
+   ชุดนี้จึงต้องมีใบมากกว่าโควตา ไม่งั้น "ใบที่ถูกใจน้อยสุด" จะถูกเลือกอยู่ดีเพราะไม่มีตัวอื่นให้เลือก
+   บวก 5 ใบ (56% → โควตา 4) · ลบ 4 ใบ (44% → โควตา 3) → รวม 7 ใบ */
 const COMMENTS = [
-  { text: "อร่อยมากครับ ชอบ", likes: 5 },      // บวก · ถูกใจเยอะสุด
-  { text: "ดีจังเลย", likes: 1 },              // บวก
-  { text: "เฉยๆ นะ", likes: 0 },               // บวก (ถูกใจน้อยสุด — ไม่ควรถูกเลือก)
-  { text: "แพงเกินไปมาก", likes: 9 },          // ลบ · ถูกใจเยอะสุด
-  { text: "ไม่ชอบเลย", likes: 2 },             // ลบ
+  { text: "อร่อยมากครับ ชอบ", likes: 5 },      // 0 บวก · ถูกใจเยอะสุด
+  { text: "ดีจังเลย", likes: 4 },              // 1 บวก
+  { text: "รสชาติใช้ได้", likes: 3 },           // 2 บวก
+  { text: "ประทับใจร้านนี้", likes: 2 },        // 3 บวก
+  { text: "เฉยๆ นะ", likes: 0 },               // 4 บวก (ถูกใจน้อยสุด — ไม่ควรถูกเลือก)
+  { text: "แพงเกินไปมาก", likes: 9 },          // 5 ลบ · ถูกใจเยอะสุด
+  { text: "ไม่ชอบเลย", likes: 8 },             // 6 ลบ
+  { text: "รอนานมาก", likes: 7 },              // 7 ลบ
+  { text: "ไม่ประทับใจ", likes: 1 },            // 8 ลบ (ถูกใจน้อยสุด — ไม่ควรถูกเลือก)
 ];
-const LABEL = ["Positive", "Positive", "Positive", "Negative", "Negative"];
+const LABEL = [...Array(5).fill("Positive"), ...Array(4).fill("Negative")];
 
 let synthPrompt = "", aiSamples = null;
 globalThis.fetch = async (u, o) => {
@@ -50,23 +57,27 @@ const run = () => analyze({ url: "https://www.facebook.com/reel/1", target: "ove
                           { ANTHROPIC_API_KEY: "k", CLAUDE_MODEL: "claude-opus-5", SCRAPECREATORS_API_KEY: "s" });
 
 /* ── [1] เราเป็นคนเลือกใบ และเลือกตามเกณฑ์ที่ตั้งไว้ ───────── */
-aiSamples = ["ถอดความ A", "ถอดความ B", "ถอดความ C", "ถอดความ D"];
+aiSamples = ["ถอดความ A", "ถอดความ B", "ถอดความ C", "ถอดความ D",
+             "ถอดความ E", "ถอดความ F", "ถอดความ G"];
 let r = await run();
 ok("[1] ส่งรายการที่ต้องถอดความไปให้ AI ชัดเจน", /คอมเมนต์ที่ต้องถอดความ/.test(synthPrompt));
 ok("[1b] เลือกใบที่ถูกใจเยอะสุดของแต่ละกลุ่มขึ้นก่อน",
-   /1\. อร่อยมากครับ ชอบ/.test(synthPrompt) && /3\. แพงเกินไปมาก/.test(synthPrompt),
+   /1\. อร่อยมากครับ ชอบ/.test(synthPrompt) && /5\. แพงเกินไปมาก/.test(synthPrompt),
    (synthPrompt.split("เรียงตามนี้):\n")[1] || "").split("\n").join(" · "));
-ok("[1c] ไม่เอาใบที่ถูกใจน้อยสุดมาเป็นตัวอย่าง", !/เฉยๆ นะ/.test(synthPrompt.split("ต้องถอดความ")[1] || ""));
+const paraPart = synthPrompt.split("ต้องถอดความ")[1] || "";
+ok("[1c] ไม่เอาใบที่ถูกใจน้อยสุดมาเป็นตัวอย่าง (ทั้ง 2 กลุ่ม)",
+   !/เฉยๆ นะ/.test(paraPart) && !/ไม่ประทับใจ/.test(paraPart));
 
 /* ── [2] ⚠️ ผูกกับใบต้นทางได้เสมอ ไม่ว่า AI ตอบแบบไหน ────── */
 ok("[2] ทุกตัวอย่างมี src", r.samples.length > 0 && r.samples.every(x => x.src != null),
    JSON.stringify(r.samples.map(x => ({ src: x.src, s: x.sentiment }))));
+/* ใบที่ 5 (index 4) คือใบลบใบแรก — บวกกิน 4 ช่องแรกไปแล้ว */
 ok("[2b] src ชี้ไปที่ใบที่ถูกต้อง (ลำดับตรงกัน)",
    r.samples[0].src === 0 && r.samples[0].text === "ถอดความ A" &&
-   r.samples[2].src === 3 && r.samples[2].text === "ถอดความ C",
-   `[0]→${r.samples[0].src} [2]→${r.samples[2].src}`);
+   r.samples[4].src === 5 && r.samples[4].text === "ถอดความ E",
+   `[0]→${r.samples[0].src} [4]→${r.samples[4].src}`);
 ok("[2c] ป้ายมาจากผลตี sentiment ของเรา ไม่ใช่ที่ AI บอก",
-   r.samples[0].sentiment === "positive" && r.samples[2].sentiment === "negative");
+   r.samples[0].sentiment === "positive" && r.samples[4].sentiment === "negative");
 
 /* ── [3] AI ตอบเป็น object แทนสตริง → ยังต้องผูกได้ ───────── */
 aiSamples = [{ text: "obj A" }, { text: "obj B" }, { text: "obj C" }, { text: "obj D" }];

@@ -23,6 +23,7 @@
 | `swapsample.cjs` | ✂️ **ปุ่ม ✕ ตัดตัวอย่างที่ไม่ตรงประเด็น** — ต้องเอาใบ**ในกลุ่มเดียวกัน**มาแทน · กดซ้ำต้องเดินหน้า · ไม่มีใบเหลือ/ถอดความไม่สำเร็จ = **เก็บใบเดิมไว้** ห้ามปล่อยช่องว่าง | ต้องมีเซิร์ฟเวอร์ static |
 | `resynth.cjs` | 🔄 **ปุ่ม "สรุปใหม่ตามป้ายที่แก้"** — ยังไม่แก้ป้ายห้ามมีปุ่ม · ต้องส่งป้ายที่แก้แล้ว+ยอดถูกใจ · **ยิงไม่สำเร็จห้ามลบสรุป/ตัวอย่างเดิมทิ้ง** · การ์ด keyword ห้ามมีปุ่มนี้ | ต้องมีเซิร์ฟเวอร์ static |
 | `samplemid.mjs` | 🟡 **ช่อง "กลาง" ต้องมีตัวอย่างของตัวเอง** — โพสจริงส่วนใหญ่เป็นกลางท่วม · โหมด CP ก็ต้องมี (ห้ามผูกกับ synthIdx) · `not_related` ห้ามถูกเลือก | `node samplemid.mjs` |
+| `samplequota.mjs` | 📐 **ช่องที่สัดส่วนเยอะได้ตัวอย่างเยอะขึ้น** (≥50% → 4 ใบ · ≥30% → 3 · ที่เหลือ 2) · 🚫 **ขั้นต่ำ 2 เสมอ** ห้ามลดตามสัดส่วน · 💰 เพดานรวม 9 ใบ · ใบที่เพิ่มต้องเป็นใบถูกใจเยอะสุดถัดไป ไม่ใช่สุ่ม | `node samplequota.mjs` |
 | `samplesrc.mjs` | **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** — src ต้องถูกเสมอไม่ว่า AI ตอบรูปแบบไหน · เลือกแบบตายตัว รันซ้ำได้ใบเดิม | `node samplesrc.mjs` |
 | `keywords.mjs` | **เลข "คำที่พูดถึงบ่อย" ต้องนับจากคอมเมนต์จริง ไม่ใช่ที่ AI เดา** · คำที่แต่งขึ้นต้องถูกตัด · สรุปต้องรู้สัดส่วนจริงของทั้งโพส | `node keywords.mjs` |
 | `synthbudget.mjs` | 🔴 **สรุปพังต้องไม่หายเงียบ** — เพดานคำตอบคิดตามจำนวนใบถอดความ (ห้ามตายตัว) · ถูกตัดกลางคันต้องลองใหม่ · แกะไม่ได้ต้องติดธง **ห้ามคืนของว่างเงียบ** | `node synthbudget.mjs` |
@@ -40,10 +41,11 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          nestedReplies, scComment, fetchYouTube, INCLUDE_REPLIES,
          feedbackRoute, fbClean, FB_MAX, FB_MAX_PER_REQ, FB_MAX_TEXT,
          EFFORT_CHOICES, EFFORT_MODELS, analyze, countTerms,
-         PROFILES, getProfile, DEFAULT_PROFILE };
+         PROFILES, getProfile, DEFAULT_PROFILE,
+         sampleQuota, SAMPLE_MIN, SAMPLE_MAX };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in authguard profiles twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid keywords apierror synthbudget airetry; do node $t.mjs; done
+for t in authguard profiles twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid samplequota keywords apierror synthbudget airetry; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
