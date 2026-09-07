@@ -110,6 +110,26 @@ export const PR_RE = /^\s*ข่าวประชาสัมพันธ์/;
 export const DUSTPAGE_RE =
   /^\s*รายงานสถานการณ์\s*(?:ค่า)?\s*(?:ฝุ่น|pm)[\s.]*2?\.?5?\b[\s\S]*?(?:เทศบาล|อบต\.?|อบจ\.?|องค์การบริหารส่วน|อำเภอ)/i;
 
+/* 💱 **หน้าราคาเหรียญ/อัตราแลกเปลี่ยน — ไม่ใช่ข่าว**
+ *
+ * เจ้าของส่งภาพมา 2 ก.ย. 2026: "อัตราแลกเปลี่ยนย้อนหลัง CP USD KuCoin - Investing.com"
+ * หลุดเข้าคอลัมน์ CP · `CP` ตรงนั้นคือเหรียญคริปโต **Cluster Protocol** ไม่ใช่เครือ CP
+ * เป็นหน้าตัวเลขที่อัปเดตเองตลอดเวลา ตระกูลเดียวกับ DATAPAGE_HOSTS (iqair/aqicn)
+ *
+ * ⚠️ ของเดิม `cpEvidence` ตอบ **"weak"** (เจอ CP เดี่ยว) → ส่งให้ AI ตัดสิน → **AI ตอบว่าใช่**
+ *    จึงหลุดเข้ามา · ต้องดักด้วยกฎตายตัวก่อนถึงชั้น AI
+ *
+ * ⚠️ **ต้องมีครบ 2 อย่าง** — มี "คู่สกุลเงิน" (`CP USD` · `BTC/USDT`) **และ** คำที่บอกว่าเป็นหน้าราคา
+ *    เอาอย่างใดอย่างหนึ่งไม่ได้:
+ *    · คู่สกุลเงินอย่างเดียว → "CP USD deal signed" แบบข่าวจริงจะโดนตัด
+ *    · คำว่า "ราคา"/"อัตราแลกเปลี่ยน" อย่างเดียว → ข่าวจริงเรื่องค่าเงินบาทจะโดนตัด
+ *
+ * 🚫 **ห้ามใส่ `investing.com` ลง DATAPAGE_HOSTS** — เว็บนั้นมีข่าวจริงด้วย ตัดทั้งเว็บจะเสียข่าว
+ */
+const FX_PAIR_RE = /\b[a-z]{2,6}\s*[\/\-\s]\s*(?:usd|usdt|thb|btc|eth|bnb)\b/i;
+const FX_WORD_RE = /อัตราแลกเปลี่ยน|ราคาย้อนหลัง|ประวัติราคา|กราฟราคา|exchange rate|historical (?:data|rate|price)|price chart|kucoin|binance|coinmarketcap|coingecko/i;
+export const FXPAGE_RE = { test: (t) => FX_PAIR_RE.test(t) && FX_WORD_RE.test(t) };
+
 // ⚠️ ryt9.com เพิ่ม 14 ส.ค. 2026 — เป็นเว็บแจกข่าว PR เหมือนกัน และสรุปที่ติดมากับฟีด
 // เป็น "ข่าวอื่นที่พ่วงมา" (เจอจริง: การ์ด "อิน-องศา" มีสรุปเป็นข่าว ซีพี แอ็กซ์ตร้า คนละใบ)
 export const PR_HOSTS = ["newswit.com", "thaipr.net", "prnewswire.com", "businesswire.com", "ryt9.com"];
@@ -218,6 +238,7 @@ export function noiseReason(it, title, src) {
   if (EVENT_PATH_RE.test(link)) return "event-page";  // หน้างานอีเวนต์/นิทรรศการ ไม่ใช่ข่าว
   if (PR_RE.test(title)) return "pr";
   if (DUSTPAGE_RE.test(title)) return "dustpage"; // หน้ารายงานค่าฝุ่นของท้องถิ่น ไม่ใช่ข่าว
+  if (FXPAGE_RE.test(title)) return "fx-page";    // หน้าราคาเหรียญ/อัตราแลกเปลี่ยน ไม่ใช่ข่าว
   // เว็บรับแจกข่าวประชาสัมพันธ์ — ใช้กับ **คอลัมน์ CP (alert1) เท่านั้น**
   //
   // ⚠️ เคยตัดทั้งเว็บ แล้วข่าวจริงของเครือหายไปด้วย (ซีพี แอ็กซ์ตร้า แจ้งผลประกอบการ ·
