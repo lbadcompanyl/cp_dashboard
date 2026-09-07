@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="21" />
+<meta name="page-ver" content="22" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -150,7 +150,12 @@
   .sc-atag { flex: none; font-size: 10px; font-weight: 700; border: 1px solid; border-radius: 999px; padding: 2px 9px; margin-top: 1px; }
   .sc-atext { color: var(--sc-ink2); word-break: break-word; }
 
-  details.sc-card > summary { cursor: pointer; font-weight: 700; font-size: 14px; color: #111827; list-style: none; }
+  details.sc-card > summary { cursor: pointer; font-weight: 700; font-size: 14px; color: #111827; list-style: none;
+                              display: flex; align-items: center; gap: 10px; }
+  /* ดันปุ่มไปมุมขวาบนสุด · จอแคบยอมให้ตกบรรทัดดีกว่าดันหัวข้อจนล้น */
+  details.sc-card > summary > span { flex: 1 1 auto; min-width: 0; }
+  details.sc-card > summary > button { flex: 0 0 auto; font-weight: 600; }
+  @media (max-width: 560px) { details.sc-card > summary { flex-wrap: wrap; } }
   details.sc-card > summary::-webkit-details-marker { display: none; }
 
   .sc-toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: #111827; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 13px; opacity: 0; transition: all .2s; pointer-events: none; z-index: 99; }
@@ -270,17 +275,17 @@
       </div>
 
       <details class="sc-card" id="auditCard">
-        <summary>🔍 ตรวจ sentiment รายคอมเมนต์ (audit) + ส่งออก Excel/CSV</summary>
+        <!-- 🔄 ปุ่มอยู่บนหัวกล่อง มุมขวาบน **ปุ่มเดียว** และ **ขึ้นตลอด** (เจ้าของสั่ง 4 ก.ย. 2026)
+             ⚠️ อยู่บนบรรทัดหัวกล่องเพราะกล่องนี้พับได้ — วางไว้ข้างในแล้วพับอยู่ = มองไม่เห็นเลย
+             ⚠️ ปุ่มใน <summary> ถ้าไม่กัน event จะไปพับ/กางกล่องด้วยทุกครั้งที่กด -->
+        <summary>
+          <span>🔍 ตรวจ sentiment รายคอมเมนต์ (audit) + ส่งออก Excel/CSV</span>
+          <button class="sc-btn sc-pri" id="resynthBtn" type="button">🔄 สรุปใหม่ตามป้ายที่แก้</button>
+        </summary>
         <p class="sc-sub" style="margin:8px 0 0">ข้อความ + ผลที่ Claude ตี ไว้ตรวจว่าถูกต้องไหม (ตัดชื่อผู้คอมเมนต์ออกแล้ว)</p>
         <div class="sc-auditbar">
           <div class="sc-afilter" id="auditFilter"></div>
           <div class="sc-bar-tools">
-            <!-- 🔄 อยู่ตรงนี้เพราะผู้ใช้แก้ป้ายกันในกล่องนี้ — กดต่อได้ทันทีไม่ต้องเลื่อนขึ้นไปข้างบน
-                 (เจ้าของสั่งย้ายมา 4 ก.ย. 2026)
-                 ⚠️ ขึ้นเฉพาะตอนแก้ป้ายจริง (edited_count > 0) ไม่งั้นกดไปก็ได้ของเดิม
-                 🚫 ห้ามยิงเองอัตโนมัติทุกครั้งที่แก้ป้าย: แก้ทีละใบ 10 ใบ = ยิง 10 ครั้ง
-                    เจ้าของเลือกให้เป็นปุ่มกดเอง จะได้คุมได้ว่าจ่ายเมื่อไหร่ (2 ก.ย. 2026) -->
-            <button class="sc-btn sc-pri" id="resynthBtn" type="button" hidden>🔄 สรุปใหม่ตามป้ายที่แก้</button>
             <button class="sc-btn" id="auditXlsxBtn" type="button">📊 Excel</button>
             <button class="sc-btn" id="auditCsvBtn" type="button">📑 CSV</button>
           </div>
@@ -851,9 +856,12 @@ function syncResynth(){
   const stale = n > (lastResult?._resynthAt ?? -1);
   const wrap = el("resynthWrap"), note = el("resynthNote"), btn = el("resynthBtn");
   if (wrap) wrap.hidden = !(n && stale);
-  if (note && n && stale) note.textContent = `คุณแก้ป้ายไว้ ${n} ใบ — สรุปกับตัวอย่างยังเป็นของรอบที่แล้ว · กด 🔄 ในกล่อง “ตรวจ sentiment รายคอมเมนต์” ข้างล่างเพื่อสรุปใหม่`;
-  /* ปุ่มยังขึ้นแม้สรุปใหม่ไปแล้ว — ผู้ใช้กดสรุปซ้ำได้ถ้าอยากได้ตัวอย่างชุดอื่น */
-  if (btn) btn.hidden = !n;
+  if (note && n && stale) note.textContent = `คุณแก้ป้ายไว้ ${n} ใบ — สรุปกับตัวอย่างยังเป็นของรอบที่แล้ว · กดปุ่ม 🔄 มุมขวาบนของกล่อง “ตรวจ sentiment รายคอมเมนต์” ข้างล่าง`;
+  /* 🔓 ปุ่มขึ้นตลอด ไม่ต้องรอให้แก้ป้าย (เจ้าของสั่ง 4 ก.ย. 2026)
+     ของเดิมซ่อนไว้จนกว่าจะมีการแก้ — เหตุผลเดิมคือ "ไม่แก้อะไรเลย กดไปก็ได้ของเดิม"
+     แต่ที่จริงกดแล้วได้สรุป/ตัวอย่างชุดใหม่ (AI ถอดความใหม่) จึงมีประโยชน์อยู่
+     💰 แลกกับ: กดทีไรก็จ่ายทุกครั้ง — เป็นปุ่มกดเอง ไม่ยิงอัตโนมัติ ผู้ใช้จึงคุมได้เอง */
+  if (btn) btn.hidden = false;
 }
 /* ข้อความผลของปุ่ม — ว่างเมื่อไหร่ต้องซ่อนกล่องด้วย ไม่งั้นเหลือช่องว่างคาไว้ */
 function resynthMsg(t){
@@ -900,7 +908,9 @@ async function runResynth(){
     btn.textContent = "🔄 สรุปใหม่ตามป้ายที่แก้";
   }
 }
-if (el("resynthBtn")) el("resynthBtn").onclick = runResynth;
+/* ⚠️ ปุ่มอยู่ใน <summary> — ถ้าไม่กัน event ไว้ กดปุ่มทีกล่องจะพับ/กางทุกครั้ง
+   (เบราว์เซอร์ถือว่าคลิกที่ไหนใน summary ก็คือสั่งพับ/กาง) */
+if (el("resynthBtn")) el("resynthBtn").onclick = (e) => { e.preventDefault(); e.stopPropagation(); runResynth(); };
 
 /* ══════════════════════════════════════════════════════════════
  * ชั้น ② ของระบบเรียนรู้ — ส่งที่แก้ไว้เข้ากองรอตรวจ
