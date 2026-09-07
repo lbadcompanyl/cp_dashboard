@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="20" />
+<meta name="page-ver" content="21" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -240,8 +240,10 @@
                 เจ้าของเลือกให้เป็นปุ่มกดเอง จะได้คุมได้ว่าจ่ายเมื่อไหร่ (2 ก.ย. 2026)
              🚫 ไม่มีปุ่มแบบนี้ที่การ์ด "คำที่พูดถึงบ่อย" โดยตั้งใจ — ตัวเลขตรงนั้น
                 นับจากข้อความคอมเมนต์ ไม่ได้ขึ้นกับป้าย กดไปก็ได้เลขเดิมเป๊ะ -->
+        <!-- 📍 ปุ่มย้ายไปอยู่หัวกล่อง audit แล้ว (เจ้าของสั่ง 4 ก.ย. 2026) — ที่นี่เหลือแต่ "คำเตือนว่าสรุปเก่า"
+             ⚠️ **ห้ามย้ายคำเตือนตามปุ่มไป** คำเตือนต้องอยู่ติดของที่เก่า ไม่งั้นคนอ่านสรุปที่ตกยุค
+                โดยไม่รู้ตัว (กล่อง audit พับอยู่เป็นค่าตั้งต้น มองไม่เห็นอะไรข้างในเลย) -->
         <div class="sc-resynth" id="resynthWrap" hidden>
-          <button class="sc-btn2" id="resynthBtn" type="button">🔄 สรุปใหม่ตามป้ายที่แก้</button>
           <span class="sc-sub" id="resynthNote"></span>
         </div>
       </div>
@@ -273,10 +275,18 @@
         <div class="sc-auditbar">
           <div class="sc-afilter" id="auditFilter"></div>
           <div class="sc-bar-tools">
+            <!-- 🔄 อยู่ตรงนี้เพราะผู้ใช้แก้ป้ายกันในกล่องนี้ — กดต่อได้ทันทีไม่ต้องเลื่อนขึ้นไปข้างบน
+                 (เจ้าของสั่งย้ายมา 4 ก.ย. 2026)
+                 ⚠️ ขึ้นเฉพาะตอนแก้ป้ายจริง (edited_count > 0) ไม่งั้นกดไปก็ได้ของเดิม
+                 🚫 ห้ามยิงเองอัตโนมัติทุกครั้งที่แก้ป้าย: แก้ทีละใบ 10 ใบ = ยิง 10 ครั้ง
+                    เจ้าของเลือกให้เป็นปุ่มกดเอง จะได้คุมได้ว่าจ่ายเมื่อไหร่ (2 ก.ย. 2026) -->
+            <button class="sc-btn sc-pri" id="resynthBtn" type="button" hidden>🔄 สรุปใหม่ตามป้ายที่แก้</button>
             <button class="sc-btn" id="auditXlsxBtn" type="button">📊 Excel</button>
             <button class="sc-btn" id="auditCsvBtn" type="button">📑 CSV</button>
           </div>
         </div>
+        <!-- ผลของการกดปุ่ม (สำเร็จ/พัง) — ต้องอยู่ใกล้ปุ่ม ไม่ใช่ไปโผล่บนสุดของหน้า -->
+        <div class="sc-sub" id="resynthMsg" hidden></div>
         <div class="sc-alist" id="auditList"></div>
 
         <!-- ชั้น ② ของระบบเรียนรู้ — โผล่เฉพาะตอนมีของที่แก้ไว้
@@ -829,24 +839,39 @@ async function swapSample(src, key, btn){
  * 🚫 ห้ามยิงเองอัตโนมัติตอนกดแก้ป้าย — แก้ทีละใบ 10 ใบ = ยิง 10 ครั้ง
  *    เจ้าของเลือกให้เป็นปุ่มกดเอง (2 ก.ย. 2026) จะได้คุมได้ว่าจ่ายเมื่อไหร่
  * ══════════════════════════════════════════════════════════════ */
+/* ⚠️ ปุ่มกับคำเตือนอยู่คนละที่โดยตั้งใจ (ย้ายปุ่ม 4 ก.ย. 2026)
+     ปุ่ม     → หัวกล่อง audit  = ที่ที่ผู้ใช้กำลังแก้ป้ายอยู่ กดต่อได้เลย
+     คำเตือน → ใต้กล่องสรุป     = ติดกับ "ของที่เก่าแล้ว"
+   🚫 ห้ามยุบให้เหลือที่เดียว — กล่อง audit พับอยู่เป็นค่าตั้งต้น ถ้าคำเตือนอยู่ข้างใน
+      คนที่ไม่กางจะอ่านสรุปที่ตกยุคโดยไม่มีอะไรบอกเลย */
 function syncResynth(){
-  const wrap = el("resynthWrap");
-  if (!wrap) return;
   const n = lastResult?.edited_count || 0;
-  wrap.hidden = !n;
-  const note = el("resynthNote");
-  if (note && n) note.textContent = `คุณแก้ป้ายไว้ ${n} ใบ — สรุปกับตัวอย่างยังเป็นของรอบที่แล้ว`;
+  /* 🔴 สรุปใหม่ไปแล้วต้องเลิกเตือนว่า "ยังเป็นของรอบที่แล้ว" — ไม่งั้นคำเตือนโกหก
+     เทียบกับจำนวนที่แก้ ณ ตอนสรุปใหม่ · แก้เพิ่มอีกเมื่อไหร่ คำเตือนกลับมาเอง */
+  const stale = n > (lastResult?._resynthAt ?? -1);
+  const wrap = el("resynthWrap"), note = el("resynthNote"), btn = el("resynthBtn");
+  if (wrap) wrap.hidden = !(n && stale);
+  if (note && n && stale) note.textContent = `คุณแก้ป้ายไว้ ${n} ใบ — สรุปกับตัวอย่างยังเป็นของรอบที่แล้ว · กด 🔄 ในกล่อง “ตรวจ sentiment รายคอมเมนต์” ข้างล่างเพื่อสรุปใหม่`;
+  /* ปุ่มยังขึ้นแม้สรุปใหม่ไปแล้ว — ผู้ใช้กดสรุปซ้ำได้ถ้าอยากได้ตัวอย่างชุดอื่น */
+  if (btn) btn.hidden = !n;
+}
+/* ข้อความผลของปุ่ม — ว่างเมื่อไหร่ต้องซ่อนกล่องด้วย ไม่งั้นเหลือช่องว่างคาไว้ */
+function resynthMsg(t){
+  const m = el("resynthMsg");
+  if (!m) return;
+  m.textContent = t || "";
+  m.hidden = !t;
 }
 
 async function runResynth(){
   if (!lastResult || !lastResult.audit) return;
-  const btn = el("resynthBtn"), note = el("resynthNote");
+  const btn = el("resynthBtn");
   const items = lastResult.audit.map(a => ({
     text: a.text || "", sentiment: a.sentiment, likes: a.likes || 0,
   }));
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span> กำลังสรุปใหม่…';
-  if (note) note.textContent = "";
+  resynthMsg("");
   try {
     const r = await fetch(WORKER.replace(/\/+$/,"") + "/resynth", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -861,13 +886,15 @@ async function runResynth(){
     lastResult.samples = d.samples || [];
     lastResult.summary_from = d.summary_from;
     lastResult.summary_of = d.summary_of;
+    lastResult._resynthAt = lastResult.edited_count || 0;   // สรุปนี้ตรงกับป้ายชุดปัจจุบันแล้ว
     /* ตัวอย่างชุดใหม่ตรงกับป้ายปัจจุบันแล้ว — ธง "แก้แล้ว" ยังอยู่ใน audit เหมือนเดิม
        (ผู้ใช้ยังต้องเห็นว่าตัวเองแก้ใบไหนไว้ และปุ่มส่งเข้ากองรอตรวจยังต้องทำงาน) */
     renderResult(lastResult, true);
-    if (note) note.textContent = "สรุปใหม่แล้ว ✓";
+    syncResynth();               // ⚠️ renderResult ไม่ได้เรียกให้ — ไม่เรียกเอง คำเตือน "สรุปเก่า" จะค้างทั้งที่เพิ่งสรุปใหม่
+    resynthMsg("สรุปใหม่แล้ว ✓");
     toast("สรุปใหม่ตามป้ายที่คุณแก้แล้ว ✓");
   } catch (e) {
-    if (note) note.textContent = "สรุปใหม่ไม่สำเร็จ: " + String(e && e.message || e);
+    resynthMsg("สรุปใหม่ไม่สำเร็จ: " + String(e && e.message || e));
   } finally {
     btn.disabled = false;
     btn.textContent = "🔄 สรุปใหม่ตามป้ายที่แก้";
