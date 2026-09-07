@@ -221,6 +221,57 @@ console.log("\n[9] ไฟล์ .xlsx จริง — วันที่ที�
   ok("บันทึกเป็นวันที่ 2 ก.ย. (ตีความเป็นเวลาไทย)", t.includes("2026-09-02"));
 }
 
+console.log("\n[10] หน้าลองดูคอลัมน์ /issue/zadmin/");
+{
+  const v = await ctx.newPage();
+  v.on("pageerror", (e) => { fail++; console.log("  ❌ JS พังบนหน้า zadmin → " + e.message); });
+  const card = { id: "p1", source: "facebook", account: "เพจตัวอย่าง", accountType: "page",
+    snippet: "พาดหัวทดสอบ", url: "https://a/p", postedAt: "2026-09-02T09:00:00+07:00",
+    engagement: 1234, comments: 87, commentsAreFromFile: true, sent: null,
+    postSent: "neg", postSentSrc: "zocial", sentimentChecked: false, sentimentProfile: null, rubricVersion: null };
+  let lastUrl = "";
+  await v.route("**/issue/api/listen*", (route) => {
+    lastUrl = route.request().url();
+    const empty = lastUrl.includes("minEng=9999");
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(
+      empty ? { date: "2026-09-02", campaign: "c", updatedAt: null, hasData: false, cards: [], filters: { minEng: 9999 } }
+            : { date: "2026-09-02", campaign: "c", updatedAt: "2026-09-02T10:00:00Z", hasData: true,
+                filters: { minEng: 0, source: [], q: "", noise: true },
+                dropped: [{ why: "job", count: 3 }], cards: [card] }) });
+  });
+  await v.goto(`${BASE}/issue/zadmin/`, { waitUntil: "domcontentloaded" });
+  await v.waitForSelector(".item", { timeout: 8000 });
+  const t = await v.textContent("#out");
+
+  ok("แสดงการ์ดที่ได้จาก API", t.includes("พาดหัวทดสอบ"));
+  ok("ป้ายอารมณ์ต้องบอกว่าเป็นค่าดิบของ Zocial", t.includes("ดิบจาก Zocial"));
+  ok("เตือนว่าค่าดิบเป็นลบ 60% อย่าเพิ่งสรุป", t.includes("60%"));
+  ok("จำนวนคอมเมนต์เขียนกำกับว่า 'ในไฟล์'", t.includes("ในไฟล์"));
+  ok("บอกว่าตัดอะไรทิ้งไปบ้าง เป็นภาษาคน", t.includes("ประกาศงาน") && t.includes("3"));
+  ok("บอกว่าเปิดกลับได้ ไม่ได้ลบทิ้ง", t.includes("ไม่ได้ลบทิ้ง"));
+
+  await v.selectOption("#noise", "0");
+  await v.click("#go");
+  await v.waitForFunction(() => !document.querySelector("#out .spin"), { timeout: 8000 });
+  ok("เลือก 'ไม่ตัด' แล้วส่ง noise=0 ไปจริง", lastUrl.includes("noise=0"), lastUrl);
+
+  // 🔴 ไม่มีข้อมูล ต้องบอกว่าไม่มี ห้ามปล่อยหน้าว่าง
+  await v.fill("#minEng", "9999");
+  await v.click("#go");
+  await v.waitForFunction(() => document.querySelector("#out")?.textContent.includes("ไม่มีข้อมูล"), { timeout: 8000 });
+  const t2 = await v.textContent("#out");
+  ok("ไม่มีข้อมูลต้องขึ้นข้อความ ไม่ใช่หน้าว่าง", t2.includes("ไม่มีข้อมูล"));
+  ok("และบอกด้วยว่าตอนนี้กรองอะไรอยู่", t2.includes("9999"), t2.replace(/\s+/g, " ").slice(0, 120));
+
+  // 🔒 Access หมดอายุ
+  await v.unroute("**/issue/api/listen*");
+  await v.route("**/issue/api/listen*", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<html>login</html>" }));
+  await v.click("#go");
+  await v.waitForFunction(() => document.querySelector("#out")?.textContent.includes("เซสชัน"), { timeout: 8000 });
+  ok("เซสชันหมดอายุ → บอกให้เข้าสู่ระบบใหม่ + มีปุ่ม", (await v.locator("#rl").count()) === 1);
+  await v.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);

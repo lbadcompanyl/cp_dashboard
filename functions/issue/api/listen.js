@@ -10,6 +10,8 @@
  *    ไม่งั้นหน้าเว็บแยกไม่ออกระหว่าง "ยังโหลดไม่เสร็จ" กับ "วันนั้นลืม upload" แล้วจะหมุนค้าง
  */
 import * as S from "./_lib/store.js";
+// 🎯 ตัวกรอง "อะไรไม่ใช่ข่าว" ชุดกลางของทั้งโปรเจกต์ — กฎถาวรใน CLAUDE.md ห้ามก๊อปลิสต์มาไว้ที่นี่
+import { noiseReason, setAllowed, setBlocked } from "../../api/_lib/noise.js";
 
 const MAX_LIMIT = 100;
 const json = (o, status = 200) =>
@@ -24,6 +26,14 @@ export async function onRequestGet({ request, env }) {
   const limit = Math.min(MAX_LIMIT, Math.max(1, Number(u.searchParams.get("limit")) || 30));
   let campaign = u.searchParams.get("campaign") || "";
   let date = u.searchParams.get("date") || "";
+
+  // ── เงื่อนไขการคัดข่าว — ทำตอน "อ่าน" ไม่ใช่ตอนบันทึก ────────────────────
+  // 🎯 ตัดตอนอ่าน = ปิดเงื่อนไขแล้วของกลับมาครบทันที · ตัดตอนบันทึก = หายถาวร
+  //    ยึดหลักเดิมของโปรเจกต์: ตัดพลาดแล้วข่าวหายเงียบ แย่กว่าปล่อยขยะผ่าน
+  const minEng = Math.max(0, Number(u.searchParams.get("minEng")) || 0);
+  const only = (u.searchParams.get("source") || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const q = (u.searchParams.get("q") || "").trim();
+  const useNoise = u.searchParams.get("noise") !== "0";
 
   try {
     if (!campaign) {
@@ -40,18 +50,41 @@ export async function onRequestGet({ request, env }) {
     if (!date) return json({ date: null, campaign, updatedAt: null, hasData: false, cards: [],
       note: "แคมเปญนี้ยังไม่มีข้อมูลสักวัน" });
 
+    const where = ["campaign = ?", "date = ?"];
+    const args = [campaign, date];
+    if (minEng > 0) { where.push("COALESCE(engagement,0) >= ?"); args.push(minEng); }
+    if (only.length) { where.push(`source IN (${only.map(() => "?").join(",")})`); args.push(...only); }
+    if (q) { where.push("snippet LIKE ?"); args.push(`%${q}%`); }
+
+    // ดึงเผื่อไว้ เพราะตัวกรอง "ไม่ใช่ข่าว" ทำงานหลังดึง — ดึงพอดี limit แล้วกรองทิ้ง
+    // จะได้การ์ดไม่ครบตามที่ขอ ทั้งที่ในฐานข้อมูลมีพอ
     const { results } = await db.prepare(
       `SELECT id, source, account, account_type, snippet, url, posted_at, engagement,
               comment_count, comment_sent_neg, comment_sent_neu, comment_sent_pos,
               post_sent, post_sent_src, sentiment_checked, sentiment_profile, rubric_version
-       FROM daily_news WHERE campaign = ? AND date = ?
+       FROM daily_news WHERE ${where.join(" AND ")}
        ORDER BY COALESCE(engagement,0) DESC, posted_at DESC LIMIT ?`
-    ).bind(campaign, date, limit).all();
+    ).bind(...args, limit * 4).all();
 
     const upd = await db.prepare("SELECT MAX(updated_at) AS u FROM daily_aggregate WHERE campaign = ? AND date = ?")
       .bind(campaign, date).first();
 
-    const cards = (results || []).map((r) => ({
+    // ⚠️ ตัวแปรของ noise.js อยู่ระดับโมดูล และ Workers ใช้โมดูลเดิมซ้ำข้าม request
+    //    ไม่ตั้งใหม่ทุกครั้ง = ค้างรายชื่อของ request ก่อนหน้า (กับดักเดิมที่ CLAUDE.md เตือนไว้)
+    setAllowed({}); setBlocked({});
+
+    const dropCount = {};
+    const kept = (results || []).filter((r) => {
+      // 🚫 ใช้ตัวกรองข่าวกับ "ข่าวจากสำนักข่าว" เท่านั้น
+      //    ลิสต์ในนั้นทำมาเพื่อหน้าเว็บข่าว (หน้าขายของ · ประกาศงาน · หน้ารวมบทความ)
+      //    เอาไปจับโพสต์เฟซบุ๊กจะตัดโพสต์จริงทิ้ง เช่นโพสต์ที่พูดถึงราคาสินค้า
+      if (!useNoise || r.source !== "news") return true;
+      const why = noiseReason({ link: r.url }, r.snippet || "", "alert2");
+      if (why) dropCount[why] = (dropCount[why] || 0) + 1;
+      return !why;
+    }).slice(0, limit);
+
+    const cards = kept.map((r) => ({
       id: r.id,
       source: r.source,
       account: r.account || null,
@@ -75,7 +108,14 @@ export async function onRequestGet({ request, env }) {
       rubricVersion: r.rubric_version,
     }));
 
-    return json({ date, campaign, updatedAt: (upd && upd.u) || null, hasData: cards.length > 0, cards });
+    return json({
+      date, campaign, updatedAt: (upd && upd.u) || null,
+      hasData: cards.length > 0,
+      // 🚫 ตัดอะไรไปต้องบอกเสมอ ห้ามตัดเงียบ — หน้าเว็บเอาไปแสดงให้ผู้ใช้เห็น
+      filters: { minEng, source: only, q, noise: useNoise },
+      dropped: Object.entries(dropCount).map(([why, count]) => ({ why, count })).sort((a, b) => b.count - a.count),
+      cards,
+    });
   } catch (e) {
     const msg = String(e && e.message || e);
     // ตารางยังไม่ถูกสร้าง = ยังไม่เคยมีใคร upload — ไม่ใช่ระบบพัง ต้องบอกให้ถูกเรื่อง
