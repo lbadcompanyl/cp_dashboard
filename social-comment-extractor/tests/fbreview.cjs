@@ -19,7 +19,7 @@ const ITEMS = [
   const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
-  let mode = "ok", lastUrl = "", cleared = false;
+  let mode = "ok", lastUrl = "", cleared = false, clearMethod = "";
 
   await page.route("**/issue/api/sentiment/**", async (route) => {
     const u = route.request().url();
@@ -28,7 +28,7 @@ const ITEMS = [
       lastUrl = u;
       if (mode === "badkey") return send({ error: "bad_key" }, 403);
       if (mode === "nokey") return send({ error: "read_disabled", detail: "ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare" }, 403);
-      if (u.includes("clear=1")) { cleared = true; return send({ ok: true, cleared: ITEMS.length, items: [] }); }
+      if (u.includes("clear=1")) { cleared = true; clearMethod = route.request().method(); return send({ ok: true, cleared: ITEMS.length, items: [] }); }
       return send({ ok: true, ver: 19, count: ITEMS.length, max: 500, items: ITEMS });
     }
     if (u.endsWith("/")) return send({ ok: true, ver: 19, rubric: "v6", model: "claude-opus-5", models: ["claude-opus-5"] });
@@ -53,13 +53,16 @@ const ITEMS = [
   ok("[2] 🔓 ไม่ใส่กุญแจก็เปิดกองได้ (Access กันให้แล้ว)",
      !/❌/.test(await info()) && /\d/.test(await info()), (await info()).trim());
 
-  /* ── [2b] 🔴 แต่ "ล้างกอง" ยังต้องใส่กุญแจ — ของหายถาวร กู้ไม่ได้ ─────── */
-  cleared = false;
+  /* ── [2b] 🗑 คำสั่งล้างต้องส่งแบบ POST ไม่ใช่ GET ────────────────────
+     ของหายถาวร กู้ไม่ได้ · คำสั่งแบบนี้อยู่บน GET ไม่ได้ เพราะกดโดนโดยไม่ตั้งใจง่ายเกินไป
+     (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า · เครื่องมือไล่เก็บลิงก์)
+     🎯 เลือกทางนี้แทนการขอกุญแจ เพราะกันตรงจุดกว่า และเจ้าของไม่ต้องตั้งอะไรเพิ่มเลย */
+  cleared = false; clearMethod = "";
   page.once("dialog", d => d.accept());
   await page.click("#fbclear");
-  await page.waitForFunction(() => document.querySelector("#fbinfo").textContent.includes("❌"), null, { timeout: 5000 });
-  ok("[2b] 🔴 ไม่ใส่กุญแจ → ล้างกองไม่ได้", /กุญแจ/.test(await info()), (await info()).trim());
-  ok("[2c] 🔴 และไม่ได้ยิงคำสั่งล้างออกไปเลย", cleared === false);
+  await page.waitForFunction(() => /ล้างแล้ว/.test(document.querySelector("#fbinfo").textContent), null, { timeout: 5000 });
+  ok("[2b] 🗑 ไม่ใส่กุญแจก็ล้างได้ (Access กันให้แล้ว)", cleared === true, (await info()).trim());
+  ok("[2c] 🚫 และต้องส่งแบบ POST ไม่ใช่ GET", clearMethod === "POST", `ส่งแบบ ${clearMethod}`);
 
   // ── กุญแจผิด / ยังไม่ตั้ง: ต้องแปลเป็นภาษาคน ──
   for (const [m, want, label] of [["badkey", /กุญแจไม่ถูก/, "กุญแจผิด"], ["nokey", /ยังไม่ได้ตั้ง FEEDBACK_KEY/, "ยังไม่ตั้งกุญแจ"]]) {
@@ -91,6 +94,7 @@ const ITEMS = [
      await page.locator("#fbcsv").isVisible() && await page.locator("#fbclear").isVisible());
 
   // ── ล้างกองต้องถามก่อน ──
+  cleared = false;   /* ⚠️ [2b] เพิ่งล้างไปแล้ว ต้องรีเซ็ตก่อน ไม่งั้นข้อนี้อ่านค่าค้างจากรอบก่อน */
   page.once("dialog", d => d.dismiss());
   await page.click("#fbclear");
   await page.waitForTimeout(400);

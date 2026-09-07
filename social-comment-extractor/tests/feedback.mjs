@@ -114,19 +114,35 @@ ok("[2] ไม่เก็บชื่อ/ลิงก์ แม้ถูกส�
      r.ok === true && r.items.length === 1, JSON.stringify(r).slice(0, 80));
 }
 
-/* ── [7f] 🔴 แต่ "ล้างกอง" ต้องมีกุญแจเสมอ แม้ผ่าน Access มาแล้ว ──────────
-   อ่านผิดพลาดไม่เสียหาย แต่ล้างผิดพลาด = ของทั้งกองหายถาวร กู้ไม่ได้
-   และมันเป็น GET ซึ่งกดโดนโดยไม่ตั้งใจได้ (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า) */
+/* ── [7f] 🗑 ล้างกอง — **GET ทำไม่ได้ ต้อง POST** ──────────────────────
+   ของหายถาวร กู้ไม่ได้ · คำสั่งแบบนี้อยู่บน GET ไม่ได้ เพราะกดโดนโดยไม่ตั้งใจง่ายเกินไป
+   (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า · เครื่องมือไล่เก็บลิงก์ — ยิง GET เองได้ทั้งนั้น)
+   🎯 แก้ตรงจุดกว่าการขอกุญแจ — และเจ้าของไม่ต้องตั้ง FEEDBACK_KEY เลยสักตัว */
 {
   const kv = fakeKV([good]);
   const r = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }, "?clear=1"));
-  ok("[7f] 🔴 ผ่าน Access แต่ไม่มีกุญแจ → ล้างกองไม่ได้", r.error === "clear_needs_key", JSON.stringify(r));
+  ok("[7f] 🚫 ล้างด้วย GET ไม่ได้ (แม้ผ่าน Access)", r.error === "clear_needs_post", JSON.stringify(r));
   const still = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
   ok("[7g] 🔴 และของในกองต้องยังอยู่ครบ ไม่ได้ถูกล้างไปแล้ว", still.items.length === 1,
      `เหลือ ${still.items.length} ใบ`);
-  const okClear = await body(await call(new Request("https://x/feedback"),
-    { FEEDBACK_KV: kv, INTERNAL: true, FEEDBACK_KEY: "s3cret" }, "?clear=1&key=s3cret"));
-  ok("[7h] มีกุญแจถูก → ล้างได้", okClear.cleared === 1, JSON.stringify(okClear));
+
+  const post = () => new Request("https://x/feedback", { method: "POST",
+    headers: { "content-type": "application/json" }, body: "{}" });
+  const okClear = await body(await call(post(), { FEEDBACK_KV: kv, INTERNAL: true }, "?clear=1"));
+  ok("[7h] ✅ POST + ผ่าน Access → ล้างได้ โดยไม่ต้องมีกุญแจ", okClear.cleared === 1, JSON.stringify(okClear));
+  const after = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7i] ล้างแล้วกองว่างจริง", after.items.length === 0, `เหลือ ${after.items.length} ใบ`);
+}
+
+/* ── [7j] 🔒 ไม่ผ่าน Access (ยิงตรงเข้า workers.dev) ล้างไม่ได้ถ้าไม่มีกุญแจ ── */
+{
+  const kv = fakeKV([good]);
+  const post = () => new Request("https://x/feedback", { method: "POST",
+    headers: { "content-type": "application/json" }, body: "{}" });
+  const r = await body(await call(post(), { FEEDBACK_KV: kv }, "?clear=1"));
+  ok("[7j] 🔒 ยิงจากข้างนอกไม่มีกุญแจ → ล้างไม่ได้", r.error === "bad_key", JSON.stringify(r));
+  const still = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7k] 🔴 ของยังอยู่ครบ", still.items.length === 1, `เหลือ ${still.items.length} ใบ`);
 }
 
 /* ── [8] ส่งก้อนใหญ่เกินไปต้องถูกตัด ───────────────────── */

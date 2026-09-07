@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 41;
+const WORKER_VER = 42;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -408,19 +408,30 @@ async function feedbackRoute(request, url, env) {
     }
     if (!kv) return json({ ok: true, stored: false, reason: "no_kv", items: [] });
     const items = JSON.parse((await kv.get(FB_KEY)) || "[]");
+    /* 🚫 ล้างกองด้วย GET ไม่ได้อีกแล้ว — ต้องเป็น POST /feedback?clear=1
+       เหตุผลที่เคยขอกุญแจตรงนี้คือ "กันกดโดนโดยไม่ตั้งใจ" ซึ่งแก้ตรงจุดกว่าด้วยการ
+       ไม่ให้คำสั่งทำลายข้อมูลอยู่บน GET ตั้งแต่แรก (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า
+       · เครื่องมือไล่เก็บลิงก์ — พวกนี้ยิง GET เองได้ทั้งนั้น แต่ไม่ยิง POST)
+       → เจ้าของจึงไม่ต้องตั้ง FEEDBACK_KEY เลยแม้แต่ตัวเดียว (เจ้าของทัก 4 ก.ย. 2026) */
     if (url.searchParams.get("clear") === "1") {
-      /* 🔴 ล้างกอง = ของหายถาวร กู้ไม่ได้ — **ต้องมีกุญแจเสมอ แม้ผ่าน Access มาแล้ว**
-         อ่านผิดพลาดไม่เสียหาย แต่ล้างผิดพลาดคือของทั้งกองหายในคลิกเดียว
-         และมันเป็น GET ซึ่งกดโดนโดยไม่ตั้งใจได้ (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า) */
-      const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
-      if (!env.FEEDBACK_KEY || given !== env.FEEDBACK_KEY) {
-        return json({ error: "clear_needs_key",
-          detail: "ล้างกองต้องใส่ FEEDBACK_KEY เสมอ แม้เข้าจากหน้าเว็บ — ของหายถาวร กู้ไม่ได้" }, 403);
-      }
-      await kv.put(FB_KEY, "[]");
-      return json({ ok: true, cleared: items.length, items: [] });
+      return json({ error: "clear_needs_post",
+        detail: "ล้างกองต้องส่งมาแบบ POST — คำสั่งลบข้อมูลอยู่บน GET ไม่ได้ กดโดนโดยไม่ตั้งใจง่ายเกินไป" }, 405);
     }
     return json({ ok: true, ver: WORKER_VER, count: items.length, max: FB_MAX, items });
+  }
+
+  /* 🗑 ล้างกอง — POST เท่านั้น (ดูเหตุผลที่ฝั่ง GET)
+     ด่านกันพลาดตอนนี้มี 3 ชั้น: Access · ต้องเป็น POST · หน้าเว็บถามยืนยันก่อน
+     🔒 ไม่ผ่าน Access (ยิงตรงเข้า workers.dev) ยังต้องมีกุญแจเหมือนเดิม */
+  if (url.searchParams.get("clear") === "1") {
+    if (!env.INTERNAL) {
+      const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
+      if (!env.FEEDBACK_KEY || given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    }
+    if (!kv) return json({ ok: false, cleared: 0, reason: "no_kv", detail: "ยังไม่ได้ผูก KV (FEEDBACK_KV) ที่ Cloudflare" }, 200);
+    const cur = JSON.parse((await kv.get(FB_KEY)) || "[]");
+    await kv.put(FB_KEY, "[]");
+    return json({ ok: true, cleared: cur.length, items: [] });
   }
 
   let body;
