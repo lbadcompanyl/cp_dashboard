@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 38;
+const WORKER_VER = 39;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -744,6 +744,7 @@ async function analyze(opts, env) {
   const reply_count = comments.filter(c => c.is_reply).length;
   logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ` +
     (reply_count ? ` (เป็น reply ${reply_count})` : " (นับเฉพาะคอมเมนต์บนสุด ไม่รวม reply)"));
+  if (collected.dropped_dupes) logLine(`🔁 ตัดใบที่ต้นทางส่งซ้ำออก ${collected.dropped_dupes} ใบ`);
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
   /* คอมเมนต์ที่เป็นสติกเกอร์ / GIF / รูปล้วน — ไม่มีตัวอักษรให้ AI อ่าน
@@ -857,6 +858,9 @@ async function analyze(opts, env) {
     fetched_count: comments.length,
     reply_count,
     no_text_count: skipped_no_text,   // สติกเกอร์/รูป — นับเป็นกลางแล้ว แต่ต้องบอกผู้ใช้ว่ามีกี่ใบ
+    /* 🔁 ใบที่ต้นทางส่งซ้ำมาแล้วถูกตัดออก — **ต้องบอกจำนวน ห้ามตัดเงียบ**
+       กฎเดียวกับ no_text_count: ตัวเลขบนจอต้องอธิบายได้ว่าทำไมไม่เท่ากับที่ต้นทางมี */
+    dupe_count: collected.dropped_dupes || 0,
     /* 📋 สรุปมาจากคอมเมนต์กี่ใบจากทั้งหมดกี่ใบ — หน้าเว็บต้องเขียนให้ตรง
        ⚠️ ของเดิมหน้าเว็บเขียนว่า "สรุปโดย Claude จากคอมเมนต์ทั้งหมด" ซึ่ง **ไม่จริง**
           โหมด CP สรุปจากเฉพาะใบที่แสดงท่าทีต่อ CP (ตัดกลางออก) และตัดที่ SYNTH_SAMPLE ด้วย
@@ -947,6 +951,18 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
 
   const out = [];
   let pageToken = "";
+  let dropped_dupes = 0;
+  const seen = new Set();
+  const add = (c) => {
+    const k = dupKey(c);
+    if (k && seen.has(k)) { dropped_dupes++; return false; }
+    if (k) seen.add(k);
+    out.push(c);
+    return true;
+  };
+  /* 🔁 `order=relevance` ของ YouTube จัดลำดับใหม่ระหว่างที่เราไล่หน้าอยู่
+     คอมเมนต์ใบเดียวจึงโผล่ได้ทั้งหน้า 1 และหน้า 2 — และ pageToken เดิมซ้ำก็เป็นไปได้ */
+  const usedTokens = new Set();
   while (out.length < limit) {
     const api = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
     /* ขอ replies มาด้วย — YouTube แถมมาให้สูงสุด 5 อันต่อกระทู้ในคำขอเดียว ไม่เปลืองโควตาเพิ่ม
@@ -969,7 +985,8 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
     for (const item of data.items || []) {
       const s = item.snippet?.topLevelComment?.snippet;
       if (!s) continue;
-      out.push({
+      add({
+        id: String(item.snippet?.topLevelComment?.id || item.id || ""),
         text: s.textDisplay || "",
         author: s.authorDisplayName || "",
         likes: s.likeCount || 0,
@@ -985,7 +1002,8 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
         for (const rep of item.replies?.comments || []) {
           const rs = rep.snippet;
           if (!rs?.textDisplay) continue;
-          out.push({
+          add({
+            id: String(rep.id || ""),
             text: rs.textDisplay, author: rs.authorDisplayName || "",
             likes: rs.likeCount || 0, replies: 0, time: rs.publishedAt || "", is_reply: 1,
           });
@@ -994,8 +1012,9 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
         if (out.length >= limit) break;
       }
     }
+    usedTokens.add(pageToken);
     pageToken = data.nextPageToken || "";
-    if (!pageToken) break;
+    if (!pageToken || usedTokens.has(pageToken)) break;
   }
 
   // ดึงหัวข้อ + รูปปกของคลิป (สำหรับใส่ในรายงาน) — base64 กัน CORS ตอนวาดลง canvas
@@ -1031,7 +1050,7 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
     }
   } catch (e) { /* รูป/หัวข้อไม่มาก็ไม่เป็นไร */ }
 
-  return { comments: out, post_title, post_thumb, post_stats };
+  return { comments: out, post_title, post_thumb, post_stats, dropped_dupes };
 }
 
 /* 📊 ยอดของ "ตัวโพส" (คนละเรื่องกับยอดถูกใจของคอมเมนต์)
@@ -1060,6 +1079,9 @@ function toB64(bytes) {
 function scComment(c, is_reply) {
   const rawReplies = pickField(c, ["reply_count", "replyCount", "comment_count"]);
   return {
+    /* 🆔 เก็บรหัสของต้นทางไว้กันซ้ำ — ไม่ได้เอาไปแสดงและไม่ได้ส่งกลับหน้าเว็บ
+       ไม่ใช่ข้อมูลส่วนตัว (เป็นรหัสของ "คอมเมนต์" ไม่ใช่ของคน) จึงไม่ขัด PRIVACY_NOTE */
+    id: String(pickField(c, ["id", "comment_id", "commentId", "cid", "fbid", "legacy_id"]) || ""),
     text: pickField(c, ["text", "comment", "content", "body", "message"]) || "",
     author: pickField(c, ["author", "username", "user", "name", "nickname"]) || "",
     likes: +pickField(c, ["likes", "like_count", "likeCount", "digg_count"]) || 0,
@@ -1074,6 +1096,28 @@ function scComment(c, is_reply) {
  * ⚠️ คีย์ `replies` เป็นได้ทั้ง "จำนวน" (ตัวเลข) และ "รายการ" (array) แล้วแต่ต้นทาง
  *    ต้องเช็คชนิดก่อนเสมอ — เอา array ไปบวกเลขจะได้ NaN แล้วจำนวน reply กลายเป็น 0 เงียบๆ
  */
+/**
+ * 🔁 กันคอมเมนต์ใบเดียวกันถูกนับ 2 ครั้ง
+ *
+ * 🐞 เจ้าของเจอ 4 ก.ย. 2026: "ทำไมมี comment ซ้ำในเครื่องตรวจ sentiment"
+ *    ของเดิม **ไม่มีการกันซ้ำเลยสักจุด** ทั้ง 2 ต้นทาง · ซ้ำได้ 2 ทาง
+ *      1. ต้นทางส่ง cursor เดิมกลับมา → วนดึงหน้าเดิมซ้ำจนครบ limit
+ *      2. คอมเมนต์ใบเดียวโผล่ทั้งใน list และในกอง reply ที่ซ้อนมา
+ *    ผลเสียไม่ใช่แค่ "อ่านแล้วรก" — **% ของ sentiment เพี้ยนทั้งกระดาน**
+ *    เพราะใบที่ซ้ำถูกนับ 2 ครั้ง และ **จ่ายค่า AI ซ้ำฟรีๆ ด้วย**
+ *
+ * 🚫 ตัดสินว่าซ้ำได้เฉพาะตอนที่ "มั่นใจจริง" เท่านั้น
+ *    ไม่มีรหัส และไม่มีทั้งชื่อทั้งเวลา = **เก็บไว้** ไม่ใช่ตัดทิ้ง
+ *    (คนละคนพิมพ์ข้อความสั้นเหมือนกันได้ เช่น "ครับ" — ตัดทิ้งคือข่าวหายเงียบ)
+ */
+function dupKey(c) {
+  if (c.id) return "id:" + c.id;
+  const t = String(c.text || "").replace(/\s+/g, " ").trim();
+  const who = String(c.author || ""), when = String(c.time || "");
+  if (!t || (!who && !when)) return "";      // ตัดสินไม่ได้ = ไม่ตัด
+  return "x:" + who + "\n" + when + "\n" + t;
+}
+
 function nestedReplies(c) {
   for (const k of ["replies", "reply_list", "children", "sub_comments", "comments"]) {
     const v = c && c[k];
@@ -1092,6 +1136,19 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
   let cursor = "";
   let guard = 0;
   let credits_remaining = null;
+  let dropped_dupes = 0;
+  const seen = new Set();
+  /* ✅ ผ่านด่านกันซ้ำแล้วค่อยใส่กอง — คืน true ถ้าใส่จริง */
+  const add = (c) => {
+    const k = dupKey(c);
+    if (k && seen.has(k)) { dropped_dupes++; return false; }
+    if (k) seen.add(k);
+    out.push(c);
+    return true;
+  };
+  /* 🔁 cursor ที่เคยใช้แล้ว ห้ามใช้ซ้ำ — ต้นทางส่งค่าเดิมกลับมาเมื่อไหร่
+     ของเดิมจะวนดึงหน้าเดิมไปเรื่อยๆ จนครบ limit = ได้คอมเมนต์ชุดเดิมซ้ำหลายรอบ */
+  const usedCursors = new Set();
   while (out.length < limit && guard < 60) {
     guard++;
     const api = new URL(endpoint);
@@ -1107,21 +1164,22 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
     if (!Array.isArray(list) || !list.length) break;
 
     for (const c of list) {
-      out.push(scComment(c, 0));
+      add(scComment(c, 0));
       if (out.length >= limit) break;
       /* reply ที่ซ้อนมาใน response — แตกออกมาเป็นคอมเมนต์เต็มใบ
          ⚠️ ยังไม่ยืนยันว่า ScrapeCreators ส่ง reply ซ้อนมาให้ทุกแพลตฟอร์มหรือเปล่า
             ถ้าไม่ส่งมา ตรงนี้จะไม่ทำอะไรเลย (ไม่พัง) และจำนวนที่ได้จะเท่าเดิม */
       if (includeReplies) {
         for (const rep of nestedReplies(c)) {
-          out.push(scComment(rep, 1));
+          add(scComment(rep, 1));
           if (out.length >= limit) break;
         }
         if (out.length >= limit) break;
       }
     }
+    usedCursors.add(cursor);
     cursor = data.cursor || data.next_cursor || data.nextCursor || data.next_page_id || "";
-    if (!cursor) break;
+    if (!cursor || usedCursors.has(cursor)) break;
   }
 
   // หัวข้อ + รูปปกของโพส (best-effort, +1 credit) — เผื่อ field ต่างกันจึงค้นแบบยืดหยุ่น
@@ -1156,7 +1214,7 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
     }
   } catch (e) { /* meta ไม่มาก็ไม่เป็นไร */ }
 
-  return { comments: out, credits_remaining, post_title, post_thumb, post_stats };
+  return { comments: out, credits_remaining, post_title, post_thumb, post_stats, dropped_dupes };
 }
 
 /** ค้นตัวเลขจาก response ที่ไม่รู้โครงสร้างแน่ชัด — คีย์ต้อง "ตรงชื่อ" ไม่ใช่แค่มีคำนั้นอยู่
