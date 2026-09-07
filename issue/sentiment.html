@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="22" />
+<meta name="page-ver" content="23" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1201,14 +1201,18 @@ function friendlyError(msg){
     return "❌ โพส/วิดีโอนี้ปิดคอมเมนต์";
   if (m.includes("ไม่พบคอมเมนต์"))
     return "❌ ไม่พบคอมเมนต์ในโพสนี้ (อาจไม่มีคอมเมนต์ หรือดึงไม่ได้)";
+  /* ⚠️ ข้อความพวกนี้เคยเขียนว่า "ใน Worker" ซึ่ง **ตกยุคตั้งแต่ย้ายมาอยู่ Pages (4 ก.ย. 2026)**
+     คนอ่านจะเดินไปตั้งค่าผิดหน้าแล้วงงว่าทำไมตั้งแล้วไม่หาย
+     🔴 และต้องบอกด้วยว่า **Production กับ Preview แยกกันคนละชุด** — พลาดตรงนี้บ่อยที่สุด */
+  const WHERE = "ที่หน้า Pages → Settings → Variables and Secrets (ต้องใส่ทั้ง Production และ Preview)";
   if (m.includes("anthropic_api_key"))
-    return "⚙️ ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Worker (ใส่คีย์ + Deploy)";
+    return "⚙️ ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY " + WHERE;
   if (m.includes("scrapecreators_api_key"))
-    return "⚙️ ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY ใน Worker (จำเป็นสำหรับ FB/TikTok)";
-  if (m.includes("youtube_api_key"))
-    return "⚙️ ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY ใน Worker";
+    return "⚙️ ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY " + WHERE + " (จำเป็นสำหรับ FB/TikTok)";
+  if (m.includes("youtube_api_key") || m.includes("yt_api_key"))
+    return "⚙️ ยังไม่ได้ตั้งค่ากุญแจ YouTube — ใช้ชื่อ YOUTUBE_API_KEY หรือ YT_API_KEY ก็ได้ " + WHERE;
   if (m.includes("unauthorized") || m.includes("401") || (m.includes("invalid") && m.includes("key")))
-    return "🔑 คีย์ไม่ถูกต้องหรือหมดอายุ — ตรวจ API key ใน Worker";
+    return "🔑 คีย์ไม่ถูกต้องหรือหมดอายุ — ตรวจ API key " + WHERE;
   if (m.includes("rate") || m.includes("429"))
     return "⏳ เรียกถี่เกินไป (rate limit) — รอสักครู่แล้วลองใหม่";
   if (m.includes("credit") || m.includes("insufficient") || m.includes("402"))
