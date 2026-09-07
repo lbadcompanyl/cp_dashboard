@@ -1,6 +1,6 @@
 # API ของเครื่องมือ sentiment — เรียกใช้ยังไง
 
-> คู่มือ endpoint ทั้งหมดของ `worker/worker.js`
+> คู่มือ endpoint ทั้งหมดของ `functions/issue/api/sentiment/_core.js`
 > ใช้ได้ทั้งกรณีเรียกข้ามห้อง และกรณีที่ห้องอื่นรับไปพัฒนาต่อ
 >
 > 🎯 **ไม่ต้องสร้างตัวตี sentiment ใหม่ ไม่ต้องทำ lexicon เอง**
@@ -9,7 +9,11 @@
 > 🚫 **ห้ามก๊อปโค้ดตี sentiment ไปวางที่อื่นแล้วแก้แยกกัน** — จะกลายเป็น 2 มาตรฐานทันที
 > แก้เกณฑ์ที่หนึ่งแล้วอีกที่ไม่ตาม แล้วตัวเลขบนเว็บเดียวกันจะขัดกันเอง
 
-Worker: `https://comment-sentiment.s3445028.workers.dev`
+**เรียกจากในเว็บ** (แนะนำ): `https://cp-dashboard-680.pages.dev/issue/api/sentiment/…`
+— อยู่หลัง Cloudflare Access · ไม่ต้องมีกุญแจ · หน้าเว็บของเราใช้ทางนี้
+
+**เรียกจากข้างนอก** (server-to-server): `https://comment-sentiment.s3445028.workers.dev/…`
+— **ต้องมีกุญแจ `WORKER_KEY` ทุก endpoint ที่เผาเงิน**
 เกณฑ์ตัดสิน: `RUBRIC-CP.md` · ระบบเรียนรู้: `FEEDBACK.md` · จุดอ่อนของ Zocial: `ZOCIAL-GAPS.md`
 
 ---
@@ -62,15 +66,13 @@ Worker: `https://comment-sentiment.s3445028.workers.dev`
 >
 > ⚠️ **`missing` = โมเดลไม่ตอบใบนั้น ผู้เรียกต้องเช็คทุกครั้ง ห้ามนับเป็น neutral**
 >
-> 📌 **ทำไมไม่ใช่ `/api/sentiment`** — worker ตัวนี้เป็น Cloudflare **Worker** แยกจาก Pages
-> (`comment-sentiment.s3445028.workers.dev`) ไม่ได้อยู่ใต้ `/api/` ของเว็บ
-> ย้ายไป Pages Function ได้ แต่ต้องยก secret/KV/ขั้นตอน deploy ตามไปทั้งชุด
-> → ถ้าอยากได้ path นั้นจริงๆ ทำ proxy บางๆ ที่ Pages ทีหลังได้
+> 📌 **ย้ายมาอยู่ใต้ `/issue/api/sentiment/` แล้ว** (4 ก.ย. 2026) — ไม่ใช่ `/api/sentiment`
+> เพราะ `/api/*` เปิดสาธารณะ (แดชบอร์ดอื่นเรียกอยู่) ส่วน `/issue/*` มี Access ครอบ
 
-### 🔐 ต้องมีกุญแจ
+### 🔐 ต้องมีกุญแจ (เฉพาะตอนเรียกจากข้างนอก)
 
-`/sentiment` เป็น endpoint เดียวที่บังคับกุญแจ — เพราะเรียกจาก **เซิร์ฟเวอร์ถึงเซิร์ฟเวอร์**
-กุญแจจึงเก็บเป็น Secret ได้จริง ไม่หลุดเหมือนของที่ฝังในหน้าเว็บ
+**เรียกผ่าน `/issue/api/sentiment/…` ไม่ต้องมีกุญแจ** — Cloudflare Access กันให้แล้ว
+กุญแจใช้เฉพาะตอนยิงตรงเข้า `comment-sentiment.*.workers.dev` จากเซิร์ฟเวอร์อื่น
 
 ```
 x-worker-key: <WORKER_KEY>        # หรือ ?key=<WORKER_KEY>
@@ -88,20 +90,22 @@ x-worker-key: <WORKER_KEY>        # หรือ ?key=<WORKER_KEY>
 > · กันได้แค่เบราว์เซอร์จากเว็บอื่น · `curl` ไม่ส่ง Origin มา จึงผ่าน — **ตัวที่กันสคริปต์คือ `WORKER_KEY`**
 > · คำขอที่ไม่มี Origin ผ่านเสมอ ไม่งั้น server-to-server พังหมด
 
-### 🚫 endpoint อื่นยังไม่มีกุญแจ — ตั้งใจ และต้องรู้ความเสี่ยง
+### ✅ endpoint ที่เผาเงิน ปิดจากข้างนอกหมดแล้ว (4 ก.ย. 2026)
 
-`/analyze` `/resynth` `/paraphrase` `/comments` `/classify` `/credits` **ใครก็ยิงได้**
-เพราะหน้าเว็บ `/issue/sentiment*.html` เรียกจากเบราว์เซอร์ — ใส่กุญแจแล้วต้องฝังในโค้ด
-ที่ใครก็เปิดดูได้ = **ไม่ใช่ความลับตั้งแต่แรก** แถมหน้าเว็บพังทันที
-(ปัญหาเดียวกับปุ่ม ⚑ กับ `/api/flags` ที่จดไว้ใน `CLAUDE.md`)
+`/analyze` `/comments` `/classify` `/resynth` `/paraphrase` `/credits` `/sentiment`
 
-| ยิงแล้วเสียอะไร | |
+| เรียกจากไหน | ผ่านไหม |
 |---|---|
-| `/analyze` · `/comments` | 🔴 เครดิต ScrapeCreators (จ่ายเงิน) |
-| `/classify` · `/resynth` · `/paraphrase` | 🔴 โควตา Claude (จ่ายเงิน) |
-| `POST /feedback` | 🔴 เขียน KV — โควตา 1,000/วัน **ใช้ร่วมทั้งโปรเจกต์** |
+| `/issue/api/sentiment/…` (หลัง Access) | ✅ ผ่าน — ไม่ต้องมีกุญแจ |
+| ยิงตรงเข้า workers.dev + มีกุญแจถูก | ✅ ผ่าน |
+| ยิงตรงเข้า workers.dev ไม่มีกุญแจ | 🚫 403 · **ไม่ยิงออกไปข้างนอกเลย ไม่เผาเงิน** |
+| ยังไม่ตั้ง `WORKER_KEY` | 🚫 403 — **ปิด ไม่ใช่เปิดให้ทุกคน** |
 
-**ที่ยังทำได้และยังไม่ได้ทำ:** ตั้ง Rate Limiting Rules ที่ Cloudflare (ไม่ต้องแก้โค้ด)
+> 🔴 **ก่อนหน้านี้ 6 ตัวนี้เปิดให้ใครก็ยิงได้** — `/analyze` ยิงทีเดียวได้ถึง 2,000 คอมเมนต์
+> = เผาทั้งเครดิต ScrapeCreators และค่า Claude · precedent: `/debugmeta` ที่เคยหลุด production
+>
+> ⚠️ **`POST /feedback` ยังเปิดอยู่** — เขียน KV ซึ่งใช้โควตาร่วมทั้งโปรเจกต์ (1,000/วัน)
+> ยังไม่ปิดเพราะยังไม่ได้ตัดสินใจ · **รู้ไว้ว่าเป็นรูที่เหลืออยู่**
 
 ## 1b. `POST /classify` — ของเดิม ยังใช้ได้
 

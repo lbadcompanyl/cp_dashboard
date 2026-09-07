@@ -53,15 +53,42 @@ ok("[3b] ส่งทาง ?key= ก็ได้", (await (await worker.fetch(n
    headers: { "content-type": "application/json" }, body: JSON.stringify({ texts: ["x"] }) }),
    E2, {})).json()).error !== "bad_key");
 
-/* ── [4] 🚫 endpoint ที่หน้าเว็บเรียก ต้อง **ไม่** ถูกบังคับกุญแจ ──
-   ใส่กุญแจกับพวกนี้ = หน้าเว็บพังทันที และกุญแจก็ต้องฝังในโค้ดหน้าเว็บ = ไม่ลับอยู่ดี
-   (บทเรียนเดียวกับปุ่ม ⚑ กับ /api/flags ใน CLAUDE.md) */
+/* ── [4] 💰 endpoint ที่เผาเงิน ต้องปิดจากข้างนอกทุกตัว (เจ้าของสั่ง 4 ก.ย. 2026) ──
+   🔴 ของเดิมกันแค่ /sentiment ตัวเดียว อีก 6 ตัวเปิดให้ใครก็ยิงได้
+      /analyze ยิงทีเดียวได้ถึง 2,000 คอมเมนต์ = เผาทั้งเครดิต ScrapeCreators และค่า Claude */
+const before4 = aiCalls;   /* ⚠️ [3] ยิงออกไปแล้วโดยตั้งใจ (กุญแจถูก) — ต้องวัดเฉพาะช่วงนี้ */
 for (const ep of ["/analyze", "/resynth", "/paraphrase", "/comments", "/classify"]) {
   const rr = await post(ep, E2, {}, { url: "https://www.facebook.com/reel/1", texts: ["x"], items: [{ text: "x" }] });
   const jj = await rr.json().catch(() => ({}));
-  ok(`[4] 🚫 ${ep} ไม่ถูกบังคับกุญแจ (หน้าเว็บต้องเรียกได้)`,
+  ok(`[4] 💰 ${ep} ยิงจากข้างนอกโดยไม่มีกุญแจ → 403`,
+     rr.status === 403 && jj.error === "bad_key", `${rr.status} ${jj.error || ""}`);
+}
+ok("[4b] 💰 ถูกปฏิเสธก่อนยิงออกไปข้างนอก (ไม่เผาเงินสักบาท)", aiCalls === before4, `ยิงเพิ่ม ${aiCalls - before4} ครั้ง`);
+
+/* ── [4c] 🔓 แต่ถ้ามาทาง /issue/api/sentiment/* (ผ่าน Cloudflare Access แล้ว) ต้องผ่าน ──
+   ธง INTERNAL ถูกตั้งใน [[route]].js ฝั่งเซิร์ฟเวอร์ที่เดียว **ผู้เรียกยัดเข้ามาเองไม่ได้**
+   เพราะมันอยู่ใน env ไม่ใช่ header/query */
+for (const ep of ["/analyze", "/classify"]) {
+  const rr = await post(ep, { ...E2, INTERNAL: true }, {},
+    { url: "https://www.facebook.com/reel/1", texts: ["x"], items: [{ text: "x" }] });
+  const jj = await rr.json().catch(() => ({}));
+  ok(`[4c] 🔓 ${ep} มาจากข้างใน (หลัง Access) → ผ่านด่านกุญแจ`,
      jj.error !== "bad_key" && jj.error !== "endpoint_disabled", `${rr.status} ${jj.error || ""}`);
 }
+
+/* ── [4d] 🚫 ห้ามรับธง INTERNAL จาก header/query ของผู้เรียก ────────────
+   ถ้ารับ ใครก็ปลอมเป็น "มาจากข้างใน" ได้ = ด่านทั้งหมดไร้ความหมาย */
+let rr = await post("/analyze", E2, { "x-internal": "1", INTERNAL: "true" },
+  { url: "https://www.facebook.com/reel/1" });
+let jj = await rr.json().catch(() => ({}));
+ok("[4d] 🚫 ปลอม header INTERNAL ไม่ได้", rr.status === 403 && jj.error === "bad_key",
+   `${rr.status} ${jj.error || ""}`);
+rr = await worker.fetch(new Request("https://w.dev/analyze?INTERNAL=true", {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ url: "https://www.facebook.com/reel/1" }) }), E2, {});
+jj = await rr.json().catch(() => ({}));
+ok("[4e] 🚫 ปลอมผ่าน query string ก็ไม่ได้", rr.status === 403 && jj.error === "bad_key",
+   `${rr.status} ${jj.error || ""}`);
 
 /* ── [5] 🌐 ALLOW_ORIGIN ต้องบล็อกจริง ไม่ใช่แค่ตั้ง header ────── */
 const E3 = { ...ENV, WORKER_KEY: KEY, ALLOW_ORIGIN: "https://cp-dashboard-680.pages.dev" };

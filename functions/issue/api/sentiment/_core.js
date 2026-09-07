@@ -448,6 +448,30 @@ export default {
     if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }), origin);
 
     const url = new URL(request.url);
+
+    /* 🔐 ด่านกันคนนอกยิงเข้ามาเผาเงิน (เจ้าของสั่ง 4 ก.ย. 2026)
+       ══════════════════════════════════════════════════════════════════
+       ทางที่ยอมให้ผ่านมี 2 ทางเท่านั้น
+         1. มาจาก `/issue/api/sentiment/*` = ผ่าน Cloudflare Access มาแล้ว (`env.INTERNAL`)
+         2. ถือกุญแจ `WORKER_KEY` มาด้วย (สำหรับห้องอื่นที่เรียกแบบ server-to-server)
+
+       🚫 **ไม่ตั้ง WORKER_KEY = ปิด ไม่ใช่เปิดให้ทุกคน** (กฎเดียวกับ FEEDBACK_KEY)
+          ลืมตั้งแล้วต้องไม่หลุด — precedent: `/debugmeta` ที่เคยหลุดจนเผาเครดิตที่จ่ายเงิน
+
+       ⚠️ `env.INTERNAL` ถูกตั้งในโค้ดฝั่งเซิร์ฟเวอร์ที่เดียว (`[[route]].js`)
+          **ผู้เรียกยัดเข้ามาเองไม่ได้** เพราะ env ไม่ได้มาจาก header/query
+       ⚠️ เอาไว้หลัง OPTIONS เสมอ ไม่งั้น preflight ของเบราว์เซอร์ตาย แล้วหน้าเว็บพังทั้งที่กุญแจถูก */
+    const COSTS_MONEY = ["/analyze", "/comments", "/classify", "/resynth", "/paraphrase", "/credits", "/sentiment"];
+    if (COSTS_MONEY.includes(url.pathname)) {
+      if (!env.INTERNAL) {
+        if (!env.WORKER_KEY) {
+          return cors(json({ error: "endpoint_disabled",
+            detail: "เรียกจากข้างนอกต้องมีกุญแจ — ยังไม่ได้ตั้ง WORKER_KEY ที่ Cloudflare" }, 403), origin);
+        }
+        const given = request.headers.get("x-worker-key") || url.searchParams.get("key") || "";
+        if (given !== env.WORKER_KEY) return cors(json({ error: "bad_key" }, 403), origin);
+      }
+    }
     if (request.method === "GET" && url.pathname === "/") {
       return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, rubric: RUBRIC_VER,
         /* ให้ห้องอื่นถามได้ว่ามี profile อะไรให้เรียกบ้าง โดยไม่ต้องเปิดโค้ดดู */
@@ -602,19 +626,13 @@ export default {
          ⚠️ **ไม่ตั้ง `WORKER_KEY` = ปิด endpoint** ไม่ใช่เปิดให้ทุกคน
             (กฎเดียวกับ `FEEDBACK_KEY` — ค่าปริยายต้องปลอดภัย ลืมตั้งแล้วต้องไม่หลุด)
 
-         🚫 **ห้ามเอากฎนี้ไปใช้กับ endpoint ที่หน้าเว็บเรียก** (`/analyze` `/resynth`
-            `/paraphrase` `/comments` `/classify` `/credits`) — กุญแจจะต้องฝังอยู่ในโค้ด
-            หน้าเว็บที่ใครก็เปิดดูได้ = ไม่ใช่ความลับตั้งแต่แรก แถมหน้าเว็บพังทันที
-            (บทเรียนเดียวกับปุ่ม ⚑ กับ `/api/flags` ที่จดไว้ใน CLAUDE.md)
+         ✅ ตั้งแต่ 4 ก.ย. 2026 endpoint ที่หน้าเว็บเรียกก็ถูกกันด้วย — แต่กันคนละวิธี
+            หน้าเว็บเข้าทาง `/issue/api/sentiment/*` ซึ่งมี Cloudflare Access ครอบอยู่
+            จึงไม่ต้องมีกุญแจฝังในโค้ดหน้าเว็บ (ซึ่งเปิดดูได้ = ไม่ลับตั้งแต่แรก)
 
          📌 precedent ที่ทำให้ต้องมีข้อนี้: `/debugmeta` ที่เคยหลุด production
             แล้วเปิดให้ใครก็ได้ยิงจนเผาเครดิต ScrapeCreators ที่จ่ายเงิน */
-      if (!env.WORKER_KEY) {
-        return cors(json({ error: "endpoint_disabled",
-          detail: "ยังไม่ได้ตั้ง WORKER_KEY ที่ Cloudflare — /sentiment ปิดอยู่" }, 403), origin);
-      }
-      const given = request.headers.get("x-worker-key") || url.searchParams.get("key") || "";
-      if (given !== env.WORKER_KEY) return cors(json({ error: "bad_key" }, 403), origin);
+      /* (ด่านกุญแจอยู่บนสุดของ fetch แล้ว — ครอบ endpoint ที่เผาเงินทุกตัว ไม่ใช่แค่ตัวนี้) */
       let body;
       try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
       /* รับ profile ได้ทั้งใน body และ query string (`?profile=cp_comment`) */

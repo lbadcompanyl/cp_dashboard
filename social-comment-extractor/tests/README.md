@@ -9,7 +9,7 @@
 | `jsonparse.mjs` | โมเดลตอบผิดฟอร์แมตแล้วแก้ตัวเองกลางคัน — ต้องหยิบ array ที่ถูกต้องให้เจอ |  |
 | `replies.mjs` | ดึง reply มาวิเคราะห์ด้วย · คีย์ `replies` เป็นได้ทั้งตัวเลขและ array ห้ามสับสน |  |
 | `lensconsistency.mjs` | **ตัวเลขบนแถบสรุป ต้องเท่ากับรายการ audit เสมอ** (บั๊กที่เจ้าของจับได้เอง) |  |
-| `leakcheck.py` | few-shot ห้ามซ้ำ/ใกล้เคียงกับ eval set | `python3 leakcheck.py ../worker/worker.js <eval.xlsx>` |
+| `leakcheck.py` | few-shot ห้ามซ้ำ/ใกล้เคียงกับ eval set | `python3 leakcheck.py ../../functions/issue/api/sentiment/_core.js <eval.xlsx>` |
 | `evalpage.cjs` · `evalpage-context.cjs` · `evalpage-missing.cjs` · `evalpage-error.cjs` · `evalpage-tokens.cjs` · `evalpage-split.cjs` · `evalpage-grab.cjs` | หน้า `issue/sentiment-eval.html` — แถวไม่เลื่อน · ก้อนที่ยิงพลาดต้องไม่ถูกเดาแทน · ป้ายเตือน · โทเคน · ชุดสอบไล่ · ดึงคอมเมนต์เป็น CSV | ต้องมีเซิร์ฟเวอร์ static |
 | `verbadge.cjs` · `stopbtn.cjs` · `edittest.cjs` | หน้า `issue/sentiment.html` — ป้ายเวอร์ชันหลังบ้าน · ปุ่มเดียวสลับวิเคราะห์/หยุด · แก้ป้ายเองแล้วตัวเลขต้องขยับ | ต้องมีเซิร์ฟเวอร์ static |
 | `feedback.mjs` | กองรอตรวจฝั่ง worker — เขียน KV ครั้งเดียว · ไม่มี KV ต้องตอบ `ok:false` · อ่านต้องมีกุญแจ | `node feedback.mjs` |
@@ -36,7 +36,7 @@
 # เทสต์ฝั่ง worker ทุกตัว: ก๊อป worker.js เป็น .mjs แล้วเติม "export line" เดียวนี้
 # (worker ตั้งใจให้เป็นไฟล์เดียวเพราะ deploy ด้วยการก๊อปวาง จึงไม่มี export ในตัว)
 # ⚠️ ต้องใส่ให้ครบทุกชื่อในบรรทัดเดียว — เคยเติมแค่บางชื่อแล้วเทสต์ตัวอื่นพังหมด
-cp ../worker/worker.js /tmp/w.mjs
+cp ../../functions/issue/api/sentiment/_core.js /tmp/w.mjs
 cat >> /tmp/w.mjs <<'EOF'
 export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonArray,
          nestedReplies, scComment, fetchYouTube, INCLUDE_REPLIES,

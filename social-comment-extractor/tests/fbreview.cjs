@@ -21,7 +21,7 @@ const ITEMS = [
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let mode = "ok", lastUrl = "", cleared = false;
 
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const u = route.request().url();
     const send = (o, st = 200) => route.fulfill({ status: st, contentType: "application/json", body: JSON.stringify(o) });
     if (u.includes("/feedback")) {

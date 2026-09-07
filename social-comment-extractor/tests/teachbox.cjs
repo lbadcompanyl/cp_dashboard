@@ -28,7 +28,7 @@ const RESULT = {
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let fbBody = null, fbCalls = 0, fbReply = { ok: true, stored: true, added: 1, skipped: 0, total: 1 };
 
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const req = route.request(), u = req.url();
     const send = (o) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(o) });
     if (u.endsWith("/credits")) return send({ credits_remaining: 7070 });

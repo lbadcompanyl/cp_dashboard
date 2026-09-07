@@ -8,7 +8,7 @@ const { chromium } = require("playwright");
   const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const u = route.request().url();
     if (u.endsWith("/")) return route.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ ok: true, ver: 18, rubric: "v6", model: "claude-opus-5" }) });

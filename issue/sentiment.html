@@ -313,7 +313,13 @@
   <div class="sc-toast" id="toast"></div>
 
 <script>
-const WORKER = "https://comment-sentiment.s3445028.workers.dev";
+/* 🔐 เรียกผ่านเว็บของเราเอง ไม่ยิงตรงไปที่ workers.dev อีกแล้ว (ย้าย 4 ก.ย. 2026)
+   path นี้อยู่ใต้ `/issue/` จึงมี Cloudflare Access ครอบให้ คนนอกมาไม่ถึง
+   🚫 ห้ามเปลี่ยนกลับเป็น URL ของ workers.dev — ตรงนั้นเป็นที่อยู่สาธารณะ
+      ใครก็สั่งให้ทำงานได้แล้วเงินออกจากบัญชีเรา (เครดิต ScrapeCreators + ค่า Claude)
+   📌 เป็น path แบบสัมพัทธ์โดยตั้งใจ — preview ของแต่ละ branch เป็นคนละโดเมน
+      เขียนโดเมนตายตัวเมื่อไหร่ preview จะยิงข้ามไปหา production ทันที */
+const WORKER = "/issue/api/sentiment";
 const DEMO = new URLSearchParams(location.search).has("demo");
 const el = id => document.getElementById(id);
 let lastResult = null;

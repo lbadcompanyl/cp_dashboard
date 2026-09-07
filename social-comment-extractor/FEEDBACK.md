@@ -93,7 +93,7 @@
 curl -s "https://comment-sentiment.s3445028.workers.dev/feedback?key=<FEEDBACK_KEY>"
 
 # 2. ตรวจข้อสอบรั่ว — ต้องไม่มีใบไหนใกล้เคียงกับชุดสอบ
-python3 tests/leakcheck.py worker/worker.js <eval.xlsx>
+python3 tests/leakcheck.py ../functions/issue/api/sentiment/_core.js <eval.xlsx>
 
 # 3. วัดก่อนแก้ / แก้ / วัดหลังแก้ — บนหน้า /issue/sentiment-eval.html
 #    แล้วจดทั้ง 2 ตัวเลขลง BASELINE.md **ห้ามจดตัวเลขที่ไม่ได้มาจากผลรันจริง**
