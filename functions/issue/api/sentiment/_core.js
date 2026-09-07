@@ -4,7 +4,7 @@
  * รับลิงก์โพส → ดึงคอมเมนต์ → ตี sentiment ด้วย Claude → ส่งกลับเป็น aggregate
  *
  * แหล่งดึงคอมเมนต์ (adapter):
- *   - YouTube : YouTube Data API v3 (ฟรี, ทางการ)          env: YOUTUBE_API_KEY
+ *   - YouTube : YouTube Data API v3 (ฟรี, ทางการ)          env: YOUTUBE_API_KEY หรือ YT_API_KEY
  *   - Facebook: ScrapeCreators /v1/facebook/post/comments   env: SCRAPECREATORS_API_KEY
  *   - TikTok  : ScrapeCreators /v1/tiktok/video/comments     env: SCRAPECREATORS_API_KEY
  *
@@ -963,7 +963,12 @@ function youtubeVideoId(url) {
 }
 
 async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
-  if (!env.YOUTUBE_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY");
+  /* 🔑 รับได้ 2 ชื่อ — ที่ Pages มีตัวนี้อยู่แล้วในชื่อ `YT_API_KEY` (ของหน้า /social/)
+     เป็นกุญแจ Google ตัวเดียวกัน โควตาก็ก้อนเดียวกันอยู่แล้ว (คิดต่อโปรเจกต์ ไม่ใช่ต่อชื่อตัวแปร)
+     → ใช้ของเดิมได้เลย ไม่ต้องเพิ่มตัวแปรซ้ำ และไม่ต้องเอากุญแจมาวางซ้ำอีกที่
+     ⚠️ ห้ามเขียน `env.A || env.B` กระจายหลายที่ — อ่านครั้งเดียวตรงนี้แล้วส่งต่อ */
+  const ytKey = env.YOUTUBE_API_KEY || env.YT_API_KEY;
+  if (!ytKey) throw new Error("ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY (หรือ YT_API_KEY) ที่ Cloudflare");
   const vid = youtubeVideoId(url);
   if (!vid) throw new Error("แยก video id จากลิงก์ YouTube ไม่ได้");
 
@@ -990,7 +995,7 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
     api.searchParams.set("maxResults", "100");
     api.searchParams.set("order", "relevance");
     api.searchParams.set("textFormat", "plainText");
-    api.searchParams.set("key", env.YOUTUBE_API_KEY);
+    api.searchParams.set("key", ytKey);
     if (pageToken) api.searchParams.set("pageToken", pageToken);
 
     const r = await fetch(api.toString());
@@ -1043,7 +1048,7 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
        เพิ่มคำนี้จึงได้ยอดดู/ยอดถูกใจของคลิปมาฟรี ไม่เปลืองโควตาเพิ่มเลย */
     metaApi.searchParams.set("part", "snippet,statistics");
     metaApi.searchParams.set("id", vid);
-    metaApi.searchParams.set("key", env.YOUTUBE_API_KEY);
+    metaApi.searchParams.set("key", ytKey);
     const mr = await fetch(metaApi.toString());
     const md = await mr.json();
     const st = md.items && md.items[0] && md.items[0].statistics;

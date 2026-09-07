@@ -24,6 +24,7 @@
 | `resynth.cjs` | 🔄 **ปุ่ม "สรุปใหม่ตามป้ายที่แก้"** — ยังไม่แก้ป้ายห้ามมีปุ่ม · ต้องส่งป้ายที่แก้แล้ว+ยอดถูกใจ · **ยิงไม่สำเร็จห้ามลบสรุป/ตัวอย่างเดิมทิ้ง** · การ์ด keyword ห้ามมีปุ่มนี้ | ต้องมีเซิร์ฟเวอร์ static |
 | `samplemid.mjs` | 🟡 **ช่อง "กลาง" ต้องมีตัวอย่างของตัวเอง** — โพสจริงส่วนใหญ่เป็นกลางท่วม · โหมด CP ก็ต้องมี (ห้ามผูกกับ synthIdx) · `not_related` ห้ามถูกเลือก | `node samplemid.mjs` |
 | `dupes.mjs` | 🔁 **คอมเมนต์ใบเดียวห้ามถูกนับ 2 ครั้ง** — cursor เดิมซ้ำต้องหยุด · id ซ้ำ/reply ซ้อนซ้ำต้องตัด · 🚫 **ตัดสินไม่ได้ต้องเก็บไว้** (คนละคนพิมพ์เหมือนกันได้) · ต้องบอกจำนวนที่ตัด · 💰 ใบซ้ำห้ามถูกส่งให้ AI | `node dupes.mjs` |
+| `ytkey.mjs` | 🔑 **กุญแจ YouTube รับได้ทั้ง `YOUTUBE_API_KEY` และ `YT_API_KEY`** (ที่ Pages มีชื่อหลัง) · ไม่มีสักชื่อ/ค่าว่าง = โยน error บอกทั้ง 2 ชื่อ · 🚫 ห้ามยิงออกไปหา Google ด้วยกุญแจเปล่า | `node ytkey.mjs` |
 | `samplequota.mjs` | 📐 **ช่องที่สัดส่วนเยอะได้ตัวอย่างเยอะขึ้น** (≥50% → 4 ใบ · ≥30% → 3 · ที่เหลือ 2) · 🚫 **ขั้นต่ำ 2 เสมอ** ห้ามลดตามสัดส่วน · 💰 เพดานรวม 9 ใบ · ใบที่เพิ่มต้องเป็นใบถูกใจเยอะสุดถัดไป ไม่ใช่สุ่ม | `node samplequota.mjs` |
 | `samplesrc.mjs` | **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** — src ต้องถูกเสมอไม่ว่า AI ตอบรูปแบบไหน · เลือกแบบตายตัว รันซ้ำได้ใบเดิม | `node samplesrc.mjs` |
 | `keywords.mjs` | **เลข "คำที่พูดถึงบ่อย" ต้องนับจากคอมเมนต์จริง ไม่ใช่ที่ AI เดา** · คำที่แต่งขึ้นต้องถูกตัด · สรุปต้องรู้สัดส่วนจริงของทั้งโพส | `node keywords.mjs` |
@@ -46,7 +47,7 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          sampleQuota, SAMPLE_MIN, SAMPLE_MAX, dupKey };
 EOF
 cp *.mjs /tmp/ && cd /tmp
-for t in authguard profiles twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid samplequota dupes keywords apierror synthbudget airetry; do node $t.mjs; done
+for t in authguard profiles twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid samplequota dupes ytkey keywords apierror synthbudget airetry; do node $t.mjs; done
 
 # evalpage.cjs
 python3 -m http.server 8899 --directory <รากของ repo> &
