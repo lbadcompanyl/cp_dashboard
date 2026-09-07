@@ -103,6 +103,32 @@ ok("[2] ไม่เก็บชื่อ/ลิงก์ แม้ถูกส�
   ok("[7d] ส่งกุญแจทาง header ก็ได้", (await body(await call(hdr, { FEEDBACK_KV: kv, FEEDBACK_KEY: "s3cret" }))).ok === true);
 }
 
+/* ── [7e] ✅ มาทางหน้าเว็บ (ผ่าน Cloudflare Access) = อ่านได้เลย ไม่ต้องมีกุญแจ ──
+   เจ้าของเคาะ 4 ก.ย. 2026: "lock ไว้หลัง access ก็พอ"
+   คนที่เปิดหน้าเว็บได้ ก็อ่านคอมเมนต์พวกนั้นบนจอได้อยู่แล้ว กุญแจกลายเป็นล็อกดอกที่ 2 ของประตูบานเดียว
+   ⚠️ ธง INTERNAL ตั้งใน [[route]].js ฝั่งเซิร์ฟเวอร์ที่เดียว ผู้เรียกยัดเข้ามาเองไม่ได้ */
+{
+  const kv = fakeKV([good]);
+  const r = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7e] ✅ ผ่าน Access แล้ว → อ่านกองได้โดยไม่ต้องตั้ง FEEDBACK_KEY",
+     r.ok === true && r.items.length === 1, JSON.stringify(r).slice(0, 80));
+}
+
+/* ── [7f] 🔴 แต่ "ล้างกอง" ต้องมีกุญแจเสมอ แม้ผ่าน Access มาแล้ว ──────────
+   อ่านผิดพลาดไม่เสียหาย แต่ล้างผิดพลาด = ของทั้งกองหายถาวร กู้ไม่ได้
+   และมันเป็น GET ซึ่งกดโดนโดยไม่ตั้งใจได้ (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า) */
+{
+  const kv = fakeKV([good]);
+  const r = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }, "?clear=1"));
+  ok("[7f] 🔴 ผ่าน Access แต่ไม่มีกุญแจ → ล้างกองไม่ได้", r.error === "clear_needs_key", JSON.stringify(r));
+  const still = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7g] 🔴 และของในกองต้องยังอยู่ครบ ไม่ได้ถูกล้างไปแล้ว", still.items.length === 1,
+     `เหลือ ${still.items.length} ใบ`);
+  const okClear = await body(await call(new Request("https://x/feedback"),
+    { FEEDBACK_KV: kv, INTERNAL: true, FEEDBACK_KEY: "s3cret" }, "?clear=1&key=s3cret"));
+  ok("[7h] มีกุญแจถูก → ล้างได้", okClear.cleared === 1, JSON.stringify(okClear));
+}
+
 /* ── [8] ส่งก้อนใหญ่เกินไปต้องถูกตัด ───────────────────── */
 {
   const kv = fakeKV();

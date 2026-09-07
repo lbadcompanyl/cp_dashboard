@@ -43,10 +43,23 @@ const ITEMS = [
   ok("[1] ยังไม่เปิดกอง ปุ่มบันทึก/ล้างต้องซ่อน",
      await page.locator("#fbcsv").isHidden() && await page.locator("#fbclear").isHidden());
 
-  // ── ไม่ใส่กุญแจ ──
+  /* ── [2] 🔓 ไม่ใส่กุญแจก็เปิดกองได้แล้ว (เจ้าของเคาะ 4 ก.ย. 2026: "lock ไว้หลัง access ก็พอ")
+     หน้านี้อยู่ใต้ /issue/ ซึ่งมี Cloudflare Access ครอบ — คนที่เปิดหน้านี้ได้
+     ก็อ่านคอมเมนต์พวกนั้นบนจอได้อยู่แล้ว กุญแจกลายเป็นล็อกดอกที่ 2 ของประตูบานเดียว
+     ⚠️ ฝั่งเซิร์ฟเวอร์ยังบังคับกุญแจอยู่ ถ้ายิงตรงเข้า workers.dev (ไม่ผ่าน Access) */
   await page.click("#fbload");
+  await page.waitForFunction(() => document.querySelectorAll("#fblist details, #fblist p").length > 0,
+    null, { timeout: 5000 });
+  ok("[2] 🔓 ไม่ใส่กุญแจก็เปิดกองได้ (Access กันให้แล้ว)",
+     !/❌/.test(await info()) && /\d/.test(await info()), (await info()).trim());
+
+  /* ── [2b] 🔴 แต่ "ล้างกอง" ยังต้องใส่กุญแจ — ของหายถาวร กู้ไม่ได้ ─────── */
+  cleared = false;
+  page.once("dialog", d => d.accept());
+  await page.click("#fbclear");
   await page.waitForFunction(() => document.querySelector("#fbinfo").textContent.includes("❌"), null, { timeout: 5000 });
-  ok("[2] ไม่ใส่กุญแจ = บอกให้ใส่ ไม่ยิงหลังบ้าน", /ใส่กุญแจก่อน/.test(await info()), (await info()).trim());
+  ok("[2b] 🔴 ไม่ใส่กุญแจ → ล้างกองไม่ได้", /กุญแจ/.test(await info()), (await info()).trim());
+  ok("[2c] 🔴 และไม่ได้ยิงคำสั่งล้างออกไปเลย", cleared === false);
 
   // ── กุญแจผิด / ยังไม่ตั้ง: ต้องแปลเป็นภาษาคน ──
   for (const [m, want, label] of [["badkey", /กุญแจไม่ถูก/, "กุญแจผิด"], ["nokey", /ยังไม่ได้ตั้ง FEEDBACK_KEY/, "ยังไม่ตั้งกุญแจ"]]) {

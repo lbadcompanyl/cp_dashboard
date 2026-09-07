@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 40;
+const WORKER_VER = 41;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -392,15 +392,31 @@ async function feedbackRoute(request, url, env) {
   const kv = env.FEEDBACK_KV;
 
   if (request.method === "GET") {
-    /* 🔒 อ่านกอง = เห็นข้อความคอมเมนต์ที่สะสมไว้ทั้งหมด จึงต้องมีกุญแจเสมอ
-       ⚠️ ไม่ได้ตั้ง FEEDBACK_KEY ไว้ = **ปิด** ไม่ใช่เปิดให้ทุกคน
-          (ค่าปริยายที่ปลอดภัยกว่า — ลืมตั้งแล้วข้อมูลหลุดเป็นเรื่องที่กู้ไม่ได้) */
-    if (!env.FEEDBACK_KEY) return json({ error: "read_disabled", detail: "ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare" }, 403);
-    const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
-    if (given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    /* 🔒 อ่านกอง = เห็นข้อความคอมเมนต์ที่สะสมไว้ทั้งหมด
+       "ไม่มีชื่อ" ไม่ได้แปลว่าตามตัวไม่ได้ — เอาข้อความไปค้นในโซเชียลก็เจอคนโพสต์
+       และกองนี้ยังบอกด้วยว่าทีมตัดสินคอมเมนต์ไหนว่าบวก/ลบ = ความเห็นภายใน
+
+       ✅ เจ้าของเคาะ 4 ก.ย. 2026: **ล็อกหลัง Access ชั้นเดียวพอ**
+          มาทาง /issue/api/sentiment/* = ผ่านหน้าล็อกอินมาแล้ว ไม่ต้องมีกุญแจซ้ำ
+          คนที่เปิดหน้าเว็บได้ ก็อ่านคอมเมนต์พวกนั้นบนจอได้อยู่แล้ว
+       🔒 ยิงตรงเข้า workers.dev (ไม่ผ่าน Access) ยังต้องมีกุญแจเหมือนเดิม
+          ไม่ตั้ง FEEDBACK_KEY = ปิด ไม่ใช่เปิด */
+    if (!env.INTERNAL) {
+      if (!env.FEEDBACK_KEY) return json({ error: "read_disabled", detail: "ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare" }, 403);
+      const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
+      if (given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    }
     if (!kv) return json({ ok: true, stored: false, reason: "no_kv", items: [] });
     const items = JSON.parse((await kv.get(FB_KEY)) || "[]");
     if (url.searchParams.get("clear") === "1") {
+      /* 🔴 ล้างกอง = ของหายถาวร กู้ไม่ได้ — **ต้องมีกุญแจเสมอ แม้ผ่าน Access มาแล้ว**
+         อ่านผิดพลาดไม่เสียหาย แต่ล้างผิดพลาดคือของทั้งกองหายในคลิกเดียว
+         และมันเป็น GET ซึ่งกดโดนโดยไม่ตั้งใจได้ (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า) */
+      const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
+      if (!env.FEEDBACK_KEY || given !== env.FEEDBACK_KEY) {
+        return json({ error: "clear_needs_key",
+          detail: "ล้างกองต้องใส่ FEEDBACK_KEY เสมอ แม้เข้าจากหน้าเว็บ — ของหายถาวร กู้ไม่ได้" }, 403);
+      }
       await kv.put(FB_KEY, "[]");
       return json({ ok: true, cleared: items.length, items: [] });
     }
