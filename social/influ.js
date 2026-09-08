@@ -39,6 +39,11 @@
     nq: "",
     delId: "",             // 🔴 ปุ่มลบต้องกดยืนยัน — จำว่ากำลังถามยืนยันของใบไหนอยู่
     credits: null,         // ยอดเครดิต ScrapeCreators คงเหลือ { left, at }
+    /* 🔴 โหมดแก้ไข — ปิดเป็นค่าตั้งต้น (รีวิว 8 ก.ย. 2026 ข้อ 1)
+       "หน้าดูต้องสะอาด — ไม่มีปุ่มลบ ไม่มีช่องกรอก จนกว่าจะเปิดโหมดแก้ไข"
+       ทีมเปิดดูยอดร่วมกัน ปุ่มลบที่โผล่ตลอดเวลาคือความเสี่ยงที่ไม่ได้แลกกับอะไรเลย */
+    edit: false,
+    moChart: false,        // จอแคบ: กราฟรายเดือนซ่อนไว้หลังปุ่ม "ดูรายเดือน"
   };
 
   /* ── ของ 2 ชนิดในรายการเดียว ────────────────────────────────────
@@ -332,16 +337,18 @@
       return h + '<div class="loading"><span class="spin"></span> กำลังโหลดรายการ…</div>' + addBox();
     }
 
-    /* 🔴 กล่องวางลิงก์อยู่ **ล่างสุด** (เจ้าของสั่ง 8 ก.ย. 2026)
-       ของที่ดูบ่อยควรอยู่บน · กล่องวางลิงก์ใช้ตอนเพิ่มของใหม่ซึ่งนานๆ ที */
-    return h + creditBar() + socialSection() + newsSection() + addBox();
+    /* ลำดับตามรีวิว 8 ก.ย. 2026: ตอบ "สดแค่ไหน" กับ "อะไรเด่น" ให้ได้ใน 3 วินาที
+       → แถบอัปเดต + KPI อยู่บนสุด · กล่องวางลิงก์อยู่ล่างสุดและเฉพาะโหมดแก้ไข */
+    return h + headerBar() + kpiCards() + monthPanel() + socialSection() + newsSection() + addBox();
   }
 
   /* ── กล่องวางลิงก์ (ใช้ร่วมทั้ง 2 section — ระบบแยกให้เองว่าอันไหนเป็นข่าว) ── */
   function addBox() {
-    var h = '<h2 class="sec">วางลิงก์ ' +
+    // 🔴 ซ่อนทั้งกล่องเมื่อไม่ได้เปิดโหมดแก้ไข (รีวิวข้อ 1) · จอแคบซ่อนด้วย CSS อีกชั้น
+    if (!state.edit) return "";
+    var h = '<h2 class="sec editonly">วางลิงก์ ' +
       '<button type="button" class="tipi" data-tip="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน · ลิงก์ YouTube/TikTok/Facebook/Instagram เข้า section โพสต์ · ลิงก์สำนักข่าวเข้า section ข่าวโดยอัตโนมัติ · ลิงก์ที่ซ้ำกับที่มีอยู่แล้วจะถูกข้าม" title="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน">ⓘ</button></h2>' +
-      '<div class="panel"><div class="addbox">' +
+      '<div class="panel editonly"><div class="addbox">' +
       '<textarea id="influ-in" class="addta" rows="3" placeholder="https://www.tiktok.com/@ชื่อ/video/…&#10;https://www.thansettakij.com/news/…" ' +
       (state.busy ? "disabled" : "") + ">" + esc(state.draft) + "</textarea>" +
       '<button type="button" class="btn primary" data-influ="add"' + (state.busy ? " disabled" : "") + ">" +
@@ -372,53 +379,67 @@
     return out;
   }
 
-  function monthChart(items, opt) {
-    opt = opt || {};
+  /* ── กราฟรายเดือน — **กราฟเดียว รวมโพสต์ + ข่าว แยก 2 สี** (รีวิว 8 ก.ย. 2026 ข้อ 4)
+   * ของเดิมเป็นกราฟแยก section ละอัน · ตอนนี้รวมเป็นอันเดียวอยู่บนสุด
+   * ⚠️ เดือนที่เป็น 0 ทั้งคู่ = โชว์แค่ชื่อเดือนสีจาง ไม่วาดแท่ง (ยังต้องมีแถว ไม่ใช่หายไป)
+   * ⚠️ Engagement มาจาก **โพสต์อย่างเดียว** เพราะข่าวไม่ได้ดึงยอด — เขียนกำกับไว้เสมอ
+   */
+  function monthPanel() {
+    if (!state.posts.length) return "";
     var keys = last3Months();
     var by = {}, approx = 0, outside = 0;
-    keys.forEach(function (k) { by[k] = { n: 0, eng: null, hasEng: false }; });
+    keys.forEach(function (k) { by[k] = { s: 0, n: 0, eng: null, hasEng: false }; });
 
-    items.forEach(function (p) {
+    state.posts.forEach(function (p) {
       var m = monthOf(p);
-      if (!m) { outside++; return; }
-      if (!by[m.m]) { outside++; return; }          // เก่ากว่า 3 เดือน (หรืออนาคต)
+      if (!m || !by[m.m]) { outside++; return; }
       if (!m.exact) approx++;
-      by[m.m].n++;
-      if (opt.eng) {
+      var b = by[m.m];
+      if (isNews(p)) b.n++;
+      else {
+        b.s++;
         var e = engOf(p);
-        if (e != null) { by[m.m].eng = (by[m.m].eng || 0) + e; by[m.m].hasEng = true; }
+        if (e != null) { b.eng = (b.eng || 0) + e; b.hasEng = true; }
       }
     });
 
     var max = 0;
-    keys.forEach(function (k) { max = Math.max(max, by[k].n); });
+    keys.forEach(function (k) { max = Math.max(max, by[k].s + by[k].n); });
 
-    /* 🔴 bar chart แนวตั้ง แท่ง = **จำนวนโพสต์** (เจ้าของสั่ง 8 ก.ย. 2026)
-       ⚠️ 3 เดือนเท่านั้น แท่งแนวตั้งจึงกว้างพอให้อ่านออกทั้งบนเดสก์ท็อปและมือถือ
-          (แท่งแนวนอนเดิมกินความสูงเยอะโดยไม่ได้อ่านง่ายขึ้น)
-       ⚠️ เดือนที่ไม่มีของยังต้องมีแท่ง(สูง 0)และเลขกำกับ ไม่ใช่หายไปจากกราฟ
-       ⚠️ ตัวเลขต้องอยู่บนหัวแท่งเสมอ — แท่งสั้นๆ เทียบด้วยตาไม่ได้ */
-    var h = '<div class="panel"><div class="bchart" role="img" aria-label="' +
-      esc("จำนวน" + (opt.unit || "ชิ้น") + "รายเดือน 3 เดือนล่าสุด") + '">';
+    var h = '<div class="panel mpanel' + (state.moChart ? " mo-open" : "") + '">' +
+      '<div class="mhead"><span class="mlg"><i class="sw sw-p"></i>โพสต์ <i class="sw sw-n"></i>ข่าว' +
+      ' · <span class="sub">เลขใต้แท่ง = Engagement (จากโพสต์อย่างเดียว)</span>' +
+      /* ⚠️ หมายเหตุยาวๆ ย้ายมาอยู่ใน tooltip ของ ⓘ ไม่ให้กินบรรทัด (รีวิวข้อ 4) */
+      (approx || outside
+        ? ' <button type="button" class="tipi" title="' +
+          esc([approx ? approx + " ชิ้นไม่รู้วันที่เผยแพร่ จึงจัดตามวันที่เพิ่มเข้ารายการ" : "",
+               outside ? "อีก " + outside + " ชิ้นเก่ากว่า 3 เดือน ไม่ได้นับในกราฟนี้ (ยังอยู่ในตารางข้างล่าง)" : ""]
+            .filter(Boolean).join(" · ")) + '">ⓘ</button>'
+        : "") +
+      "</span></div>" +
+      '<div class="bchart" role="img" aria-label="จำนวนชิ้นงานรายเดือน 3 เดือนล่าสุด">';
+
     keys.forEach(function (k) {
-      var b = by[k];
-      h += '<div class="bcol" title="' + esc(monthLabel(k) + " · " + b.n + " " + (opt.unit || "ชิ้น") +
-        (opt.eng ? " · Engagement " + (b.hasEng ? num(b.eng) : "—") : "")) + '">' +
-        '<div class="bcnt">' + b.n + "</div>" +
-        '<div class="btrk"><span class="bbar" style="height:' +
-        (max ? Math.max((b.n / max) * 100, b.n ? 6 : 0) : 0).toFixed(1) +
-        "%;background:" + esc(opt.color) + '"></span></div>' +
+      var b = by[k], tot = b.s + b.n;
+      h += '<div class="bcol' + (tot ? "" : " zero") + '" title="' +
+        esc(monthLabel(k) + " · โพสต์ " + b.s + " · ข่าว " + b.n +
+          " · Engagement " + (b.hasEng ? num(b.eng) : "—")) + '">' +
+        '<div class="bcnt">' + (tot || "") + "</div>" +
+        '<div class="btrk">' +
+        (b.n ? '<span class="bbar bnews" style="height:' + ((b.n / max) * 100).toFixed(1) + '%"></span>' : "") +
+        (b.s ? '<span class="bbar bpost" style="height:' + ((b.s / max) * 100).toFixed(1) + '%"></span>' : "") +
+        "</div>" +
         '<div class="blab">' + esc(monthLabel(k)) + "</div>" +
         /* 🚫 เดือนที่ยังไม่รู้ยอดต้องเป็น "—" ไม่ใช่ 0 — 0 แปลว่าไม่มีใครมีปฏิสัมพันธ์ */
-        (opt.eng ? '<div class="beng">' + (b.hasEng ? esc(num(b.eng)) : "—") + "</div>" : "") +
+        '<div class="beng">' + (b.hasEng ? esc(num(b.eng)) : "—") + "</div>" +
         "</div>";
     });
-    h += "</div>";
 
-    var notes = [opt.eng ? "แท่ง = จำนวนโพสต์ · เลขล่างสุด = Engagement" : "แท่ง = จำนวนข่าว"];
-    if (approx) notes.push(approx + " ชิ้นไม่รู้วันที่เผยแพร่ จึงจัดตาม<b>วันที่เพิ่มเข้ารายการ</b>");
-    if (outside) notes.push("อีก " + outside + " ชิ้นเก่ากว่า 3 เดือน <b>ไม่ได้นับในกราฟนี้</b> (ยังอยู่ในตารางข้างล่าง)");
-    return h + '<p class="addnote sub">' + notes.join(" · ") + "</p></div>";
+    /* จอแคบ: กราฟซ่อนไว้หลังปุ่ม — บนมือถือของที่ต้องเลื่อนผ่านทุกครั้งคือของที่กีดขวาง
+       ⚠️ ปุ่มนี้ต้องไม่โผล่บนเดสก์ท็อป (CSS คุมไว้) ไม่งั้นกลายเป็นปุ่มที่กดแล้วไม่มีอะไรเปลี่ยน */
+    return h + "</div></div>" +
+      '<button type="button" class="btn mochart" data-influ="mchart">' +
+      (state.moChart ? "▲ ซ่อนรายเดือน" : "▼ ดูรายเดือน") + "</button>";
   }
 
   /* ── ① โพสต์อินฟลูเอนเซอร์ ──────────────────────────────────────── */
@@ -433,17 +454,21 @@
     h += '<h2 class="sec">① โพสต์อินฟลูเอนเซอร์ ' +
       '<span class="sub">อัปเดตยอดล่าสุด ' + esc(whenTxt(state.at)) + "</span></h2>";
 
-    // 🔴 กราฟของ section นี้เอง — นับ **โพสต์** อย่างเดียว (เจ้าของสั่ง 8 ก.ย. 2026)
-    if (socialPosts().length) h += monthChart(socialPosts(), { eng: true, unit: "โพสต์", color: "#2563eb" });
-
     // ── แถบตัวกรอง ──
+    /* 🔴 filter เป็น chip แถวเดียวพร้อมจำนวน + ช่องค้นหาขวาสุด (รีวิวข้อ 5)
+       · ตัด dropdown "ช่อง" ออก — ช่องค้นหาค้นได้ทั้งหัวข้อและชื่อช่องอยู่แล้ว
+       · ปุ่ม "อัปเดตยอด" ย้ายไปแถบหัว มันไม่ใช่ตัวกรอง */
+    var cnt = { all: socialPosts().length };
+    Object.keys(P_LABEL).forEach(function (k) { cnt[k] = 0; });
+    socialPosts().forEach(function (p) { if (cnt[p.platform] != null) cnt[p.platform]++; });
     h += '<div class="panel"><div class="influbar">' +
-      sel("fPlatform", "แพลตฟอร์ม", ["all"].concat(Object.keys(P_LABEL)), function (k) { return k === "all" ? "ทั้งหมด" : P_LABEL[k]; }) +
-      sel("fAccount", "ช่อง", ["all"].concat(accounts()), function (k) { return k === "all" ? "ทั้งหมด" : k; }) +
-      '<input type="search" id="influ-q" class="pp-dt influq" data-influ="q" placeholder="ค้นหาหัวข้อ/ช่อง" value="' + esc(state.q) + '">' +
-      '<button type="button" class="btn" data-influ="refresh"' + (state.busy ? " disabled" : "") + ' ' +
-      'title="ยิงไปดึงยอดใหม่ทุกโพสต์ — ใช้เครดิตของ ScrapeCreators (ข่าวไม่ถูกยิง)">' +
-      (state.busy === "refresh" ? '<span class="spin"></span> กำลังอัปเดต…' : "🔄 อัปเดตยอด") + "</button>" +
+      '<div class="chips">' + ["all"].concat(Object.keys(P_LABEL)).map(function (k) {
+        if (k !== "all" && !cnt[k]) return "";      // ไม่โชว์ chip ของแพลตฟอร์มที่ไม่มีโพสต์เลย
+        return '<button type="button" class="chip' + (state.fPlatform === k ? " on" : "") +
+          '" data-influchip="' + k + '">' + (k === "all" ? "ทั้งหมด" : esc(P_LABEL[k])) +
+          ' <span class="chip-n">' + cnt[k] + "</span></button>";
+      }).join("") + "</div>" +
+      '<input type="search" id="influ-q" class="pp-dt influq" data-influ="q" placeholder="ค้นหาหัวข้อหรือชื่อช่อง" value="' + esc(state.q) + '">' +
       "</div>";
 
     if (!socialPosts().length) {
@@ -480,7 +505,7 @@
       }).join("") + "<th></th></tr></thead><tbody>";
 
     list.forEach(function (p) {
-      h += '<tr><th scope="row"><div class="rowhead influrow">' +
+      h += '<tr data-rowid="' + esc(p.id) + '"><th scope="row"><div class="rowhead influrow">' +
         /* 🔴 รูปไม่ขึ้นมีได้ 2 สาเหตุ ซึ่ง **ต้องแยกให้ออก** (เจ้าของถาม 8 ก.ย. 2026)
              ① ต้นทางไม่ได้ส่งลิงก์รูปมาเลย  ② ส่งมาแต่โหลดไม่ขึ้น (ลิงก์หมดอายุ/ถูกบล็อก)
            ของเดิมทั้ง 2 กรณีขึ้นเป็นกล่องเปล่าเหมือนกันเป๊ะ = ไล่ต่อไม่ได้ ต้องเดาเอา
@@ -557,34 +582,33 @@
     var all = newsPosts();
     var list = newsShown();
 
-    var h = '<h2 class="sec">② ข่าว ' +
-      '<span class="sub">นับชิ้น + แยกสำนักข่าว (ไม่ได้ดึงยอด)</span></h2>';
-
     var byOut = {};
     all.forEach(function (p) { var o = outletOf(p); byOut[o] = (byOut[o] || 0) + 1; });
     var outs = Object.keys(byOut).sort(function (a, b) { return byOut[b] - byOut[a]; });
 
-    h += '<div class="scgrid" style="--n:2">' +
-      card("ข่าวทั้งหมด", String(all.length)) +
-      card("สำนักข่าว", String(outs.length)) +
-      "</div>";
+    /* 🔴 หัวส่วนบรรทัดเดียว แทนกล่องสรุป 2 ใบ (รีวิว 8 ก.ย. 2026 ข้อ 8)
+       ตัวเลข 2 ตัวนี้ไม่ต้องใช้กล่องใหญ่ — อ่านจบในบรรทัดเดียวได้ */
+    var h = '<h2 class="sec">② ข่าว <span class="sub">' + all.length + " ข่าว จาก " +
+      outs.length + " สำนัก · นับชิ้น ไม่ดึงยอด</span></h2>";
 
     if (!all.length) {
       return h + '<div class="panel"><div class="empty"><div class="empty-i">📰</div><div><b>ยังไม่มีข่าวในรายการ</b>' +
-        "<div>วางลิงก์ข่าวในกล่องด้านบน — ระบบแยกให้เองว่าอันไหนเป็นข่าว</div></div></div></div>";
+        "<div>วางลิงก์ข่าวในกล่องด้านล่าง — ระบบแยกให้เองว่าอันไหนเป็นข่าว</div></div></div></div>";
     }
 
-    // 🔴 กราฟของ section นี้เอง — ข่าวไม่มี Engagement จึงไม่มีคอลัมน์นั้น
-    h += monthChart(all, { eng: false, unit: "ชิ้น", color: "#c2410c" });
-
-    // ── แยกตามสำนักข่าว ──
+    /* 🔴 กราฟสำนักข่าวถูกตัดออก (รีวิวข้อ 8) — ทุกสำนักมีชิ้นเดียวเท่ากันหมด
+       กราฟที่แท่งเท่ากันทุกแท่งไม่ได้บอกอะไรเลย นอกจากกินที่
+       ✅ **เปิดกลับเองเมื่อมีสำนักไหนเกิน 2 ชิ้น** — ตอนนั้นกราฟถึงจะเริ่มมีความหมาย */
     var top = outs.slice(0, 12);
-    h += '<div class="panel"><h3 class="sub" style="margin:0 0 8px">จำนวนชิ้นตามสำนักข่าว</h3>' +
-      (window.SOCIAL_CHARTS ? window.SOCIAL_CHARTS.hbars(top.map(function (o) {
-        return { label: o, value: byOut[o], color: "#c2410c", text: byOut[o] + " ชิ้น" };
-      }), { aria: "จำนวนข่าวตามสำนักข่าว" }) : "") +
-      (outs.length > top.length ? '<p class="addnote sub">แสดง ' + top.length + " จาก " + outs.length + " สำนัก</p>" : "") +
-      "</div>";
+    if (byOut[outs[0]] > 2) {
+      h += '<div class="panel"><h3 class="sub" style="margin:0 0 8px">จำนวนชิ้นตามสำนักข่าว</h3>' +
+        (window.SOCIAL_CHARTS ? window.SOCIAL_CHARTS.hbars(top.map(function (o) {
+          // ⚠️ สีเทาเดียวกับส่วนโพสต์ ไม่ใช่แดงอิฐ — ทั้งหน้าใช้สีเน้นสีเดียว
+          return { label: o, value: byOut[o], color: "#94a3b8", text: byOut[o] + " ชิ้น" };
+        }), { aria: "จำนวนข่าวตามสำนักข่าว" }) : "") +
+        (outs.length > top.length ? '<p class="addnote sub">แสดง ' + top.length + " จาก " + outs.length + " สำนัก</p>" : "") +
+        "</div>";
+    }
 
     // ── รายการข่าว ──
     h += '<div class="panel"><div class="influbar">' +
@@ -601,9 +625,14 @@
       '<th>สำนักข่าว</th><th class="num">เดือน</th><th></th></tr></thead><tbody>';
     list.forEach(function (p) {
       var m = monthOf(p);
-      h += '<tr><th scope="row"><div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
-        esc(p.title || p.note || p.url) + '">' +
-        esc(p.title || p.note || p.url) + ' <span class="ext">↗</span></a></div></th>' +
+      /* 🔴 ดึงหัวข้อไม่ได้ ห้ามโชว์ URL ดิบ (รีวิวข้อ 8)
+         URL ยาวๆ อ่านไม่รู้เรื่องและกินความกว้าง — บอกไปตรงๆ ว่าดึงหัวข้อไม่ได้ */
+      var nm = p.title || p.note || "";
+      var raw = !nm;
+      if (raw) nm = "ข่าวจาก " + outletOf(p) + " (ดึงหัวข้อไม่ได้)";
+      h += '<tr><th scope="row"><div class="influ-m"><a class="' + (raw ? "nolabel" : "") +
+        '" href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' + esc(raw ? p.url : nm) + '">' +
+        esc(nm) + ' <span class="ext">↗</span></a></div></th>' +
         "<td>" + esc(outletOf(p)) + "</td>" +
         /* ~ = ไม่รู้วันที่เผยแพร่ ใช้วันที่เพิ่มเข้ารายการแทน — ต้องบอก ไม่ใช่แสดงเหมือนของจริง */
         '<td class="num' + (m && !m.exact ? " na" : "") + '"' +
@@ -620,6 +649,7 @@
         confirm() ถูกบล็อกได้ในบางบริบท และบนมือถือกล่องเด้งเต็มจอจนไม่รู้ว่ากำลังลบใบไหน
      ⚠️ ลบแล้ว **เอากลับไม่ได้** ต้องวางลิงก์ใหม่ + เสียเครดิตดึงยอดใหม่ จึงต้องถามก่อน */
   function delBtn(id) {
+    if (!state.edit) return "";
     if (state.delId === id) {
       return '<span class="delc"><button type="button" class="btn delyes" data-infludel="' + esc(id) +
         '">ลบเลย</button><button type="button" class="btn delno" data-influ="delcancel">ยกเลิก</button></span>';
@@ -627,21 +657,101 @@
     return '<button type="button" class="btn xbtn" data-influask="' + esc(id) + '" title="เอาออกจากรายการ">✕</button>';
   }
 
-  /* 🔴 ยอดเครดิต ScrapeCreators มุมขวาบน (เจ้าของสั่ง 8 ก.ย. 2026)
-     · ปกติได้มา **ฟรี** เพราะต้นทางแถมมากับทุกคำตอบตอนดึงยอดอยู่แล้ว
-     · ปุ่ม "เช็คยอด" ไว้ใช้ตอนที่ยังไม่เคยดึงเลย
-     ⚠️ ต้องบอกด้วยว่าเป็นยอด ณ เวลาไหน — เครดิตลดลงทุกครั้งที่กด 🔄
-        โชว์เลขลอยๆ แล้วเข้าใจว่าเป็นยอดสดตอนนี้ */
-  function creditBar() {
+  /* ── แถบหัว: ตอบ "ข้อมูลสดแค่ไหน" ให้ได้ทันที (รีวิว 8 ก.ย. 2026 ข้อ 2) ──
+   * ⚠️ ต้องเป็น **วัน-เวลาจริง** ไม่ใช่ "2 นาทีที่แล้ว" อย่างเดียว —
+   *    ทีมเปิดดูคนละเวลา "2 นาทีที่แล้ว" ของแต่ละคนคนละจุดเวลากัน เอาไปคุยกันต่อไม่ได้
+   * 🔴 ปุ่ม "อัปเดตยอด" ย้ายมาอยู่ตรงนี้ ออกจากแถบ filter (ข้อ 2 ของรีวิว)
+   *    มันไม่ใช่ตัวกรอง และเป็นปุ่มเดียวในหน้าที่ **เสียเงินทุกครั้งที่กด**
+   */
+  function stamp(ms) {
+    if (!ms) return "ยังไม่เคยดึง";
+    var d = new Date(ms);
+    return d.getDate() + " " + TH_MON[d.getMonth()] + " " + String(d.getFullYear() + 543).slice(2) +
+      " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  function headerBar() {
     var c = state.credits;
-    /* 🚫 ยอดเครดิตห้ามย่อเป็น "4.8K" — ต้องเห็นเลขเต็ม
-       ย่อแล้วแยกไม่ออกว่าเหลือ 4,820 หรือ 4,849 ซึ่งเป็นตัวเลขที่ใช้ตัดสินใจว่าจะกด 🔄 ไหม
-       (ต่างจากยอดวิวที่ย่อได้ เพราะดูแนวโน้มไม่ได้ดูตัวเลขเป๊ะ) */
-    return '<div class="credbar">🎟️ เครดิต ScrapeCreators: <b>' +
+    return '<div class="ebar">' +
+      '<div class="ebar-l"><span class="ebar-t">อัปเดตล่าสุด</span> <b>' + esc(stamp(state.at)) + "</b>" +
+      (state.at ? ' <span class="sub">(' + esc(whenTxt(state.at)) + ")</span>" : "") + "</div>" +
+      '<div class="ebar-r">' +
+      /* 🚫 ยอดเครดิตห้ามย่อเป็น "4.8K" — ต้องเห็นเลขเต็ม
+         ย่อแล้วแยกไม่ออกว่าเหลือ 4,820 หรือ 4,849 ซึ่งเป็นตัวเลขที่ใช้ตัดสินใจว่าจะกด 🔄 ไหม */
+      '<span class="credbar">🎟️ เครดิต <b>' +
       (c && c.left != null ? esc(Number(c.left).toLocaleString("th-TH")) : "—") + "</b>" +
       (c && c.at ? ' <span class="sub">(ณ ' + esc(whenTxt(c.at)) + ")</span>" : "") +
       '<button type="button" class="btn xsbtn" data-influ="credits"' + (state.busy ? " disabled" : "") + ">" +
-      (state.busy === "credits" ? '<span class="spin"></span>' : "เช็คยอด") + "</button></div>";
+      (state.busy === "credits" ? '<span class="spin"></span>' : "เช็คยอด") + "</button></span>" +
+      '<button type="button" class="btn" data-influ="refresh"' + (state.busy ? " disabled" : "") + ' ' +
+      'title="ยิงไปดึงยอดใหม่ทุกโพสต์ — ใช้เครดิตของ ScrapeCreators (ข่าวไม่ถูกยิง)">' +
+      (state.busy === "refresh" ? '<span class="spin"></span> กำลังอัปเดต…' : "🔄 อัปเดตยอด") + "</button>" +
+      /* 🔴 สวิตช์โหมดแก้ไข — จอแคบซ่อนทั้งอันด้วย CSS (รีวิวข้อ 1: "บนมือถือไม่มีโหมดนี้เลย") */
+      '<button type="button" class="btn eswitch editsw' + (state.edit ? " on" : "") +
+      '" data-influ="edit" aria-pressed="' + (state.edit ? "true" : "false") +
+      '" title="เปิดแล้วจะมีปุ่มลบและกล่องวางลิงก์">' +
+      '<span class="esw-k"></span>โหมดแก้ไข</button>' +
+      "</div></div>";
+  }
+
+  /* ── KPI 4 ช่อง (รีวิวข้อ 3) ────────────────────────────────────────
+   * ⚠️ ER รวมต้อง **ตัดโพสต์ที่ไม่มียอดวิวออกทั้งใบ** ไม่ใช่แค่ข้ามตอนบวก views
+   *    Facebook ที่ไม่ใช่วิดีโอมี Engagement แต่ไม่มี Views — เอา engagement ของมัน
+   *    ไปหารด้วย views ของคนอื่น = ER พองขึ้นโดยไม่มีใครรู้ · ต้องเขียนกำกับด้วยว่าไม่รวมใคร
+   * ⚠️ โพสต์เด่นใช้ **Views** เป็นเกณฑ์ ไม่ใช่ ER — ER ของโพสต์เล็กเด้งง่ายมาก
+   *    (ไลก์ 20 จากวิว 100 = 20% ซึ่งไม่ได้แปลว่าดังกว่าคลิปล้านวิว)
+   */
+  function kpiCards() {
+    var list = socialPosts();
+    var tv = 0, te = 0, hasV = false, hasE = false;
+    var erV = 0, erE = 0, skipped = [];
+    list.forEach(function (p) {
+      var v = (p.stats || {}).views, e = engOf(p);
+      if (v != null) { tv += v; hasV = true; }
+      if (e != null) { te += e; hasE = true; }
+      if (v != null && v > 0) { erV += v; erE += e == null ? 0 : e; }
+      else skipped.push(p);
+    });
+
+    /* ⚠️ บอกชื่อแพลตฟอร์มได้เฉพาะตอนที่ **ทั้งแพลตฟอร์มนั้นถูกตัดออกหมด**
+       ตัดไปใบเดียวแล้วเขียนว่า "ไม่รวม TikTok" = โกหก (TikTok ใบอื่นยังนับอยู่)
+       เจอตอนเขียนเทสต์ — คำอธิบายที่ผิดแย่กว่าไม่มีคำอธิบาย */
+    var byPlat = {}, skipPlat = {};
+    list.forEach(function (p) { byPlat[p.platform] = (byPlat[p.platform] || 0) + 1; });
+    skipped.forEach(function (p) { skipPlat[p.platform] = (skipPlat[p.platform] || 0) + 1; });
+    var whole = Object.keys(skipPlat).filter(function (k) { return skipPlat[k] === byPlat[k]; });
+    var erSub = !skipped.length ? "ทุกโพสต์"
+      : whole.length && skipped.length === whole.reduce(function (a, k) { return a + skipPlat[k]; }, 0)
+        ? "ไม่รวม " + whole.map(function (k) { return P_LABEL[k] || k; }).join(" · ") + " (ไม่มียอดวิว)"
+        : "ไม่รวม " + skipped.length + " โพสต์ที่ไม่มียอดวิว";
+
+    var top = null;
+    list.forEach(function (p) {
+      var v = (p.stats || {}).views;
+      if (v == null) return;
+      if (!top || v > top.stats.views) top = p;
+    });
+
+    var h = '<div class="kgrid">' +
+      kcard("Views รวม", hasV ? num(tv) : "—", list.length + " โพสต์") +
+      kcard("Engagement รวม", hasE ? num(te) : "—", "Likes + Shares + Comments") +
+      kcard("ER เฉลี่ย", erV ? pct(erE / erV) : "—", erSub);
+
+    /* กดแล้วเลื่อนไปที่แถวนั้นในตาราง — ไม่งั้นเห็นชื่อแล้วต้องไปไล่หาเอง */
+    h += top
+      ? '<button type="button" class="kc kc-top" data-influtop="' + esc(top.id) + '">' +
+        '<div class="kc-l">โพสต์เด่น <span class="kc-sub">(ยอดวิวสูงสุด)</span></div>' +
+        '<div class="kc-top-t">' + esc(top.title || top.note || top.url) + "</div>" +
+        '<div class="kc-sub">' + esc(P_LABEL[top.platform] || top.platform) +
+        " · " + esc(num(top.stats.views)) + " views" +
+        (erOf(top) != null ? " · ER " + esc(pct(erOf(top))) : "") + "</div></button>"
+      : kcard("โพสต์เด่น", "—", "ยังไม่มีโพสต์ที่รู้ยอดวิว");
+    return h + "</div>";
+  }
+
+  function kcard(label, value, sub) {
+    return '<div class="kc"><div class="kc-l">' + esc(label) + '</div><div class="kc-v">' + esc(value) +
+      '</div><div class="kc-sub">' + esc(sub) + "</div></div>";
   }
 
   function card(label, value) {
@@ -664,10 +774,22 @@
      ⚠️ ผูกที่ document ครั้งเดียว ไม่ผูกใหม่ทุกครั้งที่วาด —
         draw() สร้าง innerHTML ใหม่ทั้งก้อน ตัวที่ผูกกับ element เดิมจะหลุดหมด */
   function onClick(e) {
-    var t = e.target.closest("[data-influ],[data-influsort],[data-infludel],[data-influask]");
+    var t = e.target.closest("[data-influ],[data-influsort],[data-infludel],[data-influask],[data-influchip],[data-influtop]");
     /* กดที่อื่นบนหน้า = เลิกถามยืนยันการลบ (เหมือนเมนูที่ปิดตัวเองเมื่อกดข้างนอก) */
     if (!t) { if (state.delId) { state.delId = ""; draw(); } return; }
 
+    if (t.dataset.influchip) { state.fPlatform = t.dataset.influchip; draw(); return; }
+    /* กด "โพสต์เด่น" แล้วเลื่อนไปที่แถวนั้นเลย ไม่ต้องไปไล่หาเองในตาราง (รีวิวข้อ 3) */
+    if (t.dataset.influtop) {
+      if (state.fPlatform !== "all" || state.q) { state.fPlatform = "all"; state.q = ""; draw(); }
+      var row = document.querySelector('[data-rowid="' + t.dataset.influtop + '"]');
+      if (row) {
+        row.scrollIntoView({ block: "center", behavior: "smooth" });
+        row.classList.add("flash");
+        setTimeout(function () { row.classList.remove("flash"); }, 1600);
+      }
+      return;
+    }
     if (t.dataset.influask) { state.delId = t.dataset.influask; draw(); return; }
     if (t.dataset.infludel) {
       state.delId = "";
@@ -701,6 +823,12 @@
       });
     } else if (a === "delcancel") {
       state.delId = ""; draw();
+    } else if (a === "edit") {
+      state.edit = !state.edit;
+      state.delId = "";        // ปิดโหมดแก้ไขแล้วการยืนยันลบที่ค้างอยู่ต้องหายไปด้วย
+      draw();
+    } else if (a === "mchart") {
+      state.moChart = !state.moChart; draw();
     }
   }
 
