@@ -2019,7 +2019,14 @@
     document.getElementById("controls").innerHTML = renderControls();
     document.getElementById("tabs").innerHTML = renderTabs();
     var tab = C.TABS.filter(function (t) { return t.key === state.tab; })[0] || C.TABS[0];
-    document.getElementById("view").innerHTML = tab.platform ? renderPlatform(tab.platform) : renderSummary();
+    /* ⚠️ แท็บที่มี custom ดูแลตัวเองทั้งหมด (วาดเอง รับคลิกเอง) — app.js แค่ส่งต่อ
+       ไม่มีไฟล์นั้นโหลดมา = บอกตรงๆ ห้ามปล่อยหน้าว่างเงียบๆ */
+    document.getElementById("view").innerHTML = tab.custom
+      ? (window[tab.custom]
+          ? window[tab.custom].render()
+          : '<div class="empty"><div class="empty-i">⚠️</div><div><b>โหลดส่วนนี้ไม่สำเร็จ</b>' +
+            "<div>ไม่พบไฟล์ของแท็บ " + esc(tab.label) + " — ลองรีเฟรชหน้า</div></div></div>")
+      : tab.platform ? renderPlatform(tab.platform) : renderSummary();
     bindHovers();
   }
 

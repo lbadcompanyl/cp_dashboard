@@ -61,7 +61,12 @@ console.log("\n[1] โครงหน้า — แท็บอ่านจา�
 {
   const { pg, errs } = await open();
   const tabs = await pg.$$eval(".tab", (n) => n.map((x) => x.dataset.tab));
-  ok(tabs.join(",") === "summary,youtube,tiktok,facebook", "แท็บครบ 4 ตัว เรียงถูก");
+  /* 🔴 เพิ่มแท็บ "อินฟลูฯ" ต่อท้าย (เจ้าของสั่ง 31 ส.ค. 2026)
+     ⚠️ ต้องอยู่ **ท้ายสุด** และแยกจาก 3 แท็บของช่องเราเองโดยตั้งใจ —
+        แท็บ 1-4 ดูช่องของเราเอง · แท็บนี้ดูโพสต์ของคนที่เราจ้าง คนละเรื่องกันสิ้นเชิง
+        ไม่มีตัวเลขไหลข้ามกันเลยสักตัว (คนละ endpoint คนละที่เก็บข้อมูล) */
+  ok(tabs.join(",") === "summary,youtube,tiktok,facebook,influ",
+     `แท็บครบ 5 ตัว เรียงถูก (${tabs.join(" ")})`);
   const html = await (await fetch(BASE + "/social/index.html")).text();
   ok(!/data-tab=/.test(html), "ปุ่มแท็บไม่ได้เขียนค้างใน HTML (เพิ่มแท็บ paid ทีหลังได้)");
   ok(errs.length === 0, "ไม่มี JS error");
