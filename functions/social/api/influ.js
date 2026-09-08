@@ -340,6 +340,11 @@ async function fetchOne(post, env) {
 
   return {
     ...post,
+    /* 🔴 ScrapeCreators แถมยอดเครดิตคงเหลือมากับทุกคำตอบอยู่แล้ว (เจอในคำตอบของ Facebook)
+       เก็บติดไม้ติดมือไปเลย — **ไม่ต้องยิงเพิ่มและไม่เสียเครดิตสักหน่วย**
+       (เจ้าของสั่ง 8 ก.ย. 2026: "ใส่จำนวน token ของ scrape ไว้มุมขวาบนด้วย")
+       ⚠️ ขีดล่างนำหน้า = ฟิลด์ชั่วคราว fetchMany จะถอดออกก่อนเก็บลง KV */
+    _credits: deepNum(r.body, ["credits_remaining", "credits_left", "remaining_credits"]),
     /* ⚠️ เก็บชื่อฟิลด์ไว้ **ทุกครั้ง** ไม่ใช่เฉพาะตอนขาดตัวเลข
        แถวที่ได้ตัวเลขครบแต่ค่าผิด (เช่น Views = 0 ทั้งที่มีไลก์ 287) ก็ต้องไล่ต่อได้เหมือนกัน
        เก็บแค่ชื่อคีย์ ≤ 16 ตัว ไม่เก็บค่า — blob ใน KV จึงแทบไม่โต */
@@ -497,7 +502,8 @@ export async function onRequest(context) {
 
     // ⚠️ ดึงยอดของ "เฉพาะใบใหม่" ไม่ใช่ทั้งรายการ — ใบเก่ายิงซ้ำ = เสียเครดิตฟรี
     const filled = await fetchMany(fresh, env);
-    blob.posts = filled.concat(blob.posts).slice(0, MAX_POSTS);
+    if (filled.credits != null) blob.credits = { left: filled.credits, at: Date.now() };
+    blob.posts = filled.posts.concat(blob.posts).slice(0, MAX_POSTS);
     await writeAll(env, blob);
     return json(payload({
       status: ST.OK, at: blob.at,
@@ -508,12 +514,21 @@ export async function onRequest(context) {
 
   /* ── อัปเดตยอดทุกใบ — จุดเดียวที่เสียเครดิตเยอะ ── */
   if (body.refresh) {
-    blob.posts = await fetchMany(blob.posts, env);
+    const done = await fetchMany(blob.posts, env);
+    if (done.credits != null) blob.credits = { left: done.credits, at: Date.now() };
+    blob.posts = done.posts;
     await writeAll(env, blob);
     return json(payload({ status: ST.OK, at: blob.at, data: shape(blob, env) }));
   }
 
-  return json(payload({ status: ST.ERROR, message: "ไม่รู้ว่าจะให้ทำอะไร (add / remove / refresh)" }));
+  /* ── เช็คยอดเครดิต — ไม่แตะโพสต์สักใบ ── */
+  if (body.credits) {
+    const c = await fetchCredits(env);
+    if (c.left != null) { blob.credits = { left: c.left, at: Date.now() }; await writeAll(env, blob); }
+    return json(payload({ status: ST.OK, at: blob.at, message: c.err || "", data: shape(blob, env) }));
+  }
+
+  return json(payload({ status: ST.ERROR, message: "ไม่รู้ว่าจะให้ทำอะไร (add / remove / refresh / credits)" }));
 }
 
 /** แยก YouTube ออกไปยิงเป็นชุด ที่เหลือยิงทีละใบ */
@@ -540,8 +555,29 @@ async function fetchMany(posts, env) {
 
   // เรียงกลับตามลำดับเดิม ไม่ให้แถวกระโดดหลังกดอัปเดต
   const by = {};
-  doneYt.concat(doneRest).forEach((p) => { by[p.id] = p; });
-  return posts.map((p) => by[p.id] || p);
+  let credits = null;
+  doneYt.concat(doneRest).forEach((p) => {
+    // ⚠️ ถอดฟิลด์ชั่วคราวออกก่อนเก็บลง KV — ไม่ให้ blob บวมด้วยของที่ไม่ได้ใช้
+    if (p._credits != null) credits = p._credits;
+    delete p._credits;
+    by[p.id] = p;
+  });
+  return { posts: posts.map((p) => by[p.id] || p), credits };
+}
+
+/* ยอดเครดิตคงเหลือของ ScrapeCreators
+   ⚠️ ปกติได้มาฟรีจากคำตอบของการดึงยอดอยู่แล้ว — ตัวนี้ไว้กดเช็คตอนที่ยังไม่เคยดึงเลย
+   🚫 **ยังไม่เคยยิง endpoint นี้จริงสักครั้ง** (เครื่องที่รัน session ยิงเน็ตออกไม่ได้)
+      เส้นทางมาจากเอกสารของต้นทาง · ผิดจะได้ 404 แล้วรายงานตรงๆ ไม่ใช่โชว์ 0 */
+async function fetchCredits(env) {
+  const key = String(env.SCRAPECREATORS_API_KEY || "").trim();
+  if (!key) return { err: "ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY" };
+  const r = await getJSON(`${SC}/v1/account/credit-balance`, { "x-api-key": key });
+  if (r.status === 404) return { err: "ต้นทางไม่รู้จักเส้นทางนี้ (404) — เส้นทางเช็คเครดิตอาจไม่ใช่แบบที่เดาไว้" };
+  if (!r.ok) return { err: "เช็คยอดเครดิตไม่สำเร็จ (" + (r.err || r.status) + ")" };
+  const n = deepNum(r.body, ["credits_remaining", "credits_left", "remaining_credits", "credits", "balance", "remaining"]);
+  if (n == null) return { err: "ต้นทางตอบมาแต่ไม่เจอยอดเครดิต (keys: " + Object.keys(r.body || {}).slice(0, 8).join(", ") + ")" };
+  return { left: n };
 }
 
 /** โครงที่ส่งให้หน้าเว็บ — บอกด้วยว่า env ไหนยังขาด จะได้ขึ้นการ์ดบอกให้ตั้งค่า */
@@ -549,6 +585,7 @@ function shape(blob, env) {
   return {
     posts: blob.posts,
     at: blob.at,
+    credits: blob.credits || null,
     // ⚠️ ไม่ได้แปลว่าใช้ไม่ได้ทั้งหน้า — ขาด SC ยังดู YouTube ได้ และกลับกัน
     missing: missingEnv(env, ["YT_API_KEY", "SCRAPECREATORS_API_KEY"]),
     max: MAX_POSTS,

@@ -37,6 +37,8 @@
     dir: -1,
     fOutlet: "all",        // ตัวกรองของ section ข่าว (แยกจาก section โพสต์)
     nq: "",
+    delId: "",             // 🔴 ปุ่มลบต้องกดยืนยัน — จำว่ากำลังถามยืนยันของใบไหนอยู่
+    credits: null,         // ยอดเครดิต ScrapeCreators คงเหลือ { left, at }
   };
 
   /* ── ของ 2 ชนิดในรายการเดียว ────────────────────────────────────
@@ -205,6 +207,8 @@
     state.posts = d.posts || [];
     state.missing = d.missing || [];
     state.at = d.at || 0;
+    state.credits = d.credits || null;
+    state.delId = "";       // ข้อมูลเปลี่ยนแล้ว การยืนยันเดิมไม่มีความหมาย
 
     /* ⚠️ ลิงก์ที่เพิ่มไม่ได้ต้องบอกทีละอันว่าทำไม ไม่ใช่บอกแค่จำนวน
        ผู้ใช้วางมา 10 ลิงก์แล้วขึ้นว่า "เพิ่มไม่ได้ 3" จะไม่รู้ว่าอันไหน */
@@ -330,7 +334,7 @@
 
     /* 🔴 กล่องวางลิงก์อยู่ **ล่างสุด** (เจ้าของสั่ง 8 ก.ย. 2026)
        ของที่ดูบ่อยควรอยู่บน · กล่องวางลิงก์ใช้ตอนเพิ่มของใหม่ซึ่งนานๆ ที */
-    return h + socialSection() + newsSection() + addBox();
+    return h + creditBar() + socialSection() + newsSection() + addBox();
   }
 
   /* ── กล่องวางลิงก์ (ใช้ร่วมทั้ง 2 section — ระบบแยกให้เองว่าอันไหนเป็นข่าว) ── */
@@ -389,30 +393,32 @@
     var max = 0;
     keys.forEach(function (k) { max = Math.max(max, by[k].n); });
 
-    var h = '<div class="panel"><div class="mchart' + (opt.eng ? "" : " noeng") + '">' +
-      '<div class="mrow mhead"><div class="mlab">เดือน</div><div class="mtrack"></div>' +
-      '<div class="mcnt">' + esc(opt.unit || "ชิ้น") + "</div>" +
-      (opt.eng ? '<div class="meng">Engagement</div>' : "") + "</div>";
-
+    /* 🔴 bar chart แนวตั้ง แท่ง = **จำนวนโพสต์** (เจ้าของสั่ง 8 ก.ย. 2026)
+       ⚠️ 3 เดือนเท่านั้น แท่งแนวตั้งจึงกว้างพอให้อ่านออกทั้งบนเดสก์ท็อปและมือถือ
+          (แท่งแนวนอนเดิมกินความสูงเยอะโดยไม่ได้อ่านง่ายขึ้น)
+       ⚠️ เดือนที่ไม่มีของยังต้องมีแท่ง(สูง 0)และเลขกำกับ ไม่ใช่หายไปจากกราฟ
+       ⚠️ ตัวเลขต้องอยู่บนหัวแท่งเสมอ — แท่งสั้นๆ เทียบด้วยตาไม่ได้ */
+    var h = '<div class="panel"><div class="bchart" role="img" aria-label="' +
+      esc("จำนวน" + (opt.unit || "ชิ้น") + "รายเดือน 3 เดือนล่าสุด") + '">';
     keys.forEach(function (k) {
       var b = by[k];
-      h += '<div class="mrow"><div class="mlab">' + esc(monthLabel(k)) + "</div>" +
-        '<div class="mtrack" title="' + esc(monthLabel(k) + " · " + b.n + " " + (opt.unit || "ชิ้น")) + '">' +
-        (b.n ? '<span class="mbar" style="width:' + ((b.n / max) * 100).toFixed(1) +
-          "%;background:" + esc(opt.color) + '"></span>' : "") +
-        "</div>" +
-        '<div class="mcnt"><b>' + b.n + "</b></div>" +
+      h += '<div class="bcol" title="' + esc(monthLabel(k) + " · " + b.n + " " + (opt.unit || "ชิ้น") +
+        (opt.eng ? " · Engagement " + (b.hasEng ? num(b.eng) : "—") : "")) + '">' +
+        '<div class="bcnt">' + b.n + "</div>" +
+        '<div class="btrk"><span class="bbar" style="height:' +
+        (max ? Math.max((b.n / max) * 100, b.n ? 6 : 0) : 0).toFixed(1) +
+        "%;background:" + esc(opt.color) + '"></span></div>' +
+        '<div class="blab">' + esc(monthLabel(k)) + "</div>" +
         /* 🚫 เดือนที่ยังไม่รู้ยอดต้องเป็น "—" ไม่ใช่ 0 — 0 แปลว่าไม่มีใครมีปฏิสัมพันธ์ */
-        (opt.eng ? '<div class="meng">' + (b.hasEng ? esc(num(b.eng)) : "—") + "</div>" : "") +
+        (opt.eng ? '<div class="beng">' + (b.hasEng ? esc(num(b.eng)) : "—") + "</div>" : "") +
         "</div>";
     });
-
     h += "</div>";
-    var notes = [];
+
+    var notes = [opt.eng ? "แท่ง = จำนวนโพสต์ · เลขล่างสุด = Engagement" : "แท่ง = จำนวนข่าว"];
     if (approx) notes.push(approx + " ชิ้นไม่รู้วันที่เผยแพร่ จึงจัดตาม<b>วันที่เพิ่มเข้ารายการ</b>");
     if (outside) notes.push("อีก " + outside + " ชิ้นเก่ากว่า 3 เดือน <b>ไม่ได้นับในกราฟนี้</b> (ยังอยู่ในตารางข้างล่าง)");
-    if (notes.length) h += '<p class="addnote sub">' + notes.join(" · ") + "</p>";
-    return h + "</div>";
+    return h + '<p class="addnote sub">' + notes.join(" · ") + "</p></div>";
   }
 
   /* ── ① โพสต์อินฟลูเอนเซอร์ ──────────────────────────────────────── */
@@ -420,21 +426,12 @@
     var list = shown();
     var h = "";
 
-    // ── สรุปรวม ──
-    var tv = 0, te = 0, hasV = false, hasE = false;
-    list.forEach(function (p) {
-      if ((p.stats || {}).views != null) { tv += p.stats.views; hasV = true; }
-      var e = engOf(p); if (e != null) { te += e; hasE = true; }
-    });
-
+    /* 🔴 เอากล่องสรุป 4 ใบออก (เจ้าของสั่ง 8 ก.ย. 2026: "summary box ไม่ต้อง")
+       ตัวเลขรวมมีอยู่ใน **แถวรวมท้ายตารางของแต่ละแพลตฟอร์ม** อยู่แล้ว
+       ⚠️ และรวมข้ามแพลตฟอร์มเป็นก้อนเดียวก็อ่านผิดง่าย — Views ของ YouTube
+          กับของ TikTok นับกันคนละแบบ เอามาบวกกันแล้วไม่ได้แปลว่าอะไร */
     h += '<h2 class="sec">① โพสต์อินฟลูเอนเซอร์ ' +
       '<span class="sub">อัปเดตยอดล่าสุด ' + esc(whenTxt(state.at)) + "</span></h2>";
-    h += '<div class="scgrid" style="--n:4">' +
-      card("โพสต์", String(list.length)) +
-      card("Views รวม", hasV ? num(tv) : "—") +
-      card("Engagement รวม", hasE ? num(te) : "—") +
-      card("ER เฉลี่ย", hasV && hasE && tv ? pct(te / tv) : "—") +
-      "</div>";
 
     // 🔴 กราฟของ section นี้เอง — นับ **โพสต์** อย่างเดียว (เจ้าของสั่ง 8 ก.ย. 2026)
     if (socialPosts().length) h += monthChart(socialPosts(), { eng: true, unit: "โพสต์", color: "#2563eb" });
@@ -492,8 +489,12 @@
         /* ⚠️ ลำดับสำคัญ: ชื่อจริงจากต้นทาง > แคปชั่นที่วางมา > URL ดิบ
            ลิงก์ย่อที่ดึงชื่อไม่ได้ ถ้าไม่มีแคปชั่นรอง ตารางจะมีแต่ URL ยาวๆ อ่านไม่รู้เรื่อง */
         esc(p.title || p.note || p.url) + ' <span class="ext">↗</span></a>' +
-        '<div class="influ-s">' + esc(P_LABEL[p.platform] || p.platform) +
-        (p.account ? " · " + esc(p.account) : "") + "</div>" +
+        /* 🔴 ชื่อโปรไฟล์ต่อท้ายชื่อโพสต์ (เจ้าของสั่ง 8 ก.ย. 2026)
+           ⚠️ ชื่อแพลตฟอร์มไม่ต้องเขียนซ้ำแล้ว — หัวตารางบอกอยู่ (แยก 3 ตารางตามแพลตฟอร์ม)
+           ⚠️ ต้นทางบางเจ้าไม่บอกชื่อโปรไฟล์ ต้องเขียนว่า "ไม่ทราบชื่อโปรไฟล์"
+              ไม่ใช่ปล่อยว่าง — ว่างแล้วแยกไม่ออกว่าลืมแสดงหรือไม่มีข้อมูล */
+        '<div class="influ-s">' +
+        (p.account ? "👤 " + esc(p.account) : '<span class="na">ไม่ทราบชื่อโปรไฟล์</span>') + "</div>" +
         /* ⚠️ ใบที่ดึงยอดไม่สำเร็จต้องบอกเหตุผลตรงแถวนั้น ไม่ใช่ขึ้น "—" เฉยๆ
            ไม่งั้นแยกไม่ออกว่า "ต้นทางไม่ให้ตัวเลข" กับ "ยอดเป็น 0 จริงๆ" */
         (p.err ? '<div class="influ-e">⚠️ ' + esc(p.err) + "</div>" : "") +
@@ -515,7 +516,7 @@
           (why ? ' title="' + esc(why) + '"' : "") + ">" + esc(txt) + (fishy ? " ⚠️" : "") + "</td>";
       });
 
-      h += '<td class="num"><button type="button" class="btn xbtn" data-infludel="' + esc(p.id) + '" title="เอาออกจากรายการ">✕</button></td></tr>';
+      h += '<td class="num">' + delBtn(p.id) + "</td></tr>";
     });
 
     /* 🔴 แถวรวมท้ายตาราง (เจ้าของสั่ง 8 ก.ย. 2026: "และมีค่ารวม")
@@ -603,10 +604,39 @@
         '<td class="num' + (m && !m.exact ? " na" : "") + '"' +
         (m && !m.exact ? ' title="ต้นทางไม่บอกวันที่เผยแพร่ — นี่คือเดือนที่เพิ่มลิงก์เข้ารายการ"' : "") + ">" +
         (m ? (m.exact ? "" : "~") + esc(monthLabel(m.m)) : "—") + "</td>" +
-        '<td class="num"><button type="button" class="btn xbtn" data-infludel="' + esc(p.id) + '" title="เอาออกจากรายการ">✕</button></td></tr>';
+        '<td class="num">' + delBtn(p.id) + "</td></tr>";
     });
 
     return h + "</tbody></table></div></div>";
+  }
+
+  /* 🔴 ปุ่มลบต้องกดยืนยัน (เจ้าของสั่ง 8 ก.ย. 2026)
+     ⚠️ ใช้การยืนยันในแถวนั้นเลย ไม่ใช้ confirm() ของเบราว์เซอร์ —
+        confirm() ถูกบล็อกได้ในบางบริบท และบนมือถือกล่องเด้งเต็มจอจนไม่รู้ว่ากำลังลบใบไหน
+     ⚠️ ลบแล้ว **เอากลับไม่ได้** ต้องวางลิงก์ใหม่ + เสียเครดิตดึงยอดใหม่ จึงต้องถามก่อน */
+  function delBtn(id) {
+    if (state.delId === id) {
+      return '<span class="delc"><button type="button" class="btn delyes" data-infludel="' + esc(id) +
+        '">ลบเลย</button><button type="button" class="btn delno" data-influ="delcancel">ยกเลิก</button></span>';
+    }
+    return '<button type="button" class="btn xbtn" data-influask="' + esc(id) + '" title="เอาออกจากรายการ">✕</button>';
+  }
+
+  /* 🔴 ยอดเครดิต ScrapeCreators มุมขวาบน (เจ้าของสั่ง 8 ก.ย. 2026)
+     · ปกติได้มา **ฟรี** เพราะต้นทางแถมมากับทุกคำตอบตอนดึงยอดอยู่แล้ว
+     · ปุ่ม "เช็คยอด" ไว้ใช้ตอนที่ยังไม่เคยดึงเลย
+     ⚠️ ต้องบอกด้วยว่าเป็นยอด ณ เวลาไหน — เครดิตลดลงทุกครั้งที่กด 🔄
+        โชว์เลขลอยๆ แล้วเข้าใจว่าเป็นยอดสดตอนนี้ */
+  function creditBar() {
+    var c = state.credits;
+    /* 🚫 ยอดเครดิตห้ามย่อเป็น "4.8K" — ต้องเห็นเลขเต็ม
+       ย่อแล้วแยกไม่ออกว่าเหลือ 4,820 หรือ 4,849 ซึ่งเป็นตัวเลขที่ใช้ตัดสินใจว่าจะกด 🔄 ไหม
+       (ต่างจากยอดวิวที่ย่อได้ เพราะดูแนวโน้มไม่ได้ดูตัวเลขเป๊ะ) */
+    return '<div class="credbar">🎟️ เครดิต ScrapeCreators: <b>' +
+      (c && c.left != null ? esc(Number(c.left).toLocaleString("th-TH")) : "—") + "</b>" +
+      (c && c.at ? ' <span class="sub">(ณ ' + esc(whenTxt(c.at)) + ")</span>" : "") +
+      '<button type="button" class="btn xsbtn" data-influ="credits"' + (state.busy ? " disabled" : "") + ">" +
+      (state.busy === "credits" ? '<span class="spin"></span>' : "เช็คยอด") + "</button></div>";
   }
 
   function card(label, value) {
@@ -629,10 +659,13 @@
      ⚠️ ผูกที่ document ครั้งเดียว ไม่ผูกใหม่ทุกครั้งที่วาด —
         draw() สร้าง innerHTML ใหม่ทั้งก้อน ตัวที่ผูกกับ element เดิมจะหลุดหมด */
   function onClick(e) {
-    var t = e.target.closest("[data-influ],[data-influsort],[data-infludel]");
-    if (!t) return;
+    var t = e.target.closest("[data-influ],[data-influsort],[data-infludel],[data-influask]");
+    /* กดที่อื่นบนหน้า = เลิกถามยืนยันการลบ (เหมือนเมนูที่ปิดตัวเองเมื่อกดข้างนอก) */
+    if (!t) { if (state.delId) { state.delId = ""; draw(); } return; }
 
+    if (t.dataset.influask) { state.delId = t.dataset.influask; draw(); return; }
     if (t.dataset.infludel) {
+      state.delId = "";
       state.busy = "load"; draw();
       call({ remove: [t.dataset.infludel] }).then(take);
       return;
@@ -654,6 +687,15 @@
     } else if (a === "refresh") {
       state.note = ""; state.busy = "refresh"; draw();
       call({ refresh: true }).then(take);
+    } else if (a === "credits") {
+      state.note = ""; state.busy = "credits"; draw();
+      call({ credits: true }).then(function (res) {
+        // ⚠️ เช็คไม่สำเร็จต้องบอกเหตุผล ไม่ใช่ปล่อยให้เลขค้างเป็น "—" เฉยๆ
+        if (res && res.ok && res.message) state.note = res.message;
+        take(res);
+      });
+    } else if (a === "delcancel") {
+      state.delId = ""; draw();
     }
   }
 

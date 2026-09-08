@@ -2910,6 +2910,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
     ok: true, status: "ok", at: now,
     data: {
       at: now, missing: [], max: 300,
+      credits: { left: 4820, at: now },
       posts: [
         { id: "a1", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@x/video/1",
           /* 🔴 แคปชั่นยาวแบบที่เจ้าของวางมาจริง — ของเดิมปล่อยให้คอลัมน์ชื่อยืดตามเนื้อหา
@@ -2960,7 +2961,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(/Earned media/.test(tabName), `ชื่อแท็บเป็น "Earned media" (${tabName})`);
 
   await tabTo(pg, "Earned media");
-  await pg.waitForSelector(".mchart", { timeout: 4000 });
+  await pg.waitForSelector(".bchart", { timeout: 4000 });
   const txt = await view(pg);
 
   ok(/①\s*โพสต์อินฟลูเอนเซอร์/.test(txt) && /②\s*ข่าว/.test(txt),
@@ -2995,34 +2996,57 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(tbls.length === 4 && !/Views|Engagement/.test(tbls[3]),
      `ตารางข่าวไม่มีคอลัมน์ Views/Engagement (เราไม่ได้ดึงยอดข่าว) — ${tbls.length} ตาราง`);
 
-  /* ── กราฟรายเดือน — section ละกราฟ ไล่ 3 เดือนย้อนหลัง (เจ้าของสั่ง 8 ก.ย. 2026) ── */
-  const charts = await pg.$$eval(".mchart", (n) => n.map((c) => ({
-    noeng: c.classList.contains("noeng"),
-    rows: Array.from(c.querySelectorAll(".mrow:not(.mhead)")).map((x) => ({
-      lab: x.querySelector(".mlab").textContent.trim(),
-      cnt: x.querySelector(".mcnt").textContent.trim(),
-      eng: x.querySelector(".meng") ? x.querySelector(".meng").textContent.trim() : null,
-      bars: x.querySelectorAll(".mbar").length,
+  /* ── กราฟรายเดือน — bar chart แนวตั้ง section ละอัน ไล่ 3 เดือนย้อนหลัง ──
+     (เจ้าของสั่งเปลี่ยนจากแท่งแนวนอน 8 ก.ย. 2026: "เเท่งเปลี่ยนเป็น bar chart เเสดง post") */
+  const charts = await pg.$$eval(".bchart", (n) => n.map((c) => ({
+    cols: Array.from(c.querySelectorAll(".bcol")).map((x) => ({
+      lab: x.querySelector(".blab").textContent.trim(),
+      cnt: x.querySelector(".bcnt").textContent.trim(),
+      eng: x.querySelector(".beng") ? x.querySelector(".beng").textContent.trim() : null,
+      barH: x.querySelector(".bbar") ? Math.round(x.querySelector(".bbar").getBoundingClientRect().height) : 0,
     })),
   })));
   ok(charts.length === 2, `มีกราฟ 2 อัน — section ละอัน (ได้ ${charts.length})`);
-  ok(charts[0].rows.length === 3 && charts[1].rows.length === 3,
+  ok(charts[0].cols.length === 3 && charts[1].cols.length === 3,
      "กราฟไล่ 3 เดือนย้อนหลังทั้งคู่");
   /* ⚠️ เดือนที่ไม่มีของต้องขึ้นเป็น 0 ไม่ใช่หายไปจากกราฟ —
      หายไปแล้วอ่านไม่ออกว่า "เดือนนั้นไม่มีงาน" หรือ "กราฟไม่ได้นับเดือนนั้น" */
-  ok(charts[0].rows.some((r) => r.cnt === "0" && r.bars === 0),
-     "เดือนที่ไม่มีของยังมีแถว ขึ้นเลข 0 (ไม่หายไปเฉยๆ)");
-  ok(charts[0].rows[2].cnt === "4", `กราฟโพสต์: เดือนนี้ 4 โพสต์ (ได้ ${charts[0].rows[2].cnt})`);
-  ok(charts[1].rows[2].cnt === "2" && charts[1].rows[1].cnt === "1",
+  ok(charts[0].cols.some((c) => c.cnt === "0" && c.barH === 0),
+     "เดือนที่ไม่มีของยังมีแท่ง (สูง 0) และเลขกำกับ ไม่หายไปเฉยๆ");
+  /* ⚠️ แท่งต้องสูงต่างกันจริงตามจำนวน ไม่ใช่วาดเท่ากันหมด
+     ใช้กราฟข่าวเทียบ เพราะมีของกระจาย 2 เดือน (0 · 1 · 2) — กราฟโพสต์กองอยู่เดือนเดียว */
+  const nb = charts[1].cols.map((c) => c.barH);
+  ok(nb[2] > nb[1] && nb[1] > nb[0] && nb[0] === 0,
+     `ความสูงแท่งไล่ตามจำนวนจริง 0 < 1 < 2 (${nb.join(" ")})`);
+  ok(charts[0].cols[2].cnt === "4", `กราฟโพสต์: เดือนนี้ 4 โพสต์ (ได้ ${charts[0].cols[2].cnt})`);
+  ok(charts[1].cols[2].cnt === "2" && charts[1].cols[1].cnt === "1",
      "กราฟข่าว: เดือนนี้ 2 · เดือนที่แล้ว 1");
-  /* 🚫 กราฟข่าวห้ามมีคอลัมน์ Engagement — เราไม่ได้ดึงยอดข่าว
+  /* 🚫 กราฟข่าวห้ามมี Engagement — เราไม่ได้ดึงยอดข่าว
      ใส่ช่องว่างไว้ = อ่านแล้วเข้าใจว่า "ข่าวไม่มีคนมีปฏิสัมพันธ์" ซึ่งไม่จริง */
-  ok(charts[1].noeng && charts[1].rows.every((r) => r.eng === null),
-     "กราฟข่าวไม่มีคอลัมน์ Engagement เลย");
-  ok(charts[0].rows[2].eng && charts[0].rows[2].eng !== "—" && charts[0].rows[2].eng !== "0",
+  ok(charts[1].cols.every((c) => c.eng === null), "กราฟข่าวไม่มี Engagement เลย");
+  ok(charts[0].cols[2].eng && charts[0].cols[2].eng !== "—" && charts[0].cols[2].eng !== "0",
      "กราฟโพสต์มีตัวเลข Engagement จริง");
   /* 🚫 เดือนที่ยังไม่รู้ยอดต้องเป็น "—" ไม่ใช่ 0 (กฎ null ≠ 0 ของทั้งโปรเจกต์) */
-  ok(charts[0].rows[0].eng === "—", `เดือนที่ไม่มีโพสต์ Engagement เป็น — ไม่ใช่ 0 (ได้ "${charts[0].rows[0].eng}")`);
+  ok(charts[0].cols[0].eng === "—", `เดือนที่ไม่มีโพสต์ Engagement เป็น — ไม่ใช่ 0 (ได้ "${charts[0].cols[0].eng}")`);
+
+  /* 🔴 เอากล่องสรุป 4 ใบออก (เจ้าของสั่ง: "summary box ไม่ต้อง")
+     ตัวเลขรวมอยู่ในแถวรวมท้ายตารางของแต่ละแพลตฟอร์มแล้ว */
+  ok(!(await pg.$("#view .scgrid .sc")) || !/Views รวม/.test(await view(pg)),
+     "ไม่มีกล่องสรุป Views/ER ด้านบนแล้ว");
+
+  /* 🔴 ยอดเครดิต ScrapeCreators มุมขวาบน (เจ้าของสั่ง 8 ก.ย. 2026) */
+  /* ⚠️ หา element ไม่เจอต้อง "ตก" ไม่ใช่ throw จนเทสต์ทั้งไฟล์หยุด —
+     เทสต์ที่พังกลางคันบอกไม่ได้ว่าข้ออื่นเป็นยังไง (เจอตอนลองทำให้พัง) */
+  const cred = (await pg.$(".credbar")) ? await pg.$eval(".credbar", (e) => e.textContent) : "";
+  ok(/4,820/.test(cred), `โชว์ยอดเครดิตคงเหลือ (${cred.slice(0, 40) || "ไม่มีแถบเครดิตเลย"})`);
+  /* ⚠️ ต้องบอกด้วยว่าเป็นยอด ณ เวลาไหน — เครดิตลดลงทุกครั้งที่กด 🔄
+     โชว์เลขลอยๆ จะเข้าใจว่าเป็นยอดสดตอนนี้ */
+  ok(/ณ /.test(cred), "บอกว่าเป็นยอด ณ เวลาไหน");
+  const credRight = (await pg.$(".credbar")) ? await pg.$eval(".credbar", (e) => {
+    const b = e.querySelector("b").getBoundingClientRect(), p = e.getBoundingClientRect();
+    return b.left - p.left > p.width / 2;
+  }) : false;
+  ok(credRight, "อยู่ชิดขวา (มุมขวาบน)");
 
   /* ── ตารางโพสต์: คอลัมน์ตามที่เจ้าของสั่ง + แถวรวม ── */
   ok(ttHead.slice(1, 7).join(",") === "วันที่โพสต์,Views,Engagement,Likes,Shares,Comments",
@@ -3078,6 +3102,36 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   const warnTxt = await pg.$$eval("#view .influ-w", (n) => n.map((x) => x.textContent).join(" || "));
   ok(/ต้นทางไม่ได้ส่ง/.test(warnTxt) && /Views/.test(warnTxt), `บอกว่าต้นทางไม่ได้ส่งอะไรมา (${warnTxt.slice(0, 40)}…)`);
   ok(/like_count/.test(warnTxt), "บอกชื่อฟิลด์ตัวเลขที่ต้นทางส่งมาจริง (ไล่ปัญหาต่อได้)");
+
+  /* 🔴 ชื่อโปรไฟล์ต้องอยู่ต่อท้ายชื่อโพสต์ (เจ้าของสั่ง 8 ก.ย. 2026)
+     ⚠️ ไม่มีชื่อโปรไฟล์ต้องเขียนว่า "ไม่ทราบ" ไม่ใช่ปล่อยว่าง —
+        ว่างแล้วแยกไม่ออกว่าลืมแสดงหรือต้นทางไม่บอก */
+  const accts = await pg.$$eval("#view .influ-s", (n) => n.map((x) => x.textContent.trim()));
+  ok(accts.some((a) => /GoWithKii|@x/.test(a)), `โชว์ชื่อโปรไฟล์ใต้ชื่อโพสต์ (${accts[1]})`);
+  ok(accts.every((a) => a.length > 0), "ทุกแถวมีบรรทัดโปรไฟล์ ไม่มีแถวว่าง");
+  /* ⚠️ ชื่อแพลตฟอร์มไม่ต้องเขียนซ้ำในแถว — หัวตารางบอกอยู่แล้ว */
+  ok(!accts.some((a) => /^TikTok|^YouTube|^Facebook/.test(a)), "ไม่เขียนชื่อแพลตฟอร์มซ้ำในแถว");
+
+  /* 🔴 ปุ่มลบต้องกดยืนยัน (เจ้าของสั่ง 8 ก.ย. 2026)
+     ลบแล้วเอากลับไม่ได้ ต้องวางลิงก์ใหม่ + เสียเครดิตดึงยอดใหม่ */
+  let deleted = 0;
+  await pg.route("**/social/api/influ**", (r) => {
+    const d = r.request().postData() || "";
+    if (d.indexOf("remove") >= 0) deleted++;
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fixture) });
+  });
+  await pg.click("#view .xbtn");
+  await pg.waitForTimeout(120);
+  ok(deleted === 0, "กด ✕ ครั้งแรกยังไม่ลบ — ถามยืนยันก่อน");
+  ok(!!(await pg.$("#view .delyes")), "ขึ้นปุ่มยืนยัน");
+  await pg.click("#view .delno");
+  await pg.waitForTimeout(120);
+  ok(deleted === 0 && !(await pg.$("#view .delyes")), "กดยกเลิกแล้วไม่ลบ และปุ่มยืนยันหายไป");
+  await pg.click("#view .xbtn");
+  await pg.waitForTimeout(120);
+  await pg.click("#view .delyes");
+  await pg.waitForTimeout(200);
+  ok(deleted === 1, `กดยืนยันแล้วถึงจะลบจริง (ยิงลบ ${deleted} ครั้ง)`);
 
   /* 🔴 แท็บนี้ไม่ได้ใช้ช่วงเวลาเลย → ต้องซ่อนตัวเลือกช่วงเวลาและชิพเลือกช่อง
      (เจ้าของทัก 8 ก.ย. 2026: "หน้านี้ timeline ไม่มีผลถูกไหม ? ซ่อนใน tab นี้ไว้เลยก็ได้")
