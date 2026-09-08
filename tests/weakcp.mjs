@@ -197,5 +197,64 @@ console.log("\n[9] 🌫️ หน้ารายงานค่าฝุ่น�
   ok("หน้า admin แปลเหตุผล dustpage เป็นภาษาคนแล้ว", /dustpage:\s*"[^"]*[ก-๙]/.test(adm));
 }
 
+console.log("\n[9] 🏦 กลุ่ม Ascend = เครือ CP (เจ้าของยืนยัน 8 ก.ย. 2026)");
+{
+  // เจ้าของส่งภาพจาก /admin/: ข่าว "Ascend Bank" 2 ใบถูกตัดด้วยเหตุผล "ไม่มีชื่อเครือ CP"
+  const KEEP = [
+    'Ascend Bank เร่งเครื่องขอตั้ง Virtual Bank ในปี 69 "CLICX" โกยเงินฝากทะลุ 1 พันล้านบ.',
+    "Ascend Bank restructures operations ahead of launch - Bangkok Post",
+    "แอสเซนด์ มันนี่ ประกาศผลประกอบการ",
+    "TrueMoney Wallet เปิดบริการใหม่",
+    "Ascend Group ปรับโครงสร้างธุรกิจ",
+  ];
+  for (const t of KEEP) ok(`เข้าคอลัมน์ CP ได้: ${t.slice(0, 34)}`, cpEvidence(t) === "strong", cpEvidence(t) || "(ว่าง)");
+
+  // 🚫 `ascend` เดี่ยวเป็นคำอังกฤษธรรมดา — ห้ามผ่านฟรี ต้องส่งให้ AI ตัดสิน
+  // (บทเรียนเดิมกับ SLAPP -> slapped · rcep -> intercept)
+  for (const t of ["Global markets ascend to record high", "Ascend named top fintech of the year"])
+    ok(`🚫 ascend เดี่ยว = weak ส่งให้ AI: ${t.slice(0, 30)}`, cpEvidence(t) === "weak", cpEvidence(t) || "(ว่าง)");
+
+  // ⚠️ คำละตินต้องตรงทั้งคำ — "ascending" ห้ามถูกจับ
+  ok("🚫 ascending ไม่นับ (คำละตินต้องตรงทั้งคำ)",
+    cpEvidence("นักปีนเขา ascending the north face") === "", cpEvidence("นักปีนเขา ascending the north face"));
+
+  // ⚠️ ฝั่งหน้าเว็บมี PIN_CP_RE อยู่ 2 ไฟล์ ต้องเติมให้ตรงกับ CP_BRANDS เสมอ
+  for (const f2 of ["../trend/app.js", "../issue/app.js"]) {
+    const src = fs.readFileSync(new URL(f2, import.meta.url), "utf8");
+    const m = src.match(/const PIN_CP_RE = (\/.*\/i);/);
+    ok(`${f2.replace("../", "")}: PIN_CP_RE รู้จัก Ascend แล้ว`,
+      !!m && /ascend/i.test(m[1]) && /แอสเซนด์/.test(m[1]), m ? "ยังไม่มี" : "ไม่เจอ PIN_CP_RE");
+  }
+}
+
+console.log("\n[10] 🎪 งานของเครือที่ขึ้นต้นด้วย CP + `CP` ที่เป็นประธานของประโยค");
+{
+  // เจ้าของแจ้ง 8 ก.ย. 2026: ข่าวงาน CP Innovation Expo 3 ใบถูก AI ตัดทิ้งด้วย ai-no-cp
+  const SHOT = [
+    'นวัตกรรมแบบไหนที่ "ไปต่อ" และสร้าง Impact ได้จริง?...CP เปิด "Behind the Judging Room"',
+    "เปิดห้องตัดสิน CP Innovation Expo 2026 จากไอเดียสู่ Impact - ข่าวสดออนไลน์",
+    "เจาะลึกเบื้องหลังห้องตัดสิน CP INNOVATION EXPOSITION 2026 นวัตกรรมแบบไหนที่จะไปถึงฝั่ง",
+  ];
+  for (const t of SHOT) ok(`🎯 เคสจริง: ${t.slice(0, 34)}`, cpEvidence(t) === "strong", cpEvidence(t) || "(ว่าง)");
+
+  // `CP` + คำกริยาที่ประธานต้องเป็นองค์กร = เชื่อได้เลย ไม่ต้องให้ AI เดา
+  for (const t of ["CP ผนึก Amazon เปิดตัวบริการใหม่", "CP ทุ่ม 5 หมื่นล้านลงทุนอีอีซี",
+                   "CP ประกาศผลประกอบการไตรมาส 3"])
+    ok(`CP เป็นประธาน = strong: ${t.slice(0, 30)}`, cpEvidence(t) === "strong", cpEvidence(t) || "(ว่าง)");
+
+  // 🚫 CP ที่เป็นตัวย่ออย่างอื่น ต้องไม่กลายเป็น strong
+  // (ยังเป็น weak ได้ = ส่งให้ AI ตัดสิน แค่ต้องไม่ผ่านฟรี)
+  for (const t of [
+    "อัตราแลกเปลี่ยนย้อนหลัง CP USD KuCoin - Investing.com",
+    "ผู้ป่วย CP หรือ cerebral palsy ต้องการการดูแลพิเศษ",
+    "ภาควิชา CP จุฬาฯ รับสมัครนิสิตใหม่",
+  ]) ok(`🚫 ห้ามผ่านฟรี: ${t.slice(0, 32)}`, cpEvidence(t) !== "strong", cpEvidence(t));
+
+  // ⚠️ คำกริยาต้องติดกับ CP — โผล่ที่ไหนก็ได้ในพาดหัวไม่นับ
+  ok("🚫 คำกริยาลอยๆ ไกลจาก CP ไม่นับ",
+    cpEvidence("เปิดตัวแอปใหม่ ผู้ป่วย CP ใช้ฟรี") !== "strong",
+    cpEvidence("เปิดตัวแอปใหม่ ผู้ป่วย CP ใช้ฟรี"));
+}
+
 console.log(`\n${fail === 0 ? "✅" : "❌"} ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);

@@ -1,0 +1,19 @@
+---
+description: กฎของโปรเจกต์ cp_dashboard — อ่าน AGENTS.md และ CLAUDE.md ก่อนเขียนโค้ด
+alwaysApply: true
+---
+
+👉 **อ่าน `AGENTS.md` แล้วต่อด้วย `CLAUDE.md`** (ทั้งสองไฟล์อยู่ที่ราก repo)
+
+ทั้งสองไฟล์นั้นคือกฎทั้งหมดของโปรเจกต์นี้ — ไฟล์นี้เป็นแค่ป้ายชี้ทาง
+
+🚫 **ห้ามก๊อปกฎมาไว้ที่นี่** — กฎเดียวกันอยู่ 2 ที่ = แก้ที่หนึ่งลืมอีกที่
+
+⛔ 3 ข้อที่ผิดแล้วเสียหายทันที:
+1. **`main` = เว็บจริง push แล้ว deploy ทันที** — ห้าม push เองโดยไม่ได้รับคำสั่ง
+2. **repo นี้ public** — ห้าม commit API key / token / id ใดๆ
+3. **แตะอะไรใน `functions/` ต้องรัน `node tests/imports.mjs` ก่อน push**
+   ไฟล์เดียวประกอบไม่ขึ้น = ทั้งเว็บสร้างไม่ได้ (`node --check` จับไม่ได้)
+
+โปรเจกต์นี้เป็น **static ล้วน + Cloudflare Pages Functions ไม่มีขั้นตอน build**
+🚫 ไม่มี React/Vite/Tailwind — `package.json` ที่เห็นใช้กับเทสต์เท่านั้น
