@@ -2912,13 +2912,19 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
       at: now, missing: [], max: 300,
       posts: [
         { id: "a1", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@x/video/1",
-          account: "@x", title: "คลิปรีวิว", note: "", host: "tiktok.com",
+          /* 🔴 แคปชั่นยาวแบบที่เจ้าของวางมาจริง — ของเดิมปล่อยให้คอลัมน์ชื่อยืดตามเนื้อหา
+             จนคอลัมน์ตัวเลขถูกดันออกนอกจอทั้งหมด (เจ้าของแจ้ง 8 ก.ย. 2026 พร้อมภาพ) */
+          account: "@x", host: "tiktok.com", note: "",
+          title: "🥹 คนไทยเฮทั้งประเทศ! เนเน่ รอยัล คว้า Live Golden Buzzer บนเวที America's Got Talent 2026 " +
+                 "ผ่านตรงเข้าสู่รอบชิงชนะเลิศ ทันที! โมเมนต์นี้ทั้งขนลุก ทั้งน้ำตาซึม มาส่งเสียงเชียร์เนเน่ไปด้วยกัน",
           publishedAt: thisM(2), addedAt: now,
           stats: { views: 10000, likes: 500, comments: 30, shares: 20 }, err: "" },
         { id: "a2", kind: "social", platform: "youtube", url: "https://youtu.be/aaaaaaaaaaa",
           account: "ช่องเรา", title: "คลิปยาว", note: "", host: "youtu.be",
           publishedAt: thisM(3), addedAt: now,
-          stats: { views: 5000, likes: 100, comments: 10, shares: null }, err: "" },
+          stats: { views: 5000, likes: 100, comments: 10, shares: null }, err: "",
+          /* ต้นทางตอบมาแต่ไม่มี views — ต้องบอกว่าขาดอะไรและได้ฟิลด์อะไรมาแทน */
+          warn: { miss: ["shares"], keys: ["digg_count", "comment_count"] } },
         { id: "n1", kind: "news", platform: "", url: "https://www.thansettakij.com/news/1",
           host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 1", publishedAt: thisM(1),
           addedAt: now, stats: {}, err: "" },
@@ -3018,6 +3024,33 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(foot2[4] === "—", `กรองเหลือ YouTube: Shares รวมเป็น — ไม่ใช่ 0 (ได้ "${foot2[4]}")`);
   await pg.selectOption('[data-influsel="fPlatform"]', "all");
   await pg.waitForTimeout(120);
+
+  /* 🔴 ชื่อโพสต์ยาวห้ามดันคอลัมน์ตัวเลขออกนอกจอ (เจ้าของแจ้ง 8 ก.ย. 2026 พร้อมภาพ:
+     "ชื่อเต็มเกิน ไม่เห็นอันอื่นเลย") — วัดตำแหน่งจริงบนจอ ไม่ใช่ดูจาก CSS */
+  const fit = await pg.evaluate(() => {
+    const t = document.querySelectorAll("#view .tbl.perf")[0];
+    const wrap = t.closest(".tblwrap");
+    const cells = t.querySelectorAll("tbody tr:first-child td");
+    return {
+      tblW: Math.round(t.getBoundingClientRect().width),
+      wrapW: Math.round(wrap.getBoundingClientRect().width),
+      titleW: Math.round(t.querySelector(".influ-m").getBoundingClientRect().width),
+      lastRight: Math.round(cells[cells.length - 1].getBoundingClientRect().right),
+      wrapRight: Math.round(wrap.getBoundingClientRect().right),
+    };
+  });
+  ok(fit.tblW <= fit.wrapW + 1, `ตารางกว้างไม่เกินกรอบ ไม่ต้องเลื่อนหาคอลัมน์ (${fit.tblW} / ${fit.wrapW})`);
+  ok(fit.lastRight <= fit.wrapRight + 1, "คอลัมน์สุดท้ายอยู่ในจอ (เห็นครบทุกคอลัมน์)");
+  ok(fit.titleW <= 360, `คอลัมน์ชื่อโพสต์ถูกจำกัดความกว้าง (${fit.titleW}px)`);
+  /* ⚠️ ตัดชื่อแล้วต้องยังอ่านตัวเต็มได้ — ไม่งั้นตัดทิ้งไปเฉยๆ */
+  ok(await pg.$eval("#view .influ-m a", (a) => a.title.length > 60), "ชี้ที่ชื่อแล้วเห็นตัวเต็ม (tooltip)");
+
+  /* 🔴 ยอดที่ต้นทางไม่ส่งมา ต้องบอกว่าขาดตัวไหน + ได้ฟิลด์อะไรมาแทน
+     เจ้าของถาม "ทำไม tiktok ไม่มี view ?" แล้วหน้าเว็บตอบไม่ได้เลย — "—" เฉยๆ
+     แยกไม่ออกว่า "ไม่มีคนดู" กับ "ชื่อฟิลด์ไม่ตรงกับที่เดาไว้" */
+  const warnTxt = await pg.$eval("#view .influ-w", (e) => e.textContent);
+  ok(/ต้นทางไม่ได้ส่ง/.test(warnTxt) && /Shares/.test(warnTxt), `บอกว่าต้นทางไม่ได้ส่งอะไรมา (${warnTxt.slice(0, 40)}…)`);
+  ok(/digg_count/.test(warnTxt), "บอกชื่อฟิลด์ตัวเลขที่ต้นทางส่งมาจริง (ไล่ปัญหาต่อได้)");
 
   /* ── กล่องวางลิงก์อยู่ล่างสุด (เจ้าของสั่ง 8 ก.ย. 2026) ── */
   const boxTop = await pg.$eval("#influ-in", (e) => e.getBoundingClientRect().top + scrollY);

@@ -97,6 +97,7 @@
   }
 
   var P_LABEL = { youtube: "YouTube", tiktok: "TikTok", facebook: "Facebook", instagram: "Instagram" };
+  var M_LABEL = { views: "Views", likes: "Likes", comments: "Comments", shares: "Shares" };
   var P_COLOR = { youtube: "#dc2626", tiktok: "#0d9488", facebook: "#2563eb", instagram: "#c2410c" };
 
   /* engagement = ยอดที่นับได้จริงเท่านั้น
@@ -431,7 +432,8 @@
       var s = p.stats || {};
       h += '<tr><th scope="row"><div class="rowhead influrow">' +
         (p.thumb ? '<img class="influ-th" src="' + esc(p.thumb) + '" alt="" loading="lazy">' : '<span class="influ-th ph"></span>') +
-        '<div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' +
+        '<div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
+        esc(p.title || p.note || p.url) + '">' +
         /* ⚠️ ลำดับสำคัญ: ชื่อจริงจากต้นทาง > แคปชั่นที่วางมา > URL ดิบ
            ลิงก์ย่อที่ดึงชื่อไม่ได้ ถ้าไม่มีแคปชั่นรอง ตารางจะมีแต่ URL ยาวๆ อ่านไม่รู้เรื่อง */
         esc(p.title || p.note || p.url) + ' <span class="ext">↗</span></a>' +
@@ -440,6 +442,16 @@
         /* ⚠️ ใบที่ดึงยอดไม่สำเร็จต้องบอกเหตุผลตรงแถวนั้น ไม่ใช่ขึ้น "—" เฉยๆ
            ไม่งั้นแยกไม่ออกว่า "ต้นทางไม่ให้ตัวเลข" กับ "ยอดเป็น 0 จริงๆ" */
         (p.err ? '<div class="influ-e">⚠️ ' + esc(p.err) + "</div>" : "") +
+        /* 🔴 ได้ยอดบางตัวไม่ได้บางตัว = ต้องบอกว่าขาดตัวไหน + ต้นทางส่งชื่อฟิลด์อะไรมาแทน
+           (เจ้าของถาม 8 ก.ย. 2026: "ทำไม tiktok ไม่มี view ?" แล้วหน้าเว็บตอบไม่ได้เลย)
+           ⚠️ ไม่ใช่ error — ข้อมูลที่ได้ยังใช้ได้ จึงใช้สีจาง ไม่ใช่สีแดง */
+        (!p.err && p.warn && p.warn.miss && p.warn.miss.length
+          ? '<div class="influ-w">ต้นทางไม่ได้ส่ง <b>' +
+            esc(p.warn.miss.map(function (k) { return M_LABEL[k] || k; }).join(" · ")) + "</b> มา" +
+            (p.warn.keys && p.warn.keys.length
+              ? " · ฟิลด์ตัวเลขที่ได้: " + p.warn.keys.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join(" ")
+              : "") + "</div>"
+          : "") +
         "</div></div></th>";
 
       COLS.forEach(function (c) {
@@ -536,7 +548,8 @@
       '<th>สำนักข่าว</th><th class="num">เดือน</th><th></th></tr></thead><tbody>';
     list.forEach(function (p) {
       var m = monthOf(p);
-      h += '<tr><th scope="row"><div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' +
+      h += '<tr><th scope="row"><div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
+        esc(p.title || p.note || p.url) + '">' +
         esc(p.title || p.note || p.url) + ' <span class="ext">↗</span></a></div></th>' +
         "<td>" + esc(outletOf(p)) + "</td>" +
         /* ~ = ไม่รู้วันที่เผยแพร่ ใช้วันที่เพิ่มเข้ารายการแทน — ต้องบอก ไม่ใช่แสดงเหมือนของจริง */

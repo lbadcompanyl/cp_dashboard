@@ -204,6 +204,24 @@ export function pickWhen(body) {
   return "";
 }
 
+/* ── ชื่อฟิลด์ตัวเลขที่ต้นทางส่งมาจริง ────────────────────────────────
+ * 🔴 เจ้าของถาม 8 ก.ย. 2026: "ทำไม tiktok ไม่มี view ?" แล้ว **ตอบไม่ได้**
+ *    เพราะของเดิมรายงานชื่อฟิลด์ให้ดูเฉพาะตอนที่ **ไม่เจอตัวเลขเลยสักตัว**
+ *    ถ้าเจอบ้างไม่เจอบ้าง (เช่นได้ likes แต่ไม่ได้ views) จะขึ้น "—" เฉยๆ ไม่มีเหตุผลติดมา
+ *    → แยกไม่ออกว่า "ไม่มีคนดู" กับ "ชื่อฟิลด์ไม่ตรงกับที่เดาไว้"
+ * ✅ เก็บชื่อ **คีย์ที่มีค่าเป็นตัวเลข** ทั้งหมดที่เจอ แล้วเอาไปโชว์ในแถวนั้น
+ *    รอบหน้ากด 🔄 ครั้งเดียวก็รู้เลยว่าต้องเติมชื่อไหนลง F
+ * ⚠️ เก็บแค่ "ชื่อคีย์" ไม่เก็บค่า — ไม่ให้ blob ใน KV บวมและไม่มีข้อมูลส่วนตัวติดไป */
+export function numKeys(obj, depth = 0, out = []) {
+  if (obj == null || depth > 5 || typeof obj !== "object" || out.length >= 16) return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (out.length >= 16) break;
+    if (typeof v === "number" && out.indexOf(k) < 0) out.push(k);
+    else if (v && typeof v === "object") numKeys(v, depth + 1, out);
+  }
+  return out;
+}
+
 function statsFrom(body) {
   return {
     views: deepNum(body, F.views),
@@ -250,14 +268,19 @@ async function fetchOne(post, env) {
      (บทเรียนวันนี้: ข้อความตอนพังต้องบอกสาเหตุ ไม่งั้นต้องเดาซ้ำอีกรอบ) */
   if (!got.length) {
     return {
-      ...post, stats: st, at: Date.now(),
+      ...post, stats: st, at: Date.now(), warn: null,
       err: "ต้นทางตอบมาแต่ไม่เจอตัวเลขที่รู้จัก — ชื่อฟิลด์อาจไม่ตรงกับที่เดาไว้ (ดู keys: " +
         Object.keys(r.body || {}).slice(0, 8).join(", ") + ")",
     };
   }
 
+  /* ⚠️ ได้บางตัวไม่ได้บางตัว = ต้องบอกว่าขาดตัวไหน + ต้นทางส่งชื่อฟิลด์อะไรมาแทน
+     ไม่ใช่ error (ข้อมูลที่ได้ยังใช้ได้) จึงเก็บแยกเป็น warn ไม่ใช่ err */
+  const miss = Object.keys(st).filter((k) => st[k] == null);
+
   return {
     ...post,
+    warn: miss.length ? { miss, keys: numKeys(r.body) } : null,
     title: deepStr(r.body, ["desc", "message", "title", "caption", "text", "content", "description"]).slice(0, 300) || post.title,
     account: post.account || deepStr(r.body, ["unique_id", "uniqueid", "username", "nickname", "author_name"]),
     thumb: deepStr(r.body, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "display_url", "thumbnail_url"]) || post.thumb,
@@ -305,7 +328,8 @@ async function fetchYouTube(posts, env) {
           comments: num(s.commentCount),
           shares: null,   // 🚫 YouTube ไม่เปิดเผย — null ไม่ใช่ 0
         },
-        at: Date.now(), err: "",
+        // 🚫 YouTube ไม่ต้องมี warn — shares เป็น null เพราะ API ไม่เปิดเผย ไม่ใช่ชื่อฟิลด์ไม่ตรง
+        warn: null, at: Date.now(), err: "",
       });
     });
   }

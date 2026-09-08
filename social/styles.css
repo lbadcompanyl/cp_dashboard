@@ -584,12 +584,24 @@ body {
 .influrow { display:flex; gap:10px; align-items:flex-start; text-align:left; }
 .influ-th { width:64px; height:40px; object-fit:cover; border-radius:6px; flex:none; background:var(--surface-2); }
 .influ-th.ph { display:block; }
-.influ-m { min-width:0; }
-.influ-m a { color:var(--ink); text-decoration:none; font-weight:600; font-size:.82rem; }
+/* 🔴 ชื่อโพสต์ต้องถูกจำกัดความกว้าง (เจ้าของแจ้ง 8 ก.ย. 2026: "ชื่อเต็มเกิน ไม่เห็นอันอื่นเลย")
+   แคปชั่นของ TikTok/Facebook ยาวเป็นย่อหน้า พอปล่อยให้ยืดตามเนื้อหา
+   คอลัมน์ตัวเลขทั้งหมดจะถูกดันออกนอกจอ ต้องเลื่อนตารางไปขวาสุดถึงจะเห็น
+   ⚠️ max-width ต้องอยู่ที่ div ข้างใน ไม่ใช่ที่ <th> — ตาราง layout อัตโนมัติไม่สนใจ max-width ของเซลล์ */
+.influ-m { min-width:0; max-width:340px; }
+.influ-m a {
+  color:var(--ink); text-decoration:none; font-weight:600; font-size:.82rem;
+  /* ตัดเหลือ 2 บรรทัดแล้วต่อด้วย … · ตัวเต็มอ่านได้จาก tooltip และจากลิงก์ปลายทาง */
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
 .influ-m a:hover { text-decoration:underline; }
 .influ-s { font-size:.72rem; color:var(--muted); margin-top:3px; display:flex; align-items:center; gap:5px; }
 /* ⚠️ เหตุผลที่ดึงยอดไม่ได้ ต้องอยู่ในแถวนั้นเลย ไม่ใช่ปล่อยให้เห็นแค่ "—" */
 .influ-e { font-size:.7rem; color:var(--bad); margin-top:4px; line-height:1.45; }
+/* ดึงได้บางตัว ขาดบางตัว — ไม่ใช่ความผิดพลาด แต่ต้องบอกว่าขาดอะไรและต้นทางส่งอะไรมาแทน
+   ไม่งั้นเห็น "—" แล้วแยกไม่ออกว่า "ไม่มีคนดู" กับ "ต้นทางไม่ได้ส่งมา" */
+.influ-w { font-size:.68rem; color:var(--muted); margin-top:4px; line-height:1.45; }
+.influ-w code { font-size:.95em; background:var(--surface-2); padding:0 3px; border-radius:3px; }
 .xbtn { padding:4px 9px; font-size:.78rem; color:var(--muted); }
 .xbtn:hover { color:var(--bad); border-color:var(--bad); }
 
@@ -616,6 +628,7 @@ body {
   .addbox .btn { width:100%; justify-content:center; }
   .influbar [data-influ="refresh"] { margin-left:0; width:100%; justify-content:center; }
   .influ-th { width:48px; height:32px; }
+  .influ-m { max-width:190px; }
   /* จอแคบเอาแท่งขึ้นบรรทัดของตัวเอง ไม่งั้นเหลือความกว้างไม่กี่พิกเซล */
   .mrow { grid-template-columns:56px 1fr 78px; grid-template-areas:"lab cnt eng" "bar bar bar"; row-gap:4px; }
   .mchart.noeng .mrow { grid-template-columns:56px 1fr; grid-template-areas:"lab cnt" "bar bar"; }
