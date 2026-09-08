@@ -83,7 +83,7 @@ npx wrangler secret put SCRAPECREATORS_API_KEY
 - เกณฑ์ตัดสินอยู่ที่ **[`RUBRIC-CP.md`](RUBRIC-CP.md)** — อ่านก่อนใช้/ก่อน label
 
 ### สอน AI ให้แม่นขึ้น (few-shot)
-ตัวอย่างสอนอยู่ที่ตัวแปร **`CP_EXAMPLES`** บนสุดของ `worker/worker.js`
+ตัวอย่างสอนอยู่ที่ตัวแปร **`CP_EXAMPLES`** บนสุดของ `functions/issue/api/sentiment/_core.js`
 เพิ่มเคสที่ AI เคยตอบผิดเข้าไป → Deploy → แม่นขึ้นทันที (ไม่ต้องเทรนโมเดล)
 · วิธีสร้างชุดข้อมูล label ดูที่ [`labels/README.md`](labels/README.md)
 

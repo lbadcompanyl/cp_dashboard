@@ -29,7 +29,7 @@ const CSV = [
   const bodies = [];
   let withCache = true;
 
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const req = route.request(), u = req.url();
     const send = (o) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(o) });
     if (u.endsWith("/")) return send({ ok: true, ver: 22, rubric: "v6", model: "claude-opus-5",

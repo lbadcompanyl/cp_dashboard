@@ -19,7 +19,7 @@ const path = require("path");
 
 const ROOT = path.join(__dirname, "..", "..");
 const HTML = fs.readFileSync(path.join(ROOT, "issue", "sentiment.html"), "utf8");
-const WORKER = fs.readFileSync(path.join(ROOT, "social-comment-extractor", "worker", "worker.js"), "utf8");
+const WORKER = fs.readFileSync(path.join(ROOT, "functions", "issue", "api", "sentiment", "_core.js"), "utf8");
 
 const PAGE_VER = (HTML.match(/<meta name="page-ver" content="(\d+)"/) || [])[1];
 const WVER = (WORKER.match(/^const WORKER_VER = (\d+);/m) || [])[1];
@@ -41,7 +41,7 @@ const WVER = (WORKER.match(/^const WORKER_VER = (\d+);/m) || [])[1];
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
 
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const u = route.request().url();
     const send = (o) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(o) });
     if (u.endsWith("/credits")) return send({ credits_remaining: 7000 });
@@ -62,8 +62,8 @@ const WVER = (WORKER.match(/^const WORKER_VER = (\d+);/m) || [])[1];
 
   /* ── [4] ต่อหลังบ้านไม่ได้ ก็ยังต้องบอกเลขหน้าเว็บ ─────────
      จังหวะที่หลังบ้านล่มคือจังหวะที่ต้องรู้ให้ได้ว่าหน้าเว็บเป็นรุ่นไหน */
-  await page.unroute("**/comment-sentiment.s3445028.workers.dev/**");
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", (route) => route.abort());
+  await page.unroute("**/issue/api/sentiment/**");
+  await page.route("**/issue/api/sentiment/**", (route) => route.abort());
   await page.reload();
   await page.waitForFunction(() => /ต่อหลังบ้านไม่ได้/.test(document.querySelector("#verBadge")?.textContent || ""), null, { timeout: 8000 });
   const bad = (await page.locator("#verBadge").textContent()).trim();

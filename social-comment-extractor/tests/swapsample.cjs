@@ -42,7 +42,7 @@ const BASE = {
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let sent = [], paraMode = "ok";
 
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const req = route.request(), u = req.url();
     const send = (o, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(o) });
     if (u.endsWith("/credits")) return send({ credits_remaining: 7000 });

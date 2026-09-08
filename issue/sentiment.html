@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="18" />
+<meta name="page-ver" content="23" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -68,6 +68,8 @@
   .sc-stat { background: var(--sc-surface); border: 1px solid var(--sc-border); border-radius: 11px; padding: 14px 15px; }
   .sc-stat .sc-k { font-size: 10.5px; color: var(--sc-muted); text-transform: uppercase; letter-spacing: .04em; }
   .sc-stat .sc-v { font-size: 22px; font-weight: 700; margin-top: 5px; }
+  /* บรรทัดเล็กใต้ตัวเลข — บอกว่าตัวเลขนั้นนับอะไรบ้าง / ทำไมถึงเป็น "—" */
+  .sc-stat .sc-note { font-size: 10.5px; color: var(--sc-muted); margin-top: 3px; line-height: 1.35; }
 
   .sc-senti { display: grid; grid-template-columns: 170px 1fr; gap: 24px; align-items: center; }
   @media (max-width: 560px) { .sc-senti { grid-template-columns: 1fr; justify-items: center; } }
@@ -148,7 +150,12 @@
   .sc-atag { flex: none; font-size: 10px; font-weight: 700; border: 1px solid; border-radius: 999px; padding: 2px 9px; margin-top: 1px; }
   .sc-atext { color: var(--sc-ink2); word-break: break-word; }
 
-  details.sc-card > summary { cursor: pointer; font-weight: 700; font-size: 14px; color: #111827; list-style: none; }
+  details.sc-card > summary { cursor: pointer; font-weight: 700; font-size: 14px; color: #111827; list-style: none;
+                              display: flex; align-items: center; gap: 10px; }
+  /* ดันปุ่มไปมุมขวาบนสุด · จอแคบยอมให้ตกบรรทัดดีกว่าดันหัวข้อจนล้น */
+  details.sc-card > summary > span { flex: 1 1 auto; min-width: 0; }
+  details.sc-card > summary > button { flex: 0 0 auto; font-weight: 600; }
+  @media (max-width: 560px) { details.sc-card > summary { flex-wrap: wrap; } }
   details.sc-card > summary::-webkit-details-marker { display: none; }
 
   .sc-toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); background: #111827; color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 13px; opacity: 0; transition: all .2s; pointer-events: none; z-index: 99; }
@@ -238,8 +245,10 @@
                 เจ้าของเลือกให้เป็นปุ่มกดเอง จะได้คุมได้ว่าจ่ายเมื่อไหร่ (2 ก.ย. 2026)
              🚫 ไม่มีปุ่มแบบนี้ที่การ์ด "คำที่พูดถึงบ่อย" โดยตั้งใจ — ตัวเลขตรงนั้น
                 นับจากข้อความคอมเมนต์ ไม่ได้ขึ้นกับป้าย กดไปก็ได้เลขเดิมเป๊ะ -->
+        <!-- 📍 ปุ่มย้ายไปอยู่หัวกล่อง audit แล้ว (เจ้าของสั่ง 4 ก.ย. 2026) — ที่นี่เหลือแต่ "คำเตือนว่าสรุปเก่า"
+             ⚠️ **ห้ามย้ายคำเตือนตามปุ่มไป** คำเตือนต้องอยู่ติดของที่เก่า ไม่งั้นคนอ่านสรุปที่ตกยุค
+                โดยไม่รู้ตัว (กล่อง audit พับอยู่เป็นค่าตั้งต้น มองไม่เห็นอะไรข้างในเลย) -->
         <div class="sc-resynth" id="resynthWrap" hidden>
-          <button class="sc-btn2" id="resynthBtn" type="button">🔄 สรุปใหม่ตามป้ายที่แก้</button>
           <span class="sc-sub" id="resynthNote"></span>
         </div>
       </div>
@@ -266,7 +275,13 @@
       </div>
 
       <details class="sc-card" id="auditCard">
-        <summary>🔍 ตรวจ sentiment รายคอมเมนต์ (audit) + ส่งออก Excel/CSV</summary>
+        <!-- 🔄 ปุ่มอยู่บนหัวกล่อง มุมขวาบน **ปุ่มเดียว** และ **ขึ้นตลอด** (เจ้าของสั่ง 4 ก.ย. 2026)
+             ⚠️ อยู่บนบรรทัดหัวกล่องเพราะกล่องนี้พับได้ — วางไว้ข้างในแล้วพับอยู่ = มองไม่เห็นเลย
+             ⚠️ ปุ่มใน <summary> ถ้าไม่กัน event จะไปพับ/กางกล่องด้วยทุกครั้งที่กด -->
+        <summary>
+          <span>🔍 ตรวจ sentiment รายคอมเมนต์ (audit) + ส่งออก Excel/CSV</span>
+          <button class="sc-btn sc-pri" id="resynthBtn" type="button">🔄 สรุปใหม่ตามป้ายที่แก้</button>
+        </summary>
         <p class="sc-sub" style="margin:8px 0 0">ข้อความ + ผลที่ Claude ตี ไว้ตรวจว่าถูกต้องไหม (ตัดชื่อผู้คอมเมนต์ออกแล้ว)</p>
         <div class="sc-auditbar">
           <div class="sc-afilter" id="auditFilter"></div>
@@ -275,6 +290,8 @@
             <button class="sc-btn" id="auditCsvBtn" type="button">📑 CSV</button>
           </div>
         </div>
+        <!-- ผลของการกดปุ่ม (สำเร็จ/พัง) — ต้องอยู่ใกล้ปุ่ม ไม่ใช่ไปโผล่บนสุดของหน้า -->
+        <div class="sc-sub" id="resynthMsg" hidden></div>
         <div class="sc-alist" id="auditList"></div>
 
         <!-- ชั้น ② ของระบบเรียนรู้ — โผล่เฉพาะตอนมีของที่แก้ไว้
@@ -296,7 +313,13 @@
   <div class="sc-toast" id="toast"></div>
 
 <script>
-const WORKER = "https://comment-sentiment.s3445028.workers.dev";
+/* 🔐 เรียกผ่านเว็บของเราเอง ไม่ยิงตรงไปที่ workers.dev อีกแล้ว (ย้าย 4 ก.ย. 2026)
+   path นี้อยู่ใต้ `/issue/` จึงมี Cloudflare Access ครอบให้ คนนอกมาไม่ถึง
+   🚫 ห้ามเปลี่ยนกลับเป็น URL ของ workers.dev — ตรงนั้นเป็นที่อยู่สาธารณะ
+      ใครก็สั่งให้ทำงานได้แล้วเงินออกจากบัญชีเรา (เครดิต ScrapeCreators + ค่า Claude)
+   📌 เป็น path แบบสัมพัทธ์โดยตั้งใจ — preview ของแต่ละ branch เป็นคนละโดเมน
+      เขียนโดเมนตายตัวเมื่อไหร่ preview จะยิงข้ามไปหา production ทันที */
+const WORKER = "/issue/api/sentiment";
 const DEMO = new URLSearchParams(location.search).has("demo");
 const el = id => document.getElementById(id);
 let lastResult = null;
@@ -453,6 +476,8 @@ async function demoResult(opts){
     target: opts.target, not_related: notRel,
     post_title: "ตัวอย่าง: รีวิวร้านอาหารเปิดใหม่ อร่อยจริงหรือแค่กระแส?", post_thumb: "",
     fetched_count: fetched, analyzed_count: fetched,
+    /* ตัวอย่างจงใจให้ shares เป็น null — จะได้เห็นว่าหน้าเว็บบอกไหมว่ายอดรวมขาดชนิดไหน */
+    post_stats: { views: 128400, likes: 5210, comments: 612, shares: null },
     sentiment: { positive: pos, neutral: neu, negative: neg },
     engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
     time_range: { earliest: "2026-08-10", latest: "2026-08-19" },
@@ -543,25 +568,58 @@ function renderResult(d, keepAudit){
      ⚠️ ตัวเลขนี้ **คนละเรื่องกับ sentiment** — เป็นแค่ "มีคำนี้ในข้อความไหม"
         ไม่ได้แปลว่าคอมเมนต์นั้นมีท่าทีต่อ CP
      🚫 ห้ามเอาไปกรอง/ตัดคอมเมนต์ — ข่าวที่ด่าเครือโดยไม่เอ่ยชื่อก็มี */
-  const CP_RE = /(ซี\.?พี|เครือซีพี|cpf|cp\s*all|cp\s*axtra|แม็คโคร|makro|โลตัส|lotus'?s|ทรู(?!ธ)|true\s*(corp|move|online)|เจริญโภคภัณฑ์|charoen\s*pokphand|\bcp\b)/i;
+  /* 🏷 คำที่นับว่า "กล่าวถึง CP และเครือ" — เจ้าของสั่งเอง 4 ก.ย. 2026
+        "นับเฉพาะที่ชัดๆ เช่น ซีพี, เจ้าสัว, นายทุนใหญ่, cp"
+     ⚠️ เจ้าสัว/นายทุนใหญ่ เป็นการ **เรียกแทน** ไม่ใช่ชื่อแบรนด์ ใต้โพสของเครือคนใช้คำนี้แทนชื่อ
+        แต่ในโพสอื่นอาจหมายถึงเจ้าสัวรายอื่น — ป้ายจึงเขียนว่า "กล่าวถึง" ไม่ใช่ "เอ่ยชื่อ" */
+  const CP_RE = /(ซี\.?พี|เครือซีพี|cpf|cp\s*all|cp\s*axtra|แม็คโคร|makro|โลตัส|lotus'?s|ทรู(?!ธ)|true\s*(corp|move|online)|เจริญโภคภัณฑ์|charoen\s*pokphand|เจ้าสัว|นายทุนใหญ่|\bcp\b)/i;
   const cpMentions = (d.audit || []).filter(a => CP_RE.test(String(a.text || ""))).length;
+  /* 📊 ยอดของ "ตัวโพส" — คนละเรื่องกับยอดถูกใจของคอมเมนต์ที่ดึงมาได้
+     🔴 หลังบ้านรุ่นเก่าไม่ส่ง post_stats มา → ต้องขึ้น "—" ไม่ใช่ 0 */
+  const ps = d.post_stats || {};
+  /* 🔴 แยกให้ออกระหว่าง 2 สาเหตุที่ทำให้ขึ้น "—" — คนละเรื่องกันสิ้นเชิง
+       (ก) หลังบ้านยังไม่ได้อัปเดต จึงไม่ส่ง post_stats มาเลย → **เจ้าของต้องไปวาง worker ใหม่**
+       (ข) ส่งมาแล้วแต่แพลตฟอร์มนั้นไม่เปิดเผยค่านั้น → **ทำอะไรไม่ได้ ไม่ต้องไปหาสาเหตุต่อ**
+     🐞 เจ้าของเจอ 4 ก.ย. 2026: การ์ด 2 ใบข้างกันบอกคนละสาเหตุทั้งที่ต้นเหตุเดียวกัน
+        (Engagement บอก "หลังบ้านยังไม่ส่ง" · ยอดดูบอก "แพลตฟอร์มไม่เปิดเผย") อ่านแล้วสับสน
+        แล้วยังพาไปแก้ผิดทางด้วย — ข้อความหนึ่งบอกว่าต้องไปทำอะไรต่อ อีกข้อความบอกว่าจบแล้ว */
+  const noStats = !d.post_stats;
+  /* ⚠️ ต้องบอกให้ถึงขั้น "ต้องทำอะไร" ไม่ใช่แค่ "ไม่มีข้อมูล"
+     เจ้าของอ่านแล้วต้องรู้ทันทีว่าต้องไปวาง worker ใหม่ ไม่ต้องมาถามซ้ำ */
+  const OLD_WORKER_NOTE = "ต้องอัปเดตหลังบ้านก่อน (worker ≥ v37)";
+  /* 🔴 ผลรวมที่ "ขาดบางชนิด" ต้องบอกว่าขาดอะไร — ไม่งั้นเอา Engagement ของ YouTube (ไม่มีแชร์)
+     ไปเทียบกับของ Facebook (มีแชร์) แล้วสรุปว่าคลิปแย่กว่า ทั้งที่คนละหน่วยกัน */
+  const ENG_TH = { likes: "ถูกใจ", comments: "คอมเมนต์", shares: "แชร์" };
+  const engLabel = (p) => {
+    const have = ["likes","comments","shares"].filter(k => p[k] != null).map(k => ENG_TH[k]);
+    const miss = ["likes","comments","shares"].filter(k => p[k] == null).map(k => ENG_TH[k]);
+    return have.join(" + ") + (miss.length ? ` (ไม่มียอด${miss.join("/")})` : "");
+  };
+  const engParts = ["likes","comments","shares"].map(k => ps[k]).filter(v => v != null);
+  const postEng = engParts.length ? engParts.reduce((a,b) => a+b, 0) : null;
+  const num = (v) => v == null ? "—" : Number(v).toLocaleString();
   const stats = isCP ? [
-    ["คอมเมนต์ทั้งหมด", d.analyzed_count||total],
+    ["คอมเมนต์", d.analyzed_count||total],
     /* 🔴 ของเดิมเขียนว่า "พูดถึงเครือ CP" กับ "ไม่เกี่ยวกับ CP" — **โกหกทั้งคู่**
        เป็นป้ายที่ค้างมาจากตอนที่ระบบยังมีหมวด not_related
        พอเลิกใช้ (26 ส.ค. 2026 · "ไม่แตะ CP = กลาง") มันเลยกลายเป็น "48 / 0" เสมอ
        เจ้าของอ่านแล้วเข้าใจว่าทั้ง 48 ใบพูดถึง CP ทั้งที่จริงมีแค่ไม่กี่ใบ (2 ก.ย. 2026)
        🚫 ห้ามเอาป้ายคู่นั้นกลับมา จนกว่าจะมีหมวด not_related จริงๆ อีกครั้ง */
-    ["แสดงท่าทีต่อ CP", (s.positive||0) + (s.negative||0)],
-    ["เอ่ยชื่อเครือ CP", cpMentions],
-    ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
+    ["กล่าวถึง CP และเครือ", cpMentions, `จาก ${d.analyzed_count||total} ใบ · นับจากข้อความจริง`],
+    /* ⚠️ ต้องบอกว่ารวมอะไรบ้าง — YouTube ไม่เปิดเผยยอดแชร์ ตัวเลขจึงเป็นผลรวมไม่ครบชนิด
+       เขียนไว้ดีกว่าปล่อยให้เอาไปเทียบข้ามแพลตฟอร์มแล้วสรุปผิด */
+    ["Engagement (โพส)", num(postEng),
+      noStats ? OLD_WORKER_NOTE : postEng == null ? "แพลตฟอร์มนี้ไม่ส่งยอดของโพสมา" : engLabel(ps)],
+    ["ยอดดู (โพส)", num(ps.views),
+      noStats ? OLD_WORKER_NOTE : ps.views == null ? "แพลตฟอร์มนี้ไม่เปิดเผยยอดดู" : ""],
   ] : [
     ["คอมเมนต์ที่วิเคราะห์", d.analyzed_count||total],
     ["ยอดถูกใจ/รีแอกชัน", (eng.total_likes!=null? Number(eng.total_likes).toLocaleString() : "—")],
     ["จำนวน Reply", (eng.total_replies!=null? Number(eng.total_replies).toLocaleString() : "—")],
     ["ผู้คอมเมนต์ (ไม่ซ้ำ)", (eng.unique_commenters!=null? Number(eng.unique_commenters).toLocaleString() : "—")],
   ];
-  el("statRow").innerHTML = stats.map(([k,v]) => `<div class="sc-stat"><div class="sc-k">${k}</div><div class="sc-v">${v}</div></div>`).join("");
+  el("statRow").innerHTML = stats.map(([k,v,note]) => `<div class="sc-stat"><div class="sc-k">${k}</div><div class="sc-v">${v}</div>`
+    + (note ? `<div class="sc-note">${escapeHtml(note)}</div>` : "") + `</div>`).join("");
 
   el("summaryBox").textContent = d.summary || "—";
   /* ⚠️ บอกตรงๆ ว่าสรุปมาจากคอมเมนต์กี่ใบ — โหมด CP สรุปจากเฉพาะใบที่พูดถึง CP
@@ -792,24 +850,42 @@ async function swapSample(src, key, btn){
  * 🚫 ห้ามยิงเองอัตโนมัติตอนกดแก้ป้าย — แก้ทีละใบ 10 ใบ = ยิง 10 ครั้ง
  *    เจ้าของเลือกให้เป็นปุ่มกดเอง (2 ก.ย. 2026) จะได้คุมได้ว่าจ่ายเมื่อไหร่
  * ══════════════════════════════════════════════════════════════ */
+/* ⚠️ ปุ่มกับคำเตือนอยู่คนละที่โดยตั้งใจ (ย้ายปุ่ม 4 ก.ย. 2026)
+     ปุ่ม     → หัวกล่อง audit  = ที่ที่ผู้ใช้กำลังแก้ป้ายอยู่ กดต่อได้เลย
+     คำเตือน → ใต้กล่องสรุป     = ติดกับ "ของที่เก่าแล้ว"
+   🚫 ห้ามยุบให้เหลือที่เดียว — กล่อง audit พับอยู่เป็นค่าตั้งต้น ถ้าคำเตือนอยู่ข้างใน
+      คนที่ไม่กางจะอ่านสรุปที่ตกยุคโดยไม่มีอะไรบอกเลย */
 function syncResynth(){
-  const wrap = el("resynthWrap");
-  if (!wrap) return;
   const n = lastResult?.edited_count || 0;
-  wrap.hidden = !n;
-  const note = el("resynthNote");
-  if (note && n) note.textContent = `คุณแก้ป้ายไว้ ${n} ใบ — สรุปกับตัวอย่างยังเป็นของรอบที่แล้ว`;
+  /* 🔴 สรุปใหม่ไปแล้วต้องเลิกเตือนว่า "ยังเป็นของรอบที่แล้ว" — ไม่งั้นคำเตือนโกหก
+     เทียบกับจำนวนที่แก้ ณ ตอนสรุปใหม่ · แก้เพิ่มอีกเมื่อไหร่ คำเตือนกลับมาเอง */
+  const stale = n > (lastResult?._resynthAt ?? -1);
+  const wrap = el("resynthWrap"), note = el("resynthNote"), btn = el("resynthBtn");
+  if (wrap) wrap.hidden = !(n && stale);
+  if (note && n && stale) note.textContent = `คุณแก้ป้ายไว้ ${n} ใบ — สรุปกับตัวอย่างยังเป็นของรอบที่แล้ว · กดปุ่ม 🔄 มุมขวาบนของกล่อง “ตรวจ sentiment รายคอมเมนต์” ข้างล่าง`;
+  /* 🔓 ปุ่มขึ้นตลอด ไม่ต้องรอให้แก้ป้าย (เจ้าของสั่ง 4 ก.ย. 2026)
+     ของเดิมซ่อนไว้จนกว่าจะมีการแก้ — เหตุผลเดิมคือ "ไม่แก้อะไรเลย กดไปก็ได้ของเดิม"
+     แต่ที่จริงกดแล้วได้สรุป/ตัวอย่างชุดใหม่ (AI ถอดความใหม่) จึงมีประโยชน์อยู่
+     💰 แลกกับ: กดทีไรก็จ่ายทุกครั้ง — เป็นปุ่มกดเอง ไม่ยิงอัตโนมัติ ผู้ใช้จึงคุมได้เอง */
+  if (btn) btn.hidden = false;
+}
+/* ข้อความผลของปุ่ม — ว่างเมื่อไหร่ต้องซ่อนกล่องด้วย ไม่งั้นเหลือช่องว่างคาไว้ */
+function resynthMsg(t){
+  const m = el("resynthMsg");
+  if (!m) return;
+  m.textContent = t || "";
+  m.hidden = !t;
 }
 
 async function runResynth(){
   if (!lastResult || !lastResult.audit) return;
-  const btn = el("resynthBtn"), note = el("resynthNote");
+  const btn = el("resynthBtn");
   const items = lastResult.audit.map(a => ({
     text: a.text || "", sentiment: a.sentiment, likes: a.likes || 0,
   }));
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span> กำลังสรุปใหม่…';
-  if (note) note.textContent = "";
+  resynthMsg("");
   try {
     const r = await fetch(WORKER.replace(/\/+$/,"") + "/resynth", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -824,19 +900,23 @@ async function runResynth(){
     lastResult.samples = d.samples || [];
     lastResult.summary_from = d.summary_from;
     lastResult.summary_of = d.summary_of;
+    lastResult._resynthAt = lastResult.edited_count || 0;   // สรุปนี้ตรงกับป้ายชุดปัจจุบันแล้ว
     /* ตัวอย่างชุดใหม่ตรงกับป้ายปัจจุบันแล้ว — ธง "แก้แล้ว" ยังอยู่ใน audit เหมือนเดิม
        (ผู้ใช้ยังต้องเห็นว่าตัวเองแก้ใบไหนไว้ และปุ่มส่งเข้ากองรอตรวจยังต้องทำงาน) */
     renderResult(lastResult, true);
-    if (note) note.textContent = "สรุปใหม่แล้ว ✓";
+    syncResynth();               // ⚠️ renderResult ไม่ได้เรียกให้ — ไม่เรียกเอง คำเตือน "สรุปเก่า" จะค้างทั้งที่เพิ่งสรุปใหม่
+    resynthMsg("สรุปใหม่แล้ว ✓");
     toast("สรุปใหม่ตามป้ายที่คุณแก้แล้ว ✓");
   } catch (e) {
-    if (note) note.textContent = "สรุปใหม่ไม่สำเร็จ: " + String(e && e.message || e);
+    resynthMsg("สรุปใหม่ไม่สำเร็จ: " + String(e && e.message || e));
   } finally {
     btn.disabled = false;
     btn.textContent = "🔄 สรุปใหม่ตามป้ายที่แก้";
   }
 }
-if (el("resynthBtn")) el("resynthBtn").onclick = runResynth;
+/* ⚠️ ปุ่มอยู่ใน <summary> — ถ้าไม่กัน event ไว้ กดปุ่มทีกล่องจะพับ/กางทุกครั้ง
+   (เบราว์เซอร์ถือว่าคลิกที่ไหนใน summary ก็คือสั่งพับ/กาง) */
+if (el("resynthBtn")) el("resynthBtn").onclick = (e) => { e.preventDefault(); e.stopPropagation(); runResynth(); };
 
 /* ══════════════════════════════════════════════════════════════
  * ชั้น ② ของระบบเรียนรู้ — ส่งที่แก้ไว้เข้ากองรอตรวจ
@@ -925,7 +1005,12 @@ function buildSheets(d){
     /* ⚠️ ต้องตรงกับป้ายบนหน้าจอเสมอ — ของเดิมเขียน "พูดถึงเครือ CP / ไม่เกี่ยวกับ CP"
        ซึ่งเป็น 48/0 ทุกครั้งตั้งแต่เลิกใช้ not_related แล้วอ่านผิดความหมาย */
     ...(d.target==="cp" ? [["แสดงท่าทีต่อ CP (บวก+ลบ)", (s.positive||0)+(s.negative||0)]] : []),
-    ["ยอดถูกใจ/รีแอกชัน", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
+    /* 📊 ยอดของ "ตัวโพส" — ต้องแยกให้ชัดจากยอดของคอมเมนต์ที่ดึงมาได้ ไม่งั้นเปิดไฟล์แล้วอ่านสลับกัน
+       🔴 ไม่มีข้อมูล = เว้นว่าง **ห้ามใส่ 0** (ใน Excel 0 อ่านเป็นตัวเลขจริงทันที) */
+    ["ยอดดู (โพส)", (d.post_stats||{}).views ?? ""],
+    ["ยอดถูกใจ (โพส)", (d.post_stats||{}).likes ?? ""],
+    ["ยอดแชร์ (โพส)", (d.post_stats||{}).shares ?? ""],
+    ["ยอดถูกใจ/รีแอกชัน (รวมจากคอมเมนต์ที่ดึงมา)", eng.total_likes||0],["จำนวน Reply", eng.total_replies||0],["ผู้คอมเมนต์ไม่ซ้ำ", eng.unique_commenters||0],
     ["ช่วงเวลาแรกสุด", (d.time_range||{}).earliest||""],["ช่วงเวลาล่าสุด", (d.time_range||{}).latest||""],
     ["สรุปภาพรวม", d.summary||""],
   ];
@@ -1116,14 +1201,18 @@ function friendlyError(msg){
     return "❌ โพส/วิดีโอนี้ปิดคอมเมนต์";
   if (m.includes("ไม่พบคอมเมนต์"))
     return "❌ ไม่พบคอมเมนต์ในโพสนี้ (อาจไม่มีคอมเมนต์ หรือดึงไม่ได้)";
+  /* ⚠️ ข้อความพวกนี้เคยเขียนว่า "ใน Worker" ซึ่ง **ตกยุคตั้งแต่ย้ายมาอยู่ Pages (4 ก.ย. 2026)**
+     คนอ่านจะเดินไปตั้งค่าผิดหน้าแล้วงงว่าทำไมตั้งแล้วไม่หาย
+     🔴 และต้องบอกด้วยว่า **Production กับ Preview แยกกันคนละชุด** — พลาดตรงนี้บ่อยที่สุด */
+  const WHERE = "ที่หน้า Pages → Settings → Variables and Secrets (ต้องใส่ทั้ง Production และ Preview)";
   if (m.includes("anthropic_api_key"))
-    return "⚙️ ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY ใน Worker (ใส่คีย์ + Deploy)";
+    return "⚙️ ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY " + WHERE;
   if (m.includes("scrapecreators_api_key"))
-    return "⚙️ ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY ใน Worker (จำเป็นสำหรับ FB/TikTok)";
-  if (m.includes("youtube_api_key"))
-    return "⚙️ ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY ใน Worker";
+    return "⚙️ ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY " + WHERE + " (จำเป็นสำหรับ FB/TikTok)";
+  if (m.includes("youtube_api_key") || m.includes("yt_api_key"))
+    return "⚙️ ยังไม่ได้ตั้งค่ากุญแจ YouTube — ใช้ชื่อ YOUTUBE_API_KEY หรือ YT_API_KEY ก็ได้ " + WHERE;
   if (m.includes("unauthorized") || m.includes("401") || (m.includes("invalid") && m.includes("key")))
-    return "🔑 คีย์ไม่ถูกต้องหรือหมดอายุ — ตรวจ API key ใน Worker";
+    return "🔑 คีย์ไม่ถูกต้องหรือหมดอายุ — ตรวจ API key " + WHERE;
   if (m.includes("rate") || m.includes("429"))
     return "⏳ เรียกถี่เกินไป (rate limit) — รอสักครู่แล้วลองใหม่";
   if (m.includes("credit") || m.includes("insufficient") || m.includes("402"))
