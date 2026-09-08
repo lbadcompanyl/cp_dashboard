@@ -597,7 +597,9 @@ body {
    ⚠️ ทำเป็น **แถวแนวนอน** ไม่ใช่แท่งตั้ง — จอแคบแท่งตั้ง 12 เดือนจะบางจนอ่านชื่อเดือนไม่ออก
       (บทเรียนเดียวกับตอนเปลี่ยนแท่งซ้อน 100% มาเป็นแท่งแนวนอน) */
 .mchart { display:flex; flex-direction:column; gap:6px; }
-.mrow { display:grid; grid-template-columns:64px 1fr 132px 78px; gap:10px; align-items:center; }
+.mrow { display:grid; grid-template-columns:64px 1fr 62px 78px; gap:10px; align-items:center; }
+/* กราฟของ section ข่าวไม่มีคอลัมน์ Engagement (ไม่ได้ดึงยอด) — ห้ามปล่อยช่องว่างค้างไว้ */
+.mchart.noeng .mrow { grid-template-columns:64px 1fr 62px; }
 .mrow.mhead { font-size:.7rem; color:var(--muted); font-weight:600; }
 .mlab { font-size:.78rem; color:var(--muted); white-space:nowrap; }
 .mtrack { display:flex; height:14px; border-radius:7px; overflow:hidden; background:var(--surface-2); }
@@ -615,7 +617,8 @@ body {
   .influbar [data-influ="refresh"] { margin-left:0; width:100%; justify-content:center; }
   .influ-th { width:48px; height:32px; }
   /* จอแคบเอาแท่งขึ้นบรรทัดของตัวเอง ไม่งั้นเหลือความกว้างไม่กี่พิกเซล */
-  .mrow { grid-template-columns:56px 1fr 72px; grid-template-areas:"lab cnt eng" "bar bar bar"; row-gap:4px; }
+  .mrow { grid-template-columns:56px 1fr 78px; grid-template-areas:"lab cnt eng" "bar bar bar"; row-gap:4px; }
+  .mchart.noeng .mrow { grid-template-columns:56px 1fr; grid-template-areas:"lab cnt" "bar bar"; }
   .mlab { grid-area:lab; } .mcnt { grid-area:cnt; } .meng { grid-area:eng; }
   .mtrack { grid-area:bar; }
   .mrow.mhead .mtrack { display:none; }

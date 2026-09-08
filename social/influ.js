@@ -223,23 +223,48 @@
     });
   }
 
+  /* ⚠️ ต้องคิดจาก valOf() ตัวเดียวกับที่ตารางวาด ไม่งั้นเรียงแล้วลำดับไม่ตรงกับที่เห็น */
   function sortVal(p) {
-    var s = p.stats || {};
-    if (state.sort === "eng") return engOf(p);
-    if (state.sort === "er") return erOf(p);
     if (state.sort === "added") return p.addedAt || 0;
-    return s[state.sort] == null ? null : s[state.sort];
+    return valOf(p, state.sort);
   }
 
   /* ── วาด ─────────────────────────────────────────────────────── */
+  /* 🔴 ลำดับคอลัมน์ตามที่เจ้าของสั่งเป๊ะ (8 ก.ย. 2026):
+        "วันที่โพส, View, Engagement, like, share, comment"
+     · ER ต่อท้ายเป็นของเดิมที่มีอยู่แล้ว (คิดมาจาก 2 คอลัมน์ในตารางนี้ ไม่ใช่ข้อมูลใหม่) */
   var COLS = [
+    { key: "date", label: "วันที่โพสต์", fmt: "date" },
     { key: "views", label: "Views" },
-    { key: "likes", label: "Likes" },
-    { key: "comments", label: "Comments" },
-    { key: "shares", label: "Shares", na: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API" },
     { key: "eng", label: "Engagement", strong: true },
+    { key: "likes", label: "Likes" },
+    { key: "shares", label: "Shares", na: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API" },
+    { key: "comments", label: "Comments" },
     { key: "er", label: "ER", fmt: "pct" },
   ];
+
+  /** ค่าดิบของคอลัมน์หนึ่งในแถวหนึ่ง — ใช้ทั้งตอนวาด ตอนเรียง และตอนรวม (จุดเดียวกัน) */
+  function valOf(p, key) {
+    if (key === "eng") return engOf(p);
+    if (key === "er") return erOf(p);
+    if (key === "date") { var w = whenOf(p); return w ? w.t : null; }
+    var v = (p.stats || {})[key];
+    return v == null ? null : v;
+  }
+
+  /* วันที่ที่จะแสดงในคอลัมน์ "วันที่โพสต์"
+     ⚠️ ต้นทางบางเจ้าไม่บอกวันที่โพสต์เลย → ใช้วันที่เพิ่มเข้ารายการแทน **พร้อมป้าย ~**
+        ห้ามแสดงเหมือนเป็นวันที่โพสต์จริง — กฎเดียวกับกราฟรายเดือน */
+  function whenOf(p) {
+    var s = p.publishedAt || "";
+    if (s.length >= 10) { var d = new Date(s); if (!isNaN(d.getTime())) return { t: d.getTime(), exact: true }; }
+    if (p.addedAt) return { t: p.addedAt, exact: false };
+    return null;
+  }
+  function dayLabel(ms) {
+    var d = new Date(ms);
+    return d.getDate() + " " + TH_MON[d.getMonth()] + " " + String(d.getFullYear() + 543).slice(2);
+  }
 
   function html() {
     var h = "";
@@ -260,8 +285,18 @@
         "</div></div></div>";
     }
 
-    // ── กล่องวางลิงก์ (ใช้ร่วมทั้ง 2 section — ระบบแยกให้เองว่าอันไหนเป็นข่าว) ──
-    h += '<h2 class="sec">วางลิงก์ ' +
+    if (!state.loaded && state.busy === "load") {
+      return h + '<div class="loading"><span class="spin"></span> กำลังโหลดรายการ…</div>' + addBox();
+    }
+
+    /* 🔴 กล่องวางลิงก์อยู่ **ล่างสุด** (เจ้าของสั่ง 8 ก.ย. 2026)
+       ของที่ดูบ่อยควรอยู่บน · กล่องวางลิงก์ใช้ตอนเพิ่มของใหม่ซึ่งนานๆ ที */
+    return h + socialSection() + newsSection() + addBox();
+  }
+
+  /* ── กล่องวางลิงก์ (ใช้ร่วมทั้ง 2 section — ระบบแยกให้เองว่าอันไหนเป็นข่าว) ── */
+  function addBox() {
+    var h = '<h2 class="sec">วางลิงก์ ' +
       '<button type="button" class="tipi" data-tip="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน · ลิงก์ YouTube/TikTok/Facebook/Instagram เข้า section โพสต์ · ลิงก์สำนักข่าวเข้า section ข่าวโดยอัตโนมัติ · ลิงก์ที่ซ้ำกับที่มีอยู่แล้วจะถูกข้าม" title="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน">ⓘ</button></h2>' +
       '<div class="panel"><div class="addbox">' +
       '<textarea id="influ-in" class="addta" rows="3" placeholder="https://www.tiktok.com/@ชื่อ/video/…&#10;https://www.thansettakij.com/news/…" ' +
@@ -270,71 +305,75 @@
       (state.busy === "add" ? '<span class="spin"></span> กำลังเพิ่ม…' : "+ เพิ่ม") + "</button>" +
       "</div>" +
       /* ⚠️ ต้องบอกตั้งแต่ก่อนกดว่าระบบจะแยกให้เอง ไม่งั้นวางลิงก์ข่าวลงไปแล้วไม่เห็นในตารางโพสต์
-         จะนึกว่าเพิ่มไม่สำเร็จ ทั้งที่มันไปอยู่อีก section ข้างล่าง */
+         จะนึกว่าเพิ่มไม่สำเร็จ ทั้งที่มันไปอยู่อีก section ข้างบน */
       '<p class="addnote sub">วางปนกันได้ — ลิงก์โซเชียลเข้า <b>① โพสต์อินฟลูเอนเซอร์</b> ' +
       "ลิงก์สำนักข่าวเข้า <b>② ข่าว</b> ให้เอง</p>";
     if (state.note) h += '<p class="addnote">' + esc(state.note).replace(/\n/g, "<br>") + "</p>";
-    h += "</div>";
-
-    if (!state.loaded && state.busy === "load") {
-      return h + '<div class="loading"><span class="spin"></span> กำลังโหลดรายการ…</div>';
-    }
-
-    return h + monthSection() + socialSection() + newsSection();
+    return h + "</div>";
   }
 
-  /* ── กราฟรายเดือน — เจ้าของสั่ง "เดือนนี้มีกี่ชิ้น Engagement เท่าไหร่" ─────
-   * ⚠️ แท่งนับ **ชิ้นงาน** โพสต์กับข่าวแยกสี — ไม่รวมเป็นตัวเลขเดียว
-   *    เพราะข่าว 1 ชิ้นกับโพสต์ 1 ใบวัดกันคนละอย่าง
-   * ⚠️ Engagement มาจาก **โพสต์เท่านั้น** เพราะข่าวไม่มีการดึงยอด
-   *    ต้องเขียนกำกับไว้ ไม่งั้นจะอ่านว่า "เดือนนี้ข่าวไม่มีคนอ่านเลย"
+  /* ── กราฟรายเดือน — **section ละกราฟ** (เจ้าของสั่ง 8 ก.ย. 2026) ─────────
+   * ของเดิมเป็นกราฟรวมกราฟเดียวแล้วแยกสีในแท่งเดียวกัน
+   * 🔴 "แยกเป็น section social กับ ข่าว แต่ละอันมีกราฟของตัวเอง"
+   * 🔴 "ไล่ 3 เดือนย้อนหลัง" — ไล่จาก **เดือนนี้ย้อนไป 3 เดือน** ทุกเดือนต้องมีแถว
+   *    ⚠️ เดือนที่ไม่มีของต้องขึ้นเป็น 0 ไม่ใช่หายไปจากกราฟ
+   *       หายไป = อ่านไม่ออกว่า "เดือนนั้นไม่มีงาน" หรือ "กราฟไม่ได้นับเดือนนั้น"
+   *    ⚠️ ของที่เก่ากว่า 3 เดือนต้องบอกว่ามีกี่ชิ้น ไม่ใช่ตัดทิ้งเงียบๆ
    */
-  function monthSection() {
-    if (!state.posts.length) return "";
-    var by = {}, approx = 0;
-    state.posts.forEach(function (p) {
+  function last3Months() {
+    var out = [], d = new Date();
+    for (var i = 2; i >= 0; i--) {
+      var x = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      out.push(x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0"));
+    }
+    return out;
+  }
+
+  function monthChart(items, opt) {
+    opt = opt || {};
+    var keys = last3Months();
+    var by = {}, approx = 0, outside = 0;
+    keys.forEach(function (k) { by[k] = { n: 0, eng: null, hasEng: false }; });
+
+    items.forEach(function (p) {
       var m = monthOf(p);
-      if (!m) return;
+      if (!m) { outside++; return; }
+      if (!by[m.m]) { outside++; return; }          // เก่ากว่า 3 เดือน (หรืออนาคต)
       if (!m.exact) approx++;
-      var b = by[m.m] || (by[m.m] = { social: 0, news: 0, eng: null, hasEng: false });
-      if (isNews(p)) b.news++;
-      else {
-        b.social++;
+      by[m.m].n++;
+      if (opt.eng) {
         var e = engOf(p);
-        if (e != null) { b.eng = (b.eng || 0) + e; b.hasEng = true; }
+        if (e != null) { by[m.m].eng = (by[m.m].eng || 0) + e; by[m.m].hasEng = true; }
       }
     });
-    var keys = Object.keys(by).sort();
-    if (!keys.length) return "";
-    keys = keys.slice(-12);                       // เอา 12 เดือนล่าสุดพอ ไม่งั้นแถบยาวจนอ่านไม่ไหว
 
     var max = 0;
-    keys.forEach(function (k) { max = Math.max(max, by[k].social + by[k].news); });
+    keys.forEach(function (k) { max = Math.max(max, by[k].n); });
 
-    var h = '<h2 class="sec">ภาพรวมรายเดือน <span class="sub">ชิ้นงานที่เก็บไว้ทั้งหมด</span></h2>' +
-      '<div class="panel"><div class="mchart">' +
+    var h = '<div class="panel"><div class="mchart' + (opt.eng ? "" : " noeng") + '">' +
       '<div class="mrow mhead"><div class="mlab">เดือน</div><div class="mtrack"></div>' +
-      '<div class="mcnt">ชิ้นงาน</div><div class="meng">Engagement</div></div>';
+      '<div class="mcnt">' + esc(opt.unit || "ชิ้น") + "</div>" +
+      (opt.eng ? '<div class="meng">Engagement</div>' : "") + "</div>";
 
     keys.forEach(function (k) {
-      var b = by[k], tot = b.social + b.news;
+      var b = by[k];
       h += '<div class="mrow"><div class="mlab">' + esc(monthLabel(k)) + "</div>" +
-        '<div class="mtrack" title="' + esc(monthLabel(k) + " · โพสต์ " + b.social + " · ข่าว " + b.news) + '">' +
-        (b.social ? '<span class="mbar s" style="width:' + ((b.social / max) * 100).toFixed(1) + '%"></span>' : "") +
-        (b.news ? '<span class="mbar n" style="width:' + ((b.news / max) * 100).toFixed(1) + '%"></span>' : "") +
+        '<div class="mtrack" title="' + esc(monthLabel(k) + " · " + b.n + " " + (opt.unit || "ชิ้น")) + '">' +
+        (b.n ? '<span class="mbar" style="width:' + ((b.n / max) * 100).toFixed(1) +
+          "%;background:" + esc(opt.color) + '"></span>' : "") +
         "</div>" +
-        '<div class="mcnt"><b>' + tot + "</b> <span class=\"msub\">โพสต์ " + b.social + " · ข่าว " + b.news + "</span></div>" +
+        '<div class="mcnt"><b>' + b.n + "</b></div>" +
         /* 🚫 เดือนที่ยังไม่รู้ยอดต้องเป็น "—" ไม่ใช่ 0 — 0 แปลว่าไม่มีใครมีปฏิสัมพันธ์ */
-        '<div class="meng">' + (b.hasEng ? esc(num(b.eng)) : "—") + "</div></div>";
+        (opt.eng ? '<div class="meng">' + (b.hasEng ? esc(num(b.eng)) : "—") + "</div>" : "") +
+        "</div>";
     });
 
-    h += "</div>" +
-      '<p class="addnote sub"><span class="pdot" style="background:#2563eb"></span> โพสต์ ' +
-      '<span class="pdot" style="background:#c2410c"></span> ข่าว · ' +
-      "Engagement นับจาก <b>โพสต์อย่างเดียว</b> (ข่าวไม่ได้ดึงยอด)" +
-      (approx ? " · " + approx + " ชิ้นไม่รู้วันที่เผยแพร่ จึงจัดตาม<b>วันที่เพิ่มเข้ารายการ</b>" : "") +
-      "</p></div>";
-    return h;
+    h += "</div>";
+    var notes = [];
+    if (approx) notes.push(approx + " ชิ้นไม่รู้วันที่เผยแพร่ จึงจัดตาม<b>วันที่เพิ่มเข้ารายการ</b>");
+    if (outside) notes.push("อีก " + outside + " ชิ้นเก่ากว่า 3 เดือน <b>ไม่ได้นับในกราฟนี้</b> (ยังอยู่ในตารางข้างล่าง)");
+    if (notes.length) h += '<p class="addnote sub">' + notes.join(" · ") + "</p>";
+    return h + "</div>";
   }
 
   /* ── ① โพสต์อินฟลูเอนเซอร์ ──────────────────────────────────────── */
@@ -357,6 +396,9 @@
       card("Engagement รวม", hasE ? num(te) : "—") +
       card("ER เฉลี่ย", hasV && hasE && tv ? pct(te / tv) : "—") +
       "</div>";
+
+    // 🔴 กราฟของ section นี้เอง — นับ **โพสต์** อย่างเดียว (เจ้าของสั่ง 8 ก.ย. 2026)
+    if (socialPosts().length) h += monthChart(socialPosts(), { eng: true, unit: "โพสต์", color: "#2563eb" });
 
     // ── แถบตัวกรอง ──
     h += '<div class="panel"><div class="influbar">' +
@@ -401,16 +443,44 @@
         "</div></div></th>";
 
       COLS.forEach(function (c) {
-        var v = c.key === "eng" ? engOf(p) : c.key === "er" ? erOf(p) : s[c.key];
-        var txt = v == null ? "—" : c.fmt === "pct" ? pct(v) : num(v);
-        h += '<td class="num' + (c.strong ? " strong" : "") + (v == null ? " na" : "") + '"' +
-          (v == null && c.na ? ' title="' + esc(c.na) + '"' : "") + ">" + esc(txt) + "</td>";
+        var v = valOf(p, c.key);
+        var w = c.key === "date" ? whenOf(p) : null;
+        var txt = v == null ? "—"
+          : c.fmt === "date" ? (w.exact ? "" : "~") + dayLabel(v)
+          : c.fmt === "pct" ? pct(v) : num(v);
+        // ~ = ไม่รู้วันที่โพสต์จริง ใช้วันที่เพิ่มลิงก์เข้ารายการแทน — ต้องบอก ไม่ใช่แสดงเหมือนของจริง
+        var why = v == null ? c.na : (w && !w.exact ? "ต้นทางไม่บอกวันที่โพสต์ — นี่คือวันที่เพิ่มลิงก์เข้ารายการ" : "");
+        h += '<td class="num' + (c.strong ? " strong" : "") + (v == null || (w && !w.exact) ? " na" : "") + '"' +
+          (why ? ' title="' + esc(why) + '"' : "") + ">" + esc(txt) + "</td>";
       });
 
       h += '<td class="num"><button type="button" class="btn xbtn" data-infludel="' + esc(p.id) + '" title="เอาออกจากรายการ">✕</button></td></tr>';
     });
 
-    return h + "</tbody></table></div></div>";
+    /* 🔴 แถวรวมท้ายตาราง (เจ้าของสั่ง 8 ก.ย. 2026: "และมีค่ารวม")
+       ⚠️ รวมเฉพาะค่าที่ต้นทางส่งมาจริง — ใบที่เป็น null ต้องข้าม ไม่ใช่บวกเป็น 0
+          และถ้าทั้งคอลัมน์ไม่มีค่าเลยต้องขึ้น "—" ไม่ใช่ 0
+       ⚠️ ER ของแถวรวมต้องคิดจาก Engagement รวม ÷ Views รวม
+          **ห้ามเฉลี่ย ER ของแต่ละแถว** — คลิปยอดน้อยจะมีน้ำหนักเท่าคลิปล้านวิว */
+    h += "</tbody><tfoot><tr><th scope=\"row\">รวม " + list.length + " โพสต์</th>";
+    var sum = {};
+    COLS.forEach(function (c) { sum[c.key] = null; });
+    list.forEach(function (p) {
+      COLS.forEach(function (c) {
+        if (c.key === "date" || c.key === "er") return;
+        var v = valOf(p, c.key);
+        if (v != null) sum[c.key] = (sum[c.key] || 0) + v;
+      });
+    });
+    var totalEr = sum.views && sum.eng != null ? sum.eng / sum.views : null;
+    COLS.forEach(function (c) {
+      var v = c.key === "er" ? totalEr : c.key === "date" ? null : sum[c.key];
+      var txt = c.key === "date" ? "" : v == null ? "—" : c.fmt === "pct" ? pct(v) : num(v);
+      h += '<td class="num' + (c.strong ? " strong" : "") + (v == null && c.key !== "date" ? " na" : "") + '">' + esc(txt) + "</td>";
+    });
+    h += "<td></td></tr></tfoot>";
+
+    return h + "</table></div></div>";
   }
 
   /* ── ② ข่าว — นับชิ้น + แยกสำนักข่าวเท่านั้น ────────────────────────
@@ -438,6 +508,9 @@
       return h + '<div class="panel"><div class="empty"><div class="empty-i">📰</div><div><b>ยังไม่มีข่าวในรายการ</b>' +
         "<div>วางลิงก์ข่าวในกล่องด้านบน — ระบบแยกให้เองว่าอันไหนเป็นข่าว</div></div></div></div>";
     }
+
+    // 🔴 กราฟของ section นี้เอง — ข่าวไม่มี Engagement จึงไม่มีคอลัมน์นั้น
+    h += monthChart(all, { eng: false, unit: "ชิ้น", color: "#c2410c" });
 
     // ── แยกตามสำนักข่าว ──
     var top = outs.slice(0, 12);

@@ -2897,6 +2897,15 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
 
   // ── ฝั่งหน้าเว็บ ──
   const now = Date.now();
+  /* ⚠️ วันที่ในข้อมูลจำลองต้อง **อิงวันนี้** ห้ามฮาร์ดโค้ด
+     กราฟไล่ 3 เดือนย้อนหลังจากเดือนปัจจุบัน — เขียนวันที่ตายตัวไว้ เทสต์จะตกเองเมื่อเวลาผ่านไป
+     (บทเรียนตรงๆ จาก [5b] และ [36] ที่เคยตกตอนสิ้นเดือน) */
+  const _d = new Date();
+  const mIso = (back, day) => {
+    const x = new Date(_d.getFullYear(), _d.getMonth() - back, 1);
+    return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+  };
+  const thisM = (day) => mIso(0, day), lastM = (day) => mIso(1, day);
   const fixture = {
     ok: true, status: "ok", at: now,
     data: {
@@ -2904,20 +2913,20 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
       posts: [
         { id: "a1", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@x/video/1",
           account: "@x", title: "คลิปรีวิว", note: "", host: "tiktok.com",
-          publishedAt: "2026-09-02", addedAt: now,
+          publishedAt: thisM(2), addedAt: now,
           stats: { views: 10000, likes: 500, comments: 30, shares: 20 }, err: "" },
         { id: "a2", kind: "social", platform: "youtube", url: "https://youtu.be/aaaaaaaaaaa",
           account: "ช่องเรา", title: "คลิปยาว", note: "", host: "youtu.be",
-          publishedAt: "2026-09-03", addedAt: now,
-          stats: { views: 2000, likes: 100, comments: 10, shares: null }, err: "" },
+          publishedAt: thisM(3), addedAt: now,
+          stats: { views: 5000, likes: 100, comments: 10, shares: null }, err: "" },
         { id: "n1", kind: "news", platform: "", url: "https://www.thansettakij.com/news/1",
-          host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 1", publishedAt: "2026-09-01",
+          host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 1", publishedAt: thisM(1),
           addedAt: now, stats: {}, err: "" },
         { id: "n2", kind: "news", platform: "", url: "https://www.thansettakij.com/news/2",
-          host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 2", publishedAt: "2026-09-01",
+          host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 2", publishedAt: thisM(1),
           addedAt: now, stats: {}, err: "" },
         { id: "n3", kind: "news", platform: "", url: "https://www.dailynews.co.th/news/3",
-          host: "dailynews.co.th", title: "", note: "ข่าวชิ้นที่ 3", publishedAt: "2026-08-20",
+          host: "dailynews.co.th", title: "", note: "ข่าวชิ้นที่ 3", publishedAt: lastM(20),
           addedAt: now, stats: {}, err: "" },
       ],
     },
@@ -2956,22 +2965,65 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(tbls.length === 2 && !/Views|Engagement/.test(tbls[1]),
      "ตารางข่าวไม่มีคอลัมน์ Views/Engagement (เราไม่ได้ดึงยอดข่าว)");
 
-  // ── กราฟรายเดือน ──
-  const mrows = await pg.$$eval(".mchart .mrow:not(.mhead)", (n) =>
-    n.map((x) => ({ lab: x.querySelector(".mlab").textContent.trim(),
-                    cnt: x.querySelector(".mcnt").textContent.trim(),
-                    eng: x.querySelector(".meng").textContent.trim(),
-                    bars: x.querySelectorAll(".mbar").length })));
-  ok(mrows.length === 2, `กราฟมี 2 เดือน (ส.ค. + ก.ย.) — ได้ ${mrows.length}`);
-  const aug = mrows.find((r) => /ส\.ค\./.test(r.lab));
-  const sep = mrows.find((r) => /ก\.ย\./.test(r.lab));
-  ok(!!aug && !!sep, "ป้ายเดือนเป็นภาษาไทย");
-  ok(sep && /โพสต์ 2/.test(sep.cnt) && /ข่าว 2/.test(sep.cnt),
-     "เดือน ก.ย. นับแยกโพสต์ 2 · ข่าว 2 ไม่รวมเป็นเลขเดียว");
-  /* 🚫 เดือนที่มีแต่ข่าว ต้องเป็น "—" ไม่ใช่ 0 — 0 แปลว่า "ไม่มีใครมีปฏิสัมพันธ์"
-     ซึ่งคนละเรื่องกับ "ไม่ได้ดึงยอด" (กฎ null ≠ 0 ของทั้งโปรเจกต์) */
-  ok(aug && aug.eng === "—", `เดือนที่มีแต่ข่าว Engagement เป็น — ไม่ใช่ 0 (ได้ "${aug && aug.eng}")`);
-  ok(sep && sep.eng !== "—" && sep.eng !== "0", "เดือนที่มีโพสต์มีตัวเลข Engagement จริง");
+  /* ── กราฟรายเดือน — section ละกราฟ ไล่ 3 เดือนย้อนหลัง (เจ้าของสั่ง 8 ก.ย. 2026) ── */
+  const charts = await pg.$$eval(".mchart", (n) => n.map((c) => ({
+    noeng: c.classList.contains("noeng"),
+    rows: Array.from(c.querySelectorAll(".mrow:not(.mhead)")).map((x) => ({
+      lab: x.querySelector(".mlab").textContent.trim(),
+      cnt: x.querySelector(".mcnt").textContent.trim(),
+      eng: x.querySelector(".meng") ? x.querySelector(".meng").textContent.trim() : null,
+      bars: x.querySelectorAll(".mbar").length,
+    })),
+  })));
+  ok(charts.length === 2, `มีกราฟ 2 อัน — section ละอัน (ได้ ${charts.length})`);
+  ok(charts[0].rows.length === 3 && charts[1].rows.length === 3,
+     "กราฟไล่ 3 เดือนย้อนหลังทั้งคู่");
+  /* ⚠️ เดือนที่ไม่มีของต้องขึ้นเป็น 0 ไม่ใช่หายไปจากกราฟ —
+     หายไปแล้วอ่านไม่ออกว่า "เดือนนั้นไม่มีงาน" หรือ "กราฟไม่ได้นับเดือนนั้น" */
+  ok(charts[0].rows.some((r) => r.cnt === "0" && r.bars === 0),
+     "เดือนที่ไม่มีของยังมีแถว ขึ้นเลข 0 (ไม่หายไปเฉยๆ)");
+  ok(charts[0].rows[2].cnt === "2", `กราฟโพสต์: เดือนนี้ 2 โพสต์ (ได้ ${charts[0].rows[2].cnt})`);
+  ok(charts[1].rows[2].cnt === "2" && charts[1].rows[1].cnt === "1",
+     "กราฟข่าว: เดือนนี้ 2 · เดือนที่แล้ว 1");
+  /* 🚫 กราฟข่าวห้ามมีคอลัมน์ Engagement — เราไม่ได้ดึงยอดข่าว
+     ใส่ช่องว่างไว้ = อ่านแล้วเข้าใจว่า "ข่าวไม่มีคนมีปฏิสัมพันธ์" ซึ่งไม่จริง */
+  ok(charts[1].noeng && charts[1].rows.every((r) => r.eng === null),
+     "กราฟข่าวไม่มีคอลัมน์ Engagement เลย");
+  ok(charts[0].rows[2].eng && charts[0].rows[2].eng !== "—" && charts[0].rows[2].eng !== "0",
+     "กราฟโพสต์มีตัวเลข Engagement จริง");
+  /* 🚫 เดือนที่ยังไม่รู้ยอดต้องเป็น "—" ไม่ใช่ 0 (กฎ null ≠ 0 ของทั้งโปรเจกต์) */
+  ok(charts[0].rows[0].eng === "—", `เดือนที่ไม่มีโพสต์ Engagement เป็น — ไม่ใช่ 0 (ได้ "${charts[0].rows[0].eng}")`);
+
+  /* ── ตารางโพสต์: คอลัมน์ตามที่เจ้าของสั่ง + แถวรวม ── */
+  const head = await pg.$$eval("#view .tbl.perf thead th", (n) => n.map((x) => x.textContent.replace(/[↕▼▲]/g, "").trim()));
+  ok(head.slice(1, 7).join(",") === "วันที่โพสต์,Views,Engagement,Likes,Shares,Comments",
+     `คอลัมน์เรียงตามที่สั่ง (${head.slice(1, 7).join(" ")})`);
+  const foot = await pg.$$eval("#view .tbl.perf tfoot td, #view .tbl.perf tfoot th", (n) => n.map((x) => x.textContent.trim()));
+  ok(/รวม 2 โพสต์/.test(foot[0]), `มีแถวรวมท้ายตาราง (${foot[0]})`);
+  ok(foot[2] === "15K", `Views รวม = 15K (10,000 + 5,000) — ได้ ${foot[2]}`);
+  ok(foot[5] === "20", `Shares รวม = 20 (ข้ามใบที่ต้นทางไม่บอก) — ได้ ${foot[5]}`);
+  /* 🚫 ER ของแถวรวมต้องคิดจาก Engagement รวม ÷ Views รวม **ห้ามเฉลี่ย ER ของแต่ละแถว**
+     ตัวเลขในข้อมูลจำลองจงใจให้ 2 วิธีได้คนละค่า:
+       ถ่วงน้ำหนัก (ถูก) = (550+110) / (10,000+5,000) = 4.40%
+       เฉลี่ยรายแถว (ผิด) = (5.50% + 2.20%) / 2      = 3.85%
+     ⚠️ ของเดิมตั้งตัวเลขให้ ER เท่ากันทั้ง 2 แถว → เทสต์ผ่านทั้งที่คิดผิดก็ได้ (เจอตอนลองทำให้พัง) */
+  ok(foot[7] === "4.40%", `ER รวมถ่วงน้ำหนักถูก ไม่ใช่เฉลี่ยรายแถว (ได้ ${foot[7]})`);
+
+  /* 🚫 คอลัมน์ที่ต้นทางไม่ส่งมาเลยสักใบ ต้องรวมเป็น "—" ไม่ใช่ 0
+     กรองเหลือแต่ YouTube ซึ่งไม่เปิดเผยจำนวนแชร์ → ทั้งคอลัมน์เป็น null
+     0 แปลว่า "ไม่มีใครแชร์" ซึ่งคนละเรื่องกับ "ต้นทางไม่บอก" (กฎ null ≠ 0) */
+  await pg.selectOption('[data-influsel="fPlatform"]', "youtube");
+  await pg.waitForTimeout(120);
+  const foot2 = await pg.$$eval("#view .tbl.perf tfoot td", (n) => n.map((x) => x.textContent.trim()));
+  ok(foot2[4] === "—", `กรองเหลือ YouTube: Shares รวมเป็น — ไม่ใช่ 0 (ได้ "${foot2[4]}")`);
+  await pg.selectOption('[data-influsel="fPlatform"]', "all");
+  await pg.waitForTimeout(120);
+
+  /* ── กล่องวางลิงก์อยู่ล่างสุด (เจ้าของสั่ง 8 ก.ย. 2026) ── */
+  const boxTop = await pg.$eval("#influ-in", (e) => e.getBoundingClientRect().top + scrollY);
+  const lastTbl = await pg.$$eval("#view .tbl.perf", (n) =>
+    n[n.length - 1].getBoundingClientRect().top + scrollY);
+  ok(boxTop > lastTbl, "กล่องวางลิงก์อยู่ใต้ตารางทั้งหมด (ล่างสุด)");
 
   // ── เปิดแท็บแล้วห้ามยิงอะไรที่เสียเครดิต ──
   ok(posted === 0, `เปิดแท็บไม่ยิง POST สักครั้ง (ไม่เสียเครดิต) — ยิงไป ${posted}`);
