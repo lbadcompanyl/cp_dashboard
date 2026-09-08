@@ -203,7 +203,7 @@
     { key: "facebook", label: "Facebook", icon: "f", platform: "facebook" },
     /* 🔴 แท็บนี้ดู "โพสต์ของคนอื่นที่เราจ้าง" ไม่ใช่ช่องของเราเอง (เจ้าของสั่ง 31 ส.ค. 2026)
        จึงไม่มี platform: ผูกไว้ — app.js จะส่งต่อให้ไฟล์ influ.js วาดเอง */
-    { key: "influ", label: "อินฟลูฯ", icon: "★", custom: "SOCIAL_INFLU" },
+    { key: "influ", label: "Earned media", icon: "★", custom: "SOCIAL_INFLU" },
     // ตัวอย่างของอนาคต: { key:"paid", label:"โฆษณา", icon:"฿" }
   ];
 

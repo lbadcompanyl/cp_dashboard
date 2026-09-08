@@ -1,7 +1,13 @@
-/* แท็บ "อินฟลูฯ" — ติดตามโพสต์ของอินฟลูเอนเซอร์ที่จ้าง
+/* แท็บ "Earned media" — สื่อที่ไม่ใช่ช่องของเราเอง
  *
- * 🎯 ต่างจากแท็บอื่นของหน้านี้: แท็บอื่นดูช่องของเราเอง อันนี้ดู **โพสต์ของคนอื่น**
- *    ที่เราจ้างให้ลง · ผู้ใช้วางลิงก์เข้ามาเอง แล้วระบบไปดึงยอดมาให้
+ * 🎯 ต่างจากแท็บอื่นของหน้านี้: แท็บอื่นดูช่องของเราเอง อันนี้ดู **ของคนอื่น**
+ *    ผู้ใช้วางลิงก์เข้ามาเอง แล้วระบบไปดึงยอดมาให้
+ *
+ * 🔴 มี 2 section แยกกันชัดเจน (เจ้าของสั่ง 8 ก.ย. 2026)
+ *    ① โพสต์อินฟลูเอนเซอร์ — ดึงยอดจริง (view/like/comment/share)
+ *    ② ข่าว — **นับชิ้น + แยกสำนักข่าวพอ** ไม่ดึงยอด ไม่ยิงต้นทางสักครั้ง
+ *    ⚠️ 2 อย่างนี้วัดกันคนละหน่วย **ห้ามเอาตัวเลขมารวมกันเป็นก้อนเดียว**
+ *       ข่าว 1 ชิ้นกับโพสต์ 1 ใบไม่ได้แปลว่ามีค่าเท่ากัน
  *
  * 🔴 ยิงต้นทางเฉพาะตอนผู้ใช้กดเท่านั้น (เจ้าของสั่ง — ScrapeCreators เสียเงินต่อครั้ง)
  *    เปิดแท็บ = อ่านของที่เก็บไว้ ไม่เสียเครดิตสักหน่วย
@@ -29,7 +35,41 @@
     q: "",
     sort: "views",
     dir: -1,
+    fOutlet: "all",        // ตัวกรองของ section ข่าว (แยกจาก section โพสต์)
+    nq: "",
   };
+
+  /* ── ของ 2 ชนิดในรายการเดียว ────────────────────────────────────
+     ⚠️ record รุ่นเก่า (ก่อน 8 ก.ย. 2026) ไม่มีฟิลด์ kind — ตัวไหนมี platform ถือเป็นโพสต์ */
+  function isNews(p) { return p.kind === "news" || (!p.kind && !p.platform); }
+  function socialPosts() { return state.posts.filter(function (p) { return !isNews(p); }); }
+  function newsPosts() { return state.posts.filter(isNews); }
+
+  /* ชื่อสำนักข่าว — ยืมตารางกลางของ /archives/ มาใช้ (`archives/outlets.config.js`)
+     🚫 ห้ามก๊อปรายชื่อมาไว้ที่นี่ — แก้ที่เดียวต้องมีผลทุกหน้า (กฎเดียวกับ noise.js)
+     ⚠️ ไม่มีในตาราง = แสดงโดเมนตามเดิม ไม่ซ่อน ไม่ยุบมั่ว */
+  function outletOf(p) {
+    var h = p.host || "";
+    if (!h) { try { h = new URL(p.url).hostname.replace(/^www\./i, "").toLowerCase(); } catch (e) { h = ""; } }
+    var map = window.ARCHIVE_OUTLETS || {};
+    return map[h] || h || "ไม่ทราบสำนัก";
+  }
+
+  /* เดือนที่ใช้จัดกลุ่มในกราฟ — วันที่โพสต์ก่อน ถ้าไม่รู้ค่อยใช้วันที่เพิ่มเข้ารายการ
+     ⚠️ ต้องบอกผู้ใช้ว่าใบไหนใช้วันที่เพิ่ม (ป้าย ~) ไม่งั้นกราฟจะดูเหมือนเป็นวันที่จริงทั้งหมด
+        ต้นทางหลายเจ้าไม่บอกวันที่โพสต์เลย — เดาแล้วไม่บอก = ตัวเลขโกหกแบบเงียบๆ */
+  function monthOf(p) {
+    var s = p.publishedAt || "";
+    if (s && s.length >= 7) return { m: s.slice(0, 7), exact: true };
+    var d = new Date(p.addedAt || 0);
+    if (!p.addedAt || isNaN(d.getTime())) return null;
+    return { m: d.toISOString().slice(0, 7), exact: false };
+  }
+  var TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  function monthLabel(m) {
+    var a = m.split("-");
+    return TH_MON[+a[1] - 1] + " " + (+a[0] + 543 - 2000 > 0 ? String(+a[0] + 543).slice(2) : a[0]);
+  }
 
   /* ── ตัวช่วยเล็กๆ ─────────────────────────────────────────────────
      ⚠️ ไฟล์นี้ไม่ยืมของ app.js เพราะ app.js ไม่ได้ export อะไรออกมา
@@ -144,13 +184,29 @@
   /* ── ตัวกรอง ─────────────────────────────────────────────────── */
   function accounts() {
     var seen = {};
-    state.posts.forEach(function (p) { if (p.account) seen[p.account] = 1; });
+    socialPosts().forEach(function (p) { if (p.account) seen[p.account] = 1; });
     return Object.keys(seen).sort();
+  }
+
+  function outlets() {
+    var seen = {};
+    newsPosts().forEach(function (p) { seen[outletOf(p)] = 1; });
+    return Object.keys(seen).sort();
+  }
+
+  /** ข่าวที่ผ่านตัวกรองของ section ② (คนละชุดกับตัวกรองของ section ①) */
+  function newsShown() {
+    var q = state.nq.trim().toLowerCase();
+    return newsPosts().filter(function (p) {
+      if (state.fOutlet !== "all" && outletOf(p) !== state.fOutlet) return false;
+      if (q && ((p.title || "") + " " + (p.note || "") + " " + outletOf(p) + " " + p.url).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) { return (b.addedAt || 0) - (a.addedAt || 0); });
   }
 
   function shown() {
     var q = state.q.trim().toLowerCase();
-    return state.posts.filter(function (p) {
+    return socialPosts().filter(function (p) {
       if (state.fPlatform !== "all" && p.platform !== state.fPlatform) return false;
       if (state.fAccount !== "all" && p.account !== state.fAccount) return false;
       // ค้นให้ครอบแคปชั่นด้วย — หลายใบยังไม่มีชื่อจริงจากต้นทาง มีแต่แคปชั่น
@@ -204,15 +260,19 @@
         "</div></div></div>";
     }
 
-    // ── กล่องวางลิงก์ ──
-    h += '<h2 class="sec">วางลิงก์โพสต์ ' +
-      '<button type="button" class="tipi" data-tip="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน · รองรับ YouTube · TikTok · Facebook · Instagram · ลิงก์ที่ซ้ำกับที่มีอยู่แล้วจะถูกข้าม" title="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน">ⓘ</button></h2>' +
+    // ── กล่องวางลิงก์ (ใช้ร่วมทั้ง 2 section — ระบบแยกให้เองว่าอันไหนเป็นข่าว) ──
+    h += '<h2 class="sec">วางลิงก์ ' +
+      '<button type="button" class="tipi" data-tip="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน · ลิงก์ YouTube/TikTok/Facebook/Instagram เข้า section โพสต์ · ลิงก์สำนักข่าวเข้า section ข่าวโดยอัตโนมัติ · ลิงก์ที่ซ้ำกับที่มีอยู่แล้วจะถูกข้าม" title="วางได้ทีละหลายลิงก์ บรรทัดละ 1 อัน">ⓘ</button></h2>' +
       '<div class="panel"><div class="addbox">' +
-      '<textarea id="influ-in" class="addta" rows="3" placeholder="https://www.tiktok.com/@ชื่อ/video/…&#10;https://www.instagram.com/p/…" ' +
+      '<textarea id="influ-in" class="addta" rows="3" placeholder="https://www.tiktok.com/@ชื่อ/video/…&#10;https://www.thansettakij.com/news/…" ' +
       (state.busy ? "disabled" : "") + ">" + esc(state.draft) + "</textarea>" +
       '<button type="button" class="btn primary" data-influ="add"' + (state.busy ? " disabled" : "") + ">" +
       (state.busy === "add" ? '<span class="spin"></span> กำลังเพิ่ม…' : "+ เพิ่ม") + "</button>" +
-      "</div>";
+      "</div>" +
+      /* ⚠️ ต้องบอกตั้งแต่ก่อนกดว่าระบบจะแยกให้เอง ไม่งั้นวางลิงก์ข่าวลงไปแล้วไม่เห็นในตารางโพสต์
+         จะนึกว่าเพิ่มไม่สำเร็จ ทั้งที่มันไปอยู่อีก section ข้างล่าง */
+      '<p class="addnote sub">วางปนกันได้ — ลิงก์โซเชียลเข้า <b>① โพสต์อินฟลูเอนเซอร์</b> ' +
+      "ลิงก์สำนักข่าวเข้า <b>② ข่าว</b> ให้เอง</p>";
     if (state.note) h += '<p class="addnote">' + esc(state.note).replace(/\n/g, "<br>") + "</p>";
     h += "</div>";
 
@@ -220,7 +280,67 @@
       return h + '<div class="loading"><span class="spin"></span> กำลังโหลดรายการ…</div>';
     }
 
+    return h + monthSection() + socialSection() + newsSection();
+  }
+
+  /* ── กราฟรายเดือน — เจ้าของสั่ง "เดือนนี้มีกี่ชิ้น Engagement เท่าไหร่" ─────
+   * ⚠️ แท่งนับ **ชิ้นงาน** โพสต์กับข่าวแยกสี — ไม่รวมเป็นตัวเลขเดียว
+   *    เพราะข่าว 1 ชิ้นกับโพสต์ 1 ใบวัดกันคนละอย่าง
+   * ⚠️ Engagement มาจาก **โพสต์เท่านั้น** เพราะข่าวไม่มีการดึงยอด
+   *    ต้องเขียนกำกับไว้ ไม่งั้นจะอ่านว่า "เดือนนี้ข่าวไม่มีคนอ่านเลย"
+   */
+  function monthSection() {
+    if (!state.posts.length) return "";
+    var by = {}, approx = 0;
+    state.posts.forEach(function (p) {
+      var m = monthOf(p);
+      if (!m) return;
+      if (!m.exact) approx++;
+      var b = by[m.m] || (by[m.m] = { social: 0, news: 0, eng: null, hasEng: false });
+      if (isNews(p)) b.news++;
+      else {
+        b.social++;
+        var e = engOf(p);
+        if (e != null) { b.eng = (b.eng || 0) + e; b.hasEng = true; }
+      }
+    });
+    var keys = Object.keys(by).sort();
+    if (!keys.length) return "";
+    keys = keys.slice(-12);                       // เอา 12 เดือนล่าสุดพอ ไม่งั้นแถบยาวจนอ่านไม่ไหว
+
+    var max = 0;
+    keys.forEach(function (k) { max = Math.max(max, by[k].social + by[k].news); });
+
+    var h = '<h2 class="sec">ภาพรวมรายเดือน <span class="sub">ชิ้นงานที่เก็บไว้ทั้งหมด</span></h2>' +
+      '<div class="panel"><div class="mchart">' +
+      '<div class="mrow mhead"><div class="mlab">เดือน</div><div class="mtrack"></div>' +
+      '<div class="mcnt">ชิ้นงาน</div><div class="meng">Engagement</div></div>';
+
+    keys.forEach(function (k) {
+      var b = by[k], tot = b.social + b.news;
+      h += '<div class="mrow"><div class="mlab">' + esc(monthLabel(k)) + "</div>" +
+        '<div class="mtrack" title="' + esc(monthLabel(k) + " · โพสต์ " + b.social + " · ข่าว " + b.news) + '">' +
+        (b.social ? '<span class="mbar s" style="width:' + ((b.social / max) * 100).toFixed(1) + '%"></span>' : "") +
+        (b.news ? '<span class="mbar n" style="width:' + ((b.news / max) * 100).toFixed(1) + '%"></span>' : "") +
+        "</div>" +
+        '<div class="mcnt"><b>' + tot + "</b> <span class=\"msub\">โพสต์ " + b.social + " · ข่าว " + b.news + "</span></div>" +
+        /* 🚫 เดือนที่ยังไม่รู้ยอดต้องเป็น "—" ไม่ใช่ 0 — 0 แปลว่าไม่มีใครมีปฏิสัมพันธ์ */
+        '<div class="meng">' + (b.hasEng ? esc(num(b.eng)) : "—") + "</div></div>";
+    });
+
+    h += "</div>" +
+      '<p class="addnote sub"><span class="pdot" style="background:#2563eb"></span> โพสต์ ' +
+      '<span class="pdot" style="background:#c2410c"></span> ข่าว · ' +
+      "Engagement นับจาก <b>โพสต์อย่างเดียว</b> (ข่าวไม่ได้ดึงยอด)" +
+      (approx ? " · " + approx + " ชิ้นไม่รู้วันที่เผยแพร่ จึงจัดตาม<b>วันที่เพิ่มเข้ารายการ</b>" : "") +
+      "</p></div>";
+    return h;
+  }
+
+  /* ── ① โพสต์อินฟลูเอนเซอร์ ──────────────────────────────────────── */
+  function socialSection() {
     var list = shown();
+    var h = "";
 
     // ── สรุปรวม ──
     var tv = 0, te = 0, hasV = false, hasE = false;
@@ -228,6 +348,9 @@
       if ((p.stats || {}).views != null) { tv += p.stats.views; hasV = true; }
       var e = engOf(p); if (e != null) { te += e; hasE = true; }
     });
+
+    h += '<h2 class="sec">① โพสต์อินฟลูเอนเซอร์ ' +
+      '<span class="sub">อัปเดตยอดล่าสุด ' + esc(whenTxt(state.at)) + "</span></h2>";
     h += '<div class="scgrid" style="--n:4">' +
       card("โพสต์", String(list.length)) +
       card("Views รวม", hasV ? num(tv) : "—") +
@@ -236,26 +359,22 @@
       "</div>";
 
     // ── แถบตัวกรอง ──
-    h += '<h2 class="sec">โพสต์ที่ติดตาม ' +
-      '<span class="sub">อัปเดตล่าสุด ' + esc(whenTxt(state.at)) + "</span></h2>";
     h += '<div class="panel"><div class="influbar">' +
       sel("fPlatform", "แพลตฟอร์ม", ["all"].concat(Object.keys(P_LABEL)), function (k) { return k === "all" ? "ทั้งหมด" : P_LABEL[k]; }) +
       sel("fAccount", "ช่อง", ["all"].concat(accounts()), function (k) { return k === "all" ? "ทั้งหมด" : k; }) +
-      '<input type="search" class="pp-dt influq" data-influ="q" placeholder="ค้นหาหัวข้อ/ช่อง" value="' + esc(state.q) + '">' +
+      '<input type="search" id="influ-q" class="pp-dt influq" data-influ="q" placeholder="ค้นหาหัวข้อ/ช่อง" value="' + esc(state.q) + '">' +
       '<button type="button" class="btn" data-influ="refresh"' + (state.busy ? " disabled" : "") + ' ' +
-      'title="ยิงไปดึงยอดใหม่ทุกโพสต์ — ใช้เครดิตของ ScrapeCreators">' +
+      'title="ยิงไปดึงยอดใหม่ทุกโพสต์ — ใช้เครดิตของ ScrapeCreators (ข่าวไม่ถูกยิง)">' +
       (state.busy === "refresh" ? '<span class="spin"></span> กำลังอัปเดต…' : "🔄 อัปเดตยอด") + "</button>" +
       "</div>";
 
-    if (!state.posts.length) {
-      h += '<div class="empty"><div class="empty-i">🔗</div><div><b>ยังไม่มีโพสต์ในรายการ</b>' +
-        "<div>วางลิงก์ในกล่องด้านบนแล้วกด “เพิ่ม”</div></div></div></div>";
-      return h;
+    if (!socialPosts().length) {
+      return h + '<div class="empty"><div class="empty-i">🔗</div><div><b>ยังไม่มีโพสต์ในรายการ</b>' +
+        "<div>วางลิงก์ YouTube / TikTok / Facebook / Instagram ในกล่องด้านบน</div></div></div></div>";
     }
     if (!list.length) {
-      h += '<div class="empty"><div class="empty-i">🔍</div><div><b>ไม่มีโพสต์ที่ตรงกับตัวกรอง</b>' +
+      return h + '<div class="empty"><div class="empty-i">🔍</div><div><b>ไม่มีโพสต์ที่ตรงกับตัวกรอง</b>' +
         "<div>ลองล้างตัวกรองหรือคำค้น</div></div></div></div>";
-      return h;
     }
 
     // ── ตาราง ──
@@ -291,8 +410,70 @@
       h += '<td class="num"><button type="button" class="btn xbtn" data-infludel="' + esc(p.id) + '" title="เอาออกจากรายการ">✕</button></td></tr>';
     });
 
-    h += "</tbody></table></div></div>";
-    return h;
+    return h + "</tbody></table></div></div>";
+  }
+
+  /* ── ② ข่าว — นับชิ้น + แยกสำนักข่าวเท่านั้น ────────────────────────
+   * 🔴 เจ้าของสั่ง (8 ก.ย. 2026): "อันนี้แค่นับชิ้น และ แยกสำนักข่าวพอ"
+   * 🚫 ห้ามใส่คอลัมน์ Views/Engagement ใน section นี้ — เราไม่ได้ดึงยอดข่าวเลย
+   *    ใส่คอลัมน์ว่างไว้ = อ่านแล้วเข้าใจว่า "ข่าวไม่มีคนอ่าน" ซึ่งไม่จริง
+   */
+  function newsSection() {
+    var all = newsPosts();
+    var list = newsShown();
+
+    var h = '<h2 class="sec">② ข่าว ' +
+      '<span class="sub">นับชิ้น + แยกสำนักข่าว (ไม่ได้ดึงยอด)</span></h2>';
+
+    var byOut = {};
+    all.forEach(function (p) { var o = outletOf(p); byOut[o] = (byOut[o] || 0) + 1; });
+    var outs = Object.keys(byOut).sort(function (a, b) { return byOut[b] - byOut[a]; });
+
+    h += '<div class="scgrid" style="--n:2">' +
+      card("ข่าวทั้งหมด", String(all.length)) +
+      card("สำนักข่าว", String(outs.length)) +
+      "</div>";
+
+    if (!all.length) {
+      return h + '<div class="panel"><div class="empty"><div class="empty-i">📰</div><div><b>ยังไม่มีข่าวในรายการ</b>' +
+        "<div>วางลิงก์ข่าวในกล่องด้านบน — ระบบแยกให้เองว่าอันไหนเป็นข่าว</div></div></div></div>";
+    }
+
+    // ── แยกตามสำนักข่าว ──
+    var top = outs.slice(0, 12);
+    h += '<div class="panel"><h3 class="sub" style="margin:0 0 8px">จำนวนชิ้นตามสำนักข่าว</h3>' +
+      (window.SOCIAL_CHARTS ? window.SOCIAL_CHARTS.hbars(top.map(function (o) {
+        return { label: o, value: byOut[o], color: "#c2410c", text: byOut[o] + " ชิ้น" };
+      }), { aria: "จำนวนข่าวตามสำนักข่าว" }) : "") +
+      (outs.length > top.length ? '<p class="addnote sub">แสดง ' + top.length + " จาก " + outs.length + " สำนัก</p>" : "") +
+      "</div>";
+
+    // ── รายการข่าว ──
+    h += '<div class="panel"><div class="influbar">' +
+      sel("fOutlet", "สำนักข่าว", ["all"].concat(outlets()), function (k) { return k === "all" ? "ทั้งหมด" : k; }) +
+      '<input type="search" id="influ-nq" class="pp-dt influq" data-influ="nq" placeholder="ค้นหาหัวข้อ/สำนักข่าว" value="' + esc(state.nq) + '">' +
+      "</div>";
+
+    if (!list.length) {
+      return h + '<div class="empty"><div class="empty-i">🔍</div><div><b>ไม่มีข่าวที่ตรงกับตัวกรอง</b>' +
+        "<div>ลองล้างตัวกรองหรือคำค้น</div></div></div></div>";
+    }
+
+    h += '<div class="tblwrap"><table class="tbl perf"><thead><tr><th>ข่าว</th>' +
+      '<th>สำนักข่าว</th><th class="num">เดือน</th><th></th></tr></thead><tbody>';
+    list.forEach(function (p) {
+      var m = monthOf(p);
+      h += '<tr><th scope="row"><div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' +
+        esc(p.title || p.note || p.url) + ' <span class="ext">↗</span></a></div></th>' +
+        "<td>" + esc(outletOf(p)) + "</td>" +
+        /* ~ = ไม่รู้วันที่เผยแพร่ ใช้วันที่เพิ่มเข้ารายการแทน — ต้องบอก ไม่ใช่แสดงเหมือนของจริง */
+        '<td class="num' + (m && !m.exact ? " na" : "") + '"' +
+        (m && !m.exact ? ' title="ต้นทางไม่บอกวันที่เผยแพร่ — นี่คือเดือนที่เพิ่มลิงก์เข้ารายการ"' : "") + ">" +
+        (m ? (m.exact ? "" : "~") + esc(monthLabel(m.m)) : "—") + "</td>" +
+        '<td class="num"><button type="button" class="btn xbtn" data-infludel="' + esc(p.id) + '" title="เอาออกจากรายการ">✕</button></td></tr>';
+    });
+
+    return h + "</tbody></table></div></div>";
   }
 
   function card(label, value) {
@@ -349,11 +530,14 @@
   }
   function onInput(e) {
     var t = e.target;
-    if (t.dataset && t.dataset.influ === "q") { state.q = t.value; draw(); restoreFocus("influq", t.selectionStart); }
+    /* ⚠️ มีช่องค้นหา 2 ช่อง (โพสต์ / ข่าว) — ต้องคืนโฟกัสด้วย **id** ไม่ใช่ class
+       ใช้ class จะไปคว้าช่องแรกเสมอ = พิมพ์ในช่องข่าวแล้วเคอร์เซอร์กระโดดขึ้นไปช่องโพสต์ */
+    if (t.dataset && t.dataset.influ === "q") { state.q = t.value; draw(); restoreFocus("influ-q", t.selectionStart); }
+    if (t.dataset && t.dataset.influ === "nq") { state.nq = t.value; draw(); restoreFocus("influ-nq", t.selectionStart); }
     if (t.id === "influ-in") state.draft = t.value;   // จำไว้ใน state ไม่งั้นวาดใหม่แล้วหาย
   }
-  function restoreFocus(cls, pos) {
-    var el = document.querySelector("." + cls);
+  function restoreFocus(id, pos) {
+    var el = document.getElementById(id);
     if (!el) return;
     el.focus();
     try { el.setSelectionRange(pos, pos); } catch (x) {}

@@ -1,4 +1,10 @@
-// โพสต์ของอินฟลูเอนเซอร์ที่จ้าง — เก็บลิงก์ + ดึงยอดล่าสุด
+// Earned media — เก็บลิงก์ที่ผู้ใช้วางเข้ามา แล้วดึงยอดล่าสุด
+//
+// 📦 เก็บของ 2 ชนิดใน blob เดียวกัน แยกด้วยฟิลด์ `kind`
+//    · `social` = โพสต์ของอินฟลูเอนเซอร์ที่จ้าง (YouTube/TikTok/FB/IG) → ดึงยอดจริง
+//    · `news`   = ข่าวจากสำนักข่าว → **นับชิ้น + แยกสำนักข่าวเท่านั้น** (เจ้าของสั่ง 8 ก.ย. 2026)
+//    🚫 ข่าว **ไม่ยิงต้นทางเลยสักครั้ง** ไม่ว่าจะกดอัปเดตกี่ที — ไม่มี API ไหนบอกยอดของหน้าข่าว
+//       และการยิงมั่วก็เผาเครดิต ScrapeCreators ที่จ่ายเงินฟรีๆ
 //
 // 🎯 ต่างจาก endpoint อื่นของ /social/ ตรงที่ **อันนี้เก็บของที่ผู้ใช้ใส่เข้ามา**
 //    ตัวอื่นดึงจากต้นทางล้วนๆ อันนี้มี "รายการลิงก์" ที่ต้องจำไว้ข้ามวัน
@@ -19,7 +25,8 @@
 import { ST, payload, json, missingEnv } from "../_lib/store.js";
 
 // ⭐ บวกเลขนี้ทุกครั้งที่แก้โครงข้อมูลที่เก็บลง KV
-const DATA_VER = 1;
+// v2 = เพิ่ม kind / host / publishedAt (8 ก.ย. 2026)
+const DATA_VER = 2;
 
 const KV_KEY = "influ:posts";
 const MAX_POSTS = 300;        // เพดานของ blob เดียว — เกินนี้ควรย้ายไป D1
@@ -72,6 +79,36 @@ export function platformOf(u) {
   if (/instagram\.com/.test(s)) return "instagram";
   if (/facebook\.com|fb\.watch|fb\.com/.test(s)) return "facebook";
   return null;
+}
+
+/* ── ลิงก์ข่าว ────────────────────────────────────────────────────
+ * 🔴 เจ้าของสั่ง (8 ก.ย. 2026): ข่าว **นับชิ้น + แยกสำนักข่าวพอ** ไม่ต้องดึงยอด
+ *    ลิงก์ที่ไม่ใช่ 4 แพลตฟอร์มที่รู้จัก = ข่าว ไม่ใช่ "ลิงก์ผิด"
+ *    (ของเดิมเด้งทิ้งว่า "ไม่รู้จักแพลตฟอร์ม" — วางลิสต์ข่าวมาจะไม่เหลือสักใบ)
+ */
+
+/** ชื่อโดเมนที่ใช้เป็น "สำนักข่าว" — ตัด www. ออก · ชื่อไทยแปลที่หน้าเว็บ */
+export function hostOf(url) {
+  try { return new URL(String(url)).hostname.replace(/^www\./i, "").toLowerCase(); }
+  catch (e) { return ""; }
+}
+
+/* ⚠️ ลิงก์ที่ก๊อปมาไม่ครบต้องเด้งตั้งแต่ตอนเพิ่ม ไม่ใช่ปล่อยให้ไปยิงแล้วค่อยพัง
+   เจ้าของวางมาจริงว่า `https://www.facebook.com/share/p/19...` (โดนตัดตอนก๊อป)
+   ถ้าปล่อยผ่าน = เสียเครดิต ScrapeCreators ฟรี 1 หน่วยเพื่อได้ 404 กลับมา */
+export function looksTruncated(u) {
+  return /(\.{2,}|…)\s*$/.test(String(u || ""));
+}
+
+/* วันที่ในเส้นทางของลิงก์ — สำนักข่าวไทยหลายเจ้าใส่ /2026/09/05/ ไว้ใน URL
+   ⚠️ ได้บ้างไม่ได้บ้าง เอาไว้ทำกราฟรายเดือนให้แม่นขึ้นเท่านั้น
+      ไม่เจอ = ใช้วันที่เพิ่มเข้ารายการแทน แล้ว **ติดป้ายบอกว่าเป็นวันที่เพิ่ม** */
+export function dateFromUrl(url) {
+  const m = String(url || "").match(/\/(20\d{2})[/-](\d{1,2})[/-](\d{1,2})(?:\/|$|\?)/);
+  if (!m) return "";
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  return y + "-" + String(mo).padStart(2, "0") + "-" + String(d).padStart(2, "0");
 }
 
 export function youtubeId(url) {
@@ -152,6 +189,21 @@ const F = {
   shares: ["share_count", "sharecount", "shares", "repost_count", "forward_count"],
 };
 
+/* วันที่โพสต์จากคำตอบของ ScrapeCreators — ใช้ทำกราฟรายเดือน
+   ⚠️ บางเจ้าส่งเป็นวินาที (unix) บางเจ้าส่งเป็นข้อความ ISO · รับทั้งคู่
+   🚫 หาไม่เจอต้องคืน "" ไม่ใช่เดาว่าเป็นวันนี้ — เดาแล้วกราฟรายเดือนจะโกหก */
+export function pickWhen(body) {
+  const t = deepNum(body, ["create_time", "createtime", "taken_at_timestamp", "taken_at", "timestamp", "created_time"]);
+  if (t != null && t > 1e8) {
+    const ms = t > 1e12 ? t : t * 1000;      // วินาที vs มิลลิวินาที
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  const s = deepStr(body, ["create_time", "created_time", "taken_at", "published_at", "publishedat", "date"]);
+  if (s) { const d = new Date(s); if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10); }
+  return "";
+}
+
 function statsFrom(body) {
   return {
     views: deepNum(body, F.views),
@@ -209,6 +261,7 @@ async function fetchOne(post, env) {
     title: deepStr(r.body, ["desc", "message", "title", "caption", "text", "content", "description"]).slice(0, 300) || post.title,
     account: post.account || deepStr(r.body, ["unique_id", "uniqueid", "username", "nickname", "author_name"]),
     thumb: deepStr(r.body, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "display_url", "thumbnail_url"]) || post.thumb,
+    publishedAt: pickWhen(r.body) || post.publishedAt,
     stats: st, at: Date.now(), err: "",
   };
 }
@@ -322,23 +375,31 @@ export async function onRequest(context) {
       // รับได้ทั้งสตริงเปล่าๆ และ {url, note} — ฝั่งหน้าเว็บส่งแบบหลัง
       const raw = typeof item === "string" ? item : (item && item.url) || "";
       const note = typeof item === "string" ? "" : (item && item.note) || "";
+      // ⚠️ ก๊อปมาไม่ครบต้องเด้งก่อนถึงจะไม่เสียเครดิตฟรี
+      if (looksTruncated(raw)) { bad.push({ url: raw, why: "ลิงก์ถูกตัดตอนก๊อป (ลงท้ายด้วย …) — ก๊อปใหม่ให้ครบ" }); return; }
       const url = normLink(raw);
       if (!url) return;
       const platform = platformOf(url);
-      // ⚠️ ลิงก์ที่ไม่รู้จักต้องบอกกลับไป ไม่ใช่กลืนหายเงียบๆ ผู้ใช้จะนึกว่าเพิ่มสำเร็จ
-      if (!platform) { bad.push({ url: raw, why: "ไม่รู้จักแพลตฟอร์มของลิงก์นี้" }); return; }
+      const host = hostOf(url);
+      /* 🔴 ลิงก์ที่ไม่ใช่ 4 แพลตฟอร์ม = **ข่าว** ไม่ใช่ลิงก์ผิด (เจ้าของสั่ง 8 ก.ย. 2026)
+         เด้งเฉพาะที่ไม่มีชื่อโดเมนจริงๆ = พิมพ์ผิดแน่ๆ */
+      const kind = platform ? "social" : "news";
+      if (!platform && !host) { bad.push({ url: raw, why: "อ่านลิงก์นี้ไม่ออก" }); return; }
       if (seen.has(url)) { bad.push({ url: raw, why: "มีอยู่ในรายการแล้ว" }); return; }
       seen.add(url);
       fresh.push({
         id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-        url, platform,
+        url, kind, host,
+        platform: platform || "",
         vid: platform === "youtube" ? youtubeId(url) : "",
         account: accountOf(url, platform),
         /* แคปชั่นที่วางมาเป็นชื่อตั้งต้น — ถ้าดึงชื่อจริงจากต้นทางได้ค่อยทับทีหลัง
            ⚠️ ลิงก์ย่ออย่าง vt.tiktok.com / facebook.com/share ไม่มีชื่ออะไรในตัวเลย
               ไม่เก็บแคปชั่นไว้ = ตารางจะมีแต่ URL ยาวๆ อ่านไม่รู้เรื่อง */
         note: note,
-        title: "", thumb: "", publishedAt: "",
+        title: "", thumb: "",
+        // วันที่ในเส้นทางลิงก์ (ถ้ามี) ใช้ทำกราฟรายเดือน — ไม่มีก็ใช้วันที่เพิ่มแทน
+        publishedAt: dateFromUrl(url),
         stats: { views: null, likes: null, comments: null, shares: null },
         addedAt: Date.now(), at: 0, err: "",
       });
@@ -367,8 +428,11 @@ export async function onRequest(context) {
 
 /** แยก YouTube ออกไปยิงเป็นชุด ที่เหลือยิงทีละใบ */
 async function fetchMany(posts, env) {
-  const yt = posts.filter((p) => p.platform === "youtube");
-  const rest = posts.filter((p) => p.platform !== "youtube");
+  /* 🔴 ข่าวไม่ยิงต้นทางเด็ดขาด — กันไว้ที่นี่ชั้นเดียวพอ ทั้ง add และ refresh ผ่านทางนี้ทั้งคู่
+     ⚠️ เช็คด้วย platform ด้วย เผื่อ record เก่า (v1) ที่ยังไม่มีฟิลด์ kind */
+  const feed = posts.filter((p) => p.kind !== "news" && p.platform);
+  const yt = feed.filter((p) => p.platform === "youtube");
+  const rest = feed.filter((p) => p.platform !== "youtube");
 
   const scKey = String(env.SCRAPECREATORS_API_KEY || "").trim();
   const ytKey = String(env.YT_API_KEY || "").trim();

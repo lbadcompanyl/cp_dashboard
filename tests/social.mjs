@@ -2869,6 +2869,117 @@ console.log("\n[62] 🔴 ต้นทางส่งข้อมูลช้า 
   await full.pg.close();
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด: โพสต์ (ดึงยอด) vs ข่าว (นับชิ้น)");
+{
+  /* 🔴 เจ้าของสั่ง 8 ก.ย. 2026: "แยกอีกช่องสำหรับข่าว … แค่นับชิ้น และ แยกสำนักข่าวพอ
+     … มีกราฟบอกรายเดือน … แบ่งเป็น 2 section ชัดเจน / title ของ tab เปลี่ยนเป็น Earned media"
+
+     ⚠️ ที่นี่วัดว่า "หน้าเว็บทำตัวถูกไหมเมื่อได้ข้อมูลแบบนี้" — ไม่ได้ยิง ScrapeCreators จริง
+        (ยิงจริงเสียเงิน และเครื่องที่รันเทสต์ยิงเน็ตออกไม่ได้) */
+
+  // ── ฝั่งเซิร์ฟเวอร์: ลิงก์ไหนเป็นข่าว ลิงก์ไหนเป็นโพสต์ ──
+  const api = await import("../functions/social/api/influ.js");
+  ok(api.platformOf("https://www.thansettakij.com/news/123") === null,
+     "ลิงก์สำนักข่าวไม่ใช่แพลตฟอร์มโซเชียล");
+  ok(api.hostOf("https://www.thansettakij.com/news/123") === "thansettakij.com",
+     "อ่านชื่อโดเมนของสำนักข่าวได้ (ตัด www. ออก)");
+  /* 🚫 ลิงก์ที่ก๊อปมาไม่ครบต้องเด้งตั้งแต่ตอนเพิ่ม — ปล่อยผ่าน = เสียเครดิตฟรีเพื่อได้ 404
+     เจ้าของวางมาจริงแบบนี้ */
+  ok(api.looksTruncated("https://www.facebook.com/share/p/19...") === true,
+     "จับได้ว่าลิงก์ถูกตัดตอนก๊อป (ลงท้ายด้วยจุดสามจุด)");
+  ok(api.looksTruncated("https://www.facebook.com/share/p/19abc") === false,
+     "ลิงก์ปกติไม่โดนเด้ง");
+  ok(api.dateFromUrl("https://www.dailynews.co.th/news/2026/09/05/x") === "2026-09-05",
+     "อ่านวันที่จากเส้นทางลิงก์ข่าวได้ (ใช้จัดกลุ่มรายเดือน)");
+  ok(api.dateFromUrl("https://www.kaohoon.com/news/999999") === "",
+     "ไม่มีวันที่ในลิงก์ = คืนค่าว่าง ไม่เดาเป็นวันนี้");
+
+  // ── ฝั่งหน้าเว็บ ──
+  const now = Date.now();
+  const fixture = {
+    ok: true, status: "ok", at: now,
+    data: {
+      at: now, missing: [], max: 300,
+      posts: [
+        { id: "a1", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@x/video/1",
+          account: "@x", title: "คลิปรีวิว", note: "", host: "tiktok.com",
+          publishedAt: "2026-09-02", addedAt: now,
+          stats: { views: 10000, likes: 500, comments: 30, shares: 20 }, err: "" },
+        { id: "a2", kind: "social", platform: "youtube", url: "https://youtu.be/aaaaaaaaaaa",
+          account: "ช่องเรา", title: "คลิปยาว", note: "", host: "youtu.be",
+          publishedAt: "2026-09-03", addedAt: now,
+          stats: { views: 2000, likes: 100, comments: 10, shares: null }, err: "" },
+        { id: "n1", kind: "news", platform: "", url: "https://www.thansettakij.com/news/1",
+          host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 1", publishedAt: "2026-09-01",
+          addedAt: now, stats: {}, err: "" },
+        { id: "n2", kind: "news", platform: "", url: "https://www.thansettakij.com/news/2",
+          host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 2", publishedAt: "2026-09-01",
+          addedAt: now, stats: {}, err: "" },
+        { id: "n3", kind: "news", platform: "", url: "https://www.dailynews.co.th/news/3",
+          host: "dailynews.co.th", title: "", note: "ข่าวชิ้นที่ 3", publishedAt: "2026-08-20",
+          addedAt: now, stats: {}, err: "" },
+      ],
+    },
+  };
+  const { pg, errs } = await open();
+  let posted = 0;
+  await pg.route("**/social/api/influ**", (r) => {
+    if (r.request().method() !== "GET") posted++;
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fixture) });
+  });
+
+  const tabName = await pg.$eval('.tab[data-tab="influ"]', (e) => e.textContent.trim());
+  ok(/Earned media/.test(tabName), `ชื่อแท็บเป็น "Earned media" (${tabName})`);
+
+  await tabTo(pg, "Earned media");
+  await pg.waitForSelector(".mchart", { timeout: 4000 });
+  const txt = await view(pg);
+
+  ok(/①\s*โพสต์อินฟลูเอนเซอร์/.test(txt) && /②\s*ข่าว/.test(txt),
+     "มี 2 section แยกกันชัดเจน มีเลขกำกับ");
+
+  // ── section ① ต้องมีแต่โพสต์ ── ข่าวห้ามหลุดเข้าตารางที่มีคอลัมน์ Views
+  const rows1 = await pg.$$eval("#view .tbl.perf", (t) =>
+    Array.from(t[0].querySelectorAll("tbody tr")).map((r) => r.textContent));
+  ok(rows1.length === 2, `ตารางโพสต์มี 2 แถว (ไม่ปนข่าว) — ได้ ${rows1.length}`);
+  ok(!rows1.join(" ").includes("ข่าวชิ้นที่"), "ข่าวไม่หลุดเข้าตารางโพสต์");
+
+  // ── section ② นับชิ้น + แยกสำนักข่าว ──
+  ok(/ข่าวทั้งหมด[\s\S]{0,20}3/.test(txt), "นับข่าวได้ 3 ชิ้น");
+  ok(/สำนักข่าว[\s\S]{0,20}2/.test(txt), "นับสำนักข่าวได้ 2 เจ้า");
+  /* 🔴 ชื่อสำนักข่าวยืมตารางกลางของ /archives/ มา ไม่ได้ก๊อปรายชื่อมาไว้ใน social/
+     ถ้าลืมโหลด outlets.config.js จะขึ้นเป็นโดเมนดิบให้เจ้าของอ่าน */
+  ok(txt.includes("ฐานเศรษฐกิจ") && txt.includes("เดลินิวส์"),
+     "แปลโดเมนเป็นชื่อสำนักข่าวภาษาไทย");
+  const tbls = await pg.$$eval("#view .tbl.perf thead", (n) => n.map((x) => x.textContent));
+  ok(tbls.length === 2 && !/Views|Engagement/.test(tbls[1]),
+     "ตารางข่าวไม่มีคอลัมน์ Views/Engagement (เราไม่ได้ดึงยอดข่าว)");
+
+  // ── กราฟรายเดือน ──
+  const mrows = await pg.$$eval(".mchart .mrow:not(.mhead)", (n) =>
+    n.map((x) => ({ lab: x.querySelector(".mlab").textContent.trim(),
+                    cnt: x.querySelector(".mcnt").textContent.trim(),
+                    eng: x.querySelector(".meng").textContent.trim(),
+                    bars: x.querySelectorAll(".mbar").length })));
+  ok(mrows.length === 2, `กราฟมี 2 เดือน (ส.ค. + ก.ย.) — ได้ ${mrows.length}`);
+  const aug = mrows.find((r) => /ส\.ค\./.test(r.lab));
+  const sep = mrows.find((r) => /ก\.ย\./.test(r.lab));
+  ok(!!aug && !!sep, "ป้ายเดือนเป็นภาษาไทย");
+  ok(sep && /โพสต์ 2/.test(sep.cnt) && /ข่าว 2/.test(sep.cnt),
+     "เดือน ก.ย. นับแยกโพสต์ 2 · ข่าว 2 ไม่รวมเป็นเลขเดียว");
+  /* 🚫 เดือนที่มีแต่ข่าว ต้องเป็น "—" ไม่ใช่ 0 — 0 แปลว่า "ไม่มีใครมีปฏิสัมพันธ์"
+     ซึ่งคนละเรื่องกับ "ไม่ได้ดึงยอด" (กฎ null ≠ 0 ของทั้งโปรเจกต์) */
+  ok(aug && aug.eng === "—", `เดือนที่มีแต่ข่าว Engagement เป็น — ไม่ใช่ 0 (ได้ "${aug && aug.eng}")`);
+  ok(sep && sep.eng !== "—" && sep.eng !== "0", "เดือนที่มีโพสต์มีตัวเลข Engagement จริง");
+
+  // ── เปิดแท็บแล้วห้ามยิงอะไรที่เสียเครดิต ──
+  ok(posted === 0, `เปิดแท็บไม่ยิง POST สักครั้ง (ไม่เสียเครดิต) — ยิงไป ${posted}`);
+
+  ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
+  await pg.close();
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);
