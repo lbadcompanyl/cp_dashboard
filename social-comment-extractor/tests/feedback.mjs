@@ -103,6 +103,48 @@ ok("[2] ไม่เก็บชื่อ/ลิงก์ แม้ถูกส�
   ok("[7d] ส่งกุญแจทาง header ก็ได้", (await body(await call(hdr, { FEEDBACK_KV: kv, FEEDBACK_KEY: "s3cret" }))).ok === true);
 }
 
+/* ── [7e] ✅ มาทางหน้าเว็บ (ผ่าน Cloudflare Access) = อ่านได้เลย ไม่ต้องมีกุญแจ ──
+   เจ้าของเคาะ 4 ก.ย. 2026: "lock ไว้หลัง access ก็พอ"
+   คนที่เปิดหน้าเว็บได้ ก็อ่านคอมเมนต์พวกนั้นบนจอได้อยู่แล้ว กุญแจกลายเป็นล็อกดอกที่ 2 ของประตูบานเดียว
+   ⚠️ ธง INTERNAL ตั้งใน [[route]].js ฝั่งเซิร์ฟเวอร์ที่เดียว ผู้เรียกยัดเข้ามาเองไม่ได้ */
+{
+  const kv = fakeKV([good]);
+  const r = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7e] ✅ ผ่าน Access แล้ว → อ่านกองได้โดยไม่ต้องตั้ง FEEDBACK_KEY",
+     r.ok === true && r.items.length === 1, JSON.stringify(r).slice(0, 80));
+}
+
+/* ── [7f] 🗑 ล้างกอง — **GET ทำไม่ได้ ต้อง POST** ──────────────────────
+   ของหายถาวร กู้ไม่ได้ · คำสั่งแบบนี้อยู่บน GET ไม่ได้ เพราะกดโดนโดยไม่ตั้งใจง่ายเกินไป
+   (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า · เครื่องมือไล่เก็บลิงก์ — ยิง GET เองได้ทั้งนั้น)
+   🎯 แก้ตรงจุดกว่าการขอกุญแจ — และเจ้าของไม่ต้องตั้ง FEEDBACK_KEY เลยสักตัว */
+{
+  const kv = fakeKV([good]);
+  const r = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }, "?clear=1"));
+  ok("[7f] 🚫 ล้างด้วย GET ไม่ได้ (แม้ผ่าน Access)", r.error === "clear_needs_post", JSON.stringify(r));
+  const still = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7g] 🔴 และของในกองต้องยังอยู่ครบ ไม่ได้ถูกล้างไปแล้ว", still.items.length === 1,
+     `เหลือ ${still.items.length} ใบ`);
+
+  const post = () => new Request("https://x/feedback", { method: "POST",
+    headers: { "content-type": "application/json" }, body: "{}" });
+  const okClear = await body(await call(post(), { FEEDBACK_KV: kv, INTERNAL: true }, "?clear=1"));
+  ok("[7h] ✅ POST + ผ่าน Access → ล้างได้ โดยไม่ต้องมีกุญแจ", okClear.cleared === 1, JSON.stringify(okClear));
+  const after = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7i] ล้างแล้วกองว่างจริง", after.items.length === 0, `เหลือ ${after.items.length} ใบ`);
+}
+
+/* ── [7j] 🔒 ไม่ผ่าน Access (ยิงตรงเข้า workers.dev) ล้างไม่ได้ถ้าไม่มีกุญแจ ── */
+{
+  const kv = fakeKV([good]);
+  const post = () => new Request("https://x/feedback", { method: "POST",
+    headers: { "content-type": "application/json" }, body: "{}" });
+  const r = await body(await call(post(), { FEEDBACK_KV: kv }, "?clear=1"));
+  ok("[7j] 🔒 ยิงจากข้างนอกไม่มีกุญแจ → ล้างไม่ได้", r.error === "bad_key", JSON.stringify(r));
+  const still = await body(await call(new Request("https://x/feedback"), { FEEDBACK_KV: kv, INTERNAL: true }));
+  ok("[7k] 🔴 ของยังอยู่ครบ", still.items.length === 1, `เหลือ ${still.items.length} ใบ`);
+}
+
 /* ── [8] ส่งก้อนใหญ่เกินไปต้องถูกตัด ───────────────────── */
 {
   const kv = fakeKV();
@@ -116,6 +158,31 @@ ok("[2] ไม่เก็บชื่อ/ลิงก์ แม้ถูกส�
   const kv = fakeKV();
   const r = await call(post([{ text: "", was: "x", now: "y" }]), { FEEDBACK_KV: kv });
   ok("[9] ส่งแต่ของเสีย → 400 และไม่แตะ KV", r.status === 400 && kv.n.put === 0 && kv.n.get === 0);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+ * 🏷 ป้ายจากต้นทางอื่น (Zocial Eye) — เจ้าของสั่ง 3 ก.ย. 2026
+ *    "ต้องให้จำ pattern ที่ social มันจะผิดด้วย"
+ *    ห้องใหม่ (news feed จาก Zocial) จะยืม /feedback ตัวนี้ไปใช้
+ *    ไม่มีช่องนี้ = รู้แค่ว่า AI ผิด แต่ไม่รู้ว่าต้นทางผิดแบบไหน
+ * ══════════════════════════════════════════════════════════════ */
+{
+  const keep = fbClean({ text: "ขอบคุณที่ดูแลผืนป่าให้พวกเรา", was: "neutral", now: "positive",
+                         from: "neutral", src: "zocial", model: "zocial", target: "overall" });
+  ok("[10] เก็บป้ายเดิมของ Zocial (from) ไว้ด้วย", keep && keep.from === "neutral", JSON.stringify(keep));
+  ok("[10b] เก็บว่าแก้มาจากชั้นไหน (src)", keep && keep.src === "zocial");
+
+  /* 🚫 ห้ามเชื่อค่าดิบ — ค่าที่ไม่รู้จักต้องถูกทิ้ง ไม่ใช่เก็บลง KV ทั้งดุ้น */
+  const bad = fbClean({ text: "ทดสอบ", was: "neutral", now: "positive",
+                        from: "<script>", src: "อะไรก็ไม่รู้" });
+  ok("[10c] 🚫 ค่า from/src ที่ไม่รู้จักถูกตัดทิ้ง ไม่เก็บลง KV",
+     bad && bad.from === undefined && bad.src === undefined, JSON.stringify(bad));
+
+  /* ของเดิมที่ไม่ส่ง from/src มา ต้องยังใช้ได้เหมือนเดิม */
+  const old = fbClean({ text: "ทดสอบเก่า", was: "negative", now: "positive", target: "cp" });
+  ok("[10d] ผู้เรียกรุ่นเก่า (ไม่ส่ง from/src) ต้องไม่พัง",
+     old && old.now === "positive" && old.from === undefined);
 }
 
 console.log(fail ? `\n❌ ตก ${fail} ข้อ` : "\n✅ ผ่านหมด");

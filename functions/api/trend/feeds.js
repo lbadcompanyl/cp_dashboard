@@ -35,7 +35,7 @@ const EDGE_TTL = 3600; // เก็บใน edge cache นานพอสำห
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000; // ms (เผื่อ cold start)
 const AI_MODEL_CAT = "@cf/meta/llama-3.2-3b-instruct"; // โมเดลเดียวกับที่หน้า IR ใช้
-const CACHE_VER = "86"; // bump: ทุกคอลัมน์ตัดสินที่พาดหัวอย่างเดียว ไม่อ่านเนื้อ ไม่ดูสรุป
+const CACHE_VER = "89"; // bump: ตัดหน้าสินค้าซูเปอร์/ห้างออนไลน์ (Big C ฯลฯ)
 
 // เก็บสะสม alert ลง Cloudflare KV เพื่อไม่ให้หลุดตามหน้าต่างฟีด Google Alert (เหมือนหน้า IR)
 // key แยกจาก IR (pr:archive ≠ ir:archive) จะได้ไม่ทับกัน
@@ -773,7 +773,7 @@ async function mapPoolResults(items, limit, fn) {
 }
 // ตัด related-block 3 ชั้น: (1) พาดหัวมีคำ match/keep → เก็บฟรี (2) roundup → ตัดฟรี (3) พาดหัวไม่มี → อ่านเนื้อข่าวจริง (articleBody ไม่รวม related)
 // ชั้น 3 fetch เฉพาะ background (allowFetch)
-const VFY_VER = 8; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
+const VFY_VER = 10; // รุ่นของด่านตรวจ — ใบที่ผ่านแล้วติดธง it.vfy ไม่ต้องตรวจซ้ำทุกรอบ (บวกเลขนี้ = สั่งตรวจของเก่าใหม่ทั้งคลัง)
 const AI_CP_MAX = 12; // เพดานใบที่ถาม AI ต่อ 1 build — คำตอบถูกจำไว้ ใบเดิมจึงถามครั้งเดียวตลอด
 
 // ถาม AI แล้ว "จำคำตอบไว้ 7 วัน" ต่อข่าว 1 ใบ — ไม่งั้นทุก build จะถามซ้ำทั้งคอลัมน์

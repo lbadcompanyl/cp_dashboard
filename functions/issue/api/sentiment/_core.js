@@ -4,7 +4,7 @@
  * รับลิงก์โพส → ดึงคอมเมนต์ → ตี sentiment ด้วย Claude → ส่งกลับเป็น aggregate
  *
  * แหล่งดึงคอมเมนต์ (adapter):
- *   - YouTube : YouTube Data API v3 (ฟรี, ทางการ)          env: YOUTUBE_API_KEY
+ *   - YouTube : YouTube Data API v3 (ฟรี, ทางการ)          env: YOUTUBE_API_KEY หรือ YT_API_KEY
  *   - Facebook: ScrapeCreators /v1/facebook/post/comments   env: SCRAPECREATORS_API_KEY
  *   - TikTok  : ScrapeCreators /v1/tiktok/video/comments     env: SCRAPECREATORS_API_KEY
  *
@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 28;
+const WORKER_VER = 42;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -69,6 +69,40 @@ const SYNTH_SAMPLE = 120;    // จำนวนคอมเมนต์ที่
  * ============================================================ */
 const RUBRIC_VER = "v6";
 const CLASSIFY_MAX = 50;     // จำนวนคอมเมนต์สูงสุดต่อ 1 คำขอ /classify (หน้าเว็บเป็นคนวนเอง)
+/* เพดานของ /resynth (กดปุ่ม "สรุปใหม่") — ต้องคุมไว้เพราะ endpoint นี้ยิงได้โดยไม่มีกุญแจ
+   ตั้งให้เท่ากับจำนวนคอมเมนต์สูงสุดที่หน้าเว็บดึงได้ ไม่งั้นโพสใหญ่กดปุ่มแล้วโดนปฏิเสธ */
+const RESYNTH_MAX = 500;
+/* ลองใหม่กี่ครั้งเมื่อต้นทาง Claude ล่มชั่วคราว (429 · 529 · 5xx)
+   🚫 มากกว่านี้ไม่ควร — โพสใหญ่ยิง 24 ก้อน ถ้าล่มยาวจะกลายเป็นรอเป็นนาที */
+const AI_RETRY_MAX = 2;
+/* จำนวนใบสูงสุดต่อ 1 คำขอ /paraphrase (กด ✕ ขอตัวอย่างใหม่) — กดทีละใบอยู่แล้ว
+   เผื่อไว้เล็กน้อยเผื่อวันหน้าอยากขอทีเดียวหลายช่อง */
+const PARA_MAX = 6;
+
+/* 📐 จำนวนใบตัวอย่างต่อ 1 ช่อง — **ช่องที่สัดส่วนเยอะได้เยอะขึ้น**
+   เจ้าของสั่ง 4 ก.ย. 2026: "ถ้า positive มีมาก หรือ negative มีมาก ให้เพิ่มได้ max 4 row"
+
+   | สัดส่วนของช่อง | ได้กี่ใบ |    ตัวอย่างจากโพสจริง (บวก 51% · กลาง 41% · ลบ 8%)
+   |---|---|          บวก 51% → 4 ใบ · กลาง 41% → 3 ใบ · ลบ 8% → 2 ใบ (รวม 9)
+   | ≥ 50% | 4 |
+   | ≥ 30% | 3 |
+   | ที่เหลือ | 2 |  ← เท่าของเดิม
+
+   🚫 **ขั้นต่ำ 2 เสมอ ห้ามลดตามสัดส่วน** — ช่องลบ 8% คือช่องที่ต้องอ่านที่สุดในงาน PR
+      เหลือใบเดียวเมื่อไหร่ ความเห็นของคนคนเดียวจะดูเหมือนตัวแทนของทั้งกลุ่มทันที
+   📌 รวมสูงสุดได้ 9 ใบ ไม่ใช่ 12 — จะได้ 4 ต้องมีสัดส่วน ≥50% ซึ่งมีได้ช่องเดียว */
+const SAMPLE_MIN = 2, SAMPLE_MAX = 4;
+function sampleQuota(group, labels, dist) {
+  /* ใช้สัดส่วนชุดเดียวกับที่หน้าเว็บโชว์ (`sentiment`) เพื่อให้ป้าย "บวก 51%" กับจำนวนแถวตรงกัน
+     ⚠️ ไม่มี dist ส่งมา = นับจาก labels เอง **ห้ามตกไปเป็น 0 ใบ** */
+  const src = dist && (dist.positive != null) ? dist : null;
+  const n = src ? (src[group] || 0) : labels.filter(l => l === group).length;
+  const total = src ? (["positive", "neutral", "negative"].reduce((a, k) => a + (src[k] || 0), 0))
+                    : labels.length;
+  if (!total) return SAMPLE_MIN;
+  const p = n / total;
+  return p >= 0.5 ? SAMPLE_MAX : p >= 0.3 ? 3 : SAMPLE_MIN;
+}
 
 /* โมเดลที่หน้าวัดผลเลือกได้ — 🚫 **ต้องเป็นรายชื่อตายตัวเท่านั้น**
    /classify เปิดให้ยิงได้จากหน้าเว็บ ถ้ารับชื่อโมเดลอะไรก็ได้ ใครก็สั่งใช้ตัวแพงสุดรัวๆ ได้ */
@@ -146,6 +180,50 @@ const TWO_LENS_SHOTS = [
   { t: "แค่ 395 มึงไม่ดูกันก่อนค่อยเม้นท์แหะเขาวะ", cp: "Positive", oc: "Neutral", s: 0 },
   { t: "ฟังคลิปให้จบก่อน", cp: "Positive", oc: "Neutral", s: 0 },
 ];
+
+/* ============================================================
+ * 🎛 PROFILE — งานคนละอย่างใช้ rubric คนละชุด แต่ใช้ engine ร่วมกัน
+ * ------------------------------------------------------------
+ * เจ้าของเคาะ 3 ก.ย. 2026 (หลังห้อง Zocial ถาม):
+ *   "ใช้ตัวเดียวกัน แต่แยกเป็น profile (ไม่ใช่ rubric รวมก้อนเดียว
+ *    และไม่ใช่แยก worker)"
+ *
+ * เหตุผล: engine เรียก LLM · แคช · ลองใหม่ · FEEDBACK · โครง BASELINE
+ *   **ควรใช้ร่วม** — แต่ rubric ต้องแยกต่องาน เพราะคนละ input คนละคำถาม
+ *   (คอมเมนต์ต่อ CP  vs  โพสข่าวโทนรวม) · เขียนรวมก้อนเดียวจะเบลอทั้งคู่
+ *
+ * ✅ ใช้ร่วม : engine · brands.json · labels.md · แคช · retry · FEEDBACK loop
+ * ✅ แยกกัน : rubric/prompt · few-shot · ชุดวัดผล (BASELINE set)
+ *
+ * 🚫 **ห้ามแก้ `cp_comment` โดยไม่ตั้งใจ** — เทสต์ `profiles.mjs` เก็บ sha256
+ *    ของ prompt กับ few-shot ไว้ ถ้าขยับแม้แต่ตัวอักษรเดียวจะตกทันที
+ *    (ตัวเลขบนหน้า sentiment ที่วัดไว้ 92.8% ผูกกับ prompt ชุดนี้)
+ *
+ * ➕ **เพิ่ม profile ใหม่ยังไง** — ใส่ใน PROFILES แล้วเขียน rubric เป็นเอกสาร
+ *    ของตัวเอง + ชุดวัดผลของตัวเอง · ห้ามยัดกฎของงานใหม่ลงใน systemTwoLens()
+ * ============================================================ */
+const PROFILES = {
+  /* คอมเมนต์โซเชียล → ท่าทีต่อเครือ CP + อารมณ์รวม (2 แกนในการยิงครั้งเดียว)
+     เอกสารเกณฑ์: RUBRIC-CP.md · ชุดวัดผล: 475 ใบ (BASELINE.md) */
+  cp_comment: {
+    rubric_version: "cp-v6",        // ⚠️ ผูกกับ RUBRIC_VER เดิม — ขยับเมื่อเกณฑ์เปลี่ยนเท่านั้น
+    input: "comment",
+    system: () => systemTwoLens(),
+    shots: () => TWO_LENS_SHOTS,
+    lenses: ["cp", "overall"],
+    default_lens: "cp",
+    doc: "RUBRIC-CP.md",
+  },
+  /* 🚧 news_post — ยังไม่ทำ (เจ้าของสั่ง 3 ก.ย. 2026: รอห้อง Zocial ตั้งต้น rubric
+     แล้วส่งมา review ก่อน) · ใส่ที่นี่เมื่อเคาะแล้ว ห้ามเดาเกณฑ์เอาเอง */
+};
+const DEFAULT_PROFILE = "cp_comment";
+/** คืน profile ที่ขอ · ชื่อที่ไม่รู้จัก = null (ห้ามตกกลับไปตัวปริยายเงียบๆ
+    ไม่งั้นห้องอื่นพิมพ์ผิดแล้วได้ผลจาก rubric คนละตัวโดยไม่รู้) */
+function getProfile(name) {
+  const id = String(name || DEFAULT_PROFILE);
+  return PROFILES[id] ? { id, ...PROFILES[id] } : null;
+}
 
 function systemTwoLens() {
   const ex = TWO_LENS_SHOTS
@@ -288,12 +366,23 @@ function fbClean(o) {
   if (!text) return null;
   if (!FB_LABELS.includes(was) || !FB_LABELS.includes(now)) return null;
   if (was === now) return null;                                  // ไม่ได้แก้อะไร ไม่ต้องเก็บ
+  /* 🏷 ป้ายจากต้นทางอื่นที่ตีมาก่อนเรา (ตอนนี้คือ Zocial Eye)
+     เจ้าของสั่ง 3 ก.ย. 2026: **"ต้องให้จำ pattern ที่ social มันจะผิดด้วย"**
+     ไม่มีช่องนี้ = รู้แค่ว่า "AI ผิด" แต่ไม่รู้ว่า **ต้นทางผิดแบบไหน**
+     ซึ่งเป็นข้อมูลที่เอาไปคัดกรองได้ว่าใบไหนต้องส่งให้ AI ตรวจซ้ำ (ประหยัดเงิน)
+     ⚠️ ไม่มีก็ไม่พัง — ของเดิมที่อยู่ในกองแล้วยังอ่านได้เหมือนเดิม */
+  const from = String(o.from || "").toLowerCase().slice(0, 20);
+  const src = String(o.src || "").toLowerCase();
   return {
     text, was, now,
     target: o.target === "cp" ? "cp" : "overall",                // แก้แกนไหน
     model: String(o.model || "").slice(0, 40),
     ver: Number.isFinite(+o.ver) ? +o.ver : null,
     rubric: String(o.rubric || "").slice(0, 10),
+    /* ป้ายเดิมจากต้นทาง (เช่น Zocial) — เก็บเฉพาะค่าที่รู้จัก ห้ามเชื่อค่าดิบ */
+    ...(FB_LABELS.includes(from) ? { from } : {}),
+    /* ป้ายที่ถูกแก้มาจากชั้นไหน: "zocial" (ยังไม่ผ่าน AI) หรือ "ai" (AI ตรวจแล้ว) */
+    ...(src === "zocial" || src === "ai" ? { src } : {}),
     at: new Date().toISOString().slice(0, 10),                   // วันที่พอ ไม่ต้องละเอียดถึงวินาที
   };
 }
@@ -303,19 +392,46 @@ async function feedbackRoute(request, url, env) {
   const kv = env.FEEDBACK_KV;
 
   if (request.method === "GET") {
-    /* 🔒 อ่านกอง = เห็นข้อความคอมเมนต์ที่สะสมไว้ทั้งหมด จึงต้องมีกุญแจเสมอ
-       ⚠️ ไม่ได้ตั้ง FEEDBACK_KEY ไว้ = **ปิด** ไม่ใช่เปิดให้ทุกคน
-          (ค่าปริยายที่ปลอดภัยกว่า — ลืมตั้งแล้วข้อมูลหลุดเป็นเรื่องที่กู้ไม่ได้) */
-    if (!env.FEEDBACK_KEY) return json({ error: "read_disabled", detail: "ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare" }, 403);
-    const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
-    if (given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    /* 🔒 อ่านกอง = เห็นข้อความคอมเมนต์ที่สะสมไว้ทั้งหมด
+       "ไม่มีชื่อ" ไม่ได้แปลว่าตามตัวไม่ได้ — เอาข้อความไปค้นในโซเชียลก็เจอคนโพสต์
+       และกองนี้ยังบอกด้วยว่าทีมตัดสินคอมเมนต์ไหนว่าบวก/ลบ = ความเห็นภายใน
+
+       ✅ เจ้าของเคาะ 4 ก.ย. 2026: **ล็อกหลัง Access ชั้นเดียวพอ**
+          มาทาง /issue/api/sentiment/* = ผ่านหน้าล็อกอินมาแล้ว ไม่ต้องมีกุญแจซ้ำ
+          คนที่เปิดหน้าเว็บได้ ก็อ่านคอมเมนต์พวกนั้นบนจอได้อยู่แล้ว
+       🔒 ยิงตรงเข้า workers.dev (ไม่ผ่าน Access) ยังต้องมีกุญแจเหมือนเดิม
+          ไม่ตั้ง FEEDBACK_KEY = ปิด ไม่ใช่เปิด */
+    if (!env.INTERNAL) {
+      if (!env.FEEDBACK_KEY) return json({ error: "read_disabled", detail: "ยังไม่ได้ตั้ง FEEDBACK_KEY ที่ Cloudflare" }, 403);
+      const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
+      if (given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    }
     if (!kv) return json({ ok: true, stored: false, reason: "no_kv", items: [] });
     const items = JSON.parse((await kv.get(FB_KEY)) || "[]");
+    /* 🚫 ล้างกองด้วย GET ไม่ได้อีกแล้ว — ต้องเป็น POST /feedback?clear=1
+       เหตุผลที่เคยขอกุญแจตรงนี้คือ "กันกดโดนโดยไม่ตั้งใจ" ซึ่งแก้ตรงจุดกว่าด้วยการ
+       ไม่ให้คำสั่งทำลายข้อมูลอยู่บน GET ตั้งแต่แรก (ลิงก์ที่แชร์กัน · เบราว์เซอร์โหลดล่วงหน้า
+       · เครื่องมือไล่เก็บลิงก์ — พวกนี้ยิง GET เองได้ทั้งนั้น แต่ไม่ยิง POST)
+       → เจ้าของจึงไม่ต้องตั้ง FEEDBACK_KEY เลยแม้แต่ตัวเดียว (เจ้าของทัก 4 ก.ย. 2026) */
     if (url.searchParams.get("clear") === "1") {
-      await kv.put(FB_KEY, "[]");
-      return json({ ok: true, cleared: items.length, items: [] });
+      return json({ error: "clear_needs_post",
+        detail: "ล้างกองต้องส่งมาแบบ POST — คำสั่งลบข้อมูลอยู่บน GET ไม่ได้ กดโดนโดยไม่ตั้งใจง่ายเกินไป" }, 405);
     }
     return json({ ok: true, ver: WORKER_VER, count: items.length, max: FB_MAX, items });
+  }
+
+  /* 🗑 ล้างกอง — POST เท่านั้น (ดูเหตุผลที่ฝั่ง GET)
+     ด่านกันพลาดตอนนี้มี 3 ชั้น: Access · ต้องเป็น POST · หน้าเว็บถามยืนยันก่อน
+     🔒 ไม่ผ่าน Access (ยิงตรงเข้า workers.dev) ยังต้องมีกุญแจเหมือนเดิม */
+  if (url.searchParams.get("clear") === "1") {
+    if (!env.INTERNAL) {
+      const given = url.searchParams.get("key") || request.headers.get("x-fb-key") || "";
+      if (!env.FEEDBACK_KEY || given !== env.FEEDBACK_KEY) return json({ error: "bad_key" }, 403);
+    }
+    if (!kv) return json({ ok: false, cleared: 0, reason: "no_kv", detail: "ยังไม่ได้ผูก KV (FEEDBACK_KV) ที่ Cloudflare" }, 200);
+    const cur = JSON.parse((await kv.get(FB_KEY)) || "[]");
+    await kv.put(FB_KEY, "[]");
+    return json({ ok: true, cleared: cur.length, items: [] });
   }
 
   let body;
@@ -344,11 +460,51 @@ async function feedbackRoute(request, url, env) {
 export default {
   async fetch(request, env) {
     const origin = env.ALLOW_ORIGIN || "*";
+    /* 🌐 ตั้ง ALLOW_ORIGIN ไว้ = **บล็อกจริง** ไม่ใช่แค่ตั้ง header ตอบกลับ
+       ของเดิมเอาค่านี้ไปใส่ Access-Control-Allow-Origin อย่างเดียว ซึ่ง**ไม่ได้กันอะไรเลย**
+       — CORS เป็นกฎที่เบราว์เซอร์บังคับใช้ ส่วนเซิร์ฟเวอร์เราตอบไปแล้วเรียบร้อย
+       (เผาเครดิตไปแล้วด้วย) เบราว์เซอร์แค่ไม่ให้ JS ฝั่งนั้นอ่านผล
+
+       ⚠️ กันได้แค่ **เบราว์เซอร์จากเว็บอื่น** — `curl`/สคริปต์ไม่ส่ง Origin มา หรือปลอมได้
+          คำขอที่ไม่มี Origin จึงปล่อยผ่าน (ไม่งั้น server-to-server พังหมด)
+          ตัวที่กันสคริปต์จริงๆ คือ WORKER_KEY ที่ /sentiment */
+    const reqOrigin = request.headers.get("Origin");
+    if (env.ALLOW_ORIGIN && reqOrigin && reqOrigin !== env.ALLOW_ORIGIN) {
+      return cors(json({ error: "origin_not_allowed", got: reqOrigin }, 403), origin);
+    }
     if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }), origin);
 
     const url = new URL(request.url);
+
+    /* 🔐 ด่านกันคนนอกยิงเข้ามาเผาเงิน (เจ้าของสั่ง 4 ก.ย. 2026)
+       ══════════════════════════════════════════════════════════════════
+       ทางที่ยอมให้ผ่านมี 2 ทางเท่านั้น
+         1. มาจาก `/issue/api/sentiment/*` = ผ่าน Cloudflare Access มาแล้ว (`env.INTERNAL`)
+         2. ถือกุญแจ `WORKER_KEY` มาด้วย (สำหรับห้องอื่นที่เรียกแบบ server-to-server)
+
+       🚫 **ไม่ตั้ง WORKER_KEY = ปิด ไม่ใช่เปิดให้ทุกคน** (กฎเดียวกับ FEEDBACK_KEY)
+          ลืมตั้งแล้วต้องไม่หลุด — precedent: `/debugmeta` ที่เคยหลุดจนเผาเครดิตที่จ่ายเงิน
+
+       ⚠️ `env.INTERNAL` ถูกตั้งในโค้ดฝั่งเซิร์ฟเวอร์ที่เดียว (`[[route]].js`)
+          **ผู้เรียกยัดเข้ามาเองไม่ได้** เพราะ env ไม่ได้มาจาก header/query
+       ⚠️ เอาไว้หลัง OPTIONS เสมอ ไม่งั้น preflight ของเบราว์เซอร์ตาย แล้วหน้าเว็บพังทั้งที่กุญแจถูก */
+    const COSTS_MONEY = ["/analyze", "/comments", "/classify", "/resynth", "/paraphrase", "/credits", "/sentiment"];
+    if (COSTS_MONEY.includes(url.pathname)) {
+      if (!env.INTERNAL) {
+        if (!env.WORKER_KEY) {
+          return cors(json({ error: "endpoint_disabled",
+            detail: "เรียกจากข้างนอกต้องมีกุญแจ — ยังไม่ได้ตั้ง WORKER_KEY ที่ Cloudflare" }, 403), origin);
+        }
+        const given = request.headers.get("x-worker-key") || url.searchParams.get("key") || "";
+        if (given !== env.WORKER_KEY) return cors(json({ error: "bad_key" }, 403), origin);
+      }
+    }
     if (request.method === "GET" && url.pathname === "/") {
-      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, rubric: RUBRIC_VER, models: MODEL_CHOICES, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
+      return cors(json({ ok: true, service: "comment-sentiment", ver: WORKER_VER, rubric: RUBRIC_VER,
+        /* ให้ห้องอื่นถามได้ว่ามี profile อะไรให้เรียกบ้าง โดยไม่ต้องเปิดโค้ดดู */
+        profiles: Object.fromEntries(Object.entries(PROFILES).map(([k, v]) =>
+          [k, { rubric_version: v.rubric_version, input: v.input, lenses: v.lenses, doc: v.doc }])),
+        models: MODEL_CHOICES, model: env.CLAUDE_MODEL || DEFAULT_MODEL }), origin);
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
@@ -381,6 +537,7 @@ export default {
         return cors(json({
           ok: true, ver: WORKER_VER, platform,
           post_title: got.post_title || "",
+          post_stats: got.post_stats || emptyPostStats(),
           count: got.comments.length,
           reply_count: got.comments.filter(c => c.is_reply).length,
           credits_remaining: got.credits_remaining ?? null,
@@ -414,9 +571,173 @@ export default {
         const effort = EFFORT_CHOICES.includes(body.effort) ? body.effort : null;
         const results = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context, effort);
         const missing = results.filter(r => r.missing).length;
-        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER, model, effort, missing, results, tokens: acc }), origin);
+        /* ⚠️ ติด profile + rubric_version ทุกครั้ง — เก็บผลไว้ข้ามเดือนแล้วต้องรู้ว่า
+           ตัวเลขนั้นมาจากเกณฑ์เวอร์ชันไหน ไม่งั้นเทียบข้ามเวลาไม่ได้ (เจ้าของสั่ง 3 ก.ย. 2026) */
+        return cors(json({ ok: true, ver: WORKER_VER, rubric: RUBRIC_VER,
+          profile: DEFAULT_PROFILE, rubric_version: PROFILES[DEFAULT_PROFILE].rubric_version,
+          model, effort, missing, results, tokens: acc }), origin);
       } catch (e) {
         return cors(json({ error: "classify_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
+    /* 🔄 สรุปใหม่หลังผู้ใช้แก้ป้ายเอง — ยิง Claude รอบ "สรุป" อย่างเดียว
+       **ไม่ตี sentiment ใหม่** (ป้ายมาจากผู้ใช้แล้ว) และ **ไม่แตะ ScrapeCreators**
+       จึงไม่กินเครดิตที่จ่ายเงิน · วัดจริง: โพส 39 ใบ = 32% ของงานทั้งการวิเคราะห์
+       โพส 200 ใบ = 19% (ยิ่งโพสใหญ่ยิ่งคุ้ม เพราะส่วนที่แพงคือการตี sentiment)
+
+       ⚠️ หน้าเว็บเป็นคนส่งข้อความคอมเมนต์กลับมาให้ — worker ไม่เก็บ state ของโพสไว้
+       🚫 ห้ามให้ endpoint นี้เขียน KV หรือแตะเครดิต ScrapeCreators เด็ดขาด
+          มันเปิดให้ยิงได้โดยไม่มีกุญแจเหมือน /analyze · สิ่งที่เสียได้คือโควตา Claude
+          จึงต้องมีเพดานจำนวนใบและขนาดคำขอคุมไว้ทุกครั้ง */
+    if (request.method === "POST" && url.pathname === "/resynth") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const items = Array.isArray(body?.items) ? body.items : null;
+      if (!items || !items.length) return cors(json({ error: "no_items" }, 400), origin);
+      if (items.length > RESYNTH_MAX) {
+        return cors(json({ error: "too_many", max: RESYNTH_MAX, got: items.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const target = body.target === "cp" ? "cp" : "overall";
+      const texts = items.map(it => String(it && it.text || "").trim().slice(0, 400));
+      /* ป้ายที่ยอมรับมีแค่ 4 ค่า — ค่าอื่นตกเป็น neutral ห้ามเชื่อค่าที่ส่งมาดิบๆ */
+      const OKL = ["positive", "neutral", "negative", "not_related"];
+      const labels = items.map(it => {
+        const s = String(it && it.sentiment || "").toLowerCase();
+        return OKL.includes(s) ? s : "neutral";
+      });
+      const likes = items.map(it => Number(it && it.likes) || 0);
+      const sentiment = { positive: 0, neutral: 0, negative: 0 };
+      labels.forEach(l => { if (sentiment[l] != null) sentiment[l]++; });
+      const acc = { input: 0, output: 0 };
+      try {
+        const { synth, synthPool, synthError } = await buildSynth(
+          { texts, labels, likes, target, wantSamples: true, sentiment }, env, acc);
+        /* 🚫 สรุปพัง = ห้ามตอบ 200 พร้อมของว่าง — หน้าเว็บจะเอา [] ไปทับของเดิม
+           แล้วคำกับตัวอย่างหายเกลี้ยงโดยไม่มีอะไรบอก (บั๊กที่เจ้าของเจอ 2 ก.ย. 2026) */
+        if (synthError) {
+          return cors(json({ error: "resynth_failed", detail: synthError }, 502), origin);
+        }
+        return cors(json({
+          ok: true, ver: WORKER_VER, rubric: RUBRIC_VER,
+          target,
+          summary: synth.summary || "",
+          keywords: synth.keywords || [],
+          samples: synth.samples || [],
+          summary_from: Math.min(synthPool.length, SYNTH_SAMPLE),
+          summary_of: texts.length,
+          claude_usage: { input: acc.input, output: acc.output, total: acc.input + acc.output },
+          model: env.CLAUDE_MODEL || DEFAULT_MODEL,
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "resynth_failed", detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
+    /* 🎛 endpoint กลางสำหรับห้องอื่นเรียกใช้ — contract ที่เจ้าของเคาะ 3 ก.ย. 2026
+       ขอ  : { texts[], profile, context?, lens? }
+       ตอบ: { profile, rubric_version, results:[{ label, confidence, lenses, is_sarcasm }] }
+
+       🎯 ต่างจาก /classify ตรงที่ **ผูกกับ profile และติด rubric_version มาด้วยเสมอ**
+          → เก็บผลไว้ข้ามเดือนแล้วยังรู้ว่าตัวเลขนั้นมาจากเกณฑ์เวอร์ชันไหน เทียบข้ามเวลาได้
+       ⚠️ `/classify` เดิมยังอยู่ ไม่ถอด — หน้า sentiment-eval ใช้อยู่
+          และตอนนี้ก็ติด profile/rubric_version กลับไปด้วยเหมือนกัน
+
+       📌 ทำไมไม่ใช่ `/api/sentiment` ตามที่เขียนมา — worker ตัวนี้เป็น Cloudflare **Worker**
+          แยกจาก Pages (`comment-sentiment.s3445028.workers.dev`) ไม่ได้อยู่ใต้ `/api/` ของเว็บ
+          ย้ายไป Pages Function ได้แต่ต้องยก secret/KV/ขั้นตอน deploy ตามไปทั้งชุด
+          → เลือกทางที่ไม่ต้องรื้อ ถ้าอยากได้ path นั้นจริงๆ ค่อยทำ proxy บาง ๆ ที่ Pages ทีหลัง */
+    if (request.method === "POST" && url.pathname === "/sentiment") {
+      /* 🔐 endpoint นี้เรียกจาก **เซิร์ฟเวอร์ถึงเซิร์ฟเวอร์** เท่านั้น (ห้องอื่นเรียกจาก
+         Pages Function) กุญแจจึงเก็บเป็น Secret ได้จริง ไม่หลุดเหมือนของที่ฝังในหน้าเว็บ
+
+         ⚠️ **ไม่ตั้ง `WORKER_KEY` = ปิด endpoint** ไม่ใช่เปิดให้ทุกคน
+            (กฎเดียวกับ `FEEDBACK_KEY` — ค่าปริยายต้องปลอดภัย ลืมตั้งแล้วต้องไม่หลุด)
+
+         ✅ ตั้งแต่ 4 ก.ย. 2026 endpoint ที่หน้าเว็บเรียกก็ถูกกันด้วย — แต่กันคนละวิธี
+            หน้าเว็บเข้าทาง `/issue/api/sentiment/*` ซึ่งมี Cloudflare Access ครอบอยู่
+            จึงไม่ต้องมีกุญแจฝังในโค้ดหน้าเว็บ (ซึ่งเปิดดูได้ = ไม่ลับตั้งแต่แรก)
+
+         📌 precedent ที่ทำให้ต้องมีข้อนี้: `/debugmeta` ที่เคยหลุด production
+            แล้วเปิดให้ใครก็ได้ยิงจนเผาเครดิต ScrapeCreators ที่จ่ายเงิน */
+      /* (ด่านกุญแจอยู่บนสุดของ fetch แล้ว — ครอบ endpoint ที่เผาเงินทุกตัว ไม่ใช่แค่ตัวนี้) */
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      /* รับ profile ได้ทั้งใน body และ query string (`?profile=cp_comment`) */
+      const prof = getProfile(body?.profile || url.searchParams.get("profile"));
+      if (!prof) {
+        /* 🚫 ชื่อไม่รู้จัก = ตอบ error ห้ามตกกลับไปตัวปริยายเงียบๆ
+           ไม่งั้นห้องอื่นพิมพ์ผิดแล้วได้ผลจาก rubric คนละตัวโดยไม่มีใครรู้ */
+        return cors(json({ error: "unknown_profile",
+          got: String(body?.profile || url.searchParams.get("profile") || ""),
+          known: Object.keys(PROFILES) }, 400), origin);
+      }
+      const texts = Array.isArray(body?.texts) ? body.texts
+                  : (typeof body?.text === "string" ? [body.text] : null);
+      if (!texts || !texts.length) return cors(json({ error: "no_texts" }, 400), origin);
+      if (texts.length > CLASSIFY_MAX) {
+        return cors(json({ error: "too_many", max: CLASSIFY_MAX, got: texts.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const lens = prof.lenses.includes(body?.lens) ? body.lens : prof.default_lens;
+      const acc = { input: 0, output: 0 };
+      try {
+        const model = MODEL_CHOICES.includes(body.model) ? body.model : (env.CLAUDE_MODEL || DEFAULT_MODEL);
+        const effort = EFFORT_CHOICES.includes(body.effort) ? body.effort : null;
+        const raw = await classifyTwoLens(texts, { ...env, CLAUDE_MODEL: model }, acc, body.context, effort);
+        const key = lens === "cp" ? "sentiment_cp" : "overall_cred";
+        const results = raw.map(r => ({
+          /* ป้ายของแกนที่ขอ — ตัวหลักที่ผู้เรียกเอาไปใช้ */
+          label: r.missing ? null : String(r[key] || "").toLowerCase(),
+          /* 🚫 confidence: ระบบ **ยังไม่มี** ตัวเลขนี้ — คืน null ตรงๆ ห้ามแต่งค่าขึ้นมา
+             (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" — เคยเจ็บมาแล้ว 3 รอบ ดู HANDOFF.md)
+             จะมีได้ต้องให้โมเดลตอบเพิ่ม = แก้ prompt = กระทบตัวเลขที่วัดไว้ 92.8% */
+          confidence: null,
+          /* ค่าทุกแกนที่ profile นี้มี — ผู้เรียกเลือกใช้เองได้โดยไม่ต้องยิงซ้ำ */
+          lenses: { cp: r.sentiment_cp, overall: r.overall_cred },
+          is_sarcasm: r.is_sarcasm ? 1 : 0,
+          /* ⚠️ โมเดลไม่ตอบใบนี้ — ผู้เรียก **ต้องเช็ค** ห้ามนับเป็น neutral */
+          missing: r.missing ? 1 : 0,
+        }));
+        return cors(json({
+          ok: true, ver: WORKER_VER,
+          profile: prof.id, rubric_version: prof.rubric_version, lens,
+          model, effort,
+          missing: results.filter(r => r.missing).length,
+          results, tokens: acc,
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "sentiment_failed", profile: prof.id,
+                           detail: String(e && e.message || e) }, 502), origin);
+      }
+    }
+    /* ✂️ ถอดความใบใหม่ — ใช้ตอนผู้ใช้กด ✕ ตัดตัวอย่างที่ไม่ตรงประเด็นออก
+       แล้วขอใบถัดไปของกลุ่มเดียวกันมาแทน (เจ้าของสั่ง 2 ก.ย. 2026)
+
+       🎯 ตั้งใจให้เป็นคำขอที่ **เล็กที่สุด** — ไม่มีกองสรุป ไม่มี keyword ไม่มีตัวอย่างอื่น
+          ส่งไปแค่ข้อความที่จะถอดความ จ่ายเฉพาะตอนกดจริง
+       🚫 ทางเลือกที่ไม่เอา: ถอดความสำรองไว้ล่วงหน้าทุกครั้งที่วิเคราะห์
+          (จ่ายเพิ่มทุกโพสแม้ไม่มีใครกด — ผิดหลัก "จ่ายเมื่อใช้" ที่ตกลงกันไว้)
+       🚫 ไม่เขียน KV ไม่แตะ ScrapeCreators */
+    if (request.method === "POST" && url.pathname === "/paraphrase") {
+      let body;
+      try { body = await request.json(); } catch (e) { return cors(json({ error: "bad_json" }, 400), origin); }
+      const raw = Array.isArray(body?.texts) ? body.texts : null;
+      if (!raw || !raw.length) return cors(json({ error: "no_texts" }, 400), origin);
+      if (raw.length > PARA_MAX) {
+        return cors(json({ error: "too_many", max: PARA_MAX, got: raw.length }, 400), origin);
+      }
+      if (!env.ANTHROPIC_API_KEY) return cors(json({ error: "no_claude_key" }, 500), origin);
+      const items = raw.map(t => String(t || "").replace(/\s+/g, " ").trim().slice(0, 400)).filter(Boolean);
+      if (!items.length) return cors(json({ error: "no_texts" }, 400), origin);
+      const acc = { input: 0, output: 0 };
+      try {
+        const texts = await paraphraseOnly(items, env, acc);
+        return cors(json({
+          ok: true, ver: WORKER_VER, texts,
+          claude_usage: { input: acc.input, output: acc.output, total: acc.input + acc.output },
+        }), origin);
+      } catch (e) {
+        return cors(json({ error: "paraphrase_failed", detail: String(e && e.message || e) }, 502), origin);
       }
     }
     /* 🚫 เคยมี `/debugmeta` ตรงนี้ — ถอดออกทั้งเส้นทางและฟังก์ชันแล้ว (เจ้าของสั่ง 20 ส.ค. 2026)
@@ -468,6 +789,7 @@ async function analyze(opts, env) {
   const reply_count = comments.filter(c => c.is_reply).length;
   logLine(`ดึงคอมเมนต์สำเร็จ ${comments.length} รายการ` +
     (reply_count ? ` (เป็น reply ${reply_count})` : " (นับเฉพาะคอมเมนต์บนสุด ไม่รวม reply)"));
+  if (collected.dropped_dupes) logLine(`🔁 ตัดใบที่ต้นทางส่งซ้ำออก ${collected.dropped_dupes} ใบ`);
   if (collected.credits_remaining != null) logLine(`ScrapeCreators credits คงเหลือ ${collected.credits_remaining}`);
 
   /* คอมเมนต์ที่เป็นสติกเกอร์ / GIF / รูปล้วน — ไม่มีตัวอักษรให้ AI อ่าน
@@ -548,6 +870,10 @@ async function analyze(opts, env) {
     /* 🏷 ธงบอกว่าใบนี้ "ไม่มีข้อความให้อ่าน" ไม่ใช่ "AI อ่านแล้วเห็นว่ากลาง"
        หน้าเว็บต้องเอาไปแสดงให้ต่างกัน ไม่งั้นดูเหมือน AI ตัดสินมาแล้วทั้งที่ไม่ได้อ่าน */
     no_text: two[i]?.no_text ? 1 : 0,
+    /* 👍 ยอดถูกใจ — ใช้เลือกใบตัวอย่างตอนกด "สรุปใหม่" (`/resynth`)
+       ไม่มีค่านี้ การเลือกใบจะเรียงตามความยาวแทน แล้วได้คนละใบกับตอนวิเคราะห์ครั้งแรก
+       ⚠️ เป็นตัวเลขล้วน ไม่ใช่ข้อมูลของผู้คอมเมนต์ จึงไม่ขัด PRIVACY_NOTE */
+    likes: comments[i]?.likes || 0,
   }));
 
   /* 3) สรุป + keyword + ตัวอย่าง
@@ -555,39 +881,9 @@ async function analyze(opts, env) {
         ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
   /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
         ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน (โหมดอารมณ์รวมของเดิมส่ง texts ทั้งก้อน) */
-  const synthIdx = [];
-  texts.forEach((t, i) => {
-    if (!t) return;
-    if (target !== "cp" || labels[i] === "positive" || labels[i] === "negative") synthIdx.push(i);
-  });
-  const synthPool = synthIdx.map(i => texts[i]);
-  if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
-
-  /* 🎯 **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** (แก้ 31 ส.ค. 2026 รอบสอง)
-     ของเดิมให้ AI เลือกเองแล้วสั่งให้ตอบเลขข้อกลับมาด้วย — ถ้ามันไม่ตอบเลข
-     ตัวอย่างจะย้ายตามป้ายที่ผู้ใช้แก้ไม่ได้ **และไม่มีอะไรบอกว่าเพราะอะไร**
-     เจ้าของเจอเองว่า "เปลี่ยนแล้วก็ไม่อัพเดทอยู่ดี"
-     ตอนนี้ฝั่งเราชี้เลยว่าเอาใบไหน AI มีหน้าที่ถอดความอย่างเดียว
-     → รู้แน่นอนว่าตัวอย่างแต่ละอันมาจากคอมเมนต์ใบไหน ไม่ต้องเชื่อ AI
-
-     เกณฑ์เลือก: ถูกใจเยอะสุดก่อน แล้วค่อยยาวสุด (ตัวแทนที่คนเห็นด้วยมากที่สุด)
-     ⚠️ ต้องเรียงแบบตายตัว ไม่งั้นวิเคราะห์โพสเดิมซ้ำแล้วได้ตัวอย่างคนละใบทุกครั้ง */
-  const pickBy = (want, n) => synthIdx
-    .filter(i => labels[i] === want)
-    .sort((x, y) => (comments[y].likes || 0) - (comments[x].likes || 0) ||
-                    texts[y].length - texts[x].length || x - y)
-    .slice(0, n);
-  const pickIdx = wantSamples ? [...pickBy("positive", 2), ...pickBy("negative", 2)] : [];
-  if (pickIdx.length) logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
-
-  const synth = synthPool.length
-    ? await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, tokens, target,
-                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
-                       /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
-                       { ...sentiment, total: texts.length },
-                       /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
-                       texts.filter(Boolean))
-    : { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
+  const { synth, synthPool, synthError } = await buildSynth(
+    { texts, labels, likes: comments.map(c => c.likes || 0), target, wantSamples, sentiment },
+    env, tokens, logLine);
   logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
 
@@ -601,9 +897,15 @@ async function analyze(opts, env) {
     source_url: url,
     post_title: collected.post_title || "",
     post_thumb: collected.post_thumb || "",
+    /* 📊 ยอดของ "ตัวโพส" — engagement / ยอดดู ที่หน้าเว็บเอาไปขึ้นการ์ด
+       ⚠️ คนละเรื่องกับ `engagement` ข้างล่าง ซึ่งเป็นยอดรวมของ "คอมเมนต์" ที่ดึงมาได้เท่านั้น */
+    post_stats: collected.post_stats || emptyPostStats(),
     fetched_count: comments.length,
     reply_count,
     no_text_count: skipped_no_text,   // สติกเกอร์/รูป — นับเป็นกลางแล้ว แต่ต้องบอกผู้ใช้ว่ามีกี่ใบ
+    /* 🔁 ใบที่ต้นทางส่งซ้ำมาแล้วถูกตัดออก — **ต้องบอกจำนวน ห้ามตัดเงียบ**
+       กฎเดียวกับ no_text_count: ตัวเลขบนจอต้องอธิบายได้ว่าทำไมไม่เท่ากับที่ต้นทางมี */
+    dupe_count: collected.dropped_dupes || 0,
     /* 📋 สรุปมาจากคอมเมนต์กี่ใบจากทั้งหมดกี่ใบ — หน้าเว็บต้องเขียนให้ตรง
        ⚠️ ของเดิมหน้าเว็บเขียนว่า "สรุปโดย Claude จากคอมเมนต์ทั้งหมด" ซึ่ง **ไม่จริง**
           โหมด CP สรุปจากเฉพาะใบที่แสดงท่าทีต่อ CP (ตัดกลางออก) และตัดที่ SYNTH_SAMPLE ด้วย
@@ -624,11 +926,18 @@ async function analyze(opts, env) {
        (เจ้าของเจอจริง 2 ก.ย. 2026 — ต้นเหตุจริงคือหน้าเว็บรุ่น 10 ไม่ใช่หลังบ้าน) */
     ver: WORKER_VER,
     rubric: RUBRIC_VER,
+    /* 🎛 เกณฑ์ที่ใช้ตีผลชุดนี้ — ต้องติดไปกับผลลัพธ์เสมอ ไม่งั้นย้อนดูไม่ได้ว่า
+       ตัวเลขเก่ามาจาก rubric เวอร์ชันไหน (เจ้าของสั่ง 3 ก.ย. 2026 ข้อ 4) */
+    profile: DEFAULT_PROFILE,
+    rubric_version: PROFILES[DEFAULT_PROFILE].rubric_version,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
     keywords: synth.keywords || [],
     summary: synth.summary || "",
     samples: wantSamples ? (synth.samples || []) : [],
+    /* ⚠️ สรุปพังแต่ตัวเลข/audit ยังใช้ได้ → ส่งผลกลับไปตามปกติ **แต่ต้องบอกว่าสรุปพัง**
+       ไม่งั้นหน้าเว็บจะขึ้นสรุปว่างเปล่ากับคำ 0 คำ เหมือนโพสนี้ไม่มีอะไรจะพูดถึง */
+    synth_failed: synthError || null,
     credits_remaining: collected.credits_remaining ?? null,
     claude_usage: { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output },
     claude_rate_remaining: tokens.rate_remaining,
@@ -681,12 +990,29 @@ function youtubeVideoId(url) {
 }
 
 async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
-  if (!env.YOUTUBE_API_KEY) throw new Error("ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY");
+  /* 🔑 รับได้ 2 ชื่อ — ที่ Pages มีตัวนี้อยู่แล้วในชื่อ `YT_API_KEY` (ของหน้า /social/)
+     เป็นกุญแจ Google ตัวเดียวกัน โควตาก็ก้อนเดียวกันอยู่แล้ว (คิดต่อโปรเจกต์ ไม่ใช่ต่อชื่อตัวแปร)
+     → ใช้ของเดิมได้เลย ไม่ต้องเพิ่มตัวแปรซ้ำ และไม่ต้องเอากุญแจมาวางซ้ำอีกที่
+     ⚠️ ห้ามเขียน `env.A || env.B` กระจายหลายที่ — อ่านครั้งเดียวตรงนี้แล้วส่งต่อ */
+  const ytKey = env.YOUTUBE_API_KEY || env.YT_API_KEY;
+  if (!ytKey) throw new Error("ยังไม่ได้ตั้งค่า YOUTUBE_API_KEY (หรือ YT_API_KEY) ที่ Cloudflare");
   const vid = youtubeVideoId(url);
   if (!vid) throw new Error("แยก video id จากลิงก์ YouTube ไม่ได้");
 
   const out = [];
   let pageToken = "";
+  let dropped_dupes = 0;
+  const seen = new Set();
+  const add = (c) => {
+    const k = dupKey(c);
+    if (k && seen.has(k)) { dropped_dupes++; return false; }
+    if (k) seen.add(k);
+    out.push(c);
+    return true;
+  };
+  /* 🔁 `order=relevance` ของ YouTube จัดลำดับใหม่ระหว่างที่เราไล่หน้าอยู่
+     คอมเมนต์ใบเดียวจึงโผล่ได้ทั้งหน้า 1 และหน้า 2 — และ pageToken เดิมซ้ำก็เป็นไปได้ */
+  const usedTokens = new Set();
   while (out.length < limit) {
     const api = new URL("https://www.googleapis.com/youtube/v3/commentThreads");
     /* ขอ replies มาด้วย — YouTube แถมมาให้สูงสุด 5 อันต่อกระทู้ในคำขอเดียว ไม่เปลืองโควตาเพิ่ม
@@ -696,7 +1022,7 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
     api.searchParams.set("maxResults", "100");
     api.searchParams.set("order", "relevance");
     api.searchParams.set("textFormat", "plainText");
-    api.searchParams.set("key", env.YOUTUBE_API_KEY);
+    api.searchParams.set("key", ytKey);
     if (pageToken) api.searchParams.set("pageToken", pageToken);
 
     const r = await fetch(api.toString());
@@ -709,7 +1035,8 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
     for (const item of data.items || []) {
       const s = item.snippet?.topLevelComment?.snippet;
       if (!s) continue;
-      out.push({
+      add({
+        id: String(item.snippet?.topLevelComment?.id || item.id || ""),
         text: s.textDisplay || "",
         author: s.authorDisplayName || "",
         likes: s.likeCount || 0,
@@ -725,7 +1052,8 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
         for (const rep of item.replies?.comments || []) {
           const rs = rep.snippet;
           if (!rs?.textDisplay) continue;
-          out.push({
+          add({
+            id: String(rep.id || ""),
             text: rs.textDisplay, author: rs.authorDisplayName || "",
             likes: rs.likeCount || 0, replies: 0, time: rs.publishedAt || "", is_reply: 1,
           });
@@ -734,19 +1062,29 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
         if (out.length >= limit) break;
       }
     }
+    usedTokens.add(pageToken);
     pageToken = data.nextPageToken || "";
-    if (!pageToken) break;
+    if (!pageToken || usedTokens.has(pageToken)) break;
   }
 
   // ดึงหัวข้อ + รูปปกของคลิป (สำหรับใส่ในรายงาน) — base64 กัน CORS ตอนวาดลง canvas
-  let post_title = "", post_thumb = "";
+  let post_title = "", post_thumb = "", post_stats = emptyPostStats();
   try {
     const metaApi = new URL("https://www.googleapis.com/youtube/v3/videos");
-    metaApi.searchParams.set("part", "snippet");
+    /* ⚠️ ขอ statistics มาด้วย — YouTube คิดโควตาเป็น "ต่อคำขอ" ไม่ใช่ต่อ part
+       เพิ่มคำนี้จึงได้ยอดดู/ยอดถูกใจของคลิปมาฟรี ไม่เปลืองโควตาเพิ่มเลย */
+    metaApi.searchParams.set("part", "snippet,statistics");
     metaApi.searchParams.set("id", vid);
-    metaApi.searchParams.set("key", env.YOUTUBE_API_KEY);
+    metaApi.searchParams.set("key", ytKey);
     const mr = await fetch(metaApi.toString());
     const md = await mr.json();
+    const st = md.items && md.items[0] && md.items[0].statistics;
+    if (st) post_stats = {
+      views:    numOrNull(st.viewCount),
+      likes:    numOrNull(st.likeCount),      // คลิปที่ปิดยอดถูกใจจะไม่มีคีย์นี้ → null ไม่ใช่ 0
+      comments: numOrNull(st.commentCount),
+      shares:   null,                         // YouTube ไม่เปิดเผยยอดแชร์ — ห้ามเดาเป็น 0
+    };
     const sn = md.items && md.items[0] && md.items[0].snippet;
     if (sn) {
       post_title = sn.title || "";
@@ -762,7 +1100,17 @@ async function fetchYouTube(url, limit, env, includeReplies = INCLUDE_REPLIES) {
     }
   } catch (e) { /* รูป/หัวข้อไม่มาก็ไม่เป็นไร */ }
 
-  return { comments: out, post_title, post_thumb };
+  return { comments: out, post_title, post_thumb, post_stats, dropped_dupes };
+}
+
+/* 📊 ยอดของ "ตัวโพส" (คนละเรื่องกับยอดถูกใจของคอมเมนต์)
+   🔴 ไม่รู้ = null เสมอ **ห้ามเติม 0** — 0 แปลว่า "ไม่มีใครดูเลย" ซึ่งคนละความหมาย
+      (กฎเดียวกับ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ที่โปรเจกต์นี้เจ็บมาแล้ว 3 รอบ) */
+function emptyPostStats() { return { views: null, likes: null, comments: null, shares: null }; }
+function numOrNull(v) {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
 }
 
 function toB64(bytes) {
@@ -781,6 +1129,9 @@ function toB64(bytes) {
 function scComment(c, is_reply) {
   const rawReplies = pickField(c, ["reply_count", "replyCount", "comment_count"]);
   return {
+    /* 🆔 เก็บรหัสของต้นทางไว้กันซ้ำ — ไม่ได้เอาไปแสดงและไม่ได้ส่งกลับหน้าเว็บ
+       ไม่ใช่ข้อมูลส่วนตัว (เป็นรหัสของ "คอมเมนต์" ไม่ใช่ของคน) จึงไม่ขัด PRIVACY_NOTE */
+    id: String(pickField(c, ["id", "comment_id", "commentId", "cid", "fbid", "legacy_id"]) || ""),
     text: pickField(c, ["text", "comment", "content", "body", "message"]) || "",
     author: pickField(c, ["author", "username", "user", "name", "nickname"]) || "",
     likes: +pickField(c, ["likes", "like_count", "likeCount", "digg_count"]) || 0,
@@ -795,6 +1146,28 @@ function scComment(c, is_reply) {
  * ⚠️ คีย์ `replies` เป็นได้ทั้ง "จำนวน" (ตัวเลข) และ "รายการ" (array) แล้วแต่ต้นทาง
  *    ต้องเช็คชนิดก่อนเสมอ — เอา array ไปบวกเลขจะได้ NaN แล้วจำนวน reply กลายเป็น 0 เงียบๆ
  */
+/**
+ * 🔁 กันคอมเมนต์ใบเดียวกันถูกนับ 2 ครั้ง
+ *
+ * 🐞 เจ้าของเจอ 4 ก.ย. 2026: "ทำไมมี comment ซ้ำในเครื่องตรวจ sentiment"
+ *    ของเดิม **ไม่มีการกันซ้ำเลยสักจุด** ทั้ง 2 ต้นทาง · ซ้ำได้ 2 ทาง
+ *      1. ต้นทางส่ง cursor เดิมกลับมา → วนดึงหน้าเดิมซ้ำจนครบ limit
+ *      2. คอมเมนต์ใบเดียวโผล่ทั้งใน list และในกอง reply ที่ซ้อนมา
+ *    ผลเสียไม่ใช่แค่ "อ่านแล้วรก" — **% ของ sentiment เพี้ยนทั้งกระดาน**
+ *    เพราะใบที่ซ้ำถูกนับ 2 ครั้ง และ **จ่ายค่า AI ซ้ำฟรีๆ ด้วย**
+ *
+ * 🚫 ตัดสินว่าซ้ำได้เฉพาะตอนที่ "มั่นใจจริง" เท่านั้น
+ *    ไม่มีรหัส และไม่มีทั้งชื่อทั้งเวลา = **เก็บไว้** ไม่ใช่ตัดทิ้ง
+ *    (คนละคนพิมพ์ข้อความสั้นเหมือนกันได้ เช่น "ครับ" — ตัดทิ้งคือข่าวหายเงียบ)
+ */
+function dupKey(c) {
+  if (c.id) return "id:" + c.id;
+  const t = String(c.text || "").replace(/\s+/g, " ").trim();
+  const who = String(c.author || ""), when = String(c.time || "");
+  if (!t || (!who && !when)) return "";      // ตัดสินไม่ได้ = ไม่ตัด
+  return "x:" + who + "\n" + when + "\n" + t;
+}
+
 function nestedReplies(c) {
   for (const k of ["replies", "reply_list", "children", "sub_comments", "comments"]) {
     const v = c && c[k];
@@ -813,6 +1186,19 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
   let cursor = "";
   let guard = 0;
   let credits_remaining = null;
+  let dropped_dupes = 0;
+  const seen = new Set();
+  /* ✅ ผ่านด่านกันซ้ำแล้วค่อยใส่กอง — คืน true ถ้าใส่จริง */
+  const add = (c) => {
+    const k = dupKey(c);
+    if (k && seen.has(k)) { dropped_dupes++; return false; }
+    if (k) seen.add(k);
+    out.push(c);
+    return true;
+  };
+  /* 🔁 cursor ที่เคยใช้แล้ว ห้ามใช้ซ้ำ — ต้นทางส่งค่าเดิมกลับมาเมื่อไหร่
+     ของเดิมจะวนดึงหน้าเดิมไปเรื่อยๆ จนครบ limit = ได้คอมเมนต์ชุดเดิมซ้ำหลายรอบ */
+  const usedCursors = new Set();
   while (out.length < limit && guard < 60) {
     guard++;
     const api = new URL(endpoint);
@@ -828,25 +1214,26 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
     if (!Array.isArray(list) || !list.length) break;
 
     for (const c of list) {
-      out.push(scComment(c, 0));
+      add(scComment(c, 0));
       if (out.length >= limit) break;
       /* reply ที่ซ้อนมาใน response — แตกออกมาเป็นคอมเมนต์เต็มใบ
          ⚠️ ยังไม่ยืนยันว่า ScrapeCreators ส่ง reply ซ้อนมาให้ทุกแพลตฟอร์มหรือเปล่า
             ถ้าไม่ส่งมา ตรงนี้จะไม่ทำอะไรเลย (ไม่พัง) และจำนวนที่ได้จะเท่าเดิม */
       if (includeReplies) {
         for (const rep of nestedReplies(c)) {
-          out.push(scComment(rep, 1));
+          add(scComment(rep, 1));
           if (out.length >= limit) break;
         }
         if (out.length >= limit) break;
       }
     }
+    usedCursors.add(cursor);
     cursor = data.cursor || data.next_cursor || data.nextCursor || data.next_page_id || "";
-    if (!cursor) break;
+    if (!cursor || usedCursors.has(cursor)) break;
   }
 
   // หัวข้อ + รูปปกของโพส (best-effort, +1 credit) — เผื่อ field ต่างกันจึงค้นแบบยืดหยุ่น
-  let post_title = "", post_thumb = "";
+  let post_title = "", post_thumb = "", post_stats = emptyPostStats();
   try {
     const metaEp = kind === "facebook"
       ? "https://api.scrapecreators.com/v1/facebook/post"
@@ -858,6 +1245,14 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
       const md = await mr.json();
       const c2 = findCredits(md); if (c2 != null) credits_remaining = c2;
       post_title = String(deepFindStr(md, ["desc", "message", "title", "caption", "text", "content", "description"]) || "").slice(0, 300);
+      /* ยอดของตัวโพส — อยู่ใน response ก้อนเดียวกับที่ขอหัวข้อ/รูปปกอยู่แล้ว **ไม่เสียเครดิตเพิ่ม**
+         ⚠️ ชื่อคีย์ต่างกันตามแพลตฟอร์ม/รุ่นของ API จึงค้นแบบยืดหยุ่น หาไม่เจอ = null */
+      post_stats = {
+        views:    deepFindNum(md, ["play_count", "playcount", "view_count", "viewcount", "video_view_count", "views"]),
+        likes:    deepFindNum(md, ["digg_count", "diggcount", "reaction_count", "reactioncount", "like_count", "likecount", "likes"]),
+        comments: deepFindNum(md, ["comment_count", "commentcount", "comments_count"]),
+        shares:   deepFindNum(md, ["share_count", "sharecount", "shares", "repost_count"]),
+      };
       const turl = deepFindUrl(md, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "picture", "photo", "image", "display_url"]);
       if (turl) {
         const ir = await fetch(turl);
@@ -869,7 +1264,22 @@ async function fetchScrapeCreators(kind, url, limit, env, includeReplies = INCLU
     }
   } catch (e) { /* meta ไม่มาก็ไม่เป็นไร */ }
 
-  return { comments: out, credits_remaining, post_title, post_thumb };
+  return { comments: out, credits_remaining, post_title, post_thumb, post_stats, dropped_dupes };
+}
+
+/** ค้นตัวเลขจาก response ที่ไม่รู้โครงสร้างแน่ชัด — คีย์ต้อง "ตรงชื่อ" ไม่ใช่แค่มีคำนั้นอยู่
+ *  (`includes` จะไปจับ `comment_count_hidden` หรือ `like_count_str` ที่ความหมายคนละอย่าง) */
+function deepFindNum(obj, names, depth = 0) {
+  if (obj == null || depth > 6 || typeof obj !== "object") return null;
+  for (const [k, v] of Object.entries(obj)) {
+    if (!names.includes(k.toLowerCase())) continue;
+    const n = numOrNull(typeof v === "object" && v ? (v.count ?? v.total_count ?? v.value) : v);
+    if (n != null) return n;
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object") { const r = deepFindNum(v, names, depth + 1); if (r != null) return r; }
+  }
+  return null;
 }
 
 /** ค้นหาสตริง (หัวข้อ) จาก response ที่ไม่รู้โครงสร้างแน่ชัด */
@@ -952,16 +1362,32 @@ async function callClaude(env, system, userText, maxTokens, acc, opts = {}) {
   if (opts.effort && EFFORT_MODELS.includes(model)) {
     body.output_config = { effort: opts.effort };
   }
-  const r = await fetch(ANTHROPIC_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await r.json().catch(() => null);
+  /* 🔁 ต้นทางล่มชั่วคราว = **ลองใหม่ให้เอง** ไม่ใช่โยนกลับให้ผู้ใช้กด
+     เจ้าของเจอ 2 ก.ย. 2026: กดปุ่มสรุปใหม่แล้วได้ `529 overloaded_error`
+     ซึ่งเป็นอาการที่หายเองภายในไม่กี่วินาที — ให้คนมานั่งกดซ้ำเองไม่มีเหตุผล
+     · ลองเฉพาะที่ลองแล้วมีโอกาสหาย: 429 (ยิงถี่) · 5xx/529 (ต้นทางล่ม)
+     🚫 ห้ามลองใหม่กับ 400/401/403 — คำขอผิดหรือสิทธิ์ไม่ถึง ลองกี่ครั้งก็เหมือนเดิม
+        เปลืองเวลาผู้ใช้เปล่าๆ แถมถ้าเป็น 429 อยู่แล้วยิ่งยิงยิ่งแย่
+     ⚠️ เคารพ `retry-after` ที่ต้นทางบอกมาก่อนเสมอ (แต่ไม่เกิน 8 วิ กันหน้าเว็บค้าง) */
+  const RETRY_ON = (s) => s === 429 || s === 529 || (s >= 500 && s < 600);
+  let r, data = null;
+  for (let attempt = 0; ; attempt++) {
+    r = await fetch(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (r.ok || attempt >= AI_RETRY_MAX || !RETRY_ON(r.status)) break;
+    const ra = Number(r.headers.get("retry-after"));
+    const waitMs = Math.min(8000, ra > 0 ? ra * 1000 : 1000 * Math.pow(2, attempt));
+    if (acc) acc.retries = (acc.retries || 0) + 1;
+    await new Promise(res => setTimeout(res, waitMs));
+  }
+  data = await r.json().catch(() => null);
   /* 🔴 ข้อความ error ต้องบอก **เลขสถานะ + ชนิด** เสมอ ห้ามเหลือแต่ประโยคของต้นทาง
      เจ้าของเจอ 2 ก.ย. 2026: หน้าเว็บขึ้นแค่ "Claude API: Request not allowed"
      ซึ่งแยกไม่ออกเลยว่ากุญแจผิด (401) · สิทธิ์ไม่ถึง/ถูกบล็อก (403) · ยิงถี่ไป (429)
@@ -1073,6 +1499,127 @@ function countTerms(terms, texts) {
   return out.sort((a, b) => b.count - a.count || a.term.localeCompare(b.term)).slice(0, 12);
 }
 
+/**
+ * เลือกกองที่จะสรุป + เลือกใบตัวอย่าง แล้วยิงขอสรุปจาก Claude 1 ครั้ง
+ *
+ * 🔁 **แยกออกมาเป็นฟังก์ชันเพราะใช้ 2 ที่** — ตอนวิเคราะห์ครั้งแรก (`analyze`)
+ *    และตอนผู้ใช้กด "สรุปใหม่" หลังแก้ป้ายเอง (`/resynth`)
+ *    🚫 ห้ามก๊อปโค้ดนี้ไปวางซ้ำ — แก้ที่เดียวต้องมีผลทั้ง 2 ทาง ไม่งั้นสรุปกับตัวอย่าง
+ *       ที่ได้จาก 2 ทางจะไม่เหมือนกัน แล้วผู้ใช้จะงงว่าทำไมกดปุ่มแล้วได้คนละแบบ
+ *
+ * @param inp.texts   ข้อความคอมเมนต์ (ใบที่ไม่มีข้อความเป็นสตริงว่าง)
+ * @param inp.labels  ป้ายปัจจุบันของแต่ละใบ — **ตอน /resynth คือป้ายที่ผู้ใช้แก้แล้ว**
+ * @param inp.likes   ยอดถูกใจ ใช้เลือกใบตัวอย่าง (ไม่มีก็ได้ จะเรียงตามความยาวแทน)
+ */
+/**
+ * ✂️ ถอดความคอมเมนต์อย่างเดียว — ไม่สรุป ไม่หา keyword
+ * ใช้ตอนผู้ใช้กด ✕ ตัดตัวอย่างทิ้งแล้วขอใบใหม่มาแทน
+ *
+ * ⚠️ ต้องคืน **จำนวนเท่าที่ขอไป และเรียงตามลำดับเดิม** — ฝั่งหน้าเว็บจับคู่ด้วยลำดับ
+ *    ตอบไม่ครบ = เอาเท่าที่ได้ ห้ามเดาว่าอันไหนคู่กับอันไหน (กฎเดียวกับ synthesize)
+ */
+async function paraphraseOnly(items, env, acc) {
+  const system =
+    "You paraphrase Thai social media comments for an anonymized report.\n" +
+    "Rules:\n" +
+    "- Write in Thai, one short sentence per comment (max 40 words).\n" +
+    "- Never copy the original wording verbatim — restate the point.\n" +
+    "- Never include names, @handles, phone numbers, or links.\n" +
+    "- Keep the commenter's stance and tone.\n" +
+    'Return JSON only: {"texts":["...","..."]} with exactly the same number of items, in the same order.';
+  const user = "คอมเมนต์ที่ต้องถอดความ (" + items.length + " ข้อ เรียงตามนี้):\n" +
+    items.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  /* เผื่อเยอะกว่าที่คำตอบต้องการจริงมาก เพราะ opus เขียนความคิดก่อนตอบ
+     (บทเรียนเดียวกับ synthesize — เพดานตายตัวน้อยๆ ทำให้ถูกตัดกลางคันแล้ว JSON พัง) */
+  const out = await callClaude(env, system, user, 2000 + 400 * items.length, acc);
+  if (acc && acc.stop_reason === "max_tokens") {
+    throw new Error("ถอดความ: คำตอบถูกตัดกลางคัน");
+  }
+  let obj;
+  try { obj = extractJson(out); }
+  catch (e) { throw new Error("ถอดความ: แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160)); }
+  const arr = Array.isArray(obj && obj.texts) ? obj.texts : null;
+  /* 🚫 แกะได้แต่ไม่มี texts = ต้องบอกว่าไม่สำเร็จ ห้ามคืน [] เหมือนสำเร็จ
+     (กับดัก "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" — เคยพลาดมาแล้วที่ synthesize) */
+  if (!arr || !arr.length) throw new Error("ถอดความ: โมเดลไม่ได้ตอบรายการมา: " + String(out).slice(0, 160));
+  return arr.slice(0, items.length)
+    .map(s => String(typeof s === "string" ? s : (s && s.text) || "").trim().slice(0, 300));
+}
+
+async function buildSynth(inp, env, acc, logLine = () => {}) {
+  const { texts, labels, target, wantSamples, sentiment } = inp;
+  const likes = inp.likes || [];
+
+  /* ⚠️ ใบที่ไม่มีข้อความต้องไม่เข้ากองสรุปทุกกรณี — ส่งสตริงว่างไปให้ AI สรุป
+        ได้แต่ทำให้สรุปเพี้ยนกับเปลืองโทเคน
+     โหมด CP: สรุปจากคอมเมนต์ที่มีท่าทีต่อ CP จริงๆ (ตัด Neutral ที่ไม่ได้แตะ CP ออก)
+        ไม่งั้นสรุปจะกลายเป็นเรื่องปลา/รัฐ ซึ่งไม่ใช่สิ่งที่คอลัมน์นี้ต้องการ */
+  const synthIdx = [];
+  texts.forEach((t, i) => {
+    if (!t) return;
+    if (target !== "cp" || labels[i] === "positive" || labels[i] === "negative") synthIdx.push(i);
+  });
+  const synthPool = synthIdx.map(i => texts[i]);
+  if (target === "cp") logLine(`สรุปจากคอมเมนต์ที่แสดงท่าทีต่อ CP ${synthPool.length} รายการ`);
+
+  /* 🎯 **เราเลือกใบตัวอย่างเอง ไม่ให้ AI เลือก** (แก้ 31 ส.ค. 2026 รอบสอง)
+     ของเดิมให้ AI เลือกเองแล้วสั่งให้ตอบเลขข้อกลับมาด้วย — ถ้ามันไม่ตอบเลข
+     ตัวอย่างจะย้ายตามป้ายที่ผู้ใช้แก้ไม่ได้ **และไม่มีอะไรบอกว่าเพราะอะไร**
+     ตอนนี้ฝั่งเราชี้เลยว่าเอาใบไหน AI มีหน้าที่ถอดความอย่างเดียว
+
+     เกณฑ์เลือก: ถูกใจเยอะสุดก่อน แล้วค่อยยาวสุด (ตัวแทนที่คนเห็นด้วยมากที่สุด)
+     ⚠️ ต้องเรียงแบบตายตัว ไม่งั้นวิเคราะห์โพสเดิมซ้ำแล้วได้ตัวอย่างคนละใบทุกครั้ง
+
+     🟡 เลือกจาก **ทุกใบที่มีข้อความ** ไม่ใช่จาก synthIdx
+     synthIdx ของโหมด CP ตัดใบกลางทิ้ง → ช่องกลางบนหน้าเว็บจึงไม่เคยมีตัวอย่างเลย
+     (เจ้าของเจอ 2 ก.ย. 2026: "กลาง 87% (20 คอมเมนต์)" แต่มีตัวอย่างใบเดียว)
+     ⚠️ `not_related` ไม่โดนเลือก เพราะ want เป็น positive/neutral/negative เท่านั้น */
+  const pickPool = [];
+  texts.forEach((t, i) => { if (t) pickPool.push(i); });
+
+  const pickBy = (want, n) => pickPool
+    .filter(i => labels[i] === want)
+    .sort((x, y) => (likes[y] || 0) - (likes[x] || 0) ||
+                    texts[y].length - texts[x].length || x - y)
+    .slice(0, n);
+  /* ถอดความครบทั้ง 3 ช่อง — **ช่องที่สัดส่วนเยอะได้ตัวอย่างเยอะขึ้น** (เจ้าของสั่ง 4 ก.ย. 2026)
+       "ถ้า positive มีมาก หรือ negative มีมาก ให้เพิ่มได้ max 4 row"
+     🚫 ห้ามตัดช่องกลางออกเพื่อประหยัด — มันคือช่องที่คอมเมนต์เยอะที่สุดในโพสทั่วไป
+     🚫 และห้ามลดช่องที่สัดส่วนน้อยให้ต่ำกว่า 2 — ช่องลบ 8% คือช่องที่ต้องอ่านที่สุด
+        ถ้าเหลือใบเดียวจะกลายเป็น "ความเห็นของคนคนเดียว" ที่ดูเหมือนตัวแทนทั้งกลุ่ม */
+  const pickIdx = wantSamples
+    ? ["positive", "neutral", "negative"].flatMap(g => pickBy(g, sampleQuota(g, labels, sentiment)))
+    : [];
+  if (pickIdx.length) {
+    const per = ["positive", "neutral", "negative"].map(g =>
+      `${g[0]}${pickIdx.filter(i => labels[i] === g).length}`).join(" ");
+    logLine(`เลือกใบตัวอย่างเอง ${pickIdx.length} ใบ (${per} · ถูกใจเยอะสุดของแต่ละกลุ่ม)`);
+  }
+
+  /* ⚠️ สรุปพังไม่ควรทำให้ทั้งการวิเคราะห์พัง (ตัวเลข/audit ยังใช้ได้)
+     แต่ **ต้องบอกผู้เรียกว่าพัง** ไม่ใช่กลืนแล้วส่งของว่างไปเหมือนสำเร็จ
+     · `analyze` เอาไปติดธง `synth_failed` ให้หน้าเว็บเห็น
+     · `/resynth` ตอบ error กลับไปเลย เพราะสรุปคือของชิ้นเดียวที่ผู้ใช้กดขอ */
+  let synth, synthError = null;
+  if (!synthPool.length) {
+    synth = { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
+  } else {
+    try {
+      synth = await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, acc, target,
+                       pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
+                       /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
+                       { ...sentiment, total: texts.length },
+                       /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
+                       texts.filter(Boolean));
+    } catch (e) {
+      synthError = String(e && e.message || e);
+      logLine("⚠️ สรุปไม่สำเร็จ: " + synthError);
+      synth = { summary: "", keywords: [], samples: [] };
+    }
+  }
+  return { synth, synthPool, synthError };
+}
+
 async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels, dist, allTexts) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
@@ -1113,7 +1660,27 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
     ? "\n\nคอมเมนต์ที่ต้องถอดความ (" + pickTexts.length + " ข้อ เรียงตามนี้):\n" +
       pickTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n")
     : "";
-  const out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, 1500, acc);
+  /* 🔴 เพดานคำตอบต้องคิดตามจำนวนใบที่ต้องถอดความ **ห้ามตั้งตายตัว**
+     ของเดิมตายตัวที่ 1,500 · พอเพิ่มใบถอดความจาก 4 เป็น 6 ใบ (2 ก.ย. 2026)
+     คำตอบถูกตัดกลางคัน → แกะ JSON ไม่ได้ → คืนค่าว่างทั้งก้อนเงียบๆ
+     เจ้าของเห็นเป็น "กดสรุปใหม่แล้วคำกับตัวอย่างหายหมด สรุปเหมือนเดิมเป๊ะ"
+
+     ⚠️ เผื่อเยอะกว่าที่ JSON ต้องการจริงมาก เพราะ **opus เขียนความคิดก่อนตอบ**
+        และส่วนนั้นกินโทเคนก่อนถึง JSON (บทเรียนที่จดไว้ใน BASELINE.md:
+        ก้อน 6 ข้อ ต้องการ JSON จริง ~150 แต่เพดาน 1,140 ยังไม่พอ)
+     🚫 ห้ามลดกลับเป็นค่าตายตัว — เทสต์ synthbudget.mjs มีด่านจับ */
+  const nPara = (pickTexts && pickTexts.length) || 0;
+  let budget = 2500 + 400 * nPara;
+  let out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, budget, acc);
+  /* ถูกตัดกลางคัน = ลองใหม่ด้วยเพดาน 2 เท่าก่อนยอมแพ้ (ท่าเดียวกับ classifyTwoLens)
+     ความยาวของคำนำเดาไม่ได้ ต่างกันไปทุกครั้ง */
+  if (acc && acc.stop_reason === "max_tokens") {
+    budget = Math.min(16000, budget * 2);
+    out = await callClaude(env, system, "คอมเมนต์ (ตัวอย่าง):\n" + joined + share + toPara, budget, acc);
+  }
+  if (acc && acc.stop_reason === "max_tokens") {
+    throw new Error(`สรุป: คำตอบถูกตัดกลางคันแม้ขยายเพดานเป็น ${budget} แล้ว`);
+  }
   try {
     const obj = extractJson(out);
     return {
@@ -1139,7 +1706,12 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
         : [],
     };
   } catch (e) {
-    return { summary: "", keywords: [], samples: [] };
+    /* 🚫 ห้ามคืนค่าว่างเงียบๆ — เป็นกับดัก "ไม่รู้ ≠ ค่าใดค่าหนึ่ง" ตรงๆ
+       ของเดิมคืน { summary:"", keywords:[], samples:[] } แล้วหน้าเว็บเอาไปแสดง
+       ผลคือ **คำกับตัวอย่างหายเกลี้ยง ส่วนสรุปคงของเก่าไว้** โดยไม่มีอะไรบอกว่าพัง
+       (เจ้าของเจอ 2 ก.ย. 2026 ตอนกดปุ่มสรุปใหม่)
+       ผู้เรียกเป็นคนตัดสินเองว่าจะกลืนหรือจะบอกผู้ใช้ — ที่นี่มีหน้าที่บอกความจริง */
+    throw new Error("สรุป: แกะคำตอบของโมเดลไม่ได้: " + String(out).slice(0, 160));
   }
 }
 

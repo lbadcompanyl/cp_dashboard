@@ -4,7 +4,7 @@
 import { readFileSync } from "fs";
 let fail = 0; const ok = (c, m) => { console.log((c ? "✅" : "❌") + " " + m); if (!c) fail++; };
 
-const src = readFileSync("/home/user/cp_dashboard/social-comment-extractor/worker/worker.js", "utf8");
+const src = readFileSync("/home/user/cp_dashboard/functions/issue/api/sentiment/_core.js", "utf8");
 const body = src.slice(src.indexOf("async function analyze("), src.indexOf("function detectPlatform("));
 
 // [1] ต้องมีตัวแปรเดียวที่ตัดสินว่าใช้แกนไหน

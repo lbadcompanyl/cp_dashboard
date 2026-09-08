@@ -5,7 +5,7 @@ const fs = require("fs");
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let sent = null;
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const url = route.request().url();
     if (url.endsWith("/")) return route.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ ok: true, ver: 14, rubric: "v5", model: "m", models: ["m"] }) });

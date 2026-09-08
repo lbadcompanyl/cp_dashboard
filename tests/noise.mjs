@@ -182,5 +182,32 @@ console.log("\n════════ หน้ารวมบทความ 
      w("archiverX ทดสอบ") === null, String(w("archiverX ทดสอบ")));
 }
 
+console.log("\n════════ 🛒 หน้าสินค้าซูเปอร์มาร์เก็ต/ห้างออนไลน์ ไม่ใช่ข่าว ════════");
+{
+  // เจ้าของส่งภาพมา 8 ก.ย. 2026: "CP Ready to Cook Chicken Nuggets Classic 200 g. - Big C Online"
+  // ⚠️ ด่านชื่อเครือกรองออกไม่ได้ เพราะ CP อยู่ในชื่อสินค้าจริงๆ
+  const { noiseReason: nr } = await load("../functions/api/trend/feeds.js");
+  const w = (t, link = "https://x/1") =>
+    nr({ title: t, link, snippet: "" }, t.toLowerCase(), "alert1");
+  ok("🎯 เคสจริง (ตัดที่โดเมน bigc)",
+    w("CP Ready to Cook Chicken Nuggets Classic 200 g. - Big C Online",
+      "https://www.bigc.co.th/product/cp-nuggets") === "shopping");
+  ok("ร้านที่ยังไม่อยู่ในลิสต์ ก็ตัดได้จากขนาดบรรจุท้ายพาดหัว",
+    w("CP Ready to Cook Chicken Nuggets Classic 200 g. - ร้านไม่รู้จัก",
+      "https://unknown-shop.example/p/1") === "shopping");
+  for (const h of ["tops.co.th", "gourmetmarket.com", "villamarket.com", "central.co.th"])
+    ok(`ตัดโดเมน: ${h}`, w("ซีพี ไก่สด", `https://www.${h}/p/1`) === "shopping");
+
+  // 🚫 ฝั่งนี้สำคัญกว่า — ตัวเลข+หน่วยกลางประโยคเป็นข่าวจริงได้
+  for (const t of [
+    "จับยาบ้า 200 กก. ที่ชายแดนแม่สาย",
+    "ซีพีเอฟ แจ้งผลประกอบการไตรมาส 2 กำไรโต 30%",
+    "ราคาหมูหน้าฟาร์มขยับ เกษตรกรเริ่มหายใจคล่อง",
+    "น้ำท่วมสุโขทัย ระดับน้ำสูง 2 เมตร",
+    "เซเว่น อีเลฟเว่น เปิดสาขาที่ 15,000",
+    "ส่งออกไก่แปรรูปโต 12% ปีนี้",
+  ]) ok(`🚫 ห้ามตัดข่าวจริง: ${t.slice(0, 34)}`, w(t) === null, String(w(t)));
+}
+
 console.log(`\n${fail ? "❌" : "✅"} ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);

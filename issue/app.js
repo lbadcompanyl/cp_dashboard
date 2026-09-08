@@ -413,7 +413,7 @@ function renderPanel(panel) {
 const PIN_FALSE_RE = /บีแอลซีพี|blcp|ซีพีเอ็นจ?|cpn |บีซีพีจี|bcpg|บีซีพี|bcp |ทรู\s*ดิจิ(?:ทัล|ตอล)\s*(?:พาร์ค|ปาร์ค|park)|true\s*digital\s*park|ทรู\s*ธ?\s*โซเชี?ย?ล|truth\s*social|trump\s*media/gi;
 // เพิ่ม เจียรวนนท์/chearavanont ให้ตรงกับ CP_BRANDS ฝั่ง server —
 // เดิมข่าวที่มีแต่ชื่อผู้บริหารติดบนได้เพราะบังเอิญมีคำว่า 'ทรู' อยู่ในชื่อสถานที่ พอตัดสถานที่ออกก็หลุด
-const PIN_CP_RE = /ซีพี|\bcpf\b|cp ?all|ซีพีเอฟ|เซเว่น|7-?eleven|แม็คโคร|makro|โลตัส|lotus|เจียไต๋|แอ็กซ์ตร้า|cpaxt|ทรู|true ?money|true ?corp|เจียรวนนท์|chearavanont/i;
+const PIN_CP_RE = /ซีพี|\bcpf\b|cp ?all|ซีพีเอฟ|เซเว่น|7-?eleven|แม็คโคร|makro|โลตัส|lotus|เจียไต๋|แอ็กซ์ตร้า|cpaxt|ทรู|true ?money|true ?corp|เจียรวนนท์|chearavanont|ascend ?(?:money|group|bank|commerce|travel)|แอสเซนด์/i;
 // ⚠️ **คำอาหารที่กำกวม ห้ามตัดสินคนเดียว** (เจ้าของแจ้ง 14 ส.ค. 2026)
 // "ดูสนุกเกอร์สด" ถูกไฮไลต์เป็นอาหาร เพราะคำอาหารคำเดียวไปโผล่ในคำค้นที่เกี่ยวข้อง
 // (ชื่อเล่นนักกีฬา/ชื่อรายการ) — ภาษาไทยไม่มีช่องว่างคั่นคำ คำสั้นๆ จึงชนง่ายมาก

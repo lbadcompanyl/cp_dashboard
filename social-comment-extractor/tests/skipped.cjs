@@ -34,7 +34,7 @@ const NO_SKIP = { ...base, fetched_count: 8, no_text_count: 0, analyzed_count: 8
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let payload = WITH_SKIP;
 
-  await page.route("**/comment-sentiment.s3445028.workers.dev/**", async (route) => {
+  await page.route("**/issue/api/sentiment/**", async (route) => {
     const u = route.request().url();
     const send = (o) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(o) });
     if (u.endsWith("/credits")) return send({ credits_remaining: 7025 });
