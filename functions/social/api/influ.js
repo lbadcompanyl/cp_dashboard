@@ -41,6 +41,29 @@ const SC_EP = {
   instagram: `${SC}/v1/instagram/post`,
 };
 
+/* ── แกะลิงก์ออกจากข้อความที่ผู้ใช้วางมา ──────────────────────────
+ * 🔴 เจ้าของวางมาแบบ "แคปชั่น 1 บรรทัด แล้วลิงก์บรรทัดถัดไป" สลับกันไป (31 ส.ค. 2026)
+ *    ของเดิมตัดด้วยช่องว่างแล้วเอาทุกชิ้นมาเป็นลิงก์ → วางจริงได้ 47 ชิ้น
+ *    เด้ง 44 อันว่า "ไม่รู้จักแพลตฟอร์ม" ทั้งที่มีลิงก์จริงแค่ 3
+ * ✅ หยิบเฉพาะที่ขึ้นต้นด้วย http(s):// · ที่เหลือไม่ใช่ขยะ —
+ *    เก็บบรรทัดข้อความก่อนหน้าไว้เป็น **ชื่อโพสต์ตั้งต้น**
+ *    มีประโยชน์จริงเพราะลิงก์ย่อ (vt.tiktok.com · facebook.com/share) ไม่มีชื่ออะไรเลย
+ *    ระหว่างที่ยังดึงยอดไม่สำเร็จ อย่างน้อยก็ยังรู้ว่าโพสต์ไหน
+ * ⚠️ ห้ามเด้งบรรทัดที่เป็นข้อความธรรมดา — มันคือแคปชั่น ไม่ใช่ลิงก์ที่พิมพ์ผิด
+ */
+export function parseInput(text) {
+  var out = [], note = "";
+  String(text || "").split(/\r?\n/).forEach(function (line) {
+    var t = line.trim();
+    if (!t) return;
+    var m = t.match(/https?:\/\/[^\s<>"']+/g);
+    if (!m) { note = t.slice(0, 200); return; }   // บรรทัดข้อความ = แคปชั่นของลิงก์ถัดไป
+    m.forEach(function (u) { out.push({ url: u, note: note }); });
+    note = "";                                    // ใช้แล้วทิ้ง ไม่ให้ติดไปใบถัดไป
+  });
+  return out;
+}
+
 /** ลิงก์นี้เป็นของเจ้าไหน — คืน null ถ้าไม่รู้จัก (ต้องบอกผู้ใช้ ไม่ใช่เก็บเงียบ) */
 export function platformOf(u) {
   const s = String(u || "").toLowerCase();
@@ -67,7 +90,10 @@ export function youtubeId(url) {
 export function normLink(u) {
   let s = String(u || "").trim();
   if (!s) return "";
-  s = s.replace(/^http:\/\//i, "https://").replace(/[?&](utm_[^=]+|fbclid|igsh|is_from_webapp|sender_device|web_id)=[^&#]*/gi, "");
+  /* ⚠️ ต้องตัดตัวติดตามให้ครบ ไม่งั้นลิงก์เดียวกันที่ก๊อปมาคนละที่จะกลายเป็นคนละใบ
+     mibextid/rdid มาจากการแชร์ของ Facebook · _t/_r/is_from_webapp มาจาก TikTok */
+  s = s.replace(/^http:\/\//i, "https://")
+    .replace(/[?&](utm_[^=]*|fbclid|igsh|igshid|mibextid|rdid|share_url|_t|_r|is_from_webapp|sender_device|web_id|si)=[^&#]*/gi, "");
   s = s.replace(/[?&]+$/, "").replace(/#.*$/, "").replace(/\/+$/, "");
   return s.toLowerCase().startsWith("https://") ? s : "https://" + s.replace(/^\/+/, "");
 }
@@ -292,7 +318,10 @@ export async function onRequest(context) {
     const fresh = [];
     const bad = [];
 
-    body.add.slice(0, MAX_ADD).forEach((raw) => {
+    body.add.slice(0, MAX_ADD).forEach((item) => {
+      // รับได้ทั้งสตริงเปล่าๆ และ {url, note} — ฝั่งหน้าเว็บส่งแบบหลัง
+      const raw = typeof item === "string" ? item : (item && item.url) || "";
+      const note = typeof item === "string" ? "" : (item && item.note) || "";
       const url = normLink(raw);
       if (!url) return;
       const platform = platformOf(url);
@@ -305,6 +334,10 @@ export async function onRequest(context) {
         url, platform,
         vid: platform === "youtube" ? youtubeId(url) : "",
         account: accountOf(url, platform),
+        /* แคปชั่นที่วางมาเป็นชื่อตั้งต้น — ถ้าดึงชื่อจริงจากต้นทางได้ค่อยทับทีหลัง
+           ⚠️ ลิงก์ย่ออย่าง vt.tiktok.com / facebook.com/share ไม่มีชื่ออะไรในตัวเลย
+              ไม่เก็บแคปชั่นไว้ = ตารางจะมีแต่ URL ยาวๆ อ่านไม่รู้เรื่อง */
+        note: note,
         title: "", thumb: "", publishedAt: "",
         stats: { views: null, likes: null, comments: null, shares: null },
         addedAt: Date.now(), at: 0, err: "",

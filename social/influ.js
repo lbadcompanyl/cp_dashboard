@@ -75,6 +75,27 @@
     return e != null && v ? e / v : null;
   }
 
+  /* ── แกะลิงก์ออกจากข้อความที่วางมา ────────────────────────────────
+   * 🔴 เจ้าของวางแบบ "แคปชั่น 1 บรรทัด แล้วลิงก์บรรทัดถัดไป" (31 ส.ค. 2026)
+   *    ตัดด้วยช่องว่างแล้วเอาทุกชิ้นมาเป็นลิงก์ไม่ได้ — วางจริงได้ 47 ชิ้น
+   *    เด้ง 44 อันว่า "ไม่รู้จักแพลตฟอร์ม" ทั้งที่มีลิงก์จริงแค่ 3
+   * ✅ เก็บบรรทัดข้อความก่อนหน้าเป็นชื่อตั้งต้นของลิงก์นั้น
+   *    จำเป็นจริง เพราะลิงก์ย่อ (vt.tiktok.com · facebook.com/share) ไม่มีชื่อในตัวเลย
+   * ⚠️ ตรรกะเดียวกับ parseInput() ฝั่งเซิร์ฟเวอร์ — แก้ที่หนึ่งต้องแก้อีกที่
+   *    (ฝั่งนี้ต้องมีด้วยเพื่อบอกจำนวนก่อนส่ง · ฝั่งโน้นต้องมีกันคนยิง API ตรงๆ) */
+  function parseInput(text) {
+    var out = [], note = "";
+    String(text || "").split(/\r?\n/).forEach(function (line) {
+      var t = line.trim();
+      if (!t) return;
+      var m = t.match(/https?:\/\/[^\s<>"']+/g);
+      if (!m) { note = t.slice(0, 200); return; }
+      m.forEach(function (u) { out.push({ url: u, note: note }); });
+      note = "";
+    });
+    return out;
+  }
+
   /* ── ยิง API ──────────────────────────────────────────────────── */
   function call(opt) {
     var o = opt
@@ -132,7 +153,8 @@
     return state.posts.filter(function (p) {
       if (state.fPlatform !== "all" && p.platform !== state.fPlatform) return false;
       if (state.fAccount !== "all" && p.account !== state.fAccount) return false;
-      if (q && (p.title || "").toLowerCase().indexOf(q) < 0 && (p.account || "").toLowerCase().indexOf(q) < 0) return false;
+      // ค้นให้ครอบแคปชั่นด้วย — หลายใบยังไม่มีชื่อจริงจากต้นทาง มีแต่แคปชั่น
+      if (q && ((p.title || "") + " " + (p.note || "") + " " + (p.account || "")).toLowerCase().indexOf(q) < 0) return false;
       return true;
     }).sort(function (a, b) {
       var av = sortVal(a), bv = sortVal(b);
@@ -249,7 +271,9 @@
       h += '<tr><th scope="row"><div class="rowhead influrow">' +
         (p.thumb ? '<img class="influ-th" src="' + esc(p.thumb) + '" alt="" loading="lazy">' : '<span class="influ-th ph"></span>') +
         '<div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' +
-        esc(p.title || p.url) + ' <span class="ext">↗</span></a>' +
+        /* ⚠️ ลำดับสำคัญ: ชื่อจริงจากต้นทาง > แคปชั่นที่วางมา > URL ดิบ
+           ลิงก์ย่อที่ดึงชื่อไม่ได้ ถ้าไม่มีแคปชั่นรอง ตารางจะมีแต่ URL ยาวๆ อ่านไม่รู้เรื่อง */
+        esc(p.title || p.note || p.url) + ' <span class="ext">↗</span></a>' +
         '<div class="influ-s"><span class="pdot" style="background:' + P_COLOR[p.platform] + '"></span>' +
         esc(P_LABEL[p.platform] || p.platform) + (p.account ? " · " + esc(p.account) : "") + "</div>" +
         /* ⚠️ ใบที่ดึงยอดไม่สำเร็จต้องบอกเหตุผลตรงแถวนั้น ไม่ใช่ขึ้น "—" เฉยๆ
@@ -309,8 +333,8 @@
     var a = t.dataset.influ;
     if (a === "add") {
       var box = document.getElementById("influ-in");
-      var urls = (box ? box.value : "").split(/[\s,]+/).map(function (x) { return x.trim(); }).filter(Boolean);
-      if (!urls.length) { state.note = "ยังไม่ได้วางลิงก์"; draw(); return; }
+      var urls = parseInput(box ? box.value : "");
+      if (!urls.length) { state.note = "ไม่เจอลิงก์ในข้อความที่วางมา"; draw(); return; }
       state.draft = ""; state.note = ""; state.busy = "add"; draw();
       call({ add: urls }).then(take);
     } else if (a === "refresh") {
