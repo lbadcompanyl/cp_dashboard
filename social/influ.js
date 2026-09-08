@@ -481,9 +481,14 @@
 
     list.forEach(function (p) {
       h += '<tr><th scope="row"><div class="rowhead influrow">' +
-        /* ⚠️ ลิงก์รูปของ TikTok/Facebook เป็นลิงก์เซ็นชื่อที่หมดอายุ — โหลดไม่ขึ้นได้เสมอ
-           onImgErr สลับเป็นกล่องเปล่าให้ ไม่ปล่อยให้เป็นไอคอนรูปแตก */
-        (p.thumb ? '<img class="influ-th" src="' + esc(p.thumb) + '" alt="">' : '<span class="influ-th ph"></span>') +
+        /* 🔴 รูปไม่ขึ้นมีได้ 2 สาเหตุ ซึ่ง **ต้องแยกให้ออก** (เจ้าของถาม 8 ก.ย. 2026)
+             ① ต้นทางไม่ได้ส่งลิงก์รูปมาเลย  ② ส่งมาแต่โหลดไม่ขึ้น (ลิงก์หมดอายุ/ถูกบล็อก)
+           ของเดิมทั้ง 2 กรณีขึ้นเป็นกล่องเปล่าเหมือนกันเป๊ะ = ไล่ต่อไม่ได้ ต้องเดาเอา
+           ⚠️ referrerpolicy="no-referrer" จำเป็น — CDN ของ TikTok/Facebook/Instagram
+              บล็อกรูปตาม Referer (hotlink) ถ้าส่งชื่อโดเมนเราไป มันตอบ 403 ทันที */
+        (p.thumb
+          ? '<img class="influ-th" src="' + esc(p.thumb) + '" alt="" referrerpolicy="no-referrer">'
+          : '<span class="influ-th ph" title="ต้นทางไม่ได้ส่งลิงก์รูปปกมา — กด 🔄 อัปเดตยอดเพื่อลองดึงใหม่"></span>') +
         '<div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
         esc(p.title || p.note || p.url) + '">' +
         /* ⚠️ ลำดับสำคัญ: ชื่อจริงจากต้นทาง > แคปชั่นที่วางมา > URL ดิบ
@@ -724,10 +729,14 @@
      ⚠️ event `error` ไม่ bubble ต้องดักด้วย capture ถึงจะรับที่ document ได้ */
   function onImgErr(e) {
     var t = e.target;
-    if (t && t.tagName === "IMG" && t.className.indexOf("influ-th") >= 0) {
-      t.removeAttribute("src");
-      t.className = "influ-th ph";
-    }
+    if (!t || t.tagName !== "IMG" || String(t.className).indexOf("influ-th") < 0) return;
+    /* ⚠️ เปลี่ยนเป็น span ไม่ใช่แค่เปลี่ยน class ของ img —
+       img ที่ไม่มี src จะขึ้นไอคอนรูปแตกของเบราว์เซอร์ทับกล่องเปล่า */
+    var ph = document.createElement("span");
+    ph.className = "influ-th ph fail";
+    ph.title = "ต้นทางส่งลิงก์รูปมา แต่โหลดไม่ขึ้น — ลิงก์รูปของ TikTok/Facebook/Instagram " +
+      "เป็นลิงก์เซ็นชื่อที่หมดอายุ · กด 🔄 อัปเดตยอดเพื่อขอลิงก์ใหม่";
+    t.replaceWith(ph);
   }
 
   var wired = false;

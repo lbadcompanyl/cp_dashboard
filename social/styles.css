@@ -583,7 +583,13 @@ body {
 
 .influrow { display:flex; gap:10px; align-items:flex-start; text-align:left; }
 .influ-th { width:64px; height:40px; object-fit:cover; border-radius:6px; flex:none; background:var(--surface-2); }
-.influ-th.ph { display:block; }
+/* กล่องแทนรูป — ต้องบอกด้วยว่า "ไม่มีรูปมา" หรือ "มีแต่โหลดไม่ขึ้น" ไม่ใช่เทาเปล่าเหมือนกัน */
+.influ-th.ph {
+  display:flex; align-items:center; justify-content:center;
+  font-size:.8rem; opacity:.45; color:var(--muted);
+}
+.influ-th.ph::after { content:"🖼"; }
+.influ-th.ph.fail::after { content:"⚠️"; opacity:.8; }
 /* 🔴 ชื่อโพสต์ต้องถูกจำกัดความกว้าง (เจ้าของแจ้ง 8 ก.ย. 2026: "ชื่อเต็มเกิน ไม่เห็นอันอื่นเลย")
    แคปชั่นของ TikTok/Facebook ยาวเป็นย่อหน้า พอปล่อยให้ยืดตามเนื้อหา
    คอลัมน์ตัวเลขทั้งหมดจะถูกดันออกนอกจอ ต้องเลื่อนตารางไปขวาสุดถึงจะเห็น

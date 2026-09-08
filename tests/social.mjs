@@ -2915,7 +2915,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
         { id: "a1", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@x/video/1",
           /* 🔴 แคปชั่นยาวแบบที่เจ้าของวางมาจริง — ของเดิมปล่อยให้คอลัมน์ชื่อยืดตามเนื้อหา
              จนคอลัมน์ตัวเลขถูกดันออกนอกจอทั้งหมด (เจ้าของแจ้ง 8 ก.ย. 2026 พร้อมภาพ) */
-          account: "@x", host: "tiktok.com", note: "",
+          account: "@x", host: "tiktok.com", note: "", thumb: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
           title: "🥹 คนไทยเฮทั้งประเทศ! เนเน่ รอยัล คว้า Live Golden Buzzer บนเวที America's Got Talent 2026 " +
                  "ผ่านตรงเข้าสู่รอบชิงชนะเลิศ ทันที! โมเมนต์นี้ทั้งขนลุก ทั้งน้ำตาซึม มาส่งเสียงเชียร์เนเน่ไปด้วยกัน",
           publishedAt: thisM(2), addedAt: now,
@@ -2929,6 +2929,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
            เป็นไปไม่ได้ — ต้องติดป้ายว่าเชื่อไม่ได้ ไม่ใช่โชว์ 0 เฉยๆ */
         { id: "a3", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@y/video/9",
           account: "@y", title: "คลิปที่ต้นทางส่งยอดวิวมาเป็นศูนย์", note: "", host: "tiktok.com",
+          thumb: "/social/__ลิงก์รูปหมดอายุ__.jpg",
           publishedAt: thisM(4), addedAt: now,
           stats: { views: 0, likes: 287, comments: 2, shares: 0 }, err: "",
           warn: { miss: [], keys: ["digg_count", "comment_count", "share_count"] } },
@@ -3103,6 +3104,27 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(/ต้นทางไม่ได้ส่ง/.test(warnTxt) && /Views/.test(warnTxt), `บอกว่าต้นทางไม่ได้ส่งอะไรมา (${warnTxt.slice(0, 40)}…)`);
   ok(/like_count/.test(warnTxt), "บอกชื่อฟิลด์ตัวเลขที่ต้นทางส่งมาจริง (ไล่ปัญหาต่อได้)");
 
+  /* 🔴 รูปปกไม่ขึ้นมี 2 สาเหตุ ต้องแยกให้ออก (เจ้าของถาม 8 ก.ย. 2026: "ทำไมรูป thumbnail ไม่ขึ้น")
+       ① ต้นทางไม่ได้ส่งลิงก์มาเลย  ② ส่งมาแต่โหลดไม่ขึ้น (ลิงก์เซ็นชื่อหมดอายุ / โดนบล็อก hotlink)
+     ⚠️ ของเดิมทั้ง 2 กรณีขึ้นเป็นกล่องเทาเปล่าเหมือนกันเป๊ะ = ไล่ต่อไม่ได้ ต้องเดาเอา */
+  await pg.waitForTimeout(400);          // รอให้รูปที่โหลดไม่ขึ้นยิง error ครบ
+  const thumbs = await pg.$$eval("#view .influ-th", (n) => n.map((x) => ({
+    tag: x.tagName, fail: x.classList.contains("fail"), ph: x.classList.contains("ph"),
+    why: x.title || "",
+  })));
+  const failed = thumbs.filter((t) => t.fail);
+  const none = thumbs.filter((t) => t.ph && !t.fail);
+  ok(failed.length === 1, `รูปที่โหลดไม่ขึ้นถูกแยกออกมา 1 ใบ (ได้ ${failed.length})`);
+  ok(/หมดอายุ/.test(failed[0] ? failed[0].why : ""), "บอกว่าลิงก์รูปหมดอายุ พร้อมทางแก้");
+  ok(none.length > 0 && /ไม่ได้ส่งลิงก์รูป/.test(none[0].why),
+     "ใบที่ต้นทางไม่ส่งรูปมาเลย ขึ้นคนละข้อความ");
+  ok(failed[0] && failed[0].tag === "SPAN",
+     "รูปที่พังถูกเปลี่ยนเป็นกล่อง ไม่ใช่ img ที่ไม่มี src (จะขึ้นไอคอนรูปแตก)");
+  /* ⚠️ CDN ของ TikTok/FB/IG บล็อกรูปตาม Referer — ไม่ใส่ no-referrer จะได้ 403 ทุกใบ */
+  const rp = await pg.$$eval("#view img.influ-th", (n) => n.map((x) => x.referrerPolicy));
+  ok(rp.length > 0 && rp.every((r) => r === "no-referrer"),
+     `รูปทุกใบส่งแบบ no-referrer (กันโดนบล็อก hotlink) — ได้ ${rp.join(",") || "ไม่มีรูปเลย"}`);
+
   /* 🔴 ชื่อโปรไฟล์ต้องอยู่ต่อท้ายชื่อโพสต์ (เจ้าของสั่ง 8 ก.ย. 2026)
      ⚠️ ไม่มีชื่อโปรไฟล์ต้องเขียนว่า "ไม่ทราบ" ไม่ใช่ปล่อยว่าง —
         ว่างแล้วแยกไม่ออกว่าลืมแสดงหรือต้นทางไม่บอก */
@@ -3152,7 +3174,10 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   // ── เปิดแท็บแล้วห้ามยิงอะไรที่เสียเครดิต ──
   ok(posted === 0, `เปิดแท็บไม่ยิง POST สักครั้ง (ไม่เสียเครดิต) — ยิงไป ${posted}`);
 
-  ok(errs.length === 0, `ไม่มี JS error (${errs.join(" · ")})`);
+  /* ⚠️ ข้อมูลจำลองจงใจใส่ลิงก์รูปที่โหลดไม่ขึ้น (ไว้ทดสอบกล่องแทนรูป)
+     404 ของใบนั้นจึงไม่ใช่ความผิดพลาดของหน้าเว็บ — กรองออกก่อนนับ */
+  const realErrs = errs.filter((e) => !/404|File not found/.test(e));
+  ok(realErrs.length === 0, `ไม่มี JS error (${realErrs.join(" · ")})`);
   await pg.close();
 }
 
