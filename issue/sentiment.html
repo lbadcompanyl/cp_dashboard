@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="23" />
+<meta name="page-ver" content="24" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -194,8 +194,13 @@
         </div>
         <div class="sc-field" style="width:168px">
           <label for="target">วัดท่าทีต่อ</label>
+          <!-- 🐟 ประเด็นปลาหมอคางดำใช้เกณฑ์คนละชุด (เจ้าของสั่งแยก 4 ก.ย. 2026)
+               เพราะประเด็นนี้ CP ถูกชี้ว่าเป็นต้นตอโดยตรง คอมเมนต์จึงสะท้อนถึง CP
+               แม้ไม่เอ่ยชื่อ — ประเด็นอื่น (ฝุ่น/เผาข้าวโพด) ใช้กฎนี้ไม่ได้
+               🚫 ห้ามยุบกลับเป็นตัวเลือกเดียว -->
           <select id="target">
             <option value="cp">🏢 เครือ CP</option>
+            <option value="blackchin">🐟 ปลาหมอคางดำ</option>
             <option value="general">💬 อารมณ์รวม</option>
           </select>
         </div>
@@ -407,9 +412,15 @@ async function analyze(){
   setAnalyzeBtn(true);
   inflight = new AbortController();
 
+  /* 🐟 ช่องเดียวคุม 2 อย่าง — "วัดท่าทีต่อ" (แกนไหน) กับ "ใช้เกณฑ์ชุดไหน"
+     blackchin ยังวัดท่าทีต่อ CP เหมือนเดิม แค่ใช้เกณฑ์คนละชุด
+     ⚠️ อย่ายัด "blackchin" ลง target ตรงๆ — หลังบ้านรู้จักแค่ "cp" กับ "general"
+        ส่งไปดื้อๆ จะถูกตีเป็น general แล้วได้ผลผิดแกนโดยไม่มีอะไรบอก */
+  const pick = el("target").value;
   const opts = {
     url, platform,
-    target: el("target").value,
+    target: pick === "general" ? "general" : "cp",
+    profile: pick === "blackchin" ? "cp_blackchin" : "cp_comment",
     limit: Math.max(10, Math.min(2000, +el("limit").value || 200)),
     anonymize: true, samples: true,
   };
@@ -528,6 +539,12 @@ function renderResult(d, keepAudit){
     /* 🔴 ของเดิม: "พูดถึง CP 48 คอมเมนต์ (ไม่เกี่ยว 0)" — โกหก
        ระบบไม่ได้แยกว่าใบไหนพูดถึง CP อีกแล้ว (ไม่แตะ CP = กลาง) จึงเขียนแบบนั้นไม่ได้ */
     (isCP ? ` · <b>วัดท่าทีต่อ CP</b>` : "") +
+    /* 🐟 บอกว่าใช้เกณฑ์ชุดไหน — คนละชุดให้ผลคนละแบบกับใบเดียวกัน ต้องรู้ว่าดูของชุดไหนอยู่ */
+    (d.profile === "cp_blackchin" ? ` · <b>🐟 เกณฑ์ปลาหมอคางดำ</b>` : "") +
+    /* 🔴 profile ที่ยังไม่เคยวัดความแม่น **ต้องบอก** ไม่งั้นคนอ่านตัวเลขแล้วนึกว่า
+       เชื่อได้เท่ากับตัวที่วัดมาแล้ว 92.8% (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง")
+       ⚠️ หลังบ้านรุ่นเก่าไม่ส่ง measured มา → ไม่ขึ้นป้าย ไม่ใช่ขึ้นว่าไม่ได้วัด */
+    (d.measured === false ? ` · <b style="color:var(--sc-neg)" title="เกณฑ์ชุดนี้ยังไม่มีชุดสอบวัดความแม่น — ตัวเลขที่เห็นยังบอกไม่ได้ว่าเชื่อได้แค่ไหน">⚠️ เกณฑ์ชุดนี้ยังไม่ได้วัดความแม่น</b>` : "") +
     (d.edited_count ? ` · <b style="color:var(--sc-accent)">✏️ คุณแก้เอง ${d.edited_count} ใบ</b>` : "") +
     (d.demo ? " · (ข้อมูลตัวอย่าง Demo)" : (d.credits_remaining!=null ? ` · เครดิตคงเหลือ <b>${Number(d.credits_remaining).toLocaleString()}</b>` : ""));
   /* ⚠️ % คิดจากคอมเมนต์ **ทุกใบ** ไม่ใช่เฉพาะใบที่พูดถึง CP
