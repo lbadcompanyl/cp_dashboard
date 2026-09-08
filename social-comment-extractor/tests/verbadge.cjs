@@ -13,7 +13,7 @@
  *
  * [1] และ [3] คือข้อสำคัญที่สุด — ถอดเลขฝั่งไหนออกก็ตกทันที
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 const fs = require("fs");
 const path = require("path");
 
@@ -37,7 +37,7 @@ const WVER = (WORKER.match(/^const WORKER_VER = (\d+);/m) || [])[1];
      `WORKER_VER ในไฟล์ = ${WVER}`);
 
   /* ── ป้ายบนหน้าเว็บ ─────────────────────────────────────── */
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
 

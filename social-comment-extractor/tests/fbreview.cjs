@@ -6,7 +6,7 @@
  *  [5] จับกลุ่มตาม pattern และ **บอกว่าครบ 3 ใบหรือยัง** (กฎข้อ 3 ของ FEEDBACK.md)
  *  [7] ล้างกองต้องถามยืนยันก่อน — กดพลาดแล้วเอากลับไม่ได้
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 
 const ITEMS = [
   { text: "ดูยังไม่จบก็ตำหนิแล้ว", was: "negative", now: "positive", target: "overall", at: "2026-08-29", model: "claude-opus-5", ver: 19, rubric: "v6" },
@@ -16,7 +16,7 @@ const ITEMS = [
 ];
 
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let mode = "ok", lastUrl = "", cleared = false, clearMethod = "";

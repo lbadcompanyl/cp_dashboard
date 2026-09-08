@@ -1,6 +1,6 @@
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   await page.goto("http://localhost:8899/issue/sentiment.html?demo=1");
