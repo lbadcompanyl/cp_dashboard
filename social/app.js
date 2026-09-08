@@ -2015,10 +2015,16 @@
       return;
     }
 
-    document.getElementById("periodbox").innerHTML = renderPeriod();
-    document.getElementById("controls").innerHTML = renderControls();
     document.getElementById("tabs").innerHTML = renderTabs();
     var tab = C.TABS.filter(function (t) { return t.key === state.tab; })[0] || C.TABS[0];
+
+    /* 🔴 แท็บที่ดูแลตัวเอง (custom) ไม่ได้ใช้ช่วงเวลาและชิพเลือกช่องเลยสักตัว
+       (เจ้าของทัก 8 ก.ย. 2026: "หน้านี้ timeline ไม่มีผลถูกไหม ? ซ่อนใน tab นี้ไว้เลยก็ได้")
+       ⚠️ ปล่อยให้ปุ่มค้างอยู่ = ตัวควบคุมที่กดแล้วไม่มีอะไรเปลี่ยน ซึ่งแย่กว่าไม่มี —
+          คนอ่านจะนึกว่าตัวเลขในตารางถูกกรองด้วยช่วง 12 เดือนนั้นอยู่ ทั้งที่เป็นของทั้งหมด */
+    var own = !tab.custom;
+    document.getElementById("periodbox").innerHTML = own ? renderPeriod() : "";
+    document.getElementById("controls").innerHTML = own ? renderControls() : "";
     /* ⚠️ แท็บที่มี custom ดูแลตัวเองทั้งหมด (วาดเอง รับคลิกเอง) — app.js แค่ส่งต่อ
        ไม่มีไฟล์นั้นโหลดมา = บอกตรงๆ ห้ามปล่อยหน้าว่างเงียบๆ */
     document.getElementById("view").innerHTML = tab.custom

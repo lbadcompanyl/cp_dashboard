@@ -2923,8 +2923,20 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
           account: "ช่องเรา", title: "คลิปยาว", note: "", host: "youtu.be",
           publishedAt: thisM(3), addedAt: now,
           stats: { views: 5000, likes: 100, comments: 10, shares: null }, err: "",
-          /* ต้นทางตอบมาแต่ไม่มี views — ต้องบอกว่าขาดอะไรและได้ฟิลด์อะไรมาแทน */
-          warn: { miss: ["shares"], keys: ["digg_count", "comment_count"] } },
+          warn: null },
+        /* 🔴 เคสจริงที่เจ้าของเจอ 8 ก.ย. 2026: TikTok ส่ง Views = 0 มาทั้งที่มีไลก์ 287
+           เป็นไปไม่ได้ — ต้องติดป้ายว่าเชื่อไม่ได้ ไม่ใช่โชว์ 0 เฉยๆ */
+        { id: "a3", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@y/video/9",
+          account: "@y", title: "คลิปที่ต้นทางส่งยอดวิวมาเป็นศูนย์", note: "", host: "tiktok.com",
+          publishedAt: thisM(4), addedAt: now,
+          stats: { views: 0, likes: 287, comments: 2, shares: 0 }, err: "",
+          warn: { miss: [], keys: ["digg_count", "comment_count", "share_count"] } },
+        /* 🔴 Facebook ที่ไม่ใช่วิดีโอ — ไม่มียอดวิวเป็นเรื่องปกติ (เจ้าของยืนยัน 8 ก.ย. 2026) */
+        { id: "a4", kind: "social", platform: "facebook", url: "https://www.facebook.com/p/1",
+          account: "CPF", title: "โพสต์ภาพของเพจ", note: "", host: "facebook.com",
+          publishedAt: "", addedAt: now,
+          stats: { views: null, likes: 453, comments: 57, shares: 29 }, err: "",
+          warn: { miss: ["views"], keys: ["like_count", "reaction_count", "share_count"] } },
         { id: "n1", kind: "news", platform: "", url: "https://www.thansettakij.com/news/1",
           host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 1", publishedAt: thisM(1),
           addedAt: now, stats: {}, err: "" },
@@ -2954,11 +2966,23 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(/①\s*โพสต์อินฟลูเอนเซอร์/.test(txt) && /②\s*ข่าว/.test(txt),
      "มี 2 section แยกกันชัดเจน มีเลขกำกับ");
 
-  // ── section ① ต้องมีแต่โพสต์ ── ข่าวห้ามหลุดเข้าตารางที่มีคอลัมน์ Views
-  const rows1 = await pg.$$eval("#view .tbl.perf", (t) =>
-    Array.from(t[0].querySelectorAll("tbody tr")).map((r) => r.textContent));
-  ok(rows1.length === 2, `ตารางโพสต์มี 2 แถว (ไม่ปนข่าว) — ได้ ${rows1.length}`);
-  ok(!rows1.join(" ").includes("ข่าวชิ้นที่"), "ข่าวไม่หลุดเข้าตารางโพสต์");
+  /* 🔴 แยกเป็น 3 ตารางตามแพลตฟอร์ม (เจ้าของสั่ง 8 ก.ย. 2026)
+     เหตุผลที่ต้องแยก: แต่ละเจ้าให้ตัวเลขคนละชุด รวมตารางเดียวจะเต็มไปด้วย "—" */
+  const groups = await pg.$$eval("#view .gsec", (n) => n.map((x) => x.textContent.trim()));
+  ok(groups.length === 3 && /YouTube/.test(groups[0]) && /TikTok/.test(groups[1]) &&
+     /Facebook \/ Instagram/.test(groups[2]), `มี 3 ตารางแยกตามแพลตฟอร์ม (${groups.join(" | ")})`);
+  const rowsPer = await pg.$$eval("#view .tbl.perf", (t) =>
+    t.map((x) => Array.from(x.querySelectorAll("tbody tr")).map((r) => r.textContent)));
+  ok(rowsPer[0].length === 1 && rowsPer[1].length === 2 && rowsPer[2].length === 1,
+     `แบ่งแถวถูก YouTube 1 · TikTok 2 · FB 1 (ได้ ${rowsPer.map((r) => r.length).join(" ")})`);
+  ok(!rowsPer.slice(0, 3).join(" ").includes("ข่าวชิ้นที่"), "ข่าวไม่หลุดเข้าตารางโพสต์");
+  /* 🚫 YouTube ไม่เปิดเผยจำนวนแชร์ → ตัดคอลัมน์ทิ้งไปเลย ไม่ปล่อยให้เป็นช่องว่างทั้งคอลัมน์ */
+  const ytHead = await pg.$$eval("#view .tbl.perf", (t) =>
+    Array.from(t[0].querySelectorAll("thead th")).map((x) => x.textContent.replace(/[↕▼▲]/g, "").trim()));
+  ok(ytHead.indexOf("Shares") < 0, `ตาราง YouTube ไม่มีคอลัมน์ Shares (${ytHead.join(" ")})`);
+  const ttHead = await pg.$$eval("#view .tbl.perf", (t) =>
+    Array.from(t[1].querySelectorAll("thead th")).map((x) => x.textContent.replace(/[↕▼▲]/g, "").trim()));
+  ok(ttHead.indexOf("Shares") >= 0, "ตาราง TikTok ยังมีคอลัมน์ Shares");
 
   // ── section ② นับชิ้น + แยกสำนักข่าว ──
   ok(/ข่าวทั้งหมด[\s\S]{0,20}3/.test(txt), "นับข่าวได้ 3 ชิ้น");
@@ -2968,8 +2992,8 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(txt.includes("ฐานเศรษฐกิจ") && txt.includes("เดลินิวส์"),
      "แปลโดเมนเป็นชื่อสำนักข่าวภาษาไทย");
   const tbls = await pg.$$eval("#view .tbl.perf thead", (n) => n.map((x) => x.textContent));
-  ok(tbls.length === 2 && !/Views|Engagement/.test(tbls[1]),
-     "ตารางข่าวไม่มีคอลัมน์ Views/Engagement (เราไม่ได้ดึงยอดข่าว)");
+  ok(tbls.length === 4 && !/Views|Engagement/.test(tbls[3]),
+     `ตารางข่าวไม่มีคอลัมน์ Views/Engagement (เราไม่ได้ดึงยอดข่าว) — ${tbls.length} ตาราง`);
 
   /* ── กราฟรายเดือน — section ละกราฟ ไล่ 3 เดือนย้อนหลัง (เจ้าของสั่ง 8 ก.ย. 2026) ── */
   const charts = await pg.$$eval(".mchart", (n) => n.map((c) => ({
@@ -2988,7 +3012,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
      หายไปแล้วอ่านไม่ออกว่า "เดือนนั้นไม่มีงาน" หรือ "กราฟไม่ได้นับเดือนนั้น" */
   ok(charts[0].rows.some((r) => r.cnt === "0" && r.bars === 0),
      "เดือนที่ไม่มีของยังมีแถว ขึ้นเลข 0 (ไม่หายไปเฉยๆ)");
-  ok(charts[0].rows[2].cnt === "2", `กราฟโพสต์: เดือนนี้ 2 โพสต์ (ได้ ${charts[0].rows[2].cnt})`);
+  ok(charts[0].rows[2].cnt === "4", `กราฟโพสต์: เดือนนี้ 4 โพสต์ (ได้ ${charts[0].rows[2].cnt})`);
   ok(charts[1].rows[2].cnt === "2" && charts[1].rows[1].cnt === "1",
      "กราฟข่าว: เดือนนี้ 2 · เดือนที่แล้ว 1");
   /* 🚫 กราฟข่าวห้ามมีคอลัมน์ Engagement — เราไม่ได้ดึงยอดข่าว
@@ -3001,34 +3025,36 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(charts[0].rows[0].eng === "—", `เดือนที่ไม่มีโพสต์ Engagement เป็น — ไม่ใช่ 0 (ได้ "${charts[0].rows[0].eng}")`);
 
   /* ── ตารางโพสต์: คอลัมน์ตามที่เจ้าของสั่ง + แถวรวม ── */
-  const head = await pg.$$eval("#view .tbl.perf thead th", (n) => n.map((x) => x.textContent.replace(/[↕▼▲]/g, "").trim()));
-  ok(head.slice(1, 7).join(",") === "วันที่โพสต์,Views,Engagement,Likes,Shares,Comments",
-     `คอลัมน์เรียงตามที่สั่ง (${head.slice(1, 7).join(" ")})`);
-  const foot = await pg.$$eval("#view .tbl.perf tfoot td, #view .tbl.perf tfoot th", (n) => n.map((x) => x.textContent.trim()));
+  ok(ttHead.slice(1, 7).join(",") === "วันที่โพสต์,Views,Engagement,Likes,Shares,Comments",
+     `คอลัมน์เรียงตามที่สั่ง (${ttHead.slice(1, 7).join(" ")})`);
+  const foot = await pg.$$eval("#view .tbl.perf", (t) =>
+    Array.from(t[1].querySelectorAll("tfoot th, tfoot td")).map((x) => x.textContent.trim()));
   ok(/รวม 2 โพสต์/.test(foot[0]), `มีแถวรวมท้ายตาราง (${foot[0]})`);
-  ok(foot[2] === "15K", `Views รวม = 15K (10,000 + 5,000) — ได้ ${foot[2]}`);
-  ok(foot[5] === "20", `Shares รวม = 20 (ข้ามใบที่ต้นทางไม่บอก) — ได้ ${foot[5]}`);
+  ok(foot[2] === "10K", `Views รวมของ TikTok = 10K (10,000 + 0) — ได้ ${foot[2]}`);
+  ok(foot[5] === "20", `Shares รวม = 20 (20 + 0) — ได้ ${foot[5]}`);
   /* 🚫 ER ของแถวรวมต้องคิดจาก Engagement รวม ÷ Views รวม **ห้ามเฉลี่ย ER ของแต่ละแถว**
-     ตัวเลขในข้อมูลจำลองจงใจให้ 2 วิธีได้คนละค่า:
-       ถ่วงน้ำหนัก (ถูก) = (550+110) / (10,000+5,000) = 4.40%
-       เฉลี่ยรายแถว (ผิด) = (5.50% + 2.20%) / 2      = 3.85%
-     ⚠️ ของเดิมตั้งตัวเลขให้ ER เท่ากันทั้ง 2 แถว → เทสต์ผ่านทั้งที่คิดผิดก็ได้ (เจอตอนลองทำให้พัง) */
-  ok(foot[7] === "4.40%", `ER รวมถ่วงน้ำหนักถูก ไม่ใช่เฉลี่ยรายแถว (ได้ ${foot[7]})`);
+     ตัวเลขในข้อมูลจำลองจงใจให้ 2 วิธีได้คนละค่า (ตาราง TikTok 2 แถว):
+       ถ่วงน้ำหนัก (ถูก) = (550 + 289) / (10,000 + 0) = 8.39%
+       เฉลี่ยรายแถว (ผิด) = (5.50% + 0) / 2           = 2.75%
+     ⚠️ เคยตั้งตัวเลขให้ ER เท่ากันทั้ง 2 แถว → เทสต์ผ่านทั้งที่คิดผิดก็ได้ (เจอตอนลองทำให้พัง) */
+  ok(foot[7] === "8.39%", `ER รวมถ่วงน้ำหนักถูก ไม่ใช่เฉลี่ยรายแถว (ได้ ${foot[7]})`);
 
-  /* 🚫 คอลัมน์ที่ต้นทางไม่ส่งมาเลยสักใบ ต้องรวมเป็น "—" ไม่ใช่ 0
-     กรองเหลือแต่ YouTube ซึ่งไม่เปิดเผยจำนวนแชร์ → ทั้งคอลัมน์เป็น null
-     0 แปลว่า "ไม่มีใครแชร์" ซึ่งคนละเรื่องกับ "ต้นทางไม่บอก" (กฎ null ≠ 0) */
-  await pg.selectOption('[data-influsel="fPlatform"]', "youtube");
-  await pg.waitForTimeout(120);
-  const foot2 = await pg.$$eval("#view .tbl.perf tfoot td", (n) => n.map((x) => x.textContent.trim()));
-  ok(foot2[4] === "—", `กรองเหลือ YouTube: Shares รวมเป็น — ไม่ใช่ 0 (ได้ "${foot2[4]}")`);
-  await pg.selectOption('[data-influsel="fPlatform"]', "all");
-  await pg.waitForTimeout(120);
+  /* 🔴 "Views 0 ทั้งที่มีไลก์ 287" เป็นไปไม่ได้ — ต้องติดป้ายว่าเชื่อไม่ได้
+     (เจ้าของแจ้ง 8 ก.ย. 2026: "tiktok ต้องมี view ซิ")
+     🚫 ห้ามแก้ตัวเลขเป็น null เองเงียบๆ — นั่นคือเราเดาแทนต้นทาง */
+  const zeroRow = rowsPer[1].find((t) => /ส่งยอดวิวมาเป็นศูนย์/.test(t)) || "";
+  ok(/เชื่อไม่ได้/.test(zeroRow), "แถวที่ Views = 0 แบบเป็นไปไม่ได้ ติดป้ายเตือนไว้");
+  ok(/digg_count/.test(zeroRow), "บอกชื่อฟิลด์ที่ต้นทางส่งมาจริง แม้ตัวเลขจะไม่ได้ขาดหาย");
+
+  /* 🔴 Facebook ที่ไม่ใช่วิดีโอ ไม่มียอดวิวเป็นเรื่องปกติ — ต้องเขียนบอก ไม่ใช่ปล่อยให้เดา */
+  const fbNote = await pg.$$eval("#view .gnote", (n) => n.map((x) => x.textContent).join(" "));
+  ok(/ไม่ใช่วิดีโอ/.test(fbNote), "บอกว่าโพสต์ที่ไม่ใช่วิดีโอไม่มียอดวิว");
+  ok(/ไม่เปิดเผยจำนวนแชร์/.test(fbNote), "บอกว่าทำไม YouTube ไม่มีคอลัมน์ Shares");
 
   /* 🔴 ชื่อโพสต์ยาวห้ามดันคอลัมน์ตัวเลขออกนอกจอ (เจ้าของแจ้ง 8 ก.ย. 2026 พร้อมภาพ:
      "ชื่อเต็มเกิน ไม่เห็นอันอื่นเลย") — วัดตำแหน่งจริงบนจอ ไม่ใช่ดูจาก CSS */
   const fit = await pg.evaluate(() => {
-    const t = document.querySelectorAll("#view .tbl.perf")[0];
+    const t = document.querySelectorAll("#view .tbl.perf")[1];
     const wrap = t.closest(".tblwrap");
     const cells = t.querySelectorAll("tbody tr:first-child td");
     return {
@@ -3043,14 +3069,25 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(fit.lastRight <= fit.wrapRight + 1, "คอลัมน์สุดท้ายอยู่ในจอ (เห็นครบทุกคอลัมน์)");
   ok(fit.titleW <= 360, `คอลัมน์ชื่อโพสต์ถูกจำกัดความกว้าง (${fit.titleW}px)`);
   /* ⚠️ ตัดชื่อแล้วต้องยังอ่านตัวเต็มได้ — ไม่งั้นตัดทิ้งไปเฉยๆ */
-  ok(await pg.$eval("#view .influ-m a", (a) => a.title.length > 60), "ชี้ที่ชื่อแล้วเห็นตัวเต็ม (tooltip)");
+  ok(await pg.$$eval("#view .influ-m a", (n) => n.some((a) => a.title.length > 60)),
+     "ชี้ที่ชื่อแล้วเห็นตัวเต็ม (tooltip)");
 
   /* 🔴 ยอดที่ต้นทางไม่ส่งมา ต้องบอกว่าขาดตัวไหน + ได้ฟิลด์อะไรมาแทน
      เจ้าของถาม "ทำไม tiktok ไม่มี view ?" แล้วหน้าเว็บตอบไม่ได้เลย — "—" เฉยๆ
      แยกไม่ออกว่า "ไม่มีคนดู" กับ "ชื่อฟิลด์ไม่ตรงกับที่เดาไว้" */
-  const warnTxt = await pg.$eval("#view .influ-w", (e) => e.textContent);
-  ok(/ต้นทางไม่ได้ส่ง/.test(warnTxt) && /Shares/.test(warnTxt), `บอกว่าต้นทางไม่ได้ส่งอะไรมา (${warnTxt.slice(0, 40)}…)`);
-  ok(/digg_count/.test(warnTxt), "บอกชื่อฟิลด์ตัวเลขที่ต้นทางส่งมาจริง (ไล่ปัญหาต่อได้)");
+  const warnTxt = await pg.$$eval("#view .influ-w", (n) => n.map((x) => x.textContent).join(" || "));
+  ok(/ต้นทางไม่ได้ส่ง/.test(warnTxt) && /Views/.test(warnTxt), `บอกว่าต้นทางไม่ได้ส่งอะไรมา (${warnTxt.slice(0, 40)}…)`);
+  ok(/like_count/.test(warnTxt), "บอกชื่อฟิลด์ตัวเลขที่ต้นทางส่งมาจริง (ไล่ปัญหาต่อได้)");
+
+  /* 🔴 แท็บนี้ไม่ได้ใช้ช่วงเวลาเลย → ต้องซ่อนตัวเลือกช่วงเวลาและชิพเลือกช่อง
+     (เจ้าของทัก 8 ก.ย. 2026: "หน้านี้ timeline ไม่มีผลถูกไหม ? ซ่อนใน tab นี้ไว้เลยก็ได้")
+     ⚠️ ปล่อยไว้ = ตัวควบคุมที่กดแล้วไม่มีอะไรเปลี่ยน แย่กว่าไม่มี เพราะอ่านแล้วนึกว่า
+        ตัวเลขในตารางถูกกรองด้วยช่วง 12 เดือนนั้นอยู่ ทั้งที่เป็นยอดของทั้งหมด */
+  ok(!(await pg.$("#periodbox .periodbtn")), "แท็บ Earned media ไม่มีตัวเลือกช่วงเวลา");
+  ok((await pg.$eval("#controls", (e) => e.innerHTML.trim())) === "", "ไม่มีชิพเลือกช่องด้วย");
+  await tabTo(pg, "YouTube");
+  ok(!!(await pg.$("#periodbox .periodbtn")), "กลับไปแท็บอื่นแล้วช่วงเวลากลับมาเหมือนเดิม");
+  await tabTo(pg, "Earned media");
 
   /* ── กล่องวางลิงก์อยู่ล่างสุด (เจ้าของสั่ง 8 ก.ย. 2026) ── */
   const boxTop = await pg.$eval("#influ-in", (e) => e.getBoundingClientRect().top + scrollY);

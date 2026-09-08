@@ -151,19 +151,33 @@ const num = (v) => (v == null || v === "" || isNaN(Number(v)) ? null : Number(v)
  *    โค้ดเดิมของ worker ก็ใช้วิธีนี้ · ไล่ลึกได้ไม่เกิน 6 ชั้นกัน object วนซ้ำ
  * ⚠️ ต้องรับเฉพาะ "ตัวเลข" — บางเจ้าส่ง "1.2M" มาเป็นข้อความ ซึ่งเอาไปบวกไม่ได้
  *    เจอแบบนั้นให้เป็น null (ไม่รู้) ดีกว่าแปลงมั่วแล้วได้ตัวเลขที่ผิด */
-export function deepNum(obj, names, depth = 0) {
-  if (obj == null || depth > 6 || typeof obj !== "object") return null;
+/* 🔴 "เจอตัวแรกแล้วหยุด" ใช้ไม่ได้ — คำตอบก้อนเดียวมีคีย์ชื่อเดียวกันได้หลายที่
+ *    (เจ้าของแจ้ง 8 ก.ย. 2026: TikTok ขึ้น Views = 0 ทั้งที่มี Likes 287
+ *     คลิป TikTok ที่มีคนกดไลก์ 287 เป็นไปไม่ได้ที่จะมีคนดู 0)
+ * ✅ เก็บ **ทุกตัวที่เจอ** แล้วเลือกตัวที่ > 0 ก่อน · ถ้าเป็น 0 หมดจริงๆ ค่อยคืน 0
+ *    เหตุผล: 0 ที่อยู่คู่กับตัวเลขจริงของ metric เดียวกัน = ช่องที่ต้นทางไม่ได้เติม
+ *    ไม่ใช่ยอดจริง · ส่วน 0 ที่ไม่มีตัวอื่นมาแย้ง ยังคืน 0 ตามเดิม (ไม่เดาแทนต้นทาง)
+ * ⚠️ ห้ามเปลี่ยน 0 เป็น null เอง — "ไม่มีใครดู" กับ "ต้นทางไม่บอก" ต้องแยกกัน
+ *    หน้าเว็บติดป้ายเตือนให้แทน เมื่อ 0 นั้นขัดกับยอดปฏิสัมพันธ์ (zeroSuspect)
+ */
+export function deepNum(obj, names, depth = 0, hits = null) {
+  const top = hits == null;
+  hits = hits || [];
+  if (obj == null || depth > 6 || typeof obj !== "object") return top ? pickNum(hits) : null;
   const want = names.map((n) => n.toLowerCase());
   for (const [k, v] of Object.entries(obj)) {
-    if (want.includes(k.toLowerCase())) {
-      const n = num(v);
-      if (n != null) return n;
-    }
+    if (want.includes(k.toLowerCase())) { const n = num(v); if (n != null) hits.push(n); }
   }
   for (const v of Object.values(obj)) {
-    if (v && typeof v === "object") { const r = deepNum(v, names, depth + 1); if (r != null) return r; }
+    if (v && typeof v === "object") deepNum(v, names, depth + 1, hits);
   }
-  return null;
+  return top ? pickNum(hits) : null;
+}
+
+function pickNum(hits) {
+  if (!hits.length) return null;
+  const real = hits.filter((n) => n > 0);
+  return real.length ? Math.max.apply(null, real) : hits[0];
 }
 
 export function deepStr(obj, names, depth = 0) {
@@ -212,14 +226,60 @@ export function pickWhen(body) {
  * ✅ เก็บชื่อ **คีย์ที่มีค่าเป็นตัวเลข** ทั้งหมดที่เจอ แล้วเอาไปโชว์ในแถวนั้น
  *    รอบหน้ากด 🔄 ครั้งเดียวก็รู้เลยว่าต้องเติมชื่อไหนลง F
  * ⚠️ เก็บแค่ "ชื่อคีย์" ไม่เก็บค่า — ไม่ให้ blob ใน KV บวมและไม่มีข้อมูลส่วนตัวติดไป */
+/* คีย์ของ ScrapeCreators เอง ไม่ใช่ยอดของโพสต์ — โชว์ปนไปก็มีแต่ทำให้อ่านยาก
+   (เจอจริงในคำตอบของ Facebook: credits_remaining · credits_charged) */
+const META_KEYS = /^(credits?_|cost|request_|status_?code$|took$|ms$)/i;
+
 export function numKeys(obj, depth = 0, out = []) {
   if (obj == null || depth > 5 || typeof obj !== "object" || out.length >= 16) return out;
   for (const [k, v] of Object.entries(obj)) {
     if (out.length >= 16) break;
-    if (typeof v === "number" && out.indexOf(k) < 0) out.push(k);
+    if (typeof v === "number") { if (!META_KEYS.test(k) && out.indexOf(k) < 0) out.push(k); }
     else if (v && typeof v === "object") numKeys(v, depth + 1, out);
   }
   return out;
+}
+
+/* ── หารูปปกจากคำตอบ ─────────────────────────────────────────────────
+ * 🔴 เจ้าของสั่ง 8 ก.ย. 2026: "พยายามดึงรูปให้ได้ด้วย"
+ *    ของเดิมเดาจาก **ชื่อคีย์** (cover · full_picture · display_url) เดาไม่ตรงก็ไม่ได้รูป
+ * ✅ เปลี่ยนมาดูที่ **ค่า**: สตริงไหนหน้าตาเป็นลิงก์รูป ก็เอาอันนั้น
+ *    ทนต่อการที่ต้นทางเปลี่ยนชื่อคีย์ ซึ่งเกิดขึ้นบ่อยกับ ScrapeCreators
+ * ⚠️ ให้คีย์ที่ "ฟังดูเหมือนรูปปก" ได้สิทธิ์ก่อน — ไม่งั้นอาจได้รูปโปรไฟล์คนโพสต์
+ *    (avatar) แทนรูปปกคลิป ซึ่งอยู่ในคำตอบเดียวกัน
+ * ⚠️ ลิงก์รูปของ TikTok/Facebook เป็น **ลิงก์เซ็นชื่อที่หมดอายุ** ใช้ได้ไม่กี่ชั่วโมง
+ *    หน้าเว็บจึงต้องเผื่อกรณีรูปโหลดไม่ขึ้นเสมอ (ดู onImgErr ใน social/influ.js)
+ */
+const IMG_RE = /^https?:\/\/[^\s"']+?(\.(jpe?g|png|webp|heic|gif)(\?|$)|\/image|image\/|_pic|tiktokcdn|fbcdn|cdninstagram|ytimg)/i;
+const COVER_RE = /(cover|thumb|image|picture|display|preview|poster|snapshot)/i;
+const AVATAR_RE = /(avatar|profile_pic|icon|logo)/i;
+
+/* ⚠️ ต้องจำว่า "ตอนนี้อยู่ใต้คีย์ที่แปลว่ารูปปกหรือเปล่า" ส่งต่อลงไปเรื่อยๆ
+      ลิงก์จริงมักซ่อนลึก 2-3 ชั้นใต้ชื่อคีย์ที่บอกความหมาย เช่น
+        video.cover.url_list[0]   ← "cover" อยู่ชั้นบน · ชั้นล่างชื่อ "url_list" กับ "0"
+      ดูแค่ชื่อคีย์ชั้นที่เจอสตริง = ไม่มีวันรู้ว่ามันคือรูปปก แล้วไปได้รูปโปรไฟล์คนโพสต์มาแทน
+      (เจอจริงตอนทดสอบ: ได้ avatar_thumb ของ TikTok มาแทนรูปปกคลิป)
+   ⚠️ และต้อง **ข้ามทั้งกิ่ง** ที่เป็นรูปโปรไฟล์ ไม่ใช่ข้ามเฉพาะสตริงชั้นนั้น */
+export function deepImg(obj, depth = 0, found = { cover: "", any: "" }, inCover = false) {
+  if (obj == null || depth > 6 || typeof obj !== "object" || found.cover) return found;
+  for (const [k, v] of Object.entries(obj)) {
+    if (AVATAR_RE.test(k)) continue;                       // ข้ามทั้งกิ่ง
+    const cov = inCover || COVER_RE.test(k);
+    if (typeof v === "string") {
+      if (!IMG_RE.test(v)) continue;
+      if (cov) { found.cover = v; return found; }
+      if (!found.any) found.any = v;
+    } else if (v && typeof v === "object") {
+      deepImg(v, depth + 1, found, cov);
+      if (found.cover) return found;
+    }
+  }
+  return found;
+}
+
+export function pickImg(body) {
+  const f = deepImg(body);
+  return f.cover || f.any || "";
 }
 
 function statsFrom(body) {
@@ -280,10 +340,16 @@ async function fetchOne(post, env) {
 
   return {
     ...post,
-    warn: miss.length ? { miss, keys: numKeys(r.body) } : null,
+    /* ⚠️ เก็บชื่อฟิลด์ไว้ **ทุกครั้ง** ไม่ใช่เฉพาะตอนขาดตัวเลข
+       แถวที่ได้ตัวเลขครบแต่ค่าผิด (เช่น Views = 0 ทั้งที่มีไลก์ 287) ก็ต้องไล่ต่อได้เหมือนกัน
+       เก็บแค่ชื่อคีย์ ≤ 16 ตัว ไม่เก็บค่า — blob ใน KV จึงแทบไม่โต */
+    warn: { miss, keys: numKeys(r.body) },
     title: deepStr(r.body, ["desc", "message", "title", "caption", "text", "content", "description"]).slice(0, 300) || post.title,
     account: post.account || deepStr(r.body, ["unique_id", "uniqueid", "username", "nickname", "author_name"]),
-    thumb: deepStr(r.body, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "display_url", "thumbnail_url"]) || post.thumb,
+    /* หารูปจาก "หน้าตาของค่า" ก่อน แล้วค่อยตกไปเดาจากชื่อคีย์แบบเดิม */
+    thumb: pickImg(r.body) ||
+      deepStr(r.body, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "display_url", "thumbnail_url"]) ||
+      post.thumb,
     publishedAt: pickWhen(r.body) || post.publishedAt,
     stats: st, at: Date.now(), err: "",
   };

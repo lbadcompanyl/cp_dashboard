@@ -602,6 +602,16 @@ body {
    ไม่งั้นเห็น "—" แล้วแยกไม่ออกว่า "ไม่มีคนดู" กับ "ต้นทางไม่ได้ส่งมา" */
 .influ-w { font-size:.68rem; color:var(--muted); margin-top:4px; line-height:1.45; }
 .influ-w code { font-size:.95em; background:var(--surface-2); padding:0 3px; border-radius:3px; }
+/* หัวของแต่ละตารางแพลตฟอร์ม (แยก 3 ตาราง — เจ้าของสั่ง 8 ก.ย. 2026) */
+.gsec {
+  display:flex; align-items:center; gap:7px; margin:16px 0 6px;
+  font-size:.86rem; font-weight:650; color:var(--ink);
+}
+.gsec:first-child { margin-top:4px; }
+.gsec .sub { font-weight:400; }
+/* ⚠️ เหตุผลที่แพลตฟอร์มนี้ไม่มีบางคอลัมน์ ต้องเขียนไว้ตรงหัวตาราง
+   ไม่งั้นเทียบ 3 ตารางแล้วสงสัยว่าทำไมคอลัมน์ไม่เท่ากัน */
+.gnote { margin:0 0 7px; font-size:.72rem; color:var(--muted); }
 .xbtn { padding:4px 9px; font-size:.78rem; color:var(--muted); }
 .xbtn:hover { color:var(--bad); border-color:var(--bad); }
 

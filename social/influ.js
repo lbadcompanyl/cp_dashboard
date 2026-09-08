@@ -98,6 +98,44 @@
 
   var P_LABEL = { youtube: "YouTube", tiktok: "TikTok", facebook: "Facebook", instagram: "Instagram" };
   var M_LABEL = { views: "Views", likes: "Likes", comments: "Comments", shares: "Shares" };
+
+  /* 🔴 แยกเป็น 3 ตารางตามแพลตฟอร์ม (เจ้าของสั่ง 8 ก.ย. 2026)
+     เหตุผลที่แยกแล้วดีกว่ารวม: **แต่ละเจ้าให้ตัวเลขคนละชุด**
+     เอามาเรียงในตารางเดียวกันจะเต็มไปด้วย "—" จนอ่านไม่ออกว่าคอลัมน์ไหนใช้ได้กับใคร
+     · `hide` = คอลัมน์ที่เจ้านั้น **ไม่มีทางมี** → ตัดทิ้งเลย ไม่ปล่อยให้เป็นช่องว่าง
+       (กฎเดียวกับ section ข่าวที่ไม่มีคอลัมน์ Views/Engagement) */
+  var GROUPS = [
+    { key: "youtube", label: "YouTube", plats: ["youtube"], hide: ["shares"],
+      note: "YouTube ไม่เปิดเผยจำนวนแชร์ผ่าน API จึงไม่มีคอลัมน์ Shares" },
+    { key: "tiktok", label: "TikTok", plats: ["tiktok"] },
+    { key: "meta", label: "Facebook / Instagram", plats: ["facebook", "instagram"],
+      note: "โพสต์ที่ไม่ใช่วิดีโอไม่มียอดวิว — ต้นทางส่งมาแต่ยอดปฏิสัมพันธ์ (Likes/Shares/Comments)" },
+  ];
+
+  /* 🔴 "Views 0 ทั้งที่มี Likes 287" เป็นไปไม่ได้ — ต้นทางส่ง 0 มาแทนที่จะบอกว่าไม่รู้
+     (เจอจริงกับ TikTok 8 ก.ย. 2026) · ต้องติดป้ายเตือน **ห้ามแก้ตัวเลขเงียบๆ**
+     แก้ให้เป็น null เอง = เราเดาแทนต้นทาง ซึ่งผิดกฎ "ไม่รู้ ห้ามกลืนเป็นค่าใดค่าหนึ่ง" เหมือนกัน */
+  /* ข้อความอธิบายใต้ชื่อโพสต์ — มี 2 กรณี ต้องแยกให้ออก
+     ① ต้นทางไม่ส่งบางตัวมา (เช่น FB ที่ไม่ใช่วิดีโอ ไม่มียอดวิว) = เรื่องปกติของแพลตฟอร์มนั้น
+     ② ส่งมาเป็น 0 ทั้งที่เป็นไปไม่ได้ (Views 0 แต่มีไลก์ 287) = ค่าที่เชื่อไม่ได้
+     ทั้ง 2 กรณีต้องบอกชื่อฟิลด์ที่ต้นทางส่งมาจริง ไม่งั้นไล่ปัญหาต่อไม่ได้ */
+  function rowNote(p) {
+    if (p.err) return "";
+    var w = p.warn || {}, miss = w.miss || [], bad = zeroSuspect(p);
+    if (!miss.length && !bad) return "";
+    var msg = bad
+      ? "ต้นทางส่ง <b>Views = 0</b> มาทั้งที่มี Engagement " + num(engOf(p)) + " — <b>ยอดนี้เชื่อไม่ได้</b>"
+      : "ต้นทางไม่ได้ส่ง <b>" + esc(miss.map(function (k) { return M_LABEL[k] || k; }).join(" · ")) + "</b> มา";
+    return '<div class="influ-w">' + msg +
+      (w.keys && w.keys.length
+        ? " · ฟิลด์ตัวเลขที่ได้: " + w.keys.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join(" ")
+        : "") + "</div>";
+  }
+
+  function zeroSuspect(p) {
+    var v = (p.stats || {}).views, e = engOf(p);
+    return v === 0 && e != null && e > 0;
+  }
   var P_COLOR = { youtube: "#dc2626", tiktok: "#0d9488", facebook: "#2563eb", instagram: "#c2410c" };
 
   /* engagement = ยอดที่นับได้จริงเท่านั้น
@@ -420,50 +458,61 @@
         "<div>ลองล้างตัวกรองหรือคำค้น</div></div></div></div>";
     }
 
-    // ── ตาราง ──
-    h += '<div class="tblwrap"><table class="tbl perf"><thead><tr><th>โพสต์</th>' +
-      COLS.map(function (c) {
+    /* 🔴 แยกเป็น 3 ตารางตามแพลตฟอร์ม (เจ้าของสั่ง 8 ก.ย. 2026)
+       กลุ่มที่ไม่มีโพสต์เลย **ไม่ต้องขึ้นตารางเปล่า** — ขึ้นแล้วรกโดยไม่ได้บอกอะไรเพิ่ม */
+    GROUPS.forEach(function (g) {
+      var part = list.filter(function (p) { return g.plats.indexOf(p.platform) >= 0; });
+      if (part.length) h += postTable(part, g);
+    });
+    return h + "</div>";
+  }
+
+  /* ตารางโพสต์ 1 กลุ่ม — คอลัมน์ที่กลุ่มนั้นไม่มีทางมี (`hide`) ถูกตัดทิ้งไปเลย
+     ⚠️ ไม่ปล่อยให้เป็นช่องว่าง — กฎเดียวกับ section ข่าวที่ไม่มีคอลัมน์ Views/Engagement */
+  function postTable(list, g) {
+    var cols = COLS.filter(function (c) { return (g.hide || []).indexOf(c.key) < 0; });
+
+    var h = '<h3 class="gsec"><span class="pdot" style="background:' + P_COLOR[g.plats[0]] + '"></span>' +
+      esc(g.label) + ' <span class="sub">' + list.length + " โพสต์</span></h3>" +
+      (g.note ? '<p class="gnote">' + esc(g.note) + "</p>" : "") +
+      '<div class="tblwrap"><table class="tbl perf"><thead><tr><th>โพสต์</th>' +
+      cols.map(function (c) {
         var on = state.sort === c.key;
         return '<th class="num srt' + (on ? " on" : "") + '"><button type="button" class="srtb" data-influsort="' +
           c.key + '">' + esc(c.label) + '<span class="srta">' + (on ? (state.dir < 0 ? "▼" : "▲") : "↕") + "</span></button></th>";
       }).join("") + "<th></th></tr></thead><tbody>";
 
     list.forEach(function (p) {
-      var s = p.stats || {};
       h += '<tr><th scope="row"><div class="rowhead influrow">' +
-        (p.thumb ? '<img class="influ-th" src="' + esc(p.thumb) + '" alt="" loading="lazy">' : '<span class="influ-th ph"></span>') +
+        /* ⚠️ ลิงก์รูปของ TikTok/Facebook เป็นลิงก์เซ็นชื่อที่หมดอายุ — โหลดไม่ขึ้นได้เสมอ
+           onImgErr สลับเป็นกล่องเปล่าให้ ไม่ปล่อยให้เป็นไอคอนรูปแตก */
+        (p.thumb ? '<img class="influ-th" src="' + esc(p.thumb) + '" alt="">' : '<span class="influ-th ph"></span>') +
         '<div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
         esc(p.title || p.note || p.url) + '">' +
         /* ⚠️ ลำดับสำคัญ: ชื่อจริงจากต้นทาง > แคปชั่นที่วางมา > URL ดิบ
            ลิงก์ย่อที่ดึงชื่อไม่ได้ ถ้าไม่มีแคปชั่นรอง ตารางจะมีแต่ URL ยาวๆ อ่านไม่รู้เรื่อง */
         esc(p.title || p.note || p.url) + ' <span class="ext">↗</span></a>' +
-        '<div class="influ-s"><span class="pdot" style="background:' + P_COLOR[p.platform] + '"></span>' +
-        esc(P_LABEL[p.platform] || p.platform) + (p.account ? " · " + esc(p.account) : "") + "</div>" +
+        '<div class="influ-s">' + esc(P_LABEL[p.platform] || p.platform) +
+        (p.account ? " · " + esc(p.account) : "") + "</div>" +
         /* ⚠️ ใบที่ดึงยอดไม่สำเร็จต้องบอกเหตุผลตรงแถวนั้น ไม่ใช่ขึ้น "—" เฉยๆ
            ไม่งั้นแยกไม่ออกว่า "ต้นทางไม่ให้ตัวเลข" กับ "ยอดเป็น 0 จริงๆ" */
         (p.err ? '<div class="influ-e">⚠️ ' + esc(p.err) + "</div>" : "") +
-        /* 🔴 ได้ยอดบางตัวไม่ได้บางตัว = ต้องบอกว่าขาดตัวไหน + ต้นทางส่งชื่อฟิลด์อะไรมาแทน
-           (เจ้าของถาม 8 ก.ย. 2026: "ทำไม tiktok ไม่มี view ?" แล้วหน้าเว็บตอบไม่ได้เลย)
-           ⚠️ ไม่ใช่ error — ข้อมูลที่ได้ยังใช้ได้ จึงใช้สีจาง ไม่ใช่สีแดง */
-        (!p.err && p.warn && p.warn.miss && p.warn.miss.length
-          ? '<div class="influ-w">ต้นทางไม่ได้ส่ง <b>' +
-            esc(p.warn.miss.map(function (k) { return M_LABEL[k] || k; }).join(" · ")) + "</b> มา" +
-            (p.warn.keys && p.warn.keys.length
-              ? " · ฟิลด์ตัวเลขที่ได้: " + p.warn.keys.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join(" ")
-              : "") + "</div>"
-          : "") +
+        rowNote(p) +
         "</div></div></th>";
 
-      COLS.forEach(function (c) {
+      cols.forEach(function (c) {
         var v = valOf(p, c.key);
         var w = c.key === "date" ? whenOf(p) : null;
         var txt = v == null ? "—"
           : c.fmt === "date" ? (w.exact ? "" : "~") + dayLabel(v)
           : c.fmt === "pct" ? pct(v) : num(v);
+        var fishy = c.key === "views" && zeroSuspect(p);
         // ~ = ไม่รู้วันที่โพสต์จริง ใช้วันที่เพิ่มลิงก์เข้ารายการแทน — ต้องบอก ไม่ใช่แสดงเหมือนของจริง
-        var why = v == null ? c.na : (w && !w.exact ? "ต้นทางไม่บอกวันที่โพสต์ — นี่คือวันที่เพิ่มลิงก์เข้ารายการ" : "");
-        h += '<td class="num' + (c.strong ? " strong" : "") + (v == null || (w && !w.exact) ? " na" : "") + '"' +
-          (why ? ' title="' + esc(why) + '"' : "") + ">" + esc(txt) + "</td>";
+        var why = fishy ? "ต้นทางส่ง 0 มาทั้งที่โพสต์นี้มีคนกดไลก์/คอมเมนต์ — ยอดนี้เชื่อไม่ได้"
+          : v == null ? c.na
+          : (w && !w.exact ? "ต้นทางไม่บอกวันที่โพสต์ — นี่คือวันที่เพิ่มลิงก์เข้ารายการ" : "");
+        h += '<td class="num' + (c.strong ? " strong" : "") + (v == null || fishy || (w && !w.exact) ? " na" : "") + '"' +
+          (why ? ' title="' + esc(why) + '"' : "") + ">" + esc(txt) + (fishy ? " ⚠️" : "") + "</td>";
       });
 
       h += '<td class="num"><button type="button" class="btn xbtn" data-infludel="' + esc(p.id) + '" title="เอาออกจากรายการ">✕</button></td></tr>';
@@ -476,23 +525,21 @@
           **ห้ามเฉลี่ย ER ของแต่ละแถว** — คลิปยอดน้อยจะมีน้ำหนักเท่าคลิปล้านวิว */
     h += "</tbody><tfoot><tr><th scope=\"row\">รวม " + list.length + " โพสต์</th>";
     var sum = {};
-    COLS.forEach(function (c) { sum[c.key] = null; });
+    cols.forEach(function (c) { sum[c.key] = null; });
     list.forEach(function (p) {
-      COLS.forEach(function (c) {
+      cols.forEach(function (c) {
         if (c.key === "date" || c.key === "er") return;
         var v = valOf(p, c.key);
         if (v != null) sum[c.key] = (sum[c.key] || 0) + v;
       });
     });
     var totalEr = sum.views && sum.eng != null ? sum.eng / sum.views : null;
-    COLS.forEach(function (c) {
+    cols.forEach(function (c) {
       var v = c.key === "er" ? totalEr : c.key === "date" ? null : sum[c.key];
       var txt = c.key === "date" ? "" : v == null ? "—" : c.fmt === "pct" ? pct(v) : num(v);
       h += '<td class="num' + (c.strong ? " strong" : "") + (v == null && c.key !== "date" ? " na" : "") + '">' + esc(txt) + "</td>";
     });
-    h += "<td></td></tr></tfoot>";
-
-    return h + "</table></div></div>";
+    return h + "<td></td></tr></tfoot></table></div>";
   }
 
   /* ── ② ข่าว — นับชิ้น + แยกสำนักข่าวเท่านั้น ────────────────────────
@@ -629,12 +676,25 @@
     try { el.setSelectionRange(pos, pos); } catch (x) {}
   }
 
+  /* 🔴 ลิงก์รูปของ TikTok/Facebook/Instagram เป็น **ลิงก์เซ็นชื่อที่หมดอายุ**
+     เก็บไว้ใน KV แล้วอีกไม่กี่ชั่วโมงก็โหลดไม่ขึ้น (403/404)
+     ⚠️ ปล่อยไว้จะได้ไอคอนรูปแตกเรียงเป็นแถว ดูเหมือนหน้าพัง — สลับเป็นกล่องเปล่าแทน
+     ⚠️ event `error` ไม่ bubble ต้องดักด้วย capture ถึงจะรับที่ document ได้ */
+  function onImgErr(e) {
+    var t = e.target;
+    if (t && t.tagName === "IMG" && t.className.indexOf("influ-th") >= 0) {
+      t.removeAttribute("src");
+      t.className = "influ-th ph";
+    }
+  }
+
   var wired = false;
   function render() {
     if (!wired) {
       document.addEventListener("click", onClick);
       document.addEventListener("change", onChange);
       document.addEventListener("input", onInput);
+      document.addEventListener("error", onImgErr, true);
       wired = true;
     }
     // ⚠️ โหลดครั้งเดียวตอนเปิดแท็บครั้งแรก · สลับแท็บไปกลับไม่ยิงซ้ำ
