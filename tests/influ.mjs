@@ -1,0 +1,52 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const html=fs.readFileSync(new URL('../influ/index.html',import.meta.url),'utf8');
+const source=html.match(/<script id="influ-app">([\s\S]*?)<\/script>/)[1];
+function app(saved){const elements=new Map(),handlers={};
+ function el(id){if(!elements.has(id))elements.set(id,{value:'',textContent:'',innerHTML:'',checked:false,hidden:false,handlers:{},addEventListener(n,fn){this.handlers[n]=fn},setAttribute(){},showModal(){this.open=true},close(){this.open=false},focus(){}});return elements.get(id)}
+ for(const tag of html.matchAll(/<(?:input|select|textarea)[^>]*\bid="([^"]+)"[^>]*>/g)){const e=el(tag[1]);e.value=tag[0].match(/\bvalue="([^"]*)"/)?.[1]||'';e.checked=tag[0].includes(' checked')}
+ const topics=['สิ่งแวดล้อม','ความยั่งยืน','ขยะ','ครู'].map(value=>({value,checked:true}));const tabs=['search','database','shortlist'].map(tab=>({dataset:{tab},setAttribute(){}}));
+ const doc={getElementById:el,querySelectorAll(q){return q==='#topic-options input:checked'?topics.filter(e=>e.checked):q==='#topic-options input'?topics:q==='[data-tab]'?tabs:[]},querySelector(){return el('nav')},addEventListener(n,f){handlers[n]=f}};
+ let raw=saved||null;
+ const ctx=vm.createContext({document:doc,URL,structuredClone,localStorage:{getItem(){return raw},setItem(k,v){raw=v}},setTimeout(){return 1},clearTimeout(){},confirm(){return true},crypto:{randomUUID:()=>Math.random().toString(36).slice(2)}});
+ vm.runInContext(source,ctx);
+ return{el,ctx,run:s=>vm.runInContext(s,ctx),data:()=>JSON.parse(vm.runInContext('JSON.stringify(state)',ctx)),saved:()=>raw,toggle(id){handlers.click({target:{closest:()=>({dataset:{toggle:id},hasAttribute:()=>false})}})},submit(id){const e=el(id);(e.onsubmit||e.handlers.submit)({preventDefault(){}})}}}
+let count=0;function test(name,fn){fn();count++;console.log('PASS '+name)}
+const a=app();
+test('app initializes and migrates starter data',()=>assert.equal(a.run('validateState(state)'),true));
+const original=a.data().activeProject;const id=a.data().records[0].id;
+a.toggle(id);
+test('shortlist stores selected creator in original project',()=>assert.deepEqual(a.data().projects[0].shortlist,[id]));
+a.el('new-project').onclick();a.el('p-name').value='งานเชียงใหม่';a.el('p-provinces').value='เชียงใหม่';a.el('p-budget').value='8000';a.submit('project-form');
+const second=a.data().activeProject;
+test('new project starts with empty independent shortlist',()=>{assert.equal(a.data().projects.length,2);assert.deepEqual(a.data().projects[1].shortlist,[]);assert.equal(a.el('budget').value,8000)});
+a.toggle(id);
+a.el('project-select').onchange({target:{value:original}});a.toggle(id);
+test('removing in one project does not affect another',()=>{assert.deepEqual(a.data().projects[0].shortlist,[]);assert.deepEqual(a.data().projects[1].shortlist,[id])});
+a.run(`openEditor(${JSON.stringify(id)})`);
+a.el('f-province').value='กทม';a.el('f-service-provinces').value='สระบุรี, กรุงเทพฯ';a.el('f-low').value='10000';a.el('f-high').value='20000';a.el('f-rate-date').value='2026-09-08';a.el('f-rate-source').value='ข้อมูลสมมติสำหรับทดสอบในหน่วยความจำเท่านั้น';a.el('f-travel').value='yes';a.submit('editor-form');
+test('province aliases normalized and duplicates removed',()=>{const r=a.data().records[0];assert.equal(r.province,'กรุงเทพมหานคร');assert.deepEqual(r.serviceProvinces,['สระบุรี','กรุงเทพมหานคร'])});
+test('estimated range preserved and visibly labeled',()=>{assert.equal(a.run('offerFor(state.records[0]).high'),20000);assert.equal(a.run('priceLabel(state.records[0])'),'ราคาประเมิน / คน');assert.ok(a.el('results').innerHTML.includes('ช่วงราคาประเมินบางส่วนเกินงบ'))});
+a.el('project-select').onchange({target:{value:second}});
+test('price and attendance from another project do not leak',()=>{assert.equal(a.run('offerFor(state.records[0]).low'),null);assert.equal(a.run('offerFor(state.records[0]).travel'),'unknown')});
+a.el('project-select').onchange({target:{value:original}});
+a.run(`openEditor(${JSON.stringify(id)})`);a.el('f-price').value='17000';a.submit('editor-form');
+test('confirmed quote takes precedence over lower estimate',()=>{assert.equal(a.run('priceBounds(offerFor(state.records[0]))[0]'),17000);assert.equal(a.run('matches(state.records[0],filters())'),false)});
+a.el('province-filter').value='เชียงใหม่';a.el('budget').value='';
+test('known provinces that do not match are excluded',()=>assert.equal(a.run('matches(state.records[0],filters())'),false));
+test('unknown province included by default',()=>assert.equal(a.run('matches(state.records[1],filters())'),true));
+a.el('include-unknown-location').checked=false;
+test('unknown province exclusion works',()=>assert.equal(a.run('matches(state.records[1],filters())'),false));
+a.el('province-filter').value='สระบุรี';
+test('service province matches despite home in different province',()=>assert.equal(a.run('matches(state.records[0],filters())'),true));
+test('province matching does not invent acceptance',()=>assert.equal(a.run('locationStatus(state.records[0],["สระบุรี"])'), 'match'));
+a.el('edit-project').onclick();a.el('p-name').value='เปลี่ยนชื่อ';a.submit('project-form');
+test('editing project preserves its rates and other projects',()=>{assert.equal(a.data().projects[0].name,'เปลี่ยนชื่อ');assert.equal(a.run('offerFor(state.records[0]).quote'),17000);assert.deepEqual(a.data().projects[1].shortlist,[id])});
+const b=app(a.saved());
+test('reload preserves all projects and independent data',()=>assert.deepEqual(b.data(),a.data()));
+test('invalid inverted estimate rejected',()=>assert.equal(a.run('(()=>{const s=structuredClone(state);s.projects[0].offers[s.records[0].id].low=30000;return validateState(s)})()'),false));
+test('orphan project shortlist rejected',()=>assert.equal(a.run('(()=>{const s=structuredClone(state);s.projects[1].shortlist=["missing"];return validateState(s)})()'),false));
+test('duplicate project ids rejected',()=>assert.equal(a.run('(()=>{const s=structuredClone(state);s.projects[1].id=s.projects[0].id;return validateState(s)})()'),false));
+test('legacy saved quotes and shortlist preserved on migration',()=>assert.equal(a.run('(()=>{const s=migrate({version:1,records:SEEDS.map(r=>({...r,price:12000})),shortlist:[SEEDS[0].id],campaign:"เดิม"});return validateState(s)&&s.projects[0].offers[SEEDS[0].id].quote===12000&&s.projects[0].shortlist[0]===SEEDS[0].id})()'),true));
+console.log(`${count} checks passed; browser rendering not tested. Test data remained in VM memory.`);
