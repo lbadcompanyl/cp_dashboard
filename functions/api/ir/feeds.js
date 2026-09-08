@@ -34,7 +34,7 @@ const EDGE_TTL = 3600;
 //    · เทสต์ `syslog.mjs` มีด่านจับไม่ให้ลดกลับลงไปต่ำกว่า 10 นาที
 const FRESH_MS = 15 * 60 * 1000;
 const FETCH_TIMEOUT = 12000;
-const CACHE_VER = "82"; // bump: รู้จักกลุ่ม Ascend + งาน CP Innovation + CP ที่เป็นประธานประโยค
+const CACHE_VER = "83"; // bump: ตัดหน้าสินค้าซูเปอร์/ห้างออนไลน์ (Big C ฯลฯ)
 const POOL = 8; // ดึงทีละ 8 ฟีด (คุม memory/CPU peak)
 const MAX_XML = 600000; // ตัด XML ที่ใหญ่เกินก่อน parse (กัน CPU พุ่ง/ReDoS)
 const MAX_PER_FEED = 60; // เก็บข่าวต่อฟีดไม่เกินนี้

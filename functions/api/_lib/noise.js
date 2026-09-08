@@ -48,7 +48,23 @@ export const SHOP_HOSTS = [
   // (เจอจริง 13 ส.ค. 2026: "อาหารตามเทศกาล | AllOnline" หมูกรอบชาชู 400 กรัม ฿249)
   // หน้าพวกนี้มีชื่อเครืออยู่เต็มไปหมด ด่านชื่อเครือจึงไม่มีทางกรองออก ต้องตัดที่โดเมน
   "allonline.", "shopat24", "makroclick", "mymakro", "lotuss.com", "7eleven.co.th",
+  // 🛒 ซูเปอร์มาร์เก็ต/ห้างออนไลน์ — หน้าสินค้ามีชื่อแบรนด์ CP เต็มไปหมด (สินค้าของเครือวางขายอยู่)
+  // เจ้าของส่งภาพมา 8 ก.ย. 2026: "CP Ready to Cook Chicken Nuggets Classic 200 g. - Big C Online"
+  // ⚠️ ด่านชื่อเครือกรองออกไม่ได้เลย เพราะชื่อเครืออยู่ในชื่อสินค้าจริงๆ — ต้องตัดที่โดเมน
+  "bigc.co.th", "bigc.com", "tops.co.th", "gourmetmarket", "foodland.co.th", "villamarket",
+  "central.co.th", "robinson.co.th", "jd.co.th", "konvy", "shopat.", "ofm.co.th", "officemate",
 ];
+
+/* 📦 **พาดหัวที่ลงท้ายด้วยขนาด/น้ำหนักบรรจุ = ชื่อสินค้า ไม่ใช่พาดหัวข่าว**
+ *
+ * ตาข่ายกันร้านที่ยังไม่อยู่ใน SHOP_HOSTS — "… Classic **200 g.** - Big C Online"
+ * ⚠️ **ต้องอยู่ท้ายพาดหัว** (ก่อนตัวคั่น ` - ชื่อเว็บ` หรือจบเลย) เท่านั้น
+ *    หน่วยที่โผล่กลางประโยคเป็นข่าวจริงได้ ("จับยาบ้า 200 กก. ที่ชายแดน")
+ * 🚫 **รับเฉพาะหน่วยแบบละติน** (`g` `ml` `kg` `l`) ที่ร้านค้าใช้เขียนบนกล่อง
+ *    ไม่รับ "กรัม/กก./ลิตร" ภาษาไทย เพราะข่าวจริงเขียนแบบนั้นบ่อยมาก
+ */
+export const PRODUCT_SIZE_RE =
+  /\d+(?:\.\d+)?\s*(?:g|ml|kg|l)\.?\s*(?:[-–|]\s*[^-–|]{1,40})?\s*$/i;
 
 // หน้า "ข้อมูล" ที่ไม่ใช่ข่าว — ตารางค่าฝุ่น/อากาศรายเมือง อัปเดตทุกชั่วโมงและมีทุกเมืองบนโลก
 // (เจอจริง 13 ส.ค. 2026: iqair.com หน้าเมือง "Bieber" ในแคลิฟอร์เนีย หลุดเข้าคอลัมน์ PM2.5)
@@ -269,6 +285,7 @@ export function noiseReason(it, title, src) {
   if (host && STREAM_HOSTS.some((h) => host.includes(h))) return "stream";
   if (host && DATAPAGE_HOSTS.some((h) => host.includes(h))) return "datapage";
   if (SHOP_RE.test(text)) return "shopping";
+  if (PRODUCT_SIZE_RE.test(title)) return "shopping"; // พาดหัวลงท้ายด้วยขนาดบรรจุ = ชื่อสินค้า
   if (host && JOB_HOSTS.some((h) => host.includes(h))) return "job";
   if (JOB_RE.test(text)) return "job";
   if (host && PROP_HOSTS.some((h) => host.includes(h))) return "property";
