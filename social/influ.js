@@ -44,6 +44,7 @@
        ทีมเปิดดูยอดร่วมกัน ปุ่มลบที่โผล่ตลอดเวลาคือความเสี่ยงที่ไม่ได้แลกกับอะไรเลย */
     edit: false,
     moChart: false,        // จอแคบ: กราฟรายเดือนซ่อนไว้หลังปุ่ม "ดูรายเดือน"
+    openRow: "",           // จอแคบ: แถวที่กางดูตัวเลขที่เหลืออยู่ (ทีละแถว)
   };
 
   /* ── ของ 2 ชนิดในรายการเดียว ────────────────────────────────────
@@ -55,6 +56,19 @@
   /* ชื่อสำนักข่าว — ยืมตารางกลางของ /archives/ มาใช้ (`archives/outlets.config.js`)
      🚫 ห้ามก๊อปรายชื่อมาไว้ที่นี่ — แก้ที่เดียวต้องมีผลทุกหน้า (กฎเดียวกับ noise.js)
      ⚠️ ไม่มีในตาราง = แสดงโดเมนตามเดิม ไม่ซ่อน ไม่ยุบมั่ว */
+  /* 🔴 รูปปกเสิร์ฟผ่านเซิร์ฟเวอร์เรา ไม่ให้เบราว์เซอร์ไปโหลดตรง (รีวิว 8 ก.ย. 2026 ข้อ 8)
+     · CDN ของ TikTok/FB/IG บล็อกตาม Referer — เซิร์ฟเวอร์ไปโหลดแทนจึงไม่โดน
+     · และ cache ไว้ 30 วัน พอลิงก์เซ็นชื่อของต้นทางหมดอายุ รูปยังเสิร์ฟได้ต่ออีกพักใหญ่
+     ⚠️ YouTube ไม่ต้องผ่าน — ลิงก์ไม่หมดอายุและไม่บล็อก hotlink ผ่านไปก็เพิ่มงานเปล่าๆ
+     ⚠️ ลิงก์ที่ไม่ใช่ https ปล่อยไว้ตามเดิม ฝั่งเซิร์ฟเวอร์ปฏิเสธเองอยู่แล้ว */
+  function imgSrc(p) {
+    var u = p.thumb || "";
+    if (!u) return "";
+    if (/^https:\/\/[^/]*(ytimg|ggpht)\.com\//i.test(u)) return u;
+    if (!/^https:\/\//i.test(u)) return u;
+    return "/social/api/img?u=" + encodeURIComponent(u);
+  }
+
   function outletOf(p) {
     var h = p.host || "";
     if (!h) { try { h = new URL(p.url).hostname.replace(/^www\./i, "").toLowerCase(); } catch (e) { h = ""; } }
@@ -462,11 +476,11 @@
     Object.keys(P_LABEL).forEach(function (k) { cnt[k] = 0; });
     socialPosts().forEach(function (p) { if (cnt[p.platform] != null) cnt[p.platform]++; });
     h += '<div class="panel"><div class="influbar">' +
-      '<div class="chips">' + ["all"].concat(Object.keys(P_LABEL)).map(function (k) {
+      '<div class="fchips">' + ["all"].concat(Object.keys(P_LABEL)).map(function (k) {
         if (k !== "all" && !cnt[k]) return "";      // ไม่โชว์ chip ของแพลตฟอร์มที่ไม่มีโพสต์เลย
-        return '<button type="button" class="chip' + (state.fPlatform === k ? " on" : "") +
+        return '<button type="button" class="fchip' + (state.fPlatform === k ? " on" : "") +
           '" data-influchip="' + k + '">' + (k === "all" ? "ทั้งหมด" : esc(P_LABEL[k])) +
-          ' <span class="chip-n">' + cnt[k] + "</span></button>";
+          ' <span class="fchip-n">' + cnt[k] + "</span></button>";
       }).join("") + "</div>" +
       '<input type="search" id="influ-q" class="pp-dt influq" data-influ="q" placeholder="ค้นหาหัวข้อหรือชื่อช่อง" value="' + esc(state.q) + '">' +
       "</div>";
@@ -497,7 +511,9 @@
     var h = '<h3 class="gsec"><span class="pdot" style="background:' + P_COLOR[g.plats[0]] + '"></span>' +
       esc(g.label) + ' <span class="sub">' + list.length + " โพสต์</span></h3>" +
       (g.note ? '<p class="gnote">' + esc(g.note) + "</p>" : "") +
-      '<div class="tblwrap"><table class="tbl perf"><thead><tr><th>โพสต์</th>' +
+      /* ⚠️ `influtbl` เป็นคลาสเฉพาะแท็บนี้ — กฎมือถือ (ตาราง→การ์ด) ต้องไม่หลุดไปโดน
+         ตารางของแท็บ YouTube/TikTok/Facebook ที่ใช้ `.tbl.perf` ร่วมกันอยู่ */
+      '<div class="tblwrap"><table class="tbl perf influtbl"><thead><tr><th>โพสต์</th>' +
       cols.map(function (c) {
         var on = state.sort === c.key;
         return '<th class="num srt' + (on ? " on" : "") + '"><button type="button" class="srtb" data-influsort="' +
@@ -505,14 +521,15 @@
       }).join("") + "<th></th></tr></thead><tbody>";
 
     list.forEach(function (p) {
-      h += '<tr data-rowid="' + esc(p.id) + '"><th scope="row"><div class="rowhead influrow">' +
+      h += '<tr data-rowid="' + esc(p.id) + '"' + (state.openRow === p.id ? ' class="open"' : "") +
+        '><th scope="row"><div class="rowhead influrow">' +
         /* 🔴 รูปไม่ขึ้นมีได้ 2 สาเหตุ ซึ่ง **ต้องแยกให้ออก** (เจ้าของถาม 8 ก.ย. 2026)
              ① ต้นทางไม่ได้ส่งลิงก์รูปมาเลย  ② ส่งมาแต่โหลดไม่ขึ้น (ลิงก์หมดอายุ/ถูกบล็อก)
            ของเดิมทั้ง 2 กรณีขึ้นเป็นกล่องเปล่าเหมือนกันเป๊ะ = ไล่ต่อไม่ได้ ต้องเดาเอา
            ⚠️ referrerpolicy="no-referrer" จำเป็น — CDN ของ TikTok/Facebook/Instagram
               บล็อกรูปตาม Referer (hotlink) ถ้าส่งชื่อโดเมนเราไป มันตอบ 403 ทันที */
         (p.thumb
-          ? '<img class="influ-th" src="' + esc(p.thumb) + '" alt="" referrerpolicy="no-referrer">'
+          ? '<img class="influ-th" src="' + esc(imgSrc(p)) + '" alt="" referrerpolicy="no-referrer">'
           : '<span class="influ-th ph" title="ต้นทางไม่ได้ส่งลิงก์รูปปกมา — กด 🔄 อัปเดตยอดเพื่อลองดึงใหม่"></span>') +
         '<div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
         esc(p.title || p.note || p.url) + '">' +
@@ -542,11 +559,21 @@
         var why = fishy ? "ต้นทางส่ง 0 มาทั้งที่โพสต์นี้มีคนกดไลก์/คอมเมนต์ — ยอดนี้เชื่อไม่ได้"
           : v == null ? c.na
           : (w && !w.exact ? "ต้นทางไม่บอกวันที่โพสต์ — นี่คือวันที่เพิ่มลิงก์เข้ารายการ" : "");
-        h += '<td class="num' + (c.strong ? " strong" : "") + (v == null || fishy || (w && !w.exact) ? " na" : "") + '"' +
+        /* 🔴 มือถือไม่มีหัวตาราง (รีวิว 8 ก.ย. 2026 ข้อ 7: "มือถือไม่ใช้ตาราง")
+           เซลล์จึงต้องพกชื่อคอลัมน์ไปเอง ไม่งั้นเห็นเลขลอยๆ แล้วไม่รู้ว่าเลขอะไร
+           · `mo` = 3 ตัวที่โชว์ตลอดบนมือถือ · ที่เหลือซ่อนไว้ใต้ปุ่มขยาย */
+        var moCol = c.key === "views" || c.key === "eng" || c.key === "er";
+        h += '<td class="num' + (c.strong ? " strong" : "") + (moCol ? " mo" : "") +
+          (v == null || fishy || (w && !w.exact) ? " na" : "") + '" data-l="' + esc(c.label) + '"' +
           (why ? ' title="' + esc(why) + '"' : "") + ">" + esc(txt) + (fishy ? " ⚠️" : "") + "</td>";
       });
 
-      h += '<td class="num">' + delBtn(p.id) + "</td></tr>";
+      /* ปุ่มขยายมีเฉพาะจอแคบ (CSS คุม) — เดสก์ท็อปเห็นทุกคอลัมน์อยู่แล้ว
+         ⚠️ ห้ามโผล่บนเดสก์ท็อป ไม่งั้นเป็นปุ่มที่กดแล้วไม่มีอะไรเปลี่ยน */
+      h += '<td class="num">' + delBtn(p.id) +
+        '<button type="button" class="btn moex" data-influex="' + esc(p.id) + '" ' +
+        'aria-expanded="' + (state.openRow === p.id ? "true" : "false") + '" ' +
+        'aria-label="ดูตัวเลขที่เหลือ">' + (state.openRow === p.id ? "▲" : "▼") + "</button></td></tr>";
     });
 
     /* 🔴 แถวรวมท้ายตาราง (เจ้าของสั่ง 8 ก.ย. 2026: "และมีค่ารวม")
@@ -568,7 +595,9 @@
     cols.forEach(function (c) {
       var v = c.key === "er" ? totalEr : c.key === "date" ? null : sum[c.key];
       var txt = c.key === "date" ? "" : v == null ? "—" : c.fmt === "pct" ? pct(v) : num(v);
-      h += '<td class="num' + (c.strong ? " strong" : "") + (v == null && c.key !== "date" ? " na" : "") + '">' + esc(txt) + "</td>";
+      var moCol = c.key === "views" || c.key === "eng" || c.key === "er";
+      h += '<td class="num' + (c.strong ? " strong" : "") + (moCol ? " mo" : "") +
+        (v == null && c.key !== "date" ? " na" : "") + '" data-l="' + esc(c.label) + '">' + esc(txt) + "</td>";
     });
     return h + "<td></td></tr></tfoot></table></div>";
   }
@@ -621,7 +650,7 @@
         "<div>ลองล้างตัวกรองหรือคำค้น</div></div></div></div>";
     }
 
-    h += '<div class="tblwrap"><table class="tbl perf"><thead><tr><th>ข่าว</th>' +
+    h += '<div class="tblwrap"><table class="tbl perf influtbl newstbl"><thead><tr><th>ข่าว</th>' +
       '<th>สำนักข่าว</th><th class="num">เดือน</th><th></th></tr></thead><tbody>';
     list.forEach(function (p) {
       var m = monthOf(p);
@@ -633,10 +662,10 @@
       h += '<tr><th scope="row"><div class="influ-m"><a class="' + (raw ? "nolabel" : "") +
         '" href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' + esc(raw ? p.url : nm) + '">' +
         esc(nm) + ' <span class="ext">↗</span></a></div></th>' +
-        "<td>" + esc(outletOf(p)) + "</td>" +
+        '<td data-l="สำนักข่าว">' + esc(outletOf(p)) + "</td>" +
         /* ~ = ไม่รู้วันที่เผยแพร่ ใช้วันที่เพิ่มเข้ารายการแทน — ต้องบอก ไม่ใช่แสดงเหมือนของจริง */
         '<td class="num' + (m && !m.exact ? " na" : "") + '"' +
-        (m && !m.exact ? ' title="ต้นทางไม่บอกวันที่เผยแพร่ — นี่คือเดือนที่เพิ่มลิงก์เข้ารายการ"' : "") + ">" +
+        (m && !m.exact ? ' title="ต้นทางไม่บอกวันที่เผยแพร่ — นี่คือเดือนที่เพิ่มลิงก์เข้ารายการ"' : "") + ' data-l="เดือน">' +
         (m ? (m.exact ? "" : "~") + esc(monthLabel(m.m)) : "—") + "</td>" +
         '<td class="num">' + delBtn(p.id) + "</td></tr>";
     });
@@ -774,11 +803,16 @@
      ⚠️ ผูกที่ document ครั้งเดียว ไม่ผูกใหม่ทุกครั้งที่วาด —
         draw() สร้าง innerHTML ใหม่ทั้งก้อน ตัวที่ผูกกับ element เดิมจะหลุดหมด */
   function onClick(e) {
-    var t = e.target.closest("[data-influ],[data-influsort],[data-infludel],[data-influask],[data-influchip],[data-influtop]");
+    var t = e.target.closest("[data-influ],[data-influsort],[data-infludel],[data-influask],[data-influchip],[data-influtop],[data-influex]");
     /* กดที่อื่นบนหน้า = เลิกถามยืนยันการลบ (เหมือนเมนูที่ปิดตัวเองเมื่อกดข้างนอก) */
     if (!t) { if (state.delId) { state.delId = ""; draw(); } return; }
 
     if (t.dataset.influchip) { state.fPlatform = t.dataset.influchip; draw(); return; }
+    // กางทีละแถว — กางค้างหลายแถวบนมือถือแล้วเลื่อนหาของยากกว่าเดิม
+    if (t.dataset.influex) {
+      state.openRow = state.openRow === t.dataset.influex ? "" : t.dataset.influex;
+      draw(); return;
+    }
     /* กด "โพสต์เด่น" แล้วเลื่อนไปที่แถวนั้นเลย ไม่ต้องไปไล่หาเองในตาราง (รีวิวข้อ 3) */
     if (t.dataset.influtop) {
       if (state.fPlatform !== "all" || state.q) { state.fPlatform = "all"; state.q = ""; draw(); }

@@ -2929,7 +2929,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
            เป็นไปไม่ได้ — ต้องติดป้ายว่าเชื่อไม่ได้ ไม่ใช่โชว์ 0 เฉยๆ */
         { id: "a3", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@y/video/9",
           account: "@y", title: "คลิปที่ต้นทางส่งยอดวิวมาเป็นศูนย์", note: "", host: "tiktok.com",
-          thumb: "/social/__ลิงก์รูปหมดอายุ__.jpg",
+          thumb: "https://p16-sign.tiktokcdn.com/obj/ลิงก์หมดอายุ.jpeg",
           publishedAt: thisM(4), addedAt: now,
           stats: { views: 0, likes: 287, comments: 2, shares: 0 }, err: "",
           warn: { miss: [], keys: ["digg_count", "comment_count", "share_count"] } },
@@ -3186,7 +3186,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(!(await pg.$('.influbar [data-influ="refresh"]')), "ปุ่มอัปเดตยอดไม่อยู่ในแถบ filter แล้ว");
   ok(!!(await pg.$('.ebar [data-influ="refresh"]')), "ย้ายไปอยู่แถบหัวแล้ว");
   /* 🔴 filter เป็น chip พร้อมจำนวน + ตัด dropdown "ช่อง" ออก (รีวิวข้อ 5) */
-  const chips = await pg.$$eval(".chip", (n) => n.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
+  const chips = await pg.$$eval(".fchip", (n) => n.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
   ok(chips[0] === "ทั้งหมด 4" && chips.some((c) => /TikTok 2/.test(c)),
      `chip บอกจำนวนต่อแพลตฟอร์ม (${chips.join(" | ")})`);
   ok(!(await pg.$('[data-influsel="fAccount"]')), 'ตัด dropdown "ช่อง" ออกแล้ว (ใช้ช่องค้นหาแทน)');
@@ -3195,6 +3195,115 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok((await pg.$$("#view .tbl.perf")).length === 2, "กด chip แล้วเหลือตาราง YouTube + ตารางข่าว");
   await pg.click('[data-influchip="all"]');
   await pg.waitForTimeout(150);
+
+  /* 🔴 รูปปกต้องเสิร์ฟผ่านเซิร์ฟเวอร์เรา (รีวิว 8 ก.ย. 2026 ข้อ 8)
+     · CDN ของ TikTok/FB/IG บล็อกตาม Referer และลิงก์เป็นแบบเซ็นชื่อที่หมดอายุ
+     · ผ่านเซิร์ฟเวอร์เรา = ไม่มี Referer ของโดเมนเราติดไป + cache 30 วันไว้ใช้ต่อหลังลิงก์หมดอายุ
+     ⚠️ YouTube ต้องไม่ผ่าน — ลิงก์ไม่หมดอายุและไม่บล็อก ผ่านไปก็เพิ่มงานเปล่าๆ */
+  const imgApi = await import("../functions/social/api/img.js");
+  ok(imgApi.hostAllowed("https://p16-sign.tiktokcdn.com/obj/x.jpeg"), "ยอมรับรูปจาก CDN ของ TikTok");
+  ok(imgApi.hostAllowed("https://scontent.fbkk.fbcdn.net/v/t39.jpg"), "ยอมรับรูปจาก CDN ของ Facebook");
+  /* 🚫 ไม่ใช่ image proxy แบบเปิด — ต่างจาก /api/sd/img ที่รับ URL อะไรก็ได้
+     ⚠️ ต้องเทียบแบบ "ลงท้ายด้วย .<โดเมน>" ไม่ใช่ includes ไม่งั้น fbcdn.net.evil.com ผ่านได้ */
+  ok(!imgApi.hostAllowed("https://fbcdn.net.evil.com/x.jpg"), "โดเมนที่แค่มีชื่อ CDN อยู่ข้างในไม่ผ่าน");
+  ok(!imgApi.hostAllowed("https://evil.com/x.jpg"), "โดเมนนอกลิสต์ไม่ผ่าน");
+  ok(!imgApi.hostAllowed("http://p16.tiktokcdn.com/x.jpg"), "http เปล่าๆ ไม่ผ่าน");
+
+  /* ⚠️ อ่านจาก HTML ที่โมดูลวาดออกมา ไม่ใช่จาก DOM — รูปที่โหลดไม่ขึ้นถูกสลับเป็นกล่องไปแล้ว
+     ตอนที่เทสต์มาถึงบรรทัดนี้ ถ้าอ่าน DOM จะไม่เหลือ <img> ให้ตรวจเลย */
+  const drawn = await pg.evaluate(() => window.SOCIAL_INFLU.render());
+  ok(/src="\/social\/api\/img\?u=https%3A%2F%2Fp16-sign\.tiktokcdn\.com/.test(drawn),
+     "รูปของ TikTok/FB วิ่งผ่านเซิร์ฟเวอร์เรา");
+  ok(!/src="\/social\/api\/img\?u=data%3A/.test(drawn), "รูปที่ฝังมากับหน้าไม่ต้องวิ่งผ่านเซิร์ฟเวอร์");
+
+  /* 🔴 มือถือไม่ใช้ตาราง — ทุกแถวกลายเป็นการ์ด (รีวิว 8 ก.ย. 2026 ข้อ 3 + 7)
+     ⚠️ วัดตำแหน่งจริงบนจอ 390px ไม่ใช่ดูจาก CSS — ของที่พังตอนวัดจริงมี 3 อย่างที่มองจาก CSS ไม่เห็น */
+  const mo = await browser.newPage({ viewport: { width: 390, height: 820 } });
+  const moErrs = [];
+  mo.on("pageerror", (e) => moErrs.push(String(e)));
+  await mo.goto(BASE + "/social/?mock=1", { waitUntil: "load" });
+  await mo.route("**/social/api/influ**", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fixture) }));
+  await mo.click('.tab[data-tab="influ"]');
+  await mo.waitForSelector("#view .influtbl");
+  await mo.waitForTimeout(200);
+
+  const moFit = await mo.evaluate(() => {
+    const t = document.querySelector("#view .influtbl");
+    const wrap = t.closest(".tblwrap");
+    return { tbl: Math.round(t.getBoundingClientRect().width),
+             wrap: Math.round(wrap.getBoundingClientRect().width),
+             page: document.scrollingElement.scrollWidth, win: innerWidth };
+  });
+  /* 🔴 `.tbl { min-width:420px }` อยู่ท้ายไฟล์ ความจำเพาะเท่ากันจึงชนะด้วยลำดับ
+     ถ้าเขียนกฎมือถือไม่ระวัง การ์ดจะกว้าง 420px ในกรอบ 332px = ยังต้องเลื่อนอยู่ดี */
+  ok(moFit.tbl <= moFit.wrap + 1, `การ์ดกว้างไม่เกินกรอบ ไม่ต้องเลื่อนซ้ายขวา (${moFit.tbl} / ${moFit.wrap})`);
+  ok(moFit.page === moFit.win, `หน้าไม่ล้นจอ (${moFit.page} / ${moFit.win})`);
+  ok(!(await mo.$("#view .influtbl thead:not([hidden])")) ||
+     (await mo.$eval("#view .influtbl thead", (e) => getComputedStyle(e).display)) === "none",
+     "ไม่มีหัวตารางบนมือถือ");
+
+  /* ⚠️ เลขลอยๆ ไม่มีป้ายกำกับ = อ่านไม่ออกว่าเลขอะไร (มือถือไม่มีหัวตารางให้ดู) */
+  const moCard = await mo.evaluate(() => {
+    const tr = document.querySelector("#view .influtbl tbody tr");
+    const vis = [...tr.querySelectorAll("td")].filter((t) => getComputedStyle(t).display !== "none");
+    return { shown: vis.map((t) => t.dataset.l || "(ปุ่ม)"),
+             label: getComputedStyle(vis[0], "::before").content,
+             btn: (() => { const b = tr.querySelector(".moex").getBoundingClientRect();
+                           return Math.round(b.width) + "x" + Math.round(b.height); })() };
+  });
+  ok(moCard.shown.join(",") === "Views,Engagement,ER,(ปุ่ม)",
+     `การ์ดโชว์ 3 ตัวหลัก ที่เหลือพับไว้ (${moCard.shown.join(" ")})`);
+  ok(/Views/.test(moCard.label), `เลขมีป้ายชื่อคอลัมน์กำกับ (${moCard.label})`);
+  // ปุ่มแตะขั้นต่ำ 44px ตามเกณฑ์ของรีวิว
+  ok(moCard.btn === "44x44", `ปุ่มขยายแตะได้ตามเกณฑ์ 44px (${moCard.btn})`);
+
+  await mo.click("#view .influtbl .moex");
+  await mo.waitForTimeout(150);
+  /* ⚠️ ต้องเรียงตาม **ตำแหน่งจริงบนจอ** ไม่ใช่ลำดับใน DOM —
+     CSS `order` ย้ายที่ให้ 3 ตัวหลักมาก่อน ทั้งที่ "วันที่โพสต์" เป็นคอลัมน์แรกใน DOM
+     (ตารางแรกคือ YouTube ซึ่งตัดคอลัมน์ Shares ทิ้ง จึงไม่มีในลิสต์) */
+  const moOpen = await mo.evaluate(() => {
+    const tr = document.querySelector("#view .influtbl tbody tr");
+    return [...tr.querySelectorAll("td")]
+      .filter((t) => getComputedStyle(t).display !== "none" && !t.querySelector(".moex"))
+      .map((t) => { const r = t.getBoundingClientRect(); return { l: t.dataset.l, y: Math.round(r.top), x: Math.round(r.left) }; })
+      .sort((a, b) => a.y - b.y || a.x - b.x).map((t) => t.l);
+  });
+  ok(moOpen.join(",") === "Views,Engagement,ER,วันที่โพสต์,Likes,Comments",
+     `กางแล้วเห็นครบ และ 3 ตัวหลักยังอยู่แถวบน (${moOpen.join(" ")})`);
+
+  /* 🔴 ตัวหนังสือบนมือถือห้ามต่ำกว่าเกณฑ์ (รีวิวข้อ 7 · ข้อ 9: label 12px ห้ามต่ำกว่า 11px)
+     ⚠️ นับเฉพาะที่มองเห็นจริง — หัวตารางที่ถูกซ่อนไม่นับ */
+  const tiny = await mo.evaluate(() => {
+    const out = [];
+    document.querySelectorAll("#view *").forEach((e) => {
+      if (!e.getClientRects().length) return;
+      if (![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) return;
+      const fs = parseFloat(getComputedStyle(e).fontSize);
+      if (fs < 12) out.push((e.className || e.tagName) + " " + fs + "px");
+    });
+    return out;
+  });
+  ok(tiny.length === 0, `ไม่มีตัวหนังสือต่ำกว่า 12px (${tiny.slice(0, 3).join(" · ") || "ผ่านหมด"})`);
+
+  /* ⚠️ ชื่อโพสต์ต้องตัดบรรทัดได้จริง — `.tbl.perf th[scope="row"] { white-space:nowrap }`
+     ตกทอดลงไปถึงตัวลิงก์ ทำให้เหลือบรรทัดเดียวแล้วโดนเฉือน (วัดจริง: กล่อง 328 ข้อความ 551) */
+  const wrapChk = await mo.evaluate(() => {
+    const a = document.querySelector("#view .influtbl .influ-m a");
+    return { ws: getComputedStyle(a).whiteSpace, over: a.scrollWidth > a.getBoundingClientRect().width + 1 };
+  });
+  ok(wrapChk.ws !== "nowrap" && !wrapChk.over,
+     `ชื่อโพสต์ตัดบรรทัดได้ ไม่ถูกเฉือนออกข้าง (white-space: ${wrapChk.ws})`);
+
+  /* 🔴 มือถือไม่มีโหมดแก้ไขเลย — กันไว้ที่ CSS ด้วย ไม่พึ่ง state (ย่อจอแล้วสถานะยังค้าง) */
+  ok((await mo.$eval(".eswitch", (e) => getComputedStyle(e).display)) === "none",
+     "มือถือไม่มีสวิตช์โหมดแก้ไข");
+  ok((await mo.$eval(".mpanel", (e) => getComputedStyle(e).display)) === "none" &&
+     (await mo.$eval(".mochart", (e) => getComputedStyle(e).display)) !== "none",
+     "กราฟรายเดือนพับไว้หลังปุ่ม \"ดูรายเดือน\"");
+  ok(moErrs.length === 0, `ไม่มี JS error บนมือถือ (${moErrs.join(" · ")})`);
+  await mo.close();
 
   /* 🔴 แท็บนี้ไม่ได้ใช้ช่วงเวลาเลย → ต้องซ่อนตัวเลือกช่วงเวลาและชิพเลือกช่อง
      (เจ้าของทัก 8 ก.ย. 2026: "หน้านี้ timeline ไม่มีผลถูกไหม ? ซ่อนใน tab นี้ไว้เลยก็ได้")

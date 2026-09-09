@@ -649,17 +649,20 @@ tr.flash > * { animation:fl 1.6s ease-out; }
 
 /* ── chip กรองแพลตฟอร์ม (รีวิวข้อ 5) ─────────────────────────────────
    จอแคบเลื่อนซ้าย-ขวาได้ ไม่ตัดบรรทัดจนดันตารางลง */
-.chips { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; flex:1; min-width:0; }
-.chips::-webkit-scrollbar { display:none; }
-.chip {
+/* 🚫 ห้ามใช้ชื่อ `.chip` / `.chips` — **มีอยู่แล้วในหน้านี้** (ชิพเลือกช่อง และป้ายเล็กท้ายไฟล์)
+   ตั้งชื่อซ้ำแล้วของเดิมทับกันเงียบๆ: ป้ายเล็กที่บรรทัด ~913 ทำให้ chip ตัวนี้เหลือ 10.9px
+   และ `.chips` ของเราไปเติม overflow/flex ให้ชิพเลือกช่องของแท็บอื่นด้วย (เจอตอนวัดจริง) */
+.fchips { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; flex:1; min-width:0; }
+.fchips::-webkit-scrollbar { display:none; }
+.fchip {
   flex:none; border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
-  border-radius:999px; padding:5px 12px; font:inherit; font-size:.78rem; cursor:pointer;
+  border-radius:999px; padding:6px 12px; font:inherit; font-size:.8rem; cursor:pointer;
   display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
 }
-.chip:hover { background:var(--surface-2); }
-.chip.on { border-color:var(--accent); color:var(--accent); font-weight:500; }
-.chip-n { font-variant-numeric:tabular-nums; color:var(--muted); font-size:.72rem; }
-.chip.on .chip-n { color:var(--accent); }
+.fchip:hover { background:var(--surface-2); }
+.fchip.on { border-color:var(--accent); color:var(--accent); font-weight:500; }
+.fchip-n { font-variant-numeric:tabular-nums; color:var(--muted); font-size:.75rem; }
+.fchip.on .fchip-n { color:var(--accent); }
 
 /* หัวข้อข่าวที่ดึงไม่ได้ — จางกว่าปกติ ไม่ใช่ URL ดิบ */
 .influ-m a.nolabel { color:var(--muted); font-weight:400; }
@@ -736,12 +739,104 @@ tr.flash > * { animation:fl 1.6s ease-out; }
 .msub { color:var(--muted); font-size:.7rem; }
 .meng { text-align:right; font-size:.82rem; font-weight:600; font-variant-numeric:tabular-nums; }
 
+/* ปุ่มขยายแถว — มีเฉพาะจอแคบ (กฎอยู่ใน @media ข้างล่าง) */
+.moex { display:none; }
+
 @media (max-width:700px) {
   /* 🔴 มือถือไม่มีโหมดแก้ไขเลย (รีวิวข้อ 1) — ซ่อนทั้งสวิตช์และของที่มันเปิด
      กันพลาดไว้ที่ CSS ด้วย ไม่ใช่พึ่ง state อย่างเดียว (ย่อจอแล้วสถานะยังค้างอยู่) */
   .editsw, .editonly, .xbtn, .delc { display:none !important; }
+
+  /* ── 🔴 มือถือไม่ใช้ตาราง — ทุกแถวกลายเป็นการ์ด (รีวิว 8 ก.ย. 2026 ข้อ 3 + 7) ──
+     ตาราง 8 คอลัมน์บนจอ 390px = ต้องเลื่อนซ้าย-ขวาหาตัวเลขทุกครั้ง
+     ⚠️ ใช้ CSS เปลี่ยนรูป **ตารางเดิม** ไม่ได้วาด DOM ชุดที่สอง —
+        วาด 2 ชุดแล้วต้องแก้ 2 ที่ตลอดไป และ DOM โตเป็นเท่าตัวโดยไม่ได้อะไรเพิ่ม
+     ⚠️ จำกัดด้วย `.influtbl` เท่านั้น — แท็บ YouTube/TikTok/Facebook ใช้ `.tbl.perf`
+        ร่วมกันอยู่ กฎนี้หลุดไปโดนเมื่อไหร่ตารางของแท็บพวกนั้นพังทันที
+
+     หน้าตาการ์ด 1 ใบ:
+       [รูป] หัวข้อ 2 บรรทัด          ▼   ← ปุ่มขยายลอยมุมขวาบน
+             👤 ชื่อโปรไฟล์
+       Views      Engagement    ER
+       88K        263           0.30%
+       ── กางแล้วเห็นเพิ่ม ──
+       วันที่โพสต์  Likes        Shares      Comments
+  */
+  /* ⚠️ ต้องเขียนเป็น `.tbl.influtbl` — กฎ `.tbl { min-width:420px }` อยู่ **ท้ายไฟล์**
+     กว่ากฎนี้ ความจำเพาะเท่ากันเลยแพ้ด้วยลำดับ แล้วการ์ดจะกว้าง 420px ในกรอบ 332px
+     (วัดจริงตอนทำ — เห็นแค่ CSS ไม่มีทางรู้) */
+  .tbl.influtbl { min-width:0; font-size:.82rem; }       /* ≈13px ตามเกณฑ์ของรีวิว */
+  .influtbl thead { display:none; }                      /* ป้ายชื่อคอลัมน์ย้ายไปอยู่ในเซลล์แล้ว */
+  .influtbl, .influtbl tbody, .influtbl tfoot,
+  .influtbl tr, .influtbl th, .influtbl td { display:block; }
+
+  .influtbl tbody tr {
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:7px 10px;
+    border:1px solid var(--border); border-radius:12px;
+    padding:10px 56px 10px 12px;      /* เว้นขวาไว้ให้ปุ่มขยายที่ลอยอยู่ */
+    margin-bottom:8px; position:relative;
+  }
+  .influtbl tbody th[scope="row"], .influtbl tbody td { border:0; padding:0; text-align:left; }
+  /* 🔴 `.tbl.perf th[scope="row"] { white-space:nowrap }` **ตกทอดลงไปถึงตัวลิงก์**
+     ทำให้ชื่อโพสต์ไม่ตัดบรรทัดเลย เหลือบรรทัดเดียวแล้วโดนเฉือนทิ้ง (วัดจริง: กล่องกว้าง 328
+     แต่ข้อความยาว 551) · เดสก์ท็อปตั้งใจให้ 1 บรรทัด แต่**มือถือรีวิวสั่งไว้ 2 บรรทัด** */
+  .tbl.influtbl tbody th[scope="row"] { white-space:normal; }
+  /* ⚠️ `order` คุมลำดับการวางของ grid ด้วย — ต้องบังคับให้ 3 ตัวหลักมาก่อนเสมอ
+     ไม่งั้น "วันที่โพสต์" (คอลัมน์แรกในตาราง) จะแทรกขึ้นมาก่อน Views ตอนกางแถว */
+  .influtbl tbody th[scope="row"] { grid-column:1 / -1; order:0; }
+  .influtbl tbody td.mo { order:1; }
+  .influtbl tbody td:not(.mo) { order:2; }
+
+  /* ป้ายชื่อคอลัมน์มาจาก data-l ของเซลล์เอง */
+  .influtbl tbody td::before, .influtbl tfoot td::before {
+    content:attr(data-l); display:block; line-height:1.3;
+    color:var(--muted); font-size:.75rem; font-weight:400;   /* 12px — เกณฑ์ของ label */
+  }
+  .influtbl tbody td { font-variant-numeric:tabular-nums; }
+
+  /* คอลัมน์ที่เหลือซ่อนไว้ใต้ปุ่มขยาย */
+  .influtbl tbody td:not(.mo):not(:last-child) { display:none; }
+  .influtbl tbody tr.open td:not(.mo):not(:last-child) { display:block; }
+
+  /* ปุ่มขยายลอยมุมขวาบนของการ์ด · แตะได้ ≥44px ตามเกณฑ์ของรีวิว */
+  .influtbl tbody td:last-child { position:absolute; top:8px; right:8px; }
+  .influtbl tbody td:last-child::before { content:none; }
+  .moex {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:44px; min-height:44px; border-radius:10px; padding:0; font-size:.8rem;
+  }
+
+  /* แถวรวม — เป็นแถบเดียวท้ายรายการ ไม่ใช่การ์ดอีกใบ */
+  .influtbl tfoot tr {
+    display:flex; flex-wrap:wrap; gap:2px 16px; align-items:baseline;
+    border-top:1px solid var(--border); padding:9px 2px 0; font-weight:500;
+  }
+  .influtbl tfoot th, .influtbl tfoot td { border:0; padding:0; text-align:left; }
+  .influtbl tfoot td:not(.mo) { display:none; }
+
+  /* ส่วนข่าว: ลิสต์ธรรมดา หัวข้อ + สำนัก · เดือน (รีวิวข้อ 7) */
+  .newstbl tbody tr {
+    display:block; padding:9px 2px; border:0; border-bottom:1px solid var(--border);
+    border-radius:0; margin:0;
+  }
+  .newstbl tbody td { display:inline; font-size:.75rem; color:var(--muted); }
+  .newstbl tbody td::before { display:inline; }
+  .newstbl tbody td[data-l="สำนักข่าว"]::before { content:""; }
+  .newstbl tbody td[data-l="เดือน"]::before { content:" · "; }
+  .newstbl tbody td:last-child { display:none; }
+  .newstbl .influ-m { max-width:none; }
+  /* บรรทัดรองในการ์ด — ของเดิม 11.5px ต่ำกว่าเกณฑ์ 13px ของรีวิว (วัดจริงบนจอ 390px) */
+  .influtbl .influ-s { font-size:.81rem; }
+  .influtbl .influ-w, .influtbl .influ-e { font-size:.75rem; }
+
   .kgrid { grid-template-columns:repeat(2,1fr); }
   .kc-v { font-size:1.35rem; }
+  /* ป้ายในการ์ด KPI เดิม 11.8/11.2px — ต่ำกว่าเกณฑ์ label 12px ของรีวิว (วัดจริงบนจอ 390px) */
+  .kc-l, .kc-sub, .xsbtn { font-size:.75rem; }
+  /* กราฟรายเดือนบนมือถือก็ต่ำกว่าเกณฑ์เหมือนกัน (วัดจริง: 10.7–11.8px) */
+  .mlg, .mhead .sub, .blab, .beng, .gnote { font-size:.75rem; }
+  .influ-w code { font-size:1em; }        /* .95em ของ 12px = 11.4px ต่ำกว่าเกณฑ์ */
+  .tipi { font-size:.8rem; }
   /* กราฟรายเดือนซ่อนไว้หลังปุ่ม — ของที่ต้องเลื่อนผ่านทุกครั้งคือของที่กีดขวาง */
   .mochart { display:inline-flex; margin-bottom:12px; }
   .mpanel { display:none; }
