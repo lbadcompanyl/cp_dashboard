@@ -721,24 +721,6 @@ tr.flash > * { animation:fl 1.6s ease-out; }
 .xbtn { padding:4px 9px; font-size:.78rem; color:var(--muted); }
 .xbtn:hover { color:var(--bad); border-color:var(--bad); }
 
-/* ── กราฟรายเดือนของแท็บ Earned media ──────────────────────────────
-   ⚠️ ทำเป็น **แถวแนวนอน** ไม่ใช่แท่งตั้ง — จอแคบแท่งตั้ง 12 เดือนจะบางจนอ่านชื่อเดือนไม่ออก
-      (บทเรียนเดียวกับตอนเปลี่ยนแท่งซ้อน 100% มาเป็นแท่งแนวนอน) */
-.mchart { display:flex; flex-direction:column; gap:6px; }
-.mrow { display:grid; grid-template-columns:64px 1fr 62px 78px; gap:10px; align-items:center; }
-/* กราฟของ section ข่าวไม่มีคอลัมน์ Engagement (ไม่ได้ดึงยอด) — ห้ามปล่อยช่องว่างค้างไว้ */
-.mchart.noeng .mrow { grid-template-columns:64px 1fr 62px; }
-.mrow.mhead { font-size:.7rem; color:var(--muted); font-weight:600; }
-.mlab { font-size:.78rem; color:var(--muted); white-space:nowrap; }
-.mtrack { display:flex; height:14px; border-radius:7px; overflow:hidden; background:var(--surface-2); }
-.mbar { height:100%; }
-.mbar.s { background:#2563eb; }
-.mbar.n { background:#c2410c; }
-.mcnt { font-size:.8rem; }
-.mcnt b { font-variant-numeric:tabular-nums; }
-.msub { color:var(--muted); font-size:.7rem; }
-.meng { text-align:right; font-size:.82rem; font-weight:600; font-variant-numeric:tabular-nums; }
-
 /* ปุ่มขยายแถว — มีเฉพาะจอแคบ (กฎอยู่ใน @media ข้างล่าง) */
 .moex { display:none; }
 
@@ -849,13 +831,6 @@ tr.flash > * { animation:fl 1.6s ease-out; }
   .influbar [data-influ="refresh"] { margin-left:0; width:100%; justify-content:center; }
   .influ-th { width:48px; height:32px; }
   .influ-m { max-width:190px; }
-  /* จอแคบเอาแท่งขึ้นบรรทัดของตัวเอง ไม่งั้นเหลือความกว้างไม่กี่พิกเซล */
-  .mrow { grid-template-columns:56px 1fr 78px; grid-template-areas:"lab cnt eng" "bar bar bar"; row-gap:4px; }
-  .mchart.noeng .mrow { grid-template-columns:56px 1fr; grid-template-areas:"lab cnt" "bar bar"; }
-  .mlab { grid-area:lab; } .mcnt { grid-area:cnt; } .meng { grid-area:eng; }
-  .mtrack { grid-area:bar; }
-  .mrow.mhead .mtrack { display:none; }
-  .msub { display:block; }
 }
 
 /* ── หัวตารางกดเรียงได้ ────────────────────────────────────────────
