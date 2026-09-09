@@ -3216,6 +3216,63 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
      "รูปของ TikTok/FB วิ่งผ่านเซิร์ฟเวอร์เรา");
   ok(!/src="\/social\/api\/img\?u=data%3A/.test(drawn), "รูปที่ฝังมากับหน้าไม่ต้องวิ่งผ่านเซิร์ฟเวอร์");
 
+  /* ── 🎨 ระบบภาพของแท็บ (รีวิว 8 ก.ย. 2026 ข้อ 9) ──────────────────── */
+  const vs = await pg.evaluate(() => {
+    const g = (sel, prop) => { const e = document.querySelector(sel); return e ? getComputedStyle(e)[prop] : null; };
+    const weights = new Set(), accents = new Set();
+    document.querySelectorAll(".emtab *").forEach((e) => {
+      if (!e.getClientRects().length) return;
+      const cs = getComputedStyle(e);
+      if ([...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) weights.add(cs.fontWeight);
+    });
+    // สีเน้นที่ใช้จริง: chip ที่เลือกอยู่ · แท่งกราฟโพสต์ · จุดสัญลักษณ์ในคำอธิบายกราฟ
+    [".emtab .fchip.on", ".emtab .bbar.bpost", ".emtab .sw-p"].forEach((sel) => {
+      const e = document.querySelector(sel);
+      if (e) accents.add(sel === ".emtab .fchip.on" ? getComputedStyle(e).color : getComputedStyle(e).backgroundColor);
+    });
+    return {
+      weights: [...weights].sort(), accents: [...accents],
+      sec: g(".emtab .sec", "fontSize"), kpi: g(".emtab .kc-v", "fontSize"),
+      tbl: g(".emtab .tbl", "fontSize"), radius: g(".emtab .panel", "borderRadius"),
+      inner: [".emtab .tblwrap", ".emtab .bchart"].map((sel) => g(sel, "borderTopWidth")),
+    };
+  });
+  /* 🔴 น้ำหนักตัวอักษร 2 ระดับเท่านั้น (ปกติ / 500) — ของเดิมมี 600 · 650 · 700 ปนกัน
+     หนาหลายระดับทำให้ไม่รู้ว่าอะไรสำคัญกว่าอะไร */
+  ok(vs.weights.join(",") === "400,500", `น้ำหนักตัวอักษรมี 2 ระดับ (${vs.weights.join(" ")})`);
+  /* 🔴 สีเน้นสีเดียวทั้งแท็บ */
+  ok(vs.accents.length === 1 && vs.accents[0] === "rgb(15, 118, 110)",
+     `สีเน้นเป็นสีเดียวทั้งแท็บ (${vs.accents.join(" ")})`);
+  /* ⚠️ สีเน้นต้องอ่านออกจริง — มิ้นต์สดสวยแต่ตกเกณฑ์ (#10a37f = 3.20:1)
+     สีที่อ่านไม่ออกไม่ใช่ระบบภาพที่ดี */
+  const cr = (() => {
+    const L = (r, g2, b2) => { const c = [r, g2, b2].map((v) => v / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+    const m = vs.accents[0].match(/\d+/g).map(Number);
+    const a = L(m[0], m[1], m[2]), w = L(255, 255, 255);
+    return (Math.max(a, w) + 0.05) / (Math.min(a, w) + 0.05);
+  })();
+  ok(cr >= 4.5, `สีเน้นอ่านออกบนพื้นขาว ${cr.toFixed(2)}:1 (เกณฑ์ 4.5)`);
+  ok(vs.sec === "15px" && vs.kpi === "26px" && vs.tbl === "13px",
+     `ขนาดตัวอักษรตามเกณฑ์ — หัวส่วน ${vs.sec} · KPI ${vs.kpi} · ตาราง ${vs.tbl}`);
+  ok(vs.radius === "12px", `มุมกล่อง 12px (ได้ ${vs.radius})`);
+  /* 🚫 ไม่มีกรอบซ้อนข้างในกล่อง — ตาราง/กราฟอยู่ในกล่องขาวใบเดียว ไม่มีกรอบของตัวเอง */
+  ok(vs.inner.every((w) => w === "0px"), `ไม่มีกรอบซ้อนข้างในกล่อง (${vs.inner.join(" ")})`);
+
+  /* 🔴 ระบบภาพต้องไม่หลุดไปแท็บอื่น — 4 แท็บแรกใช้ `.sec` `.panel` `.tbl` ร่วมกันอยู่
+     ถ้าเผลอไปแก้ที่ระดับไฟล์แทนที่จะผูกกับ `.emtab` หน้าตาแท็บที่รีวิวไม่ได้ดูจะเปลี่ยนตามไปหมด */
+  await tabTo(pg, "YouTube");
+  const other = await pg.evaluate(() => {
+    const g = (sel, p) => { const e = document.querySelector(sel); return e ? getComputedStyle(e)[p] : null; };
+    return { sec: g("#view .sec", "fontSize"), secW: g("#view .sec", "fontWeight"),
+             panel: g("#view .panel", "borderRadius") };
+  });
+  ok(other.sec !== "15px" && other.secW !== "500" && other.panel !== "12px",
+     `แท็บอื่นไม่โดนระบบภาพของแท็บนี้ (หัวส่วน ${other.sec}/${other.secW} · มุมกล่อง ${other.panel})`);
+  await tabTo(pg, "Earned media");
+  await pg.waitForSelector("#view .emtab");
+
   /* 🔴 มือถือไม่ใช้ตาราง — ทุกแถวกลายเป็นการ์ด (รีวิว 8 ก.ย. 2026 ข้อ 3 + 7)
      ⚠️ วัดตำแหน่งจริงบนจอ 390px ไม่ใช่ดูจาก CSS — ของที่พังตอนวัดจริงมี 3 อย่างที่มองจาก CSS ไม่เห็น */
   const mo = await browser.newPage({ viewport: { width: 390, height: 820 } });

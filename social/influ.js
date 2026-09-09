@@ -348,12 +348,18 @@
     }
 
     if (!state.loaded && state.busy === "load") {
-      return h + '<div class="loading"><span class="spin"></span> กำลังโหลดรายการ…</div>' + addBox();
+      return h + '<div class="emtab"><div class="loading"><span class="spin"></span> กำลังโหลดรายการ…</div>' +
+        addBox() + "</div>";
     }
 
     /* ลำดับตามรีวิว 8 ก.ย. 2026: ตอบ "สดแค่ไหน" กับ "อะไรเด่น" ให้ได้ใน 3 วินาที
        → แถบอัปเดต + KPI อยู่บนสุด · กล่องวางลิงก์อยู่ล่างสุดและเฉพาะโหมดแก้ไข */
-    return h + headerBar() + kpiCards() + monthPanel() + socialSection() + newsSection() + addBox();
+    /* 🔴 ห่อทั้งแท็บด้วย `.emtab` — ระบบภาพของรีวิว (สี/ฟอนต์/กรอบ) ผูกไว้กับคลาสนี้เท่านั้น
+       ⚠️ ห้ามไปแก้ `.sec` `.panel` `.tbl` ที่ระดับไฟล์ — 4 แท็บแรกใช้ร่วมกันอยู่
+          แก้ตรงนั้นเมื่อไหร่ หน้าตาของแท็บที่รีวิวไม่ได้ดูจะเปลี่ยนตามไปด้วยทั้งหมด */
+    return h + '<div class="emtab">' +
+      headerBar() + kpiCards() + monthPanel() + socialSection() + newsSection() + addBox() +
+      "</div>";
   }
 
   /* ── กล่องวางลิงก์ (ใช้ร่วมทั้ง 2 section — ระบบแยกให้เองว่าอันไหนเป็นข่าว) ── */

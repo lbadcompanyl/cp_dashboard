@@ -608,6 +608,49 @@ body {
    ไม่งั้นเห็น "—" แล้วแยกไม่ออกว่า "ไม่มีคนดู" กับ "ต้นทางไม่ได้ส่งมา" */
 .influ-w { font-size:.68rem; color:var(--muted); margin-top:4px; line-height:1.45; }
 .influ-w code { font-size:.95em; background:var(--surface-2); padding:0 3px; border-radius:3px; }
+/* ══ ระบบภาพของแท็บ Earned media (รีวิว 8 ก.ย. 2026 ข้อ 9) ═══════════════
+   🔴 ผูกไว้กับ `.emtab` ทั้งหมด — **ห้ามยกไปแก้ที่ `.sec` `.panel` `.tbl` ระดับไฟล์**
+      4 แท็บแรก (ภาพรวม/YouTube/TikTok/Facebook) ใช้คลาสพวกนั้นร่วมกันอยู่
+      แก้ตรงนั้น = เปลี่ยนหน้าตาของแท็บที่รีวิวไม่ได้ดูไปด้วยทั้งหมด
+
+   🎨 สีเน้นสีเดียว = เขียวมิ้นต์ · ใช้เฉพาะโพสต์เด่น · chip ที่เลือก · แท่งกราฟโพสต์
+   ⚠️ **เลือกโทนเข้ม `#0f766e` ไม่ใช่มิ้นต์สด** เพราะวัดคอนทราสต์แล้ว:
+        #10a37f มิ้นต์สด  → 3.20:1 บนพื้นขาว  ❌ ตกเกณฑ์ตัวอักษร (ต้อง 4.5:1)
+        #0d9488 teal-600  → 3.74:1           ❌ และชนสีประจำช่อง TikTok ด้วย
+        #0f766e teal-700  → 5.47:1 บนขาว · 4.84:1 บนการ์ดเทา ✅
+      สีที่อ่านไม่ออกไม่ใช่ระบบภาพที่ดี — เอาที่อ่านได้จริงก่อน */
+.emtab {
+  --accent: #0f766e;                    /* var(--accent) ทุกจุดในแท็บกลายเป็นมิ้นต์เอง */
+  --em-line: #e8ecf3;                   /* เส้นคั่นแถว จางกว่ากรอบกล่อง */
+}
+
+/* ── ตัวหนังสือ: น้ำหนัก 2 ระดับเท่านั้น (ปกติ / 500) ────────────────
+   ของเดิมในแท็บนี้มี 600 · 650 · 700 ปนกัน — หนาหลายระดับทำให้ไม่รู้ว่าอะไรสำคัญกว่าอะไร */
+.emtab b, .emtab strong, .emtab .sec, .emtab .gsec, .emtab .kc-v,
+.emtab .bcnt, .emtab .meng, .emtab .beng, .emtab .fchip.on,
+.emtab .tbl th, .emtab .tbl .strong, .emtab .btn, .emtab .srtb,
+.emtab .influ-m a, .emtab .ext, .emtab .kc-top-t { font-weight: 500; }
+.emtab .sec .sub, .emtab .gsec .sub { font-weight: 400; }
+
+/* ── ขนาด: KPI 24–28 · หัว section 14–16 · ตาราง 13 · label 12 ────── */
+.emtab .sec { font-size: 15px; margin: 16px 0 10px; }     /* ระยะระหว่าง section 12–16px */
+.emtab .gsec { font-size: 14px; }
+.emtab .kc-v { font-size: 26px; }
+.emtab .tbl { font-size: 13px; }
+.emtab .sec .sub, .emtab .gnote, .emtab .addnote, .emtab .kc-l, .emtab .kc-sub,
+.emtab .mhead, .emtab .blab, .emtab .influ-s { font-size: 12px; }
+
+/* ── กรอบและระยะ: กล่องขาวชั้นเดียว กรอบบาง มุม 12px ──────────────
+   🐞 **`0.5px` ทำไม่ได้จริงใน Chromium** — วัดแล้วปัดขึ้นเป็น 1px ทุกความละเอียดจอ
+      (ลอง dpr 1 · 2 · 3 ได้ `1px` ทั้งสามครั้ง ทั้งที่เขียน `.5px` และ media query ก็ตรงแล้ว)
+      รีวิวขอ "กรอบบาง 0.5px" ซึ่งเจตนาคือ **ให้กรอบเบาลง** ไม่ใช่ตัวเลขเป๊ะๆ
+      → ทำด้วย **สีที่อ่อนลง** แทน ได้ผลตาที่ต้องการโดยไม่ต้องพึ่งของที่เบราว์เซอร์ไม่รองรับ */
+.emtab .panel { border-radius: 12px; border: 1px solid var(--em-line); }
+/* คั่นแถวด้วยเส้นบาง ไม่ใช่กรอบ */
+.emtab .tbl th, .emtab .tbl td { border-bottom-color: var(--em-line); }
+/* 🚫 ไม่มีกรอบซ้อนข้างในกล่อง — ตารางกับกราฟอยู่ในกล่องขาวใบเดียว ไม่มีกรอบของตัวเอง */
+.emtab .tblwrap, .emtab .bchart, .emtab .hb { border: 0; }
+
 /* ── แถบหัวของแท็บ Earned media (รีวิว 8 ก.ย. 2026 ข้อ 2) ────────────
    ซ้าย = ข้อมูลสดแค่ไหน · ขวา = ปุ่มที่ลงมือทำอะไรบางอย่าง */
 .ebar {
