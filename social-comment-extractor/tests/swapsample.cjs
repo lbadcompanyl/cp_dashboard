@@ -9,7 +9,7 @@
  *   [4] กดซ้ำต้องเดินหน้า ไม่วนกลับมาใบที่เพิ่งตัด
  *   [5] ถอดความไม่สำเร็จ = **ห้ามเปลี่ยน** ต้องคืนใบเดิม ไม่ใช่ปล่อยช่องว่าง
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 
 /* บวก 4 ใบ (ถูกใจ 9/5/3/1) · ลบ 1 ใบ — ตัวอย่างตอนแรกคือใบถูกใจเยอะสุด 2 ใบ */
 const AUDIT = [
@@ -37,7 +37,7 @@ const BASE = {
 };
 
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let sent = [], paraMode = "ok";

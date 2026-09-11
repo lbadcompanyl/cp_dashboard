@@ -12,7 +12,7 @@
  *
  * [1] และ [2] คือข้อสำคัญที่สุด
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 
 /* 6 ใบ · เอ่ยชื่อ CP จริงๆ แค่ 2 ใบ · บวก 2 กลาง 3 ลบ 1 */
 const AUDIT = [
@@ -33,7 +33,7 @@ const BASE = {
 };
 
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
 

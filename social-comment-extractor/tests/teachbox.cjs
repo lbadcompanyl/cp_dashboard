@@ -6,7 +6,7 @@
  *  [6] ห้ามส่งชื่อ/ลิงก์โพสไปกับ payload
  *  [2] ห้ามส่งอัตโนมัติตอนกดแก้ป้าย — ต้องรอผู้ใช้กดปุ่มเอง
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 
 const RESULT = {
   ok: true, platform: "facebook", target: "overall", analyzed_count: 4, model: "claude-opus-5",
@@ -23,7 +23,7 @@ const RESULT = {
 };
 
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let fbBody = null, fbCalls = 0, fbReply = { ok: true, stored: true, added: 1, skipped: 0, total: 1 };
