@@ -1,10 +1,21 @@
 /* ตรวจ "ตัวเลขบนแถบสรุป" กับ "รายการ audit ข้างล่าง" ว่ามาจากแกนเดียวกัน
    🐞 เจ้าของจับได้เอง 28 ส.ค. 2026: แถบสรุปบอก ลบ 20 แต่รายการมี ลบ 7
       เพราะแถบสรุปใช้ overall_cred ส่วน audit ฮาร์ดโค้ดไว้ที่ sentiment_cp */
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 let fail = 0; const ok = (c, m) => { console.log((c ? "✅" : "❌") + " " + m); if (!c) fail++; };
 
-const src = readFileSync("/home/user/cp_dashboard/functions/issue/api/sentiment/_core.js", "utf8");
+/* 🚫 ห้ามเขียนที่อยู่ไฟล์แบบเต็ม (`/home/user/…`) — เครื่องอื่นไม่มีโฟลเดอร์นั้น
+   ของเดิมเขียนตายตัวไว้ → รันในเครื่องนี้ผ่าน แต่ **ที่ GitHub พังทันที** (ENOENT)
+   ตระกูลเดียวกับที่อยู่เบราว์เซอร์ใน .cjs ที่เพิ่งย้ายไป browser.cjs (8 ก.ย. 2026)
+   · run.sh ก๊อปเทสต์ไปรันที่โฟลเดอร์ชั่วคราวพร้อม w.mjs → หาจากข้างตัวเองก่อน
+   · รันในโฟลเดอร์เทสต์ตรงๆ (ไม่มี w.mjs) → ถอยไปอ่านไฟล์จริงในโปรเจกต์ */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const CORE = [join(HERE, "w.mjs"), join(HERE, "..", "..", "functions/issue/api/sentiment/_core.js")]
+  .find(existsSync);
+if (!CORE) { console.log("❌ หา _core.js ไม่เจอ (ทั้ง w.mjs ข้างตัวเอง และไฟล์จริงในโปรเจกต์)"); process.exit(1); }
+const src = readFileSync(CORE, "utf8");
 const body = src.slice(src.indexOf("async function analyze("), src.indexOf("function detectPlatform("));
 
 // [1] ต้องมีตัวแปรเดียวที่ตัดสินว่าใช้แกนไหน

@@ -9,7 +9,7 @@
  * [2] คือข้อสำคัญที่สุด — ย้ายจริงตามที่แก้
  * [4] หลังบ้านรุ่นเก่าไม่ส่ง src → ห้ามพัง และต้องบอกผู้ใช้ว่าตัวอย่างไม่ขยับ
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 
 const AUDIT = [
   { text: "อร่อยมาก", sentiment: "positive" },
@@ -38,7 +38,7 @@ const OLD = { ...base, samples: [
 ]};
 
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let payload = LINKED;
