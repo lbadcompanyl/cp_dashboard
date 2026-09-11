@@ -8,6 +8,7 @@
 // ต้องมีเซิร์ฟเวอร์ static ที่พอร์ต 8899:  python3 -m http.server 8899 --directory ..
 
 import { launch } from "./browser.mjs";
+import { readFile } from "node:fs/promises";
 
 const BASE = "http://127.0.0.1:8899";
 let pass = 0, fail = 0;
@@ -2899,6 +2900,52 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
      เจ้าของถามซ้ำ 11 ก.ย. 2026: "หาวิธีแก้ thumbnail ไม่ขึ้น" พร้อมภาพที่ขึ้น 🖼 ทั้ง 10 แถว
      ของเดิม: ถ้าหาตัวเลขไม่เจอสักตัว `fetchOne` จะ return ทันทีโดยไม่แตะรูปเลย
      → ต้นทางเปลี่ยนชื่อฟิลด์ตัวเลข แล้ว **รูปหายไปด้วยทั้งที่ในคำตอบมีรูปอยู่** */
+  /* ── 🔴 ตัวหารูปต้องรู้จัก CDN ชุดเดียวกับตัวเสิร์ฟรูป ────────────────
+     เจ้าของส่งภาพมา 11 ก.ย. 2026: TikTok 10 โพสต์ **ยอดมาครบทุกแถว** แต่รูปขึ้นแค่ 2
+     = ดึงสำเร็จแล้วแต่หารูปไม่เจอ · ต้นเหตุคือมีลิสต์โดเมน 2 ชุดที่ไม่ตรงกัน
+     `img.js` ยอมเสิร์ฟจาก ibyteimg/byteoversea (CDN สำรองของ TikTok) แต่ตัวหารูปไม่รู้จัก
+     → หาไม่เจอตั้งแต่แรก ก็ไม่มีวันได้เสิร์ฟ */
+  {
+    const shapes = [
+      ["tiktokcdn + .jpeg", "https://p16-sign-sg.tiktokcdn.com/obj/tos-alisg-p-0037/a~tplv.jpeg?x-expires=1"],
+      ["tiktokcdn + .image", "https://p16-sign-va.tiktokcdn.com/obj/tos-maliva-p-0068/a~tplv.image?x-expires=1"],
+      ["tiktokcdn-us", "https://p19-pu-sign-useast8.tiktokcdn-us.com/obj/tos-useast5-p-0068/a~tplv.jpeg?a=1"],
+      ["ibyteimg + .image", "https://p16-pu-sign-no.ibyteimg.com/tos-alisg-p-0037/a~tplv.image?dr=1"],
+      ["byteoversea", "https://p9-sign.byteoversea.com/tos-alisg-p-0037/a~tplv.image?dr=1"],
+      ["fbcdn", "https://scontent.xx.fbcdn.net/v/t39.30808-6/a.jpg?stp=dst-jpg"],
+      ["cdninstagram", "https://scontent-bkk1-1.cdninstagram.com/v/t51.29350-15/a.jpg?stp=x"],
+      ["ytimg", "https://i.ytimg.com/vi/aaaaaaaaaaa/mqdefault.jpg"],
+      /* 🔴 2 แบบนี้ **ไม่มีนามสกุลไฟล์เลย** — มีแต่ลิสต์โดเมนเท่านั้นที่ช่วยได้
+         ถ้าไม่ใส่ นามสกุลไฟล์จะช่วยไว้หมดทุกเคส แล้วเทสต์จะผ่านทั้งที่ลิสต์โดเมนเพี้ยน */
+      ["tiktokcdn ไม่มีนามสกุล", "https://p16-sign-va.tiktokcdn.com/obj/tos-maliva-p-0068/abcdef123"],
+      ["ibyteimg ไม่มีนามสกุล", "https://p16-pu-sign-no.ibyteimg.com/tos-alisg-p-0037/abcdef123"],
+    ];
+    const miss = shapes.filter(([, u]) => api.pickImg({ video: { cover: { url_list: [u] } } }) !== u);
+    ok(miss.length === 0,
+       `รู้จักหน้าตา URL รูปปกของต้นทางครบทุกแบบ (ตกไป ${miss.length}: ${miss.map((m) => m[0]).join(", ")})`);
+
+    /* 🚫 คลิปอยู่บนโดเมนเดียวกับรูปเป๊ะ — ไม่กันไว้ = ได้ .mp4 มาใส่ใน <img> แล้วรูปแตก */
+    ok(!api.looksLikeImg("https://v16-webapp.tiktokcdn.com/abc/video.mp4?a=1"),
+       "ลิงก์คลิปบนโดเมนเดียวกันไม่ถูกนับว่าเป็นรูป");
+    ok(!api.looksLikeImg("https://p16.tiktokcdn.com/a.m3u8"), "ไฟล์สตรีมก็ไม่นับ");
+    ok(!api.looksLikeImg("ไม่ใช่ลิงก์เลย"), "ข้อความธรรมดาไม่นับ");
+
+    /* 🔴 ลิสต์โดเมนต้องมีชุดเดียว — ก๊อปมาไว้ 2 ที่เมื่อไหร่ มันจะเพี้ยนอีก แค่เรื่องเวลา
+       (บทเรียนเดียวกับ noise.js ที่ห้ามก๊อปลิสต์ไปวางในแดชบอร์ด) */
+    const src = await readFile(new URL("../functions/social/api/influ.js", import.meta.url), "utf8");
+    ok(/import\s*\{[^}]*hostAllowed[^}]*\}\s*from\s*["']\.\/img\.js["']/.test(src),
+       "ตัวหารูปใช้ลิสต์โดเมนของตัวเสิร์ฟรูป ไม่ได้มีลิสต์ของตัวเอง");
+    ok(!/tiktokcdn\.com["']/.test(src), "ไม่มีชื่อโดเมน CDN เขียนซ้ำไว้ในไฟล์นี้");
+
+    /* ของเดิมที่ต้องไม่พังตามไปด้วย — รูปปกต้องชนะรูปโปรไฟล์เสมอ */
+    const both = api.pickImg({
+      author: { avatar_thumb: { url_list: ["https://p16.tiktokcdn.com/avatar.jpeg"] } },
+      video: { cover: { url_list: ["https://p16.tiktokcdn.com/cover.jpeg"] } },
+    });
+    ok(both === "https://p16.tiktokcdn.com/cover.jpeg",
+       `ได้รูปปกคลิป ไม่ใช่รูปโปรไฟล์คนโพสต์ (${both})`);
+  }
+
   {
     // ชื่อคีย์ของ array เป็น "0" ซึ่งอ่านไม่รู้เรื่อง — ต้องรายงานชื่อชั้นบนแทน
     ok(JSON.stringify(api.urlKeys({ video: { cover: { url_list: ["https://a.co/b.jpg"] } } })) === '["url_list"]',

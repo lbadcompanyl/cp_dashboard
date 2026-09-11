@@ -250,7 +250,32 @@ export function numKeys(obj, depth = 0, out = []) {
  * ⚠️ ลิงก์รูปของ TikTok/Facebook เป็น **ลิงก์เซ็นชื่อที่หมดอายุ** ใช้ได้ไม่กี่ชั่วโมง
  *    หน้าเว็บจึงต้องเผื่อกรณีรูปโหลดไม่ขึ้นเสมอ (ดู onImgErr ใน social/influ.js)
  */
-const IMG_RE = /^https?:\/\/[^\s"']+?(\.(jpe?g|png|webp|heic|gif)(\?|$)|\/image|image\/|_pic|tiktokcdn|fbcdn|cdninstagram|ytimg)/i;
+/* ── "สตริงนี้เป็นลิงก์รูปไหม" ────────────────────────────────────────
+ * 🐞 **ของเดิมมีลิสต์โดเมนของตัวเอง ที่ไม่ตรงกับลิสต์ของตัวเสิร์ฟรูป** (เจอ 11 ก.ย. 2026)
+ *    `img.js` ยอมเสิร์ฟจาก `ibyteimg.com` กับ `byteoversea.com` (CDN สำรองของ TikTok)
+ *    แต่ตัวหารูปตรงนี้ไม่รู้จัก 2 โดเมนนั้นเลย → **หาไม่เจอตั้งแต่แรก ก็ไม่มีวันได้เสิร์ฟ**
+ *    วัดจริงกับหน้าตา URL ที่ต้นทางใช้: **ตกไป 2 จาก 8 แบบ** (ลงท้าย `.image` บนโดเมนสำรอง)
+ *    · เจ้าของเจอเป็นอาการ "TikTok 10 โพสต์ ยอดมาครบ แต่รูปขึ้นแค่ 2"
+ * ✅ ใช้ลิสต์เดียวกับ `img.js` (`hostAllowed`) — **ห้ามก๊อปลิสต์โดเมนมาไว้ที่นี่อีก**
+ *    2 ลิสต์ที่ต้องตรงกันแต่อยู่คนละไฟล์ = เพี้ยนแน่นอน แค่เรื่องเวลา
+ * ⚠️ ยังรับนามสกุลรูปทั่วไปไว้ด้วย เผื่อต้นทางย้าย CDN — แต่ถ้าอยู่นอกลิสต์
+ *    ตัวเสิร์ฟจะปฏิเสธแล้วขึ้น ⚠️ ซึ่งยัง**บอกอะไรได้มากกว่ากล่องเปล่า**
+ */
+import { hostAllowed } from "./img.js";
+
+const IMG_EXT_RE = /\.(jpe?g|png|webp|heic|heif|gif|image)(\?|#|$)/i;
+/* 🚫 คลิปกับเสียงอยู่บนโดเมนเดียวกับรูปเป๊ะ (`play_addr` ของ TikTok เป็น .mp4 บน tiktokcdn)
+   ไม่กันไว้ = ได้ลิงก์วิดีโอมาใส่ใน <img> แล้วขึ้นรูปแตก */
+const NOT_IMG_RE = /\.(mp4|m3u8|mov|webm|mp3|m4a|ts)(\?|#|$)/i;
+
+export function looksLikeImg(v) {
+  const s = String(v || "");
+  if (!/^https?:\/\//i.test(s)) return false;
+  if (NOT_IMG_RE.test(s)) return false;
+  if (hostAllowed(s)) return true;                       // CDN ของ 4 แพลตฟอร์ม = รูปแน่ๆ
+  return IMG_EXT_RE.test(s) || /\/image\/|_pic/i.test(s);
+}
+
 const COVER_RE = /(cover|thumb|image|picture|display|preview|poster|snapshot)/i;
 const AVATAR_RE = /(avatar|profile_pic|icon|logo)/i;
 
@@ -266,7 +291,7 @@ export function deepImg(obj, depth = 0, found = { cover: "", any: "" }, inCover 
     if (AVATAR_RE.test(k)) continue;                       // ข้ามทั้งกิ่ง
     const cov = inCover || COVER_RE.test(k);
     if (typeof v === "string") {
-      if (!IMG_RE.test(v)) continue;
+      if (!looksLikeImg(v)) continue;
       if (cov) { found.cover = v; return found; }
       if (!found.any) found.any = v;
     } else if (v && typeof v === "object") {
