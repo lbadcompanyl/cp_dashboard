@@ -2895,6 +2895,59 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(api.dateFromUrl("https://www.kaohoon.com/news/999999") === "",
      "ไม่มีวันที่ในลิงก์ = คืนค่าว่าง ไม่เดาเป็นวันนี้");
 
+  /* ── 🔴 ที่เก็บเต็ม = ปฏิเสธใบใหม่ ห้ามดันของเก่าตกทิ้งเงียบๆ ──────────
+     เจ้าของจะ "ทยอยใส่" ลิงก์เข้ามาเรื่อยๆ ข้ามเดือน ของเดิมต่อหัวแล้ว
+     `.slice(0, MAX_POSTS)` → พอครบ 300 ใบที่เก่าที่สุดหายโดยไม่มีอะไรบอกสักตัว
+     ⚠️ ยิงผ่าน onRequest ของจริงด้วย KV ปลอม — ใช้ลิงก์ข่าวล้วนจึงไม่แตะเน็ตเลย
+        (fetchMany กรอง kind:"news" ออกก่อนอยู่แล้ว) */
+  {
+    const store = new Map();
+    const env = {
+      FLAGS_KV: {
+        get: async (k) => store.get(k) || null,
+        put: async (k, v) => { store.set(k, v); },
+      },
+    };
+    const CAP = 300;
+    const old = [];
+    for (let i = 0; i < CAP; i++) {
+      old.push({ id: "old" + i, kind: "news", platform: "", host: "old.co",
+                 url: "https://old.co/n/" + i, title: "", note: "", publishedAt: "",
+                 addedAt: 1, at: 0, stats: {}, err: "" });
+    }
+    store.set("influ:posts", JSON.stringify({ v: 2, posts: old, at: 1 }));
+
+    const call = async (add) => {
+      const req = new Request("https://e/social/api/influ", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ add }),
+      });
+      return (await api.onRequest({ request: req, env })).json();
+    };
+
+    const r1 = await call(["https://www.dailynews.co.th/news/2026/09/09/zz"]);
+    const kept = r1.data.posts;
+    ok(kept.length === CAP, `เต็มแล้วเพิ่มอีกก็ไม่เกินเพดาน (${kept.length})`);
+    /* 🔴 ข้อที่สำคัญที่สุดของชุดนี้ — ใบที่เก่าที่สุดต้อง **ยังอยู่**
+          ของเดิมใบนี้จะหายไปเงียบๆ เพราะโดนดันตกท้ายแถว */
+    ok(kept.some((p) => p.id === "old" + (CAP - 1)),
+       "ของเก่าที่สุดยังอยู่ครบ — ไม่ถูกดันตกทิ้งเพื่อเอาที่ให้ใบใหม่");
+    ok(!kept.some((p) => /dailynews/.test(p.url)), "ใบใหม่ไม่ได้ถูกเก็บ (เพราะเต็ม)");
+    ok((r1.data.rejected || []).length === 1 && /เต็ม/.test(r1.data.rejected[0].why),
+       `บอกตรงๆ ว่าเพิ่มไม่ได้เพราะที่เก็บเต็ม (${(r1.data.rejected || [])[0]?.why || "ไม่มีข้อความ"})`);
+    ok(r1.data.used === CAP && r1.data.max === CAP,
+       `ส่งทั้งจำนวนที่ใช้ไปและเพดานให้หน้าเว็บ (${r1.data.used}/${r1.data.max})`);
+
+    /* ยังไม่เต็ม = ต้องเพิ่มได้ตามปกติ — กันไม่ให้ด่านนี้กว้างจนบล็อกทุกใบ */
+    store.set("influ:posts", JSON.stringify({ v: 2, posts: old.slice(0, CAP - 1), at: 1 }));
+    const r2 = await call(["https://www.dailynews.co.th/news/2026/09/09/yy",
+                           "https://www.kaohoon.com/news/12345"]);
+    ok(r2.data.posts.length === CAP && r2.data.posts.some((p) => /dailynews/.test(p.url)),
+       "เหลือที่ 1 ใบ = รับใบแรกเข้าไปเต็มพอดี");
+    ok((r2.data.rejected || []).length === 1 && /เต็ม/.test(r2.data.rejected[0].why),
+       "ใบที่ 2 ล้นเพดาน ถูกปฏิเสธพร้อมเหตุผล ไม่ใช่หายเงียบ");
+  }
+
   // ── ฝั่งหน้าเว็บ ──
   const now = Date.now();
   /* ⚠️ วันที่ในข้อมูลจำลองต้อง **อิงวันนี้** ห้ามฮาร์ดโค้ด
@@ -2909,7 +2962,7 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   const fixture = {
     ok: true, status: "ok", at: now,
     data: {
-      at: now, missing: [], max: 300,
+      at: now, missing: [], max: 300, used: 41,
       credits: { left: 4820, at: now },
       posts: [
         { id: "a1", kind: "social", platform: "tiktok", url: "https://www.tiktok.com/@x/video/1",
@@ -3160,6 +3213,25 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(!!(await pg.$("#view .xbtn")) && !!(await pg.$("#influ-in")),
      "เปิดโหมดแก้ไขแล้วปุ่มลบและกล่องวางลิงก์โผล่");
 
+  /* 🔴 มาตรวัดที่เก็บ — "ทยอยใส่" ต้องเห็นว่าเหลือที่เท่าไหร่ ไม่ใช่รู้ตอนโดนปฏิเสธ
+     ⚠️ ต้องอ่านจาก `used` ที่เซิร์ฟเวอร์ส่งมา ไม่ใช่นับแถวบนจอ —
+        นับบนจอจะได้จำนวนหลังกรอง ซึ่งโกหกทันทีที่มีคนพิมพ์ในช่องค้นหา */
+  const cap = await pg.$("#view .capbar");
+  ok(!!cap, "มีมาตรวัดที่เก็บใต้กล่องวางลิงก์");
+  const capTxt = cap ? (await cap.evaluate((e) => e.textContent.replace(/\s+/g, " ").trim())) : "";
+  /* ⚠️ ข้อมูลจำลองมี 7 แถวแต่เก็บไว้จริง 41 — จงใจให้ไม่เท่ากัน
+     ถ้าหน้าเว็บนับแถวบนจอแทนที่จะอ่าน `used` จะได้ 7 แล้วข้อนี้ตกทันที */
+  ok(/41/.test(capTxt) && /300/.test(capTxt) && !/\b7\b/.test(capTxt),
+     `อ่านจำนวนที่เก็บไว้จริงจากเซิร์ฟเวอร์ ไม่ใช่นับแถวบนจอ (${capTxt})`);
+  const capCls = cap ? await cap.evaluate((e) => e.className) : "";
+  ok(!/capnear|capfull/.test(capCls), "ใช้ไป 41 จาก 300 = ยังไม่เตือน");
+  const capFs = cap ? await cap.evaluate((e) => parseFloat(getComputedStyle(e).fontSize)) : 0;
+  ok(capFs >= 12, `ตัวหนังสือของมาตรวัด ≥ 12px (วัดได้ ${capFs}px)`);
+  /* แถบต้องยาวตามสัดส่วนจริง ไม่ใช่วาดไว้เฉยๆ — 7/300 = 2.3% */
+  const capPct = await pg.$eval("#view .capfil", (e) =>
+    (e.getBoundingClientRect().width / e.parentElement.getBoundingClientRect().width) * 100);
+  ok(capPct > 11 && capPct < 17, `แถบยาวตามสัดส่วนจริง 41/300 (${capPct.toFixed(1)}%)`);
+
   /* 🔴 ปุ่มลบต้องกดยืนยัน (เจ้าของสั่ง 8 ก.ย. 2026)
      ลบแล้วเอากลับไม่ได้ ต้องวางลิงก์ใหม่ + เสียเครดิตดึงยอดใหม่ */
   let deleted = 0;
@@ -3386,6 +3458,38 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   const realErrs = errs.filter((e) => !/404|File not found/.test(e));
   ok(realErrs.length === 0, `ไม่มี JS error (${realErrs.join(" · ")})`);
   await pg.close();
+
+  /* ── มาตรวัดตอนใกล้เต็มและเต็ม — หน้าใหม่เพราะต้องใช้ตัวเลขคนละชุด ──
+     🚫 เตือนตอนเต็มแล้วอย่างเดียวไม่พอ — วางมา 20 ลิงก์แล้วโดนปฏิเสธยกชุดคือสายไปแล้ว
+        ต้องเห็นตั้งแต่ใกล้เต็ม จะได้ทยอยลบของเก่าทัน */
+  {
+    const fx = JSON.parse(JSON.stringify(fixture));
+    fx.data.used = 249;                                   // 83% → เตือน
+    const { pg: p2, errs: e2 } = await open();
+    await p2.route("**/social/api/influ**", (r) =>
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(fx) }));
+    await tabTo(p2, "Earned media");
+    await p2.click(".eswitch");
+    await p2.waitForTimeout(150);
+    const nearCls = await p2.$eval("#view .capbar", (e) => e.className);
+    ok(/capnear/.test(nearCls) && !/capfull/.test(nearCls),
+       `ใช้ไป 249 จาก 300 (83%) = เตือนว่าใกล้เต็ม (${nearCls})`);
+
+    fx.data.used = 300;
+    await p2.click('[data-influ="refresh"]');
+    await p2.waitForTimeout(200);
+    const fullCls = await p2.$eval("#view .capbar", (e) => e.className);
+    const fullTxt = await p2.$eval("#view .capbar", (e) => e.textContent.replace(/\s+/g, " "));
+    ok(/capfull/.test(fullCls), `เต็มแล้วขึ้นสถานะเต็ม (${fullCls})`);
+    /* ⚠️ ต้องบอกด้วยว่า **ทำยังไงต่อ** ไม่ใช่บอกแค่ว่าเต็ม */
+    ok(/เต็มแล้ว/.test(fullTxt) && /ลบ/.test(fullTxt),
+       `บอกว่าเต็มแล้วและต้องลบของเก่าก่อน (${fullTxt.trim()})`);
+    /* 🎨 ระบบภาพข้อ 9: ห้ามเพิ่มสีใหม่ — ต้องใช้สีที่แท็บนี้มีอยู่แล้ว (--bad #dc2626) */
+    const fullCol = await p2.$eval("#view .capfil", (e) => getComputedStyle(e).backgroundColor);
+    ok(fullCol === "rgb(220, 38, 38)", `แถบตอนเต็มใช้สีเตือนของชุดเดิม ไม่ใช่สีใหม่ (${fullCol})`);
+    ok(e2.filter((x) => !/404|File not found/.test(x)).length === 0, "ไม่มี JS error (มาตรวัดที่เก็บ)");
+    await p2.close();
+  }
 }
 
 await browser.close();

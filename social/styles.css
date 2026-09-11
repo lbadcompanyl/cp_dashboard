@@ -571,6 +571,22 @@ body {
 /* ลิงก์ที่เพิ่มไม่ได้ — ต้องอ่านออกว่าอันไหนและทำไม จึงขึ้นบรรทัดละอัน */
 .addnote { margin:9px 0 0; font-size:.76rem; color:var(--warn); line-height:1.6; }
 
+/* มาตรวัดที่เก็บ — บอกล่วงหน้าว่าเหลือที่กี่ลิงก์ ไม่ใช่รอให้เต็มแล้วค่อยเด้ง
+   🎨 ใช้เฉพาะสีที่แท็บนี้มีอยู่แล้ว (--accent / --warn / --bad) ไม่เพิ่มสีใหม่เข้าระบบภาพ */
+.capbar {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin:9px 0 0; font-size:.76rem; line-height:1.6; color:var(--muted);
+}
+.captrk {
+  display:block; flex:0 0 120px; height:5px; border-radius:999px;
+  background:var(--surface-2); overflow:hidden;
+}
+.capfil { display:block; height:100%; background:var(--accent); border-radius:999px; }
+.capnear { color:var(--warn); }
+.capnear .capfil { background:var(--warn); }
+.capfull { color:var(--bad); }
+.capfull .capfil { background:var(--bad); }
+
 .influbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
 .influsel { display:flex; align-items:center; gap:6px; font-size:.76rem; color:var(--muted); }
 .influsel select {
@@ -637,8 +653,8 @@ body {
 .emtab .gsec { font-size: 14px; }
 .emtab .kc-v { font-size: 26px; }
 .emtab .tbl { font-size: 13px; }
-.emtab .sec .sub, .emtab .gnote, .emtab .addnote, .emtab .kc-l, .emtab .kc-sub,
-.emtab .mhead, .emtab .blab, .emtab .influ-s { font-size: 12px; }
+.emtab .sec .sub, .emtab .gnote, .emtab .addnote, .emtab .capbar, .emtab .kc-l,
+.emtab .kc-sub, .emtab .mhead, .emtab .blab, .emtab .influ-s { font-size: 12px; }
 
 /* ── กรอบและระยะ: กล่องขาวชั้นเดียว กรอบบาง มุม 12px ──────────────
    🐞 **`0.5px` ทำไม่ได้จริงใน Chromium** — วัดแล้วปัดขึ้นเป็น 1px ทุกความละเอียดจอ

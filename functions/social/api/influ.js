@@ -500,9 +500,23 @@ export async function onRequest(context) {
       });
     });
 
+    /* 🔴 ที่เก็บเต็มแล้วต้อง **ปฏิเสธใบใหม่** ไม่ใช่ดัน ใบเก่าตกท้ายแถวทิ้งไป
+       ของเดิมต่อหัวแล้ว `.slice(0, MAX_POSTS)` = ใบที่เก่าที่สุดหายเงียบๆ ไม่มีอะไรบอกสักตัว
+       ซึ่งร้ายมากกับการ "ทยอยใส่" — ของที่อุตส่าห์วางไว้เมื่อเดือนก่อนหายโดยไม่มีใครรู้
+       ⚠️ ต้องตัดตั้งแต่ **ก่อน** fetchMany ไม่งั้นเสียเครดิตยิงใบที่จะไม่ได้เก็บอยู่ดี */
+    const room = Math.max(0, MAX_POSTS - blob.posts.length);
+    if (fresh.length > room) {
+      fresh.slice(room).forEach((p) => bad.push({
+        url: p.url,
+        why: "ที่เก็บเต็มแล้ว (" + MAX_POSTS + " ลิงก์) — ลบของเก่าออกก่อนถึงจะเพิ่มได้",
+      }));
+      fresh.length = room;
+    }
+
     // ⚠️ ดึงยอดของ "เฉพาะใบใหม่" ไม่ใช่ทั้งรายการ — ใบเก่ายิงซ้ำ = เสียเครดิตฟรี
     const filled = await fetchMany(fresh, env);
     if (filled.credits != null) blob.credits = { left: filled.credits, at: Date.now() };
+    // `slice` เหลือไว้เป็นตาข่ายชั้นสุดท้ายเท่านั้น — ปกติ `room` กันไว้หมดแล้ว
     blob.posts = filled.posts.concat(blob.posts).slice(0, MAX_POSTS);
     await writeAll(env, blob);
     return json(payload({
@@ -588,6 +602,9 @@ function shape(blob, env) {
     credits: blob.credits || null,
     // ⚠️ ไม่ได้แปลว่าใช้ไม่ได้ทั้งหน้า — ขาด SC ยังดู YouTube ได้ และกลับกัน
     missing: missingEnv(env, ["YT_API_KEY", "SCRAPECREATORS_API_KEY"]),
+    /* 🔴 ต้องส่ง **ทั้ง 2 ตัว** — ส่งแต่เพดานแล้วให้หน้าเว็บนับเอง จะนับได้แค่ใบที่
+       ผ่านตัวกรองอยู่ตอนนั้น ไม่ใช่จำนวนที่เก็บไว้จริง แล้วมาตรวัดจะโกหกทันทีที่กรอง */
     max: MAX_POSTS,
+    used: blob.posts.length,
   };
 }

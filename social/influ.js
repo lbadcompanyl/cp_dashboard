@@ -27,6 +27,10 @@
     posts: [],
     missing: [],
     at: 0,
+    /* 🔴 ที่เก็บมีเพดาน — ต้องเห็นว่าใกล้เต็มแค่ไหน **ก่อน** จะเต็ม
+       เต็มแล้วค่อยรู้ = วางลิงก์มา 20 อันแล้วโดนปฏิเสธยกชุด ซึ่งสายไปแล้ว */
+    used: 0,
+    max: 0,
     err: "",
     note: "",              // ข้อความบอกผลของการกดครั้งล่าสุด
     draft: "",             // ข้อความในกล่องวางลิงก์ (ต้องอยู่ใน state ไม่ใช่ DOM)
@@ -225,6 +229,8 @@
     state.err = "";
     state.posts = d.posts || [];
     state.missing = d.missing || [];
+    state.used = d.used || 0;
+    state.max = d.max || 0;
     state.at = d.at || 0;
     state.credits = d.credits || null;
     state.delId = "";       // ข้อมูลเปลี่ยนแล้ว การยืนยันเดิมไม่มีความหมาย
@@ -377,9 +383,25 @@
       /* ⚠️ ต้องบอกตั้งแต่ก่อนกดว่าระบบจะแยกให้เอง ไม่งั้นวางลิงก์ข่าวลงไปแล้วไม่เห็นในตารางโพสต์
          จะนึกว่าเพิ่มไม่สำเร็จ ทั้งที่มันไปอยู่อีก section ข้างบน */
       '<p class="addnote sub">วางปนกันได้ — ลิงก์โซเชียลเข้า <b>① โพสต์อินฟลูเอนเซอร์</b> ' +
-      "ลิงก์สำนักข่าวเข้า <b>② ข่าว</b> ให้เอง</p>";
+      "ลิงก์สำนักข่าวเข้า <b>② ข่าว</b> ให้เอง</p>" + capBar();
     if (state.note) h += '<p class="addnote">' + esc(state.note).replace(/\n/g, "<br>") + "</p>";
     return h + "</div>";
+  }
+
+  /* มาตรวัดที่เก็บ — ทยอยวางลิงก์เข้ามาเรื่อยๆ ต้องรู้ว่าเหลือที่เท่าไหร่
+     🚫 ของเก่า **ไม่ถูกดันตกทิ้ง** อีกแล้ว เต็มเมื่อไหร่ฝั่งเซิร์ฟเวอร์ปฏิเสธใบใหม่ตรงๆ
+        (ดู `room` ใน functions/social/api/influ.js) — เตือนก่อนถึงจะทันได้ลบของเก่า */
+  function capBar() {
+    if (!state.max) return "";
+    var pct = Math.min(100, (state.used / state.max) * 100);
+    var full = state.used >= state.max;
+    var near = pct >= 80;
+    return '<p class="capbar' + (full ? " capfull" : near ? " capnear" : "") + '">' +
+      '<span class="captrk"><span class="capfil" style="width:' + pct.toFixed(1) + '%"></span></span>' +
+      "<span>เก็บไว้ <b>" + state.used.toLocaleString("th-TH") + "</b> จาก " +
+      state.max.toLocaleString("th-TH") + " ลิงก์" +
+      (full ? " — <b>เต็มแล้ว</b> ลบของเก่าออกก่อนถึงจะเพิ่มได้"
+        : near ? " — ใกล้เต็ม" : "") + "</span></p>";
   }
 
   /* ── กราฟรายเดือน — **section ละกราฟ** (เจ้าของสั่ง 8 ก.ย. 2026) ─────────
