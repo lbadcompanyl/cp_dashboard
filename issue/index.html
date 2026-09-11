@@ -46,10 +46,12 @@
   <div class="swipe-dots" id="swipeDots"></div>
 
   <main class="board" id="board">
-    <!-- 4 panels: News · Alert 1 · Alert 2 · Trends -->
-    <section class="panel" data-source="news">
+    <!-- 4 panels: Alert 2 · Alert 1 · News · Trends -->
+    <!-- ⚠️ ลำดับคอลัมน์เจ้าของสั่ง (11 ก.ย. 2026): จับตามอง → CP → News
+         แก้ลำดับที่นี่ ต้องแก้ `first:` ใน tests/firstcol.mjs ด้วย -->
+    <section class="panel" data-source="alert2">
       <div class="phead">
-        <span class="ptitle"><span class="dot news"></span>📰 Google News</span>
+        <span class="ptitle"><span class="dot alert"></span>🔔 หัวข้อที่จับตามอง</span>
         <span class="pcount" data-count>—</span>
       </div>
       <div class="filters">
@@ -81,9 +83,9 @@
       <div class="list" data-list></div>
     </section>
 
-    <section class="panel" data-source="alert2">
+    <section class="panel" data-source="news">
       <div class="phead">
-        <span class="ptitle"><span class="dot alert"></span>🔔 หัวข้อที่จับตามอง</span>
+        <span class="ptitle"><span class="dot news"></span>📰 Google News</span>
         <span class="pcount" data-count>—</span>
       </div>
       <div class="filters">
@@ -143,6 +145,6 @@
 
   <script src="/lazycol.js?v=1"></script>
   <script src="/flags.js?v=33"></script>
-  <script src="./app.js?v=69"></script>
+  <script src="./app.js?v=70"></script>
 </body>
 </html>
