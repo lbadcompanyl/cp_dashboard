@@ -2895,6 +2895,63 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   ok(api.dateFromUrl("https://www.kaohoon.com/news/999999") === "",
      "ไม่มีวันที่ในลิงก์ = คืนค่าว่าง ไม่เดาเป็นวันนี้");
 
+  /* ── 🔴 รูปปกต้องไม่ผูกกับตัวเลข และต้องบอกได้ว่า "ไม่เจอ" เพราะอะไร ────
+     เจ้าของถามซ้ำ 11 ก.ย. 2026: "หาวิธีแก้ thumbnail ไม่ขึ้น" พร้อมภาพที่ขึ้น 🖼 ทั้ง 10 แถว
+     ของเดิม: ถ้าหาตัวเลขไม่เจอสักตัว `fetchOne` จะ return ทันทีโดยไม่แตะรูปเลย
+     → ต้นทางเปลี่ยนชื่อฟิลด์ตัวเลข แล้ว **รูปหายไปด้วยทั้งที่ในคำตอบมีรูปอยู่** */
+  {
+    // ชื่อคีย์ของ array เป็น "0" ซึ่งอ่านไม่รู้เรื่อง — ต้องรายงานชื่อชั้นบนแทน
+    ok(JSON.stringify(api.urlKeys({ video: { cover: { url_list: ["https://a.co/b.jpg"] } } })) === '["url_list"]',
+       "บอกชื่อคีย์ที่เป็นลิงก์ โดยใช้ชื่อชั้นบนแทนเลขลำดับของ array");
+    ok(api.urlKeys({ a: 1, b: "ไม่ใช่ลิงก์" }).length === 0, "ค่าที่ไม่ใช่ลิงก์ไม่ถูกนับ");
+
+    const store = new Map();
+    const env = {
+      FLAGS_KV: { get: async (k) => store.get(k) || null, put: async (k, v) => { store.set(k, v); } },
+      SCRAPECREATORS_API_KEY: "x", YT_API_KEY: "y",
+    };
+    const realFetch = globalThis.fetch;
+    let body = null;
+    globalThis.fetch = async () => new Response(JSON.stringify(body), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+    const add = async (url) => {
+      store.set("influ:posts", JSON.stringify({ v: 2, posts: [], at: 1 }));
+      const req = new Request("https://e/social/api/influ", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ add: [url] }),
+      });
+      const j = await (await api.onRequest({ request: req, env })).json();
+      return j.data.posts[0];
+    };
+
+    /* 🔴 ข้อหลักของชุดนี้ — คำตอบมีรูป แต่ชื่อฟิลด์ตัวเลขเป็นของที่เราไม่รู้จักเลย */
+    body = { aweme_detail: { video: { cover: { url_list: ["https://p16.tiktokcdn.com/cover.jpeg"] } },
+             statistics: { totally_new_metric_name: 999 } } };
+    const p1 = await add("https://www.tiktok.com/@a/video/111");
+    ok(p1.thumb === "https://p16.tiktokcdn.com/cover.jpeg",
+       `หาตัวเลขไม่เจอ ก็ยังต้องได้รูปปก (${p1.thumb || "ไม่ได้รูป"})`);
+    ok(/ไม่เจอตัวเลข/.test(p1.err || ""), "และยังรายงานเรื่องตัวเลขที่หาไม่เจอเหมือนเดิม");
+    ok(p1.at > 0, "ติดเวลาที่ดึงไว้ = แยกออกจากใบที่ยังไม่เคยดึง");
+
+    /* คำตอบมีตัวเลขครบแต่ไม่มีรูปเลย → ต้องเก็บชื่อคีย์ลิงก์ไว้ให้ไล่ต่อ */
+    body = { play_count: 100, digg_count: 5, comment_count: 1, share_count: 0,
+             share_url: "https://www.tiktok.com/@a/video/222" };
+    const p2 = await add("https://www.tiktok.com/@a/video/222");
+    ok(!p2.thumb, "ไม่มีลิงก์รูปในคำตอบ = ไม่มีรูป (ไม่เดาเอาลิงก์อะไรก็ได้มาใส่)");
+    ok(p2.warn && p2.warn.img && p2.warn.img.indexOf("share_url") >= 0,
+       `บอกว่าต้นทางส่งลิงก์ชื่ออะไรมาบ้าง (${JSON.stringify((p2.warn || {}).img)})`);
+
+    /* ได้รูปแล้วไม่ต้องเก็บชื่อคีย์ — ไม่มีอะไรต้องไล่ และกัน blob บวมฟรีๆ */
+    body = { play_count: 100, digg_count: 5, comment_count: 1, share_count: 0,
+             cover: "https://p16.tiktokcdn.com/c.jpeg", share_url: "https://x.co/y" };
+    const p3 = await add("https://www.tiktok.com/@a/video/333");
+    ok(p3.thumb && (!p3.warn || !p3.warn.img || !p3.warn.img.length),
+       "ได้รูปแล้วไม่เก็บชื่อคีย์ลิงก์ทิ้งไว้ให้ blob บวม");
+
+    globalThis.fetch = realFetch;
+  }
+
   /* ── 🔴 ที่เก็บเต็ม = ปฏิเสธใบใหม่ ห้ามดันของเก่าตกทิ้งเงียบๆ ──────────
      เจ้าของจะ "ทยอยใส่" ลิงก์เข้ามาเรื่อยๆ ข้ามเดือน ของเดิมต่อหัวแล้ว
      `.slice(0, MAX_POSTS)` → พอครบ 300 ใบที่เก่าที่สุดหายโดยไม่มีอะไรบอกสักตัว
@@ -2990,8 +3047,12 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
         { id: "a4", kind: "social", platform: "facebook", url: "https://www.facebook.com/p/1",
           account: "CPF", title: "โพสต์ภาพของเพจ", note: "", host: "facebook.com",
           publishedAt: "", addedAt: now,
+          /* 🔴 `at` > 0 = **ดึงมาแล้ว** แต่ในคำตอบไม่มีลิงก์รูป — คนละเรื่องกับ a2
+             ที่ยังไม่เคยดึงเลย · 2 อย่างนี้มีทางแก้คนละทาง จึงต้องแยกให้ออกบนจอ */
+          at: now,
           stats: { views: null, likes: 453, comments: 57, shares: 29 }, err: "",
-          warn: { miss: ["views"], keys: ["like_count", "reaction_count", "share_count"] } },
+          warn: { miss: ["views"], keys: ["like_count", "reaction_count", "share_count"],
+                  img: ["permalink_url"] } },
         { id: "n1", kind: "news", platform: "", url: "https://www.thansettakij.com/news/1",
           host: "thansettakij.com", title: "", note: "ข่าวชิ้นที่ 1", publishedAt: thisM(1),
           addedAt: now, stats: {}, err: "" },
@@ -3178,14 +3239,43 @@ console.log("\n[63] 🔴 Earned media — 2 section แยกกันชัด:
   await pg.waitForTimeout(400);          // รอให้รูปที่โหลดไม่ขึ้นยิง error ครบ
   const thumbs = await pg.$$eval("#view .influ-th", (n) => n.map((x) => ({
     tag: x.tagName, fail: x.classList.contains("fail"), ph: x.classList.contains("ph"),
+    wait: x.classList.contains("wait"), none: x.classList.contains("none"),
     why: x.title || "",
   })));
   const failed = thumbs.filter((t) => t.fail);
-  const none = thumbs.filter((t) => t.ph && !t.fail);
   ok(failed.length === 1, `รูปที่โหลดไม่ขึ้นถูกแยกออกมา 1 ใบ (ได้ ${failed.length})`);
   ok(/หมดอายุ/.test(failed[0] ? failed[0].why : ""), "บอกว่าลิงก์รูปหมดอายุ พร้อมทางแก้");
-  ok(none.length > 0 && /ไม่ได้ส่งลิงก์รูป/.test(none[0].why),
-     "ใบที่ต้นทางไม่ส่งรูปมาเลย ขึ้นคนละข้อความ");
+
+  /* 🔴 ที่จริงมี **3 สถานะ ไม่ใช่ 2** (เจ้าของถามซ้ำ 11 ก.ย. 2026 พร้อมภาพ 🖼 ทั้ง 10 แถว)
+     ของเดิมยุบ "ยังไม่เคยดึง" กับ "ดึงแล้วไม่มีรูป" เป็นกล่องเดียว แล้วเขียนว่า
+     "ต้นทางไม่ได้ส่งลิงก์รูปปกมา" — **โกหกเมื่อยังไม่เคยยิงต้นทางสักครั้ง**
+     และพาไปไล่ผิดทาง: สถานะแรกกดปุ่ม 🔄 ก็จบ · สถานะหลังกดกี่ทีก็ไม่ช่วย ต้องแก้โค้ด */
+  const wait = thumbs.filter((t) => t.wait);
+  const none = thumbs.filter((t) => t.none);
+  ok(wait.length === 1 && /ยังไม่เคยดึง/.test(wait[0].why),
+     `ใบที่ยังไม่เคยดึงข้อมูล ขึ้นสถานะของตัวเอง (${wait.length} ใบ)`);
+  ok(/🔄/.test(wait[0] ? wait[0].why : ""), "และบอกทางแก้ว่ากด 🔄 แล้วรูปจะมา");
+  ok(none.length === 1 && /ไม่มีลิงก์รูปปก/.test(none[0].why),
+     `ใบที่ดึงแล้วแต่ต้นทางไม่ส่งรูป ขึ้นคนละข้อความ (${none.length} ใบ)`);
+  ok(/กดอัปเดตซ้ำก็ไม่ช่วย/.test(none[0] ? none[0].why : ""),
+     "และบอกตรงๆ ว่ากดซ้ำไม่ช่วย — ไม่ให้เสียเครดิตกดวนฟรีๆ");
+  /* ⚠️ ต้องบอกด้วยว่าต้นทางส่งลิงก์ชื่ออะไรมา ไม่งั้นแยกไม่ออกว่า "ไม่มีรูปจริงๆ"
+        กับ "มีรูปแต่ตัวจับลิงก์ของเราไม่รู้จักหน้าตาแบบนั้น" (อย่างหลังแก้ได้) */
+  ok(/permalink_url/.test(none[0] ? none[0].why : ""),
+     "บอกชื่อคีย์ลิงก์ที่ต้นทางส่งมาจริง (ไล่ต่อได้ว่าควรเติมอะไร)");
+
+  /* 🔴 tooltip เห็นได้เฉพาะตอนเอาเมาส์ชี้ และบนมือถือไม่มีเลย
+     เจ้าของต้องมาถามว่า "ทำไมรูปไม่ขึ้น" 2 รอบ = ข้อมูลที่ซ่อนใน tooltip ยังไม่พอ */
+  const thnote = await pg.$$eval("#view .thnote", (n) => n.map((x) => x.textContent.replace(/\s+/g, " ")));
+  ok(thnote.length === 2, `มีบรรทัดสรุปใต้หัวตารางที่มีรูปขาด 2 ตาราง (ได้ ${thnote.length})`);
+  ok(thnote.some((t) => /ยังไม่เคยดึงข้อมูล/.test(t) && /🔄/.test(t)),
+     `ตารางที่ยังไม่เคยดึง บอกให้กด 🔄 (${thnote.join(" | ").slice(0, 60)}…)`);
+  ok(thnote.some((t) => /ไม่ส่งลิงก์รูป/.test(t) && /กดซ้ำไม่ช่วย/.test(t)),
+     "ตารางที่ดึงแล้วไม่มีรูป บอกว่ากดซ้ำไม่ช่วย");
+  /* 🚫 ตารางที่รูปครบต้องไม่มีบรรทัดนี้ — ข้อความที่ไม่มีอะไรให้ทำคือของรก
+     (TikTok ในข้อมูลจำลองมีลิงก์รูปครบทั้ง 2 ใบ ใบที่โหลดไม่ขึ้นไม่นับว่า "ไม่มีรูป") */
+  ok(!thnote.some((t) => /TikTok/.test(t)), "ตารางที่มีลิงก์รูปครบ ไม่ขึ้นบรรทัดนี้");
+
   ok(failed[0] && failed[0].tag === "SPAN",
      "รูปที่พังถูกเปลี่ยนเป็นกล่อง ไม่ใช่ img ที่ไม่มี src (จะขึ้นไอคอนรูปแตก)");
   /* ⚠️ CDN ของ TikTok/FB/IG บล็อกรูปตาม Referer — ไม่ใส่ no-referrer จะได้ 403 ทุกใบ */

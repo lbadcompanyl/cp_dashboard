@@ -282,6 +282,28 @@ export function pickImg(body) {
   return f.cover || f.any || "";
 }
 
+/* ── หาไม่เจอ = ต้องบอกว่าต้นทางส่งลิงก์อะไรมาบ้าง ─────────────────────
+ * 🔴 "ไม่เจอรูป" มี 2 ความหมายที่ต่างกันมาก และของเดิมแยกไม่ออกเลย
+ *      ① ต้นทางไม่ได้ส่งลิงก์รูปมาจริงๆ
+ *      ② ส่งมาแล้ว แต่ `IMG_RE` ของเราไม่รู้จักหน้าตาแบบนั้น ← แก้ที่โค้ดเราได้
+ *    เก็บ **ชื่อคีย์** ที่มีค่าเป็นลิงก์ไว้ กด 🔄 ครั้งเดียวก็รู้ว่าต้องไปเติมอะไร
+ *    (วิธีเดียวกับ numKeys ที่ใช้กับตัวเลขอยู่แล้ว)
+ * ⚠️ เก็บแค่ชื่อคีย์ ไม่เก็บค่า — กัน blob ใน KV บวมและไม่มีลิงก์ส่วนตัวติดไป
+ * ⚠️ คีย์ของ array เป็น "0" "1" ซึ่งอ่านไม่รู้เรื่อง → ใช้ชื่อคีย์ของชั้นบนแทน
+ *    (`url_list` มีความหมาย · `0` ไม่มี)
+ */
+export function urlKeys(obj, depth = 0, out = [], parent = "") {
+  if (obj == null || depth > 5 || typeof obj !== "object" || out.length >= 8) return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (out.length >= 8) break;
+    const name = /^\d+$/.test(k) ? parent || k : k;
+    if (typeof v === "string") {
+      if (/^https?:\/\//i.test(v) && out.indexOf(name) < 0) out.push(name);
+    } else if (v && typeof v === "object") urlKeys(v, depth + 1, out, name);
+  }
+  return out;
+}
+
 function statsFrom(body) {
   return {
     views: deepNum(body, F.views),
@@ -326,9 +348,23 @@ async function fetchOne(post, env) {
   /* ⚠️ ตอบ 200 แต่ไม่มีตัวเลขสักตัว = ชื่อ field ไม่ตรงกับที่เดาไว้
      ต้องบอกให้รู้ ไม่ใช่โชว์ "—" เฉยๆ แล้วปล่อยให้ไปเดาเองว่าทำไม
      (บทเรียนวันนี้: ข้อความตอนพังต้องบอกสาเหตุ ไม่งั้นต้องเดาซ้ำอีกรอบ) */
+  /* 🔴 หา **รูป/ชื่อ/โปรไฟล์ ก่อน** แยกทางตามผลของตัวเลข (แก้ 11 ก.ย. 2026)
+     ของเดิมถ้าหาตัวเลขไม่เจอสักตัวจะ `return` ทันทีโดยไม่แตะรูปเลย
+     = **รูปหายเพราะเรื่องที่ไม่เกี่ยวกัน** · ต้นทางเปลี่ยนชื่อฟิลด์ตัวเลข
+     ไม่ได้แปลว่าในคำตอบไม่มีรูปปก · 2 เรื่องนี้ต้องไม่ผูกกัน */
+  const thumb =
+    pickImg(r.body) ||
+    deepStr(r.body, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "display_url", "thumbnail_url"]) ||
+    post.thumb;
+  const title = deepStr(r.body, ["desc", "message", "title", "caption", "text", "content", "description"]).slice(0, 300) || post.title;
+  const account = post.account || deepStr(r.body, ["unique_id", "uniqueid", "username", "nickname", "author_name"]);
+  // ไม่ได้รูป = เก็บชื่อคีย์ที่เป็นลิงก์ไว้ให้ดู · ได้รูปแล้วไม่ต้องเก็บ (ไม่มีอะไรต้องไล่)
+  const imgKeys = thumb ? [] : urlKeys(r.body);
+
   if (!got.length) {
     return {
-      ...post, stats: st, at: Date.now(), warn: null,
+      ...post, stats: st, at: Date.now(), thumb, title, account,
+      warn: { miss: Object.keys(st), keys: numKeys(r.body), img: imgKeys },
       err: "ต้นทางตอบมาแต่ไม่เจอตัวเลขที่รู้จัก — ชื่อฟิลด์อาจไม่ตรงกับที่เดาไว้ (ดู keys: " +
         Object.keys(r.body || {}).slice(0, 8).join(", ") + ")",
     };
@@ -348,13 +384,8 @@ async function fetchOne(post, env) {
     /* ⚠️ เก็บชื่อฟิลด์ไว้ **ทุกครั้ง** ไม่ใช่เฉพาะตอนขาดตัวเลข
        แถวที่ได้ตัวเลขครบแต่ค่าผิด (เช่น Views = 0 ทั้งที่มีไลก์ 287) ก็ต้องไล่ต่อได้เหมือนกัน
        เก็บแค่ชื่อคีย์ ≤ 16 ตัว ไม่เก็บค่า — blob ใน KV จึงแทบไม่โต */
-    warn: { miss, keys: numKeys(r.body) },
-    title: deepStr(r.body, ["desc", "message", "title", "caption", "text", "content", "description"]).slice(0, 300) || post.title,
-    account: post.account || deepStr(r.body, ["unique_id", "uniqueid", "username", "nickname", "author_name"]),
-    /* หารูปจาก "หน้าตาของค่า" ก่อน แล้วค่อยตกไปเดาจากชื่อคีย์แบบเดิม */
-    thumb: pickImg(r.body) ||
-      deepStr(r.body, ["cover", "origin_cover", "dynamic_cover", "thumbnail", "full_picture", "display_url", "thumbnail_url"]) ||
-      post.thumb,
+    warn: { miss, keys: numKeys(r.body), img: imgKeys },
+    title, account, thumb,
     publishedAt: pickWhen(r.body) || post.publishedAt,
     stats: st, at: Date.now(), err: "",
   };

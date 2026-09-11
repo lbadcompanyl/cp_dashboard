@@ -73,6 +73,50 @@
     return "/social/api/img?u=" + encodeURIComponent(u);
   }
 
+  /* ── ช่องรูปปก — **3 สถานะ ไม่ใช่ 2** (เจ้าของถามซ้ำ 11 ก.ย. 2026: "หาวิธีแก้ thumbnail ไม่ขึ้น")
+   *    ① ยังไม่เคยดึงข้อมูลใบนี้เลย (`at` = 0)  → กด 🔄 แล้วรูปจะมา **แก้ได้**
+   *    ② ดึงแล้ว แต่ในคำตอบไม่มีลิงก์รูป        → กดอีกกี่ทีก็ไม่มา ต้องไปแก้ตัวหารูป
+   *    ③ ได้ลิงก์มาแล้วแต่โหลดไม่ขึ้น (onImgErr) → ลิงก์หมดอายุ/ถูกบล็อก
+   * 🚫 ของเดิมยุบ ① กับ ② เป็นกล่องเดียวกัน แล้วเขียนว่า "ต้นทางไม่ได้ส่งลิงก์รูปปกมา"
+   *    ซึ่ง **โกหกเมื่อยังไม่เคยยิงต้นทางสักครั้ง** — เราไม่เคยถาม จะรู้ได้ยังไงว่าเขาไม่ส่ง
+   *    (กฎ "ไม่รู้ ≠ วัดแล้วได้ศูนย์" ของทั้งโปรเจกต์) และพาไปไล่ผิดทางด้วย:
+   *    สถานะ ① แก้ได้ด้วยการกดปุ่ม ส่วน ② ต้องแก้โค้ด — คนละเรื่องกันคนละทางแก้
+   */
+  function thumbCell(p) {
+    if (p.thumb) {
+      return '<img class="influ-th" src="' + esc(imgSrc(p)) + '" alt="" referrerpolicy="no-referrer">';
+    }
+    if (!p.at) {
+      return '<span class="influ-th ph wait" title="ยังไม่เคยดึงข้อมูลของโพสต์นี้ — ' +
+        'กด 🔄 อัปเดตยอด แล้วรูปปกจะมาพร้อมยอด"></span>';
+    }
+    /* ⚠️ บอกด้วยว่าต้นทางส่งลิงก์ชื่ออะไรมาบ้าง — ไม่งั้นแยกไม่ออกว่า
+       "ต้นทางไม่มีรูปจริงๆ" กับ "มีรูปแต่ตัวจับลิงก์ของเราไม่รู้จักหน้าตาแบบนั้น" */
+    var seen = (p.warn && p.warn.img && p.warn.img.length)
+      ? " · ต้นทางส่งลิงก์ชื่อพวกนี้มา: " + p.warn.img.join(", ")
+      : "";
+    return '<span class="influ-th ph none" title="' +
+      esc("ดึงข้อมูลแล้วเมื่อ " + stamp(p.at) + " แต่ในคำตอบไม่มีลิงก์รูปปก — กดอัปเดตซ้ำก็ไม่ช่วย" + seen) +
+      '"></span>';
+  }
+
+  /* บรรทัดสรุปใต้ตาราง — tooltip เห็นได้เฉพาะตอนเอาเมาส์ไปชี้ และบนมือถือไม่มีเลย
+     เจ้าของต้องมาถามว่า "ทำไมรูปไม่ขึ้น" ถึง 2 รอบ = ข้อมูลที่ซ่อนอยู่ใน tooltip ยังไม่พอ
+     🚫 ไม่ขึ้นเมื่อมีรูปครบทุกใบ — ข้อความที่ไม่มีอะไรให้ทำคือของรก */
+  function thumbNote(list) {
+    var wait = 0, none = 0;
+    list.forEach(function (p) {
+      if (p.thumb) return;
+      if (!p.at) wait++; else none++;
+    });
+    if (!wait && !none) return "";
+    var parts = [];
+    if (wait) parts.push("<b>" + wait + " ใบยังไม่เคยดึงข้อมูล</b> — กด 🔄 อัปเดตยอด แล้วรูปจะมา");
+    if (none) parts.push(none + " ใบดึงแล้วแต่ต้นทางไม่ส่งลิงก์รูปมา (กดซ้ำไม่ช่วย)");
+    return '<p class="gnote thnote">🖼 ไม่มีรูปปก ' + (wait + none) + " จาก " + list.length +
+      " โพสต์ · " + parts.join(" · ") + "</p>";
+  }
+
   function outletOf(p) {
     var h = p.host || "";
     if (!h) { try { h = new URL(p.url).hostname.replace(/^www\./i, "").toLowerCase(); } catch (e) { h = ""; } }
@@ -539,6 +583,7 @@
     var h = '<h3 class="gsec"><span class="pdot" style="background:' + P_COLOR[g.plats[0]] + '"></span>' +
       esc(g.label) + ' <span class="sub">' + list.length + " โพสต์</span></h3>" +
       (g.note ? '<p class="gnote">' + esc(g.note) + "</p>" : "") +
+      thumbNote(list) +
       /* ⚠️ `influtbl` เป็นคลาสเฉพาะแท็บนี้ — กฎมือถือ (ตาราง→การ์ด) ต้องไม่หลุดไปโดน
          ตารางของแท็บ YouTube/TikTok/Facebook ที่ใช้ `.tbl.perf` ร่วมกันอยู่ */
       '<div class="tblwrap"><table class="tbl perf influtbl"><thead><tr><th>โพสต์</th>' +
@@ -556,9 +601,7 @@
            ของเดิมทั้ง 2 กรณีขึ้นเป็นกล่องเปล่าเหมือนกันเป๊ะ = ไล่ต่อไม่ได้ ต้องเดาเอา
            ⚠️ referrerpolicy="no-referrer" จำเป็น — CDN ของ TikTok/Facebook/Instagram
               บล็อกรูปตาม Referer (hotlink) ถ้าส่งชื่อโดเมนเราไป มันตอบ 403 ทันที */
-        (p.thumb
-          ? '<img class="influ-th" src="' + esc(imgSrc(p)) + '" alt="" referrerpolicy="no-referrer">'
-          : '<span class="influ-th ph" title="ต้นทางไม่ได้ส่งลิงก์รูปปกมา — กด 🔄 อัปเดตยอดเพื่อลองดึงใหม่"></span>') +
+        thumbCell(p) +
         '<div class="influ-m"><a href="' + esc(p.url) + '" target="_blank" rel="noopener" title="' +
         esc(p.title || p.note || p.url) + '">' +
         /* ⚠️ ลำดับสำคัญ: ชื่อจริงจากต้นทาง > แคปชั่นที่วางมา > URL ดิบ

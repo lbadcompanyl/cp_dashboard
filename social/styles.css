@@ -604,7 +604,11 @@ body {
   display:flex; align-items:center; justify-content:center;
   font-size:.8rem; opacity:.45; color:var(--muted);
 }
+/* 🔴 3 สถานะ ต้องดูออกจากไอคอนว่าอันไหนกดปุ่มแล้วหาย อันไหนต้องแก้โค้ด
+   · wait = ยังไม่เคยดึง (กด 🔄 แล้วรูปมา) · none = ดึงแล้วไม่มีรูป · fail = โหลดไม่ขึ้น */
 .influ-th.ph::after { content:"🖼"; }
+.influ-th.ph.wait::after { content:"🔄"; opacity:.55; }
+.influ-th.ph.none::after { content:"🖼"; }
 .influ-th.ph.fail::after { content:"⚠️"; opacity:.8; }
 /* 🔴 ชื่อโพสต์ต้องถูกจำกัดความกว้าง (เจ้าของแจ้ง 8 ก.ย. 2026: "ชื่อเต็มเกิน ไม่เห็นอันอื่นเลย")
    แคปชั่นของ TikTok/Facebook ยาวเป็นย่อหน้า พอปล่อยให้ยืดตามเนื้อหา
