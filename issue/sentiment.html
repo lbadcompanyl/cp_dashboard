@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="24" />
+<meta name="page-ver" content="25" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -516,6 +516,54 @@ async function demoResult(opts){
 
 /* ---------------- render ---------------- */
 function pct(n, total){ return total ? Math.round(n/total*100) : 0; }
+
+/* 🔗 จัดกลุ่มตัวอย่างคอมเมนต์ — **ที่เดียวสำหรับหน้าจอ · PDF/JPEG · CSV/Excel**
+ *
+ * 🐞 เจ้าของส่งภาพเทียบมา 11 ก.ย. 2026: "สิ่งที่ export ออกมาไม่ตรงกับสิ่งที่แสดง"
+ *    หน้าจอ: บวก 1 ใบ · **กลาง 211 ใบ (70%)** · ลบ 88 ใบ
+ *    ไฟล์ที่ได้: บวก 1 ใบ · ลบ 88 ใบ — **กลาง 211 ใบหายไปทั้งกลุ่ม**
+ *
+ *    ต้นเหตุ: โค้ดวาดรูปวนแค่ 2 กลุ่ม (`["positive",…],["negative",…]`) ไม่เคยมี "กลาง" เลย
+ *    ตอนเพิ่มช่องกลางให้หน้าจอ (2 ก.ย. 2026) แก้ที่หน้าจออย่างเดียว ไม่ได้ตามมาแก้ที่นี่
+ *    → **กับดักเดิมของโปรเจกต์: กฎเดียวกันอยู่หลายที่ แก้ที่หนึ่งลืมอีกที่**
+ *
+ *    และเจอรูที่สองระหว่างทาง: ทั้งไฟล์รูปและ CSV ใช้ `x.sentiment` = ป้ายที่ **AI ให้มาตอนแรก**
+ *    ส่วนหน้าจอใช้ป้าย **ปัจจุบัน** (ตามที่ผู้ใช้แก้เอง) → ผู้ใช้แก้ป้ายแล้ว export
+ *    ตัวอย่างจะไปอยู่ผิดกลุ่มเงียบๆ โดยไม่มีอะไรบอก
+ *
+ * 🚫 ห้ามเขียนลิสต์กลุ่มซ้ำที่อื่นอีก — ทุกที่ต้องเรียกฟังก์ชันนี้
+ *    เทสต์ `exportmatch.cjs` มีด่านจับระดับโค้ดไว้แล้ว
+ */
+function sampleGroups(d){
+  const s = d.sentiment || {};
+  const total = (s.positive||0)+(s.neutral||0)+(s.negative||0);
+  const samples = d.samples || [];
+  const audit = d.audit || [];
+  /* ⚠️ หลังบ้านรุ่นเก่าไม่ส่ง src มา → ตกกลับไปใช้ป้ายของ AI เหมือนเดิม ไม่พัง */
+  const labelOf = (x) => (x.src != null && audit[x.src])
+    ? String(audit[x.src].sentiment || "").toLowerCase()
+    : x.sentiment;
+  const by = (k) => samples.filter(x => labelOf(x) === k);
+  const pp = pct(s.positive,total), pnu = pct(s.neutral,total), pn = 100-pp-pnu;
+  return [
+    { key:"positive", th:"บวก",  emo:"บวก 😊",  word:"เชิงบวก",  cssVar:"--sc-pos", cls:"sc-pos", pc:pp,  count:s.positive||0 },
+    { key:"neutral",  th:"กลาง", emo:"กลาง 😐", word:"เป็นกลาง", cssVar:"--sc-neu", cls:"sc-neu", pc:pnu, count:s.neutral||0 },
+    { key:"negative", th:"ลบ",   emo:"ลบ 😞",   word:"เชิงลบ",   cssVar:"--sc-neg", cls:"sc-neg", pc:pn,  count:s.negative||0 },
+  ].map(g => ({
+    ...g,
+    items: g.count > 0 ? by(g.key) : [],
+    /* ตัวอย่างที่ AI จัดไว้กลุ่มนี้ตอนแรก แต่ตอนนี้ไม่อยู่แล้ว = ผู้ใช้ย้ายมันออกไปเอง */
+    movedOut: samples.some(x => x.sentiment === g.key && labelOf(x) !== g.key),
+  }))
+  /* 🚫 ห้ามโชว์ช่องกลางตลอดเวลา — ตอนวิเคราะห์เราเลือกมาถอดความเฉพาะใบบวก/ลบ
+     ช่องกลางจึงว่างเสมอถ้าไม่มีใครแก้ ขึ้นไว้เฉยๆ = รกโดยไม่ได้อะไร */
+  .filter(g => g.key !== "neutral" || g.items.length);
+}
+/** ป้ายปัจจุบันของตัวอย่างใบหนึ่ง (ตามที่ผู้ใช้แก้) — ใช้ตอนไล่ทีละใบลง CSV */
+function sampleLabelOf(d, x){
+  const a = (d.audit || [])[x.src];
+  return (x.src != null && a) ? String(a.sentiment || "").toLowerCase() : x.sentiment;
+}
 /* keepAudit = true → วาดเฉพาะส่วนสรุป ไม่แตะรายการ audit
    (ตอนผู้ใช้แก้ป้ายเอง ถ้าวาด audit ใหม่ด้วย ตัวกรองที่เลือกไว้กับตำแหน่งที่เลื่อนอยู่จะหายหมด) */
 function renderResult(d, keepAudit){
@@ -667,31 +715,13 @@ function renderResult(d, keepAudit){
 
   const samples = d.samples || [];
   el("sampleCard").style.display = total ? "" : "none";
-  /* 🔗 จัดกลุ่มตามป้าย "ปัจจุบัน" ของคอมเมนต์ต้นทาง ไม่ใช่ป้ายที่ AI ให้มาตอนแรก
-     ผู้ใช้กดแก้ป้ายแล้วตัวอย่างต้องย้ายกลุ่มตาม (เจ้าของแจ้ง 31 ส.ค. 2026)
-     ⚠️ หลังบ้านรุ่นเก่าไม่ส่ง src มา → ตกกลับไปใช้ป้ายของ AI เหมือนเดิม ไม่พัง */
-  const auditNow = d.audit || [];
-  const sampleLabel = (x) => (x.src != null && auditNow[x.src])
-    ? String(auditNow[x.src].sentiment || "").toLowerCase()
-    : x.sentiment;
   const unlinked = samples.some(x => x.src == null);
-  /* 🟡 ต้องมี **ช่องกลาง** ด้วย ไม่ใช่แค่บวก/ลบ (เจ้าของแจ้ง 2 ก.ย. 2026 — รอบที่ 4)
-     เจ้าของแก้ป้ายใบที่เป็นตัวอย่างจาก "บวก" เป็น "กลาง" → ตัวอย่างย้ายออกจากช่องบวกถูกต้องแล้ว
-     แต่ไม่มีช่องกลางให้ไปอยู่ **มันเลยหายไปเฉยๆ** อ่านแล้วเหมือนระบบไม่ทำงาน
-     (จำลองแล้วได้หน้าตาตรงกับภาพเป๊ะ: "บวก 7% (1 คอมเมนต์) — ไม่มีตัวอย่าง —")
-     🚫 แต่ห้ามโชว์ช่องกลางตลอดเวลา — ตอนวิเคราะห์เราเลือกมาถอดความเฉพาะใบบวก/ลบ
-        ช่องกลางจึงว่างเสมอถ้าไม่มีใครแก้ ขึ้นไว้เฉยๆ = รกโดยไม่ได้อะไร */
-  const byKey = (k) => samples.filter(x => sampleLabel(x) === k);
-  const groups = [
-    ["positive","บวก 😊","เชิงบวก","--sc-pos","sc-pos",pp,s.positive],
-    ["neutral","กลาง 😐","เป็นกลาง","--sc-neu","sc-neu",pnu,s.neutral],
-    ["negative","ลบ 😞","เชิงลบ","--sc-neg","sc-neg",pn,s.negative],
-  ].filter(([key]) => key !== "neutral" || byKey("neutral").length);
-  el("sampleList").innerHTML = groups.map(([key,label,word,color,cls,gp,gc]) => {
-    const items = gc > 0 ? byKey(key) : [];
+  /* 🔗 ลิสต์กลุ่มอยู่ที่ `sampleGroups()` ที่เดียว — ไฟล์ PDF/JPEG กับ CSV ใช้ตัวเดียวกันนี้
+     🚫 ห้ามเขียนลิสต์กลุ่มซ้ำตรงนี้อีก (เคยทำแล้วไฟล์ที่ export ไม่มีช่อง "กลาง" เลย) */
+  const groups = sampleGroups(d);
+  el("sampleList").innerHTML = groups.map(({key,emo:label,word,cssVar:color,cls,pc:gp,count:gc,items,movedOut}) => {
     /* ตัวอย่างที่ AI จัดไว้กลุ่มนี้ตอนแรก แต่ตอนนี้ไม่อยู่แล้ว = ผู้ใช้ย้ายมันออกไปเอง
        ต้องเขียนให้ตรงว่า "ย้ายออกไปแล้ว" ไม่ใช่ "ไม่มีตัวอย่าง" ซึ่งอ่านแล้วเหมือนของหาย */
-    const movedOut = samples.some(x => x.sentiment === key && sampleLabel(x) !== key);
     let body;
     if (gc === 0) body = `<div class="sc-nonemsg">— ไม่มีคอมเมนต์${word} —</div>`;
     else if (!items.length) body = `<div class="sc-nonemsg">${movedOut
@@ -1035,7 +1065,11 @@ function buildSheets(d){
   const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term, k.count||0])];
   const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
   const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };
-  if ((d.samples||[]).length) sheets["ตัวอย่าง"] = [["Sentiment","ข้อความ (ถอดความ)"], ...(d.samples).map(x=>[sentTh[x.sentiment]||x.sentiment, x.text])];
+  /* ⚠️ ต้องเป็นป้าย **ปัจจุบัน** (ตามที่ผู้ใช้แก้เอง) ไม่ใช่ป้ายที่ AI ให้มาตอนแรก
+     ของเดิมใช้ `x.sentiment` ตรงๆ → แก้ป้ายแล้วเปิดไฟล์ดู ตัวอย่างยังติดป้ายเก่าอยู่
+     ซึ่งไม่ตรงกับที่เห็นบนหน้าจอ และไม่มีอะไรบอกเลย */
+  if ((d.samples||[]).length) sheets["ตัวอย่าง"] = [["Sentiment","ข้อความ (ถอดความ)"],
+    ...(d.samples).map(x=>{ const lb = sampleLabelOf(d, x); return [sentTh[lb]||lb, x.text]; })];
   return sheets;
 }
 function sheetsToCsv(sheets){ let out=""; for (const [name, rows] of Object.entries(sheets)){ out += "# "+name+"\n" + rows.map(r=>r.map(csvCell).join(",")).join("\n") + "\n\n"; } return out; }
@@ -1103,16 +1137,22 @@ function reportPass(ctx, d, draw, thumb){
     y+=16;
   }
   if (d.summary){ if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("สรุปภาพรวม", pad, y); } y+=22; setFont(ctx,400,14); for (const ln of wrapLines(ctx,d.summary,cw)){ if (draw){ ctx.fillStyle=RC.ink2; ctx.fillText(ln, pad, y+12); } y+=21; } y+=16; }
-  const samples=d.samples||[];
   if (total){
     if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("ตัวอย่างคอมเมนต์ (ถอดความ)", pad, y); }
     y+=24;
-    for (const [key,lab,word,col,gp,gc] of [["positive","บวก","เชิงบวก",RC.pos,pp,s.positive],["negative","ลบ","เชิงลบ",RC.neg,pn,s.negative]]){
-      const items = gc>0 ? samples.filter(x=>x.sentiment===key) : [];
+    /* 🔗 ใช้ลิสต์กลุ่มก้อนเดียวกับหน้าจอ — ของเดิมเขียนลิสต์เองแค่ บวก/ลบ
+       ทำให้ **กลุ่ม "กลาง" หายไปจากไฟล์ทั้งกลุ่ม** (เจ้าของเจอ 11 ก.ย. 2026: กลาง 211 ใบ 70%)
+       🚫 ห้ามเขียนลิสต์กลุ่มกลับมาตรงนี้อีกเด็ดขาด */
+    for (const {key,th:lab,word,cssVar,pc:gp,count:gc,items,movedOut} of sampleGroups(d)){
+      const col = cssVar==="--sc-pos" ? RC.pos : cssVar==="--sc-neg" ? RC.neg : RC.neu;
       if (draw){ ctx.fillStyle=col; setFont(ctx,600,13); ctx.fillText(`${lab} · ${gp}%  (${gc} คอมเมนต์)`, pad, y+10); }
       y+=22;
       if (gc===0 || !items.length){
-        if (draw){ ctx.fillStyle=RC.muted; setFont(ctx,400,12.5); ctx.fillText(gc===0?`— ไม่มีคอมเมนต์${word} —`:"— ไม่มีตัวอย่าง —", pad, y+10); }
+        /* ข้อความต้องตรงกับหน้าจอ — ของเดิมเขียน "ไม่มีตัวอย่าง" ทั้งที่หน้าจอบอกว่า "ย้ายไปแล้ว" */
+        const msg = gc===0 ? `— ไม่มีคอมเมนต์${word} —`
+          : movedOut ? "— ตัวอย่างที่เคยอยู่ตรงนี้ ย้ายไปตามป้ายที่คุณแก้แล้ว —"
+          : `— ไม่มีตัวอย่าง (มี ${gc} คอมเมนต์) —`;
+        if (draw){ ctx.fillStyle=RC.muted; setFont(ctx,400,12.5); ctx.fillText(msg, pad, y+10); }
         y+=24;
       } else {
         setFont(ctx,400,13);
