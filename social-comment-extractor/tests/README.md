@@ -34,26 +34,29 @@
 | `apierror.mjs` | **ข้อความ error จาก Claude API ต้องบอกเลขสถานะ + ชนิดเสมอ** — 401/403/429/500 ต้องอ่านแยกออก · ต้นทางไม่ตอบ JSON ก็ห้ามพัง | `node apierror.mjs` |
 | `verbadge.cjs` | **ป้ายเวอร์ชันต้องบอกทั้งเลขหน้าเว็บ (น) และเลขหลังบ้าน (ล)** · ผลวิเคราะห์ต้องแนบ `ver` มาด้วย · หลังบ้านล่มก็ยังต้องบอกเลขหน้าเว็บ | ต้องมีเซิร์ฟเวอร์ static |
 
-```bash
-# เทสต์ฝั่ง worker ทุกตัว: ก๊อป worker.js เป็น .mjs แล้วเติม "export line" เดียวนี้
-# (worker ตั้งใจให้เป็นไฟล์เดียวเพราะ deploy ด้วยการก๊อปวาง จึงไม่มี export ในตัว)
-# ⚠️ ต้องใส่ให้ครบทุกชื่อในบรรทัดเดียว — เคยเติมแค่บางชื่อแล้วเทสต์ตัวอื่นพังหมด
-cp ../../functions/issue/api/sentiment/_core.js /tmp/w.mjs
-cat >> /tmp/w.mjs <<'EOF'
-export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonArray,
-         nestedReplies, scComment, fetchYouTube, INCLUDE_REPLIES,
-         feedbackRoute, fbClean, FB_MAX, FB_MAX_PER_REQ, FB_MAX_TEXT,
-         EFFORT_CHOICES, EFFORT_MODELS, analyze, countTerms,
-         PROFILES, getProfile, DEFAULT_PROFILE,
-         sampleQuota, SAMPLE_MIN, SAMPLE_MAX, dupKey, systemBlackchin, BLACKCHIN_SHOTS };
-EOF
-cp *.mjs /tmp/ && cd /tmp
-for t in authguard profiles blackchin twolens retry jsonparse replies lensconsistency feedback cache notext samplesrc samplemid samplequota dupes ytkey keywords apierror synthbudget airetry; do node $t.mjs; done
+## วิธีรัน — คำสั่งเดียว
 
-# evalpage.cjs
-python3 -m http.server 8899 --directory <รากของ repo> &
-node evalpage.cjs
+```bash
+cd social-comment-extractor/tests && bash run.sh
 ```
+
+`run.sh` ทำให้ครบทุกขั้น: ประกอบ `_core.js` เป็น `w.mjs` · เปิดเซิร์ฟเวอร์ static ·
+ไล่รันทั้ง `.mjs` และ `.cjs` · สรุปข้อที่ตกให้ท้ายสุด · ตกแม้แต่ข้อเดียวคืนสถานะ 1
+
+> 🤖 **CI ที่ GitHub รันตัวนี้ให้เองทุกครั้งที่ push แล้ว** (job ชื่อ `sentiment` —
+> เจ้าของสั่ง 8 ก.ย. 2026: *"งั้นก็ต้องตรวจทุกห้องซิ"*)
+> ก่อนหน้านั้น CI เข้าไปแค่โฟลเดอร์ `tests/` ของห้องแดชบอร์ด **ห้องนี้ไม่เคยถูกตรวจเลย**
+> เหลือแต่ AI รันเองแล้วรายงานเอง ซึ่งชนกฎ *"อย่าเชื่อ self-report ของ AI"* ตรงๆ
+
+> 🔗 **เพิ่ม export ใหม่ให้แก้ที่ `run.sh` ที่เดียว** — เมื่อก่อนบรรทัด `export {…}` ก๊อปอยู่
+> ในไฟล์นี้ด้วย ซึ่งเป็นกับดักที่โปรเจกต์นี้เจอซ้ำที่สุด (กฎเดียวกันอยู่ 2 ที่ แก้ที่หนึ่งลืมอีกที่)
+
+> 🌐 **`browser.cjs` คือที่เดียวที่รู้จักที่อยู่ของเบราว์เซอร์** — ห้ามเขียน
+> `executablePath: "/opt/pw-browsers/chromium"` ในไฟล์เทสต์อีก **ที่ CI ไม่มีไฟล์นั้น**
+> เขียนแล้วจะพังทั้ง 19 ไฟล์ทันที (ห้องแดชบอร์ดเจอมาก่อนแล้วแก้ด้วย `tests/browser.mjs`)
+
+> 🐍 `leakcheck.py` **ไม่ได้อยู่ในรอบของ `run.sh`** — ต้องใช้ไฟล์ชุดสอบ (`.xlsx`) ที่ห้าม commit
+> รันด้วยมือทุกครั้งที่แตะ few-shot: `python3 leakcheck.py ../../functions/issue/api/sentiment/_core.js <eval.xlsx>`
 
 > ⚠️ **ทำไมต้องมีเทสต์เรื่อง "แถวเลื่อน" โดยเฉพาะ** — ถ้าผลที่โมเดลตอบกลับมาไปตกผิดแถว
 > ตัวเลขความแม่นจะผิดทั้งกระดาน **โดยไม่มี error อะไรบอกเลย** และจะพาไปแก้ prompt ผิดทาง

@@ -8,10 +8,10 @@ function app(saved){const elements=new Map(),handlers={};
  for(const tag of html.matchAll(/<(?:input|select|textarea)[^>]*\bid="([^"]+)"[^>]*>/g)){const e=el(tag[1]);e.value=tag[0].match(/\bvalue="([^"]*)"/)?.[1]||'';e.checked=tag[0].includes(' checked')}
  const topics=['สิ่งแวดล้อม','ความยั่งยืน','ขยะ','ครู'].map(value=>({value,checked:true}));const tabs=['search','database','shortlist'].map(tab=>({dataset:{tab},setAttribute(){}}));
  const doc={getElementById:el,querySelectorAll(q){return q==='#topic-options input:checked'?topics.filter(e=>e.checked):q==='#topic-options input'?topics:q==='[data-tab]'?tabs:[]},querySelector(){return el('nav')},addEventListener(n,f){handlers[n]=f}};
- let raw=saved||null;
- const ctx=vm.createContext({document:doc,URL,structuredClone,localStorage:{getItem(){return raw},setItem(k,v){raw=v}},setTimeout(){return 1},clearTimeout(){},confirm(){return true},crypto:{randomUUID:()=>Math.random().toString(36).slice(2)}});
+ let raw=saved||null;const kv=new Map();if(saved)kv.set("cp-influencer-ux-v3",saved);
+ const ctx=vm.createContext({document:doc,location:{host:"test.example"},URL,structuredClone,localStorage:{getItem(k){return kv.get(k)||null},setItem(k,v){kv.set(k,v);raw=v},removeItem(k){kv.delete(k)}},setTimeout(){return 1},clearTimeout(){},confirm(){return true},crypto:{randomUUID:()=>Math.random().toString(36).slice(2)}});
  vm.runInContext(source,ctx);
- return{el,ctx,run:s=>vm.runInContext(s,ctx),data:()=>JSON.parse(vm.runInContext('JSON.stringify(state)',ctx)),saved:()=>raw,toggle(id){handlers.click({target:{closest:()=>({dataset:{toggle:id},hasAttribute:()=>false})}})},submit(id){const e=el(id);(e.onsubmit||e.handlers.submit)({preventDefault(){}})}}}
+ return{el,ctx,run:s=>vm.runInContext(s,ctx),data:()=>JSON.parse(vm.runInContext('JSON.stringify(state)',ctx)),saved:()=>kv.get("cp-influencer-ux-v3")||null,toggle(id){handlers.click({target:{closest:()=>({dataset:{toggle:id},hasAttribute:()=>false})}})},submit(id){const e=el(id);(e.onsubmit||e.handlers.submit)({preventDefault(){}})}}}
 
 let count=0;function test(name,fn){fn();count++;console.log('PASS '+name)}
 const a=app();
@@ -48,5 +48,17 @@ test('inverted estimates rejected',()=>assert.equal(a.run('(()=>{const s=structu
 a.run('save()');const b=app(a.saved());
 test('reload preserves v3 projects and profile data',()=>assert.deepEqual(b.data(),a.data()));
 test('sidebar has only two main menu items',()=>assert.equal((html.match(/<button data-page=/g)||[]).length,2));
-test('external discovery clearly disabled without backend',()=>{assert.ok(html.includes('disabled title="ยังไม่เชื่อม AI และ ScrapeCreators"'));assert.ok(!source.includes('fetch('))});
+test('external discovery clearly disabled without backend',()=>{assert.ok(html.includes('disabled title="ยังไม่เชื่อม AI และ ScrapeCreators"'));assert.ok(!source.includes('api.scrapecreators.com'))});
+const localBefore=a.saved();
+a.ctx.fetch=async()=>({ok:false,headers:{get:()=> 'application/json'},json:async()=>({error:'not_configured'})});
+const beforeFailure=a.data();await a.run('openTeam()');
+test('unconfigured team keeps local data intact',()=>assert.deepEqual(a.data(),beforeFailure));
+a.ctx.fetch=async()=>({ok:true,headers:{get:()=> 'application/json'},json:async()=>({configured:true,state:null,revision:0})});
+await a.run('openTeam()');
+test('empty central database has no seed profiles',()=>assert.equal(a.data().records.length,0));
+a.run('state.projects[0].name="Draft";save()');
+test('team draft does not replace local database',()=>assert.equal(a.saved(),localBefore));
+a.ctx.fetch=async()=>({ok:false,headers:{get:()=> 'application/json'},json:async()=>({error:'conflict'})});
+await a.run('pushTeam()');
+test('conflict retains draft without reporting saved',()=>{assert.equal(a.data().projects[0].name,'Draft');assert.equal(a.run('teamRevision'),0);assert.ok(a.el('team-status').textContent.includes('มีคนอื่น'));});
 console.log(`${count} checks passed; DOM stub, not browser rendering. Test data stayed in memory.`);

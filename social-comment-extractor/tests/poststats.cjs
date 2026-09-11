@@ -11,7 +11,7 @@
  * ⚠️ [3] ยอดรวม engagement ของแต่ละแพลตฟอร์ม **ประกอบด้วยคนละชนิด**
  *    YouTube ไม่เปิดเผยยอดแชร์ · ถ้าไม่เขียนกำกับ จะเอาไปเทียบข้ามแพลตฟอร์มแล้วสรุปผิด
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 
 const AUDIT = [
   { text: "ซีพีต้องรับผิดชอบ", sentiment: "negative", likes: 9 },
@@ -48,7 +48,7 @@ const run = async (page, patch) => {
 };
 
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const ctx = await b.newContext();
   let fail = 0;
   const ok = (n, c, x = "") => { console.log(`${c ? "✅" : "❌"} ${n}${x ? " — " + x : ""}`); if (!c) fail++; };

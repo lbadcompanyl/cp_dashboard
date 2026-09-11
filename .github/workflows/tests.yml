@@ -95,3 +95,41 @@ jobs:
             echo "❌ ตก:$fails"; exit 1
           fi
           echo "✅ ผ่านหมด"
+
+  # ────────────────────────────────────────────────────────────────────
+  # ห้อง sentiment (social-comment-extractor/tests/) — 39 ชุด
+  #
+  # 🎯 เจ้าของสั่ง 8 ก.ย. 2026: "งั้นก็ต้องตรวจทุกห้องซิ"
+  #    ก่อนหน้านี้ job ข้างบนเข้าไปแค่โฟลเดอร์ `tests/` (`working-directory: tests`
+  #    + `for f in *.mjs`) แปลว่าเทสต์ของห้องนี้ **ไม่เคยถูกรันที่นี่เลยสักครั้ง**
+  #    เหลือแต่ AI รันเองแล้วรายงานเอง ซึ่งชนกฎข้อ 3 ของเจ้าของ ("อย่าเชื่อ self-report")
+  #
+  # ⚠️ **แยกเป็น job ต่างหากโดยตั้งใจ ห้ามยุบไปรวมกับ job ข้างบน**
+  #    ห้องนี้ต้องประกอบ `_core.js` เป็น w.mjs ก่อน · มีทั้ง .mjs และ .cjs ·
+  #    ใช้ playwright จาก tests/node_modules (คนละสายกับที่ตัวเองอยู่)
+  #    แยกไว้แล้วห้องไหนตกก็เห็นชัดว่าเป็นของใคร ไม่ลากกันแดง
+  sentiment:
+    runs-on: ubuntu-latest
+    name: sentiment
+    # 🚫 **ห้ามใส่ continue-on-error ที่ job นี้** — จุดประสงค์ทั้งหมดคือให้มันบล็อกได้จริง
+    #    รันในเครื่องที่เขียนเทสต์แล้วผ่านครบ 39 ชุด ไม่ใช่ของที่ยังไม่เคยลอง
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # ⚠️ playwright ถูกลงไว้ที่เดียวคือ tests/ — run.sh ชี้ NODE_PATH มาที่นี่
+      - name: ติดตั้ง dependency ของเทสต์
+        working-directory: tests
+        run: npm install
+
+      - name: ติดตั้งเบราว์เซอร์
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+
+      # run.sh เปิดเซิร์ฟเวอร์ static ให้เอง จึงไม่ต้องมีขั้นตอนแยกเหมือน job ข้างบน
+      - name: รันเทสต์ห้อง sentiment
+        working-directory: social-comment-extractor/tests
+        run: bash run.sh

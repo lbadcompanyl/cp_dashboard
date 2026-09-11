@@ -13,7 +13,7 @@
  *
  * [2] คือข้อสำคัญที่สุด — ห้ามเอา analyzed_count มาแปะป้ายว่า "ดึงมา"
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 
 const base = {
   ok: true, platform: "facebook", target: "overall", model: "claude-opus-5", ver: 21, rubric: "v6",
@@ -29,7 +29,7 @@ const WITH_SKIP = { ...base, fetched_count: 11, no_text_count: 3, analyzed_count
 const NO_SKIP = { ...base, fetched_count: 8, no_text_count: 0, analyzed_count: 8, reply_count: 0 };
 
 (async () => {
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   let payload = WITH_SKIP;

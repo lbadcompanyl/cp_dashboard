@@ -4,7 +4,7 @@
  * [3] คือข้อสำคัญที่สุด — ถ้าแคชไม่ทำงาน ต้องขึ้นเตือนให้เห็น
  *     ไม่ใช่แสดงตัวเลข 0 เงียบๆ ให้เข้าใจว่าปกติ (กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง")
  */
-const { chromium } = require("playwright");
+const { launch } = require("./browser.cjs");
 const fs = require("fs");
 const path = require("path");
 
@@ -23,7 +23,7 @@ const CSV = [
   const tmp = path.join(process.env.TMPDIR || "/tmp", "eval-mini.csv");
   fs.writeFileSync(tmp, "﻿" + CSV);
 
-  const b = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-sandbox"] });
+  const b = await launch();
   const page = await (await b.newContext()).newPage();
   const errs = []; page.on("pageerror", e => errs.push(e.message));
   const bodies = [];

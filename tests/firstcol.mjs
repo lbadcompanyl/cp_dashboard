@@ -23,16 +23,20 @@ const ok = (name, cond, extra = "") => {
 };
 
 const PAGES = [
-  { path: "/trend/", feeds: "/api/trend/feeds", first: "news" },
+  // ⚠️ `first` = คอลัมน์ซ้ายสุดของหน้านั้นจริงๆ — เจ้าของสลับลำดับ 11 ก.ย. 2026
+  //    (`/trend/` กับ `/issue/` ขึ้นต้นด้วย "หัวข้อที่จับตามอง" แล้ว ไม่ใช่ News)
+  //    สลับลำดับใน index.html เมื่อไหร่ ต้องมาแก้ตรงนี้ด้วย
+  { path: "/trend/", feeds: "/api/trend/feeds", first: "alert2" },
   { path: "/ir/",    feeds: "/api/ir/feeds",    first: "newsth" },
-  { path: "/issue/", feeds: "/api/trend/feeds", first: "news" },
+  { path: "/issue/", feeds: "/api/trend/feeds", first: "alert2" },
 ];
 
 const body = (extra = {}) => JSON.stringify({
   sources: {
     news:   { items: [{ id: "1", title: "ข่าวคอลัมน์แรก", link: "https://a/1", at: new Date().toISOString() }] },
     newsth: { items: [{ id: "1", title: "ข่าวคอลัมน์แรก", link: "https://a/1", at: new Date().toISOString() }] },
-    alert1: { items: [] }, alert2: { items: [] },
+    alert2: { items: [{ id: "1", title: "ข่าวคอลัมน์แรก", link: "https://a/1", at: new Date().toISOString() }] },
+    alert1: { items: [] },
   },
   items: [], trends: [], generatedAt: Date.now(), ...extra,
 });
@@ -127,15 +131,17 @@ console.log("\n[4] กดปุ่ม 🔄 ต้องได้ของให�
     const t = round === 1 ? "ข่าวรอบแรก" : "ข่าวรอบใหม่";
     await new Promise((res) => setTimeout(res, 120));
     r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ sources: { news: { items: [{ id: String(round), title: t, link: "https://a/" + round, at: new Date().toISOString() }] },
-        alert1: { items: [] }, alert2: { items: [] } }, items: [], trends: [], generatedAt: Date.now() }) });
+      body: JSON.stringify({ sources: { [g.first]: { items: [{ id: String(round), title: t, link: "https://a/" + round, at: new Date().toISOString() }] },
+        alert1: { items: [] }, news: { items: [] } }, items: [], trends: [], generatedAt: Date.now() }) });
   });
   const p = await ctx.newPage();
   await p.goto(BASE + g.path, { waitUntil: "load" });
   await p.waitForTimeout(1200);
   await p.click("#refresh");
   await p.waitForTimeout(1500);
-  const txt = await p.$eval('.panel[data-source="news"] [data-list]', (e) => e.textContent);
+  // ⚠️ ต้องวัดที่ **คอลัมน์แรก** เท่านั้น — บนมือถือคอลัมน์ที่อยู่นอกจอยังไม่ถูกวาด
+  //    (ระบบโหลดทีละคอลัมน์) วัดคอลัมน์ที่ 3 จะเจอ "กำลังดึงข้อมูล…" ตลอด
+  const txt = await p.$eval(`.panel[data-source="${g.first}"] [data-list]`, (e) => e.textContent);
   ok("กดรีเฟรชแล้วได้ข้อมูลรอบใหม่", txt.includes("ข่าวรอบใหม่"), txt.slice(0, 60));
   ok("ยิง feeds มากกว่า 1 ครั้ง (ไม่ได้ใช้ของเก่าซ้ำ)", round >= 2, "ยิงไป " + round + " ครั้ง");
   await ctx.close();
