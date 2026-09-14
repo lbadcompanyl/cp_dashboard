@@ -119,7 +119,12 @@ async function load(opts = {}) {
     if (!state.data) state.data = { sources: {} };
     if (!state.data.sources) state.data.sources = {};
     const src = state.data.sources;
-    for (const k of Object.keys(feeds.sources || {})) src[k] = feeds.sources[k];
+    // 🐞 **ห้ามเขียนทับคีย์ของคอลัมน์ที่โหลดเอง** (เจ้าของแจ้ง 14 ก.ย. 2026)
+    //    `/api/trend/feeds` ส่ง `sources.trends` เป็นก้อนว่างกลับมาเสมอ ถ้า load() เสร็จหลัง
+    //    reloadTrends() จะทับผลที่ดึงมาได้ · ก้อนว่างไม่มีธง `loaded` → หมุนค้าง + ป้าย 0 คำ
+    //    (โค้ดชุดเดียวกับ trend/app.js — แก้ที่หนึ่งต้องแก้อีกที่ด้วย)
+    for (const k of Object.keys(feeds.sources || {}))
+      if (!LAZY_COLS[k]) src[k] = feeds.sources[k];
     Object.assign(state.data, feeds, { sources: src });
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");

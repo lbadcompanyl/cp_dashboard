@@ -156,7 +156,14 @@ async function load(opts = {}) {
     if (!state.data) state.data = { sources: {} };
     if (!state.data.sources) state.data.sources = {};
     const src = state.data.sources;
-    for (const k of Object.keys(feeds.sources || {})) src[k] = feeds.sources[k];
+    // 🐞 **ห้ามเขียนทับคีย์ของคอลัมน์ที่โหลดเอง** (เจ้าของแจ้ง 14 ก.ย. 2026:
+    //    "Google trend โหลดไม่ขึ้นบ่อย") — `/api/trend/feeds` ส่ง `sources.trends`
+    //    เป็นก้อนว่าง `{items: [], feedCount: 0}` กลับมา**เสมอ** (ไม่มีฟีด source=trends อยู่แล้ว)
+    //    ถ้า load() เสร็จ **หลัง** reloadTrends() มันจะทับผลที่ดึงมาได้ด้วยก้อนว่างนั้น
+    //    ก้อนว่างไม่มีธง `loaded` → หน้าเว็บอ่านว่า "ยังโหลดไม่เสร็จ" → **หมุนค้าง + ป้าย 0 คำ**
+    //    ⚠️ เป็นการแย่งกันเขียน ใครเสร็จทีหลังชนะ จึงเป็นบางครั้ง ไม่ใช่ทุกครั้ง
+    for (const k of Object.keys(feeds.sources || {}))
+      if (!SELF_LOADING.has(k)) src[k] = feeds.sources[k];
     Object.assign(state.data, feeds, { sources: src });
     $("#updated").textContent =
       "อัปเดตล่าสุด " + new Date(feeds.generatedAt || Date.now()).toLocaleTimeString("th-TH");
