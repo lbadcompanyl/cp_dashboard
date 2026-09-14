@@ -554,11 +554,14 @@ body {
   background: var(--trends); color: #fff;
   font: 700 14px/1 inherit; letter-spacing: .2px; cursor: pointer;
   box-shadow: 0 6px 20px rgba(234, 88, 12, .45), 0 2px 6px rgba(16, 24, 40, .2);
-  transition: transform .12s, box-shadow .12s;
+  transition: transform .12s, box-shadow .12s, opacity .4s ease;
 }
 #scrollcue:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 10px 26px rgba(234, 88, 12, .55), 0 2px 6px rgba(16, 24, 40, .2); }
 #scrollcue:active { transform: translateX(-50%) translateY(0); }
 #scrollcue[hidden] { display: none; }
+/* ⏱ จางหายเองใน 10 วิ — `pointer-events:none` จำเป็น ไม่งั้นระหว่างจางยังกดโดน
+   (JS ตั้ง hidden ให้อีกทีหลังจางจบ ดูใน setupScrollCue) */
+#scrollcue.cuegone { opacity: 0; pointer-events: none; }
 #scrollcue .cuearrow { animation: cuebob 1.6s ease-in-out infinite; }
 @keyframes cuebob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
 @media (prefers-reduced-motion: reduce) { #scrollcue .cuearrow { animation: none; } }

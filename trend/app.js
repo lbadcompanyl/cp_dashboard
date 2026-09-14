@@ -1393,11 +1393,26 @@ function setupScrollCue() {
   const target = $('.panel[data-source="trends"]');
   if (!cue || !target) return;
   cue.addEventListener("click", () => target.scrollIntoView({ behavior: "smooth", block: "start" }));
+
+  // ⏱ จางหายเองใน 10 วิ (เจ้าของสั่ง 14 ก.ย. 2026) — มันแค่ชี้ทาง ไม่ได้มาถาม
+  //    ⚠️ นับจาก "วินาทีที่มันโผล่มาจริง" ไม่ใช่ตอนเปิดหน้า — ถ้าเปิดหน้ามาแล้วเลื่อนอยู่ล่าง
+  //       ปุ่มจะยังไม่ขึ้น จับเวลาตั้งแต่โหลดหน้าจะกินเวลาไปเปล่าๆ
+  //    ⚠️ จางแล้วต้อง `hidden` ด้วย — ปล่อยไว้แค่ opacity:0 มันยังกดได้ กลายเป็นปุ่มล่องหนขวางคลิก
+  //    🚫 จางแล้วไม่กลับมาอีกในการเปิดหน้าครั้งนั้น (เลื่อนขึ้นลงก็ไม่เรียกคืน)
+  const FADE_MS = 10000, FADE_ANIM_MS = 400;
+  let fadeTimer = null, faded = false;
+  const fadeOut = () => {
+    faded = true;
+    cue.classList.add("cuegone");
+    setTimeout(() => { cue.hidden = true; }, FADE_ANIM_MS);
+  };
   const update = () => {
+    if (faded) return;
     const top = target.getBoundingClientRect().top;
     const visible = top < window.innerHeight - 80;              // แถวล่างโผล่มาแล้ว
     const scrollable = document.documentElement.scrollHeight > window.innerHeight + 40; // จอใหญ่จนพอดีอยู่แล้ว
     cue.hidden = visible || !scrollable;
+    if (!cue.hidden && fadeTimer === null) fadeTimer = setTimeout(fadeOut, FADE_MS);
   };
   update();
   addEventListener("scroll", update, { passive: true });
