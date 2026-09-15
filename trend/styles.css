@@ -559,7 +559,7 @@ body {
 #scrollcue:hover { transform: translateX(-50%) translateY(-2px); box-shadow: 0 10px 26px rgba(234, 88, 12, .55), 0 2px 6px rgba(16, 24, 40, .2); }
 #scrollcue:active { transform: translateX(-50%) translateY(0); }
 #scrollcue[hidden] { display: none; }
-/* ⏱ จางหายเองใน 7.5 วิ — `pointer-events:none` จำเป็น ไม่งั้นระหว่างจางยังกดโดน
+/* ⏱ จางหายเองใน 5 วิ — `pointer-events:none` จำเป็น ไม่งั้นระหว่างจางยังกดโดน
    (JS ตั้ง hidden ให้อีกทีหลังจางจบ ดูใน setupScrollCue) */
 #scrollcue.cuegone { opacity: 0; pointer-events: none; }
 #scrollcue .cuearrow { animation: cuebob 1.6s ease-in-out infinite; }
