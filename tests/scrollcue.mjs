@@ -1,6 +1,7 @@
-/* ⏱ ปุ่มลอย "▼ เลื่อนเพื่อดู Trend · X · YouTube" ต้องจางหายเองใน 10 วิ
+/* ⏱ ปุ่มลอย "▼ เลื่อนเพื่อดู Trend · X · YouTube" ต้องจางหายเองใน 7.5 วิ
  *
- * เจ้าของสั่ง 14 ก.ย. 2026 — มันแค่ชี้ทาง ไม่ได้มาถาม จึงไม่ควรค้างอยู่ตลอด
+ * เจ้าของสั่ง 14 ก.ย. 2026 (10 วิ) · ปรับเป็น 7.5 วิ 15 ก.ย. 2026
+ * — มันแค่ชี้ทาง ไม่ได้มาถาม จึงไม่ควรค้างอยู่ตลอด
  * (กฎเดียวกับแถบชวนติดตั้ง: "แถบหายเอง ห้ามบังคับให้กด")
  *
  * 🚫 ข้อที่พลาดง่ายที่สุด: จางแล้วแต่ **ยังกดโดน** — `opacity:0` อย่างเดียว
@@ -36,7 +37,7 @@ const cueState = (p) => p.$eval("#scrollcue", (el) => {
   return { hidden: el.hidden, opacity: +c.opacity, pointer: c.pointerEvents, hit };
 });
 
-console.log("\n[1] /trend/ — ปุ่มโผล่ก่อน แล้วจางหายเองใน 10 วิ");
+console.log("\n[1] /trend/ — ปุ่มโผล่ก่อน แล้วจางหายเองใน 7.5 วิ");
 {
   const ctx = await browser.newContext({ viewport: SHORT });
   await ctx.route("**/api/**", (r) =>
@@ -49,13 +50,13 @@ console.log("\n[1] /trend/ — ปุ่มโผล่ก่อน แล้ว
   ok("แรกเข้า: ปุ่มโผล่", s.hidden === false, JSON.stringify(s));
   ok("แรกเข้า: กดได้จริง", s.hit === "cue", JSON.stringify(s));
 
-  await p.waitForTimeout(8000);
+  await p.waitForTimeout(4500);
   s = await cueState(p);
-  ok("~9 วิ ยังอยู่ (ห้ามหายก่อนเวลา)", s.hidden === false && s.opacity === 1, JSON.stringify(s));
+  ok("~5.5 วิ ยังอยู่ (ห้ามหายก่อนเวลา)", s.hidden === false && s.opacity === 1, JSON.stringify(s));
 
-  await p.waitForTimeout(2500);            // ผ่าน 10 วิ + เผื่อเวลาจาง
+  await p.waitForTimeout(3500);            // ผ่าน 7.5 วิ + เผื่อเวลาจาง
   s = await cueState(p);
-  ok("~11.5 วิ: จางหายแล้ว", s.hidden === true || s.opacity === 0, JSON.stringify(s));
+  ok("~9 วิ: จางหายแล้ว", s.hidden === true || s.opacity === 0, JSON.stringify(s));
   ok("🚫 จางแล้วต้องกดไม่โดน", s.hit !== "cue", JSON.stringify(s));
 
   // 🚫 หายแล้วต้องไม่กลับมา — ไม่งั้นเลื่อนขึ้นลงทีไรก็เด้งใหม่ทุกที
@@ -73,7 +74,7 @@ console.log("\n[2] ด่านระดับโค้ด");
   const css = fs.readFileSync(new URL("../trend/styles.css", import.meta.url), "utf8");
   const block = js.slice(js.indexOf("function setupScrollCue"), js.indexOf("function setupScrollCue") + 1400);
 
-  ok("มีตัวจับเวลา 10 วิ", /FADE_MS\s*=\s*10000/.test(block), block.slice(0, 0) || "ไม่เจอ FADE_MS = 10000");
+  ok("มีตัวจับเวลา 7.5 วิ", /FADE_MS\s*=\s*7500/.test(block), "ไม่เจอ FADE_MS = 7500");
   ok("จางแล้วตั้ง hidden ด้วย (ไม่ใช่แค่ opacity)", /cue\.hidden\s*=\s*true/.test(block));
   ok("จางแล้วไม่กลับมา (มีธงกัน)", /if\s*\(faded\)\s*return/.test(block));
   ok("CSS: .cuegone ปิดการกดด้วย", /#scrollcue\.cuegone[^}]*pointer-events:\s*none/.test(css));
