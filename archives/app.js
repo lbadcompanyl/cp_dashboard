@@ -15,6 +15,23 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const PAGE = 50;        // โหลดผลลัพธ์ทีละ 50
 
+/* 🗄️ **คลังของหน้านี้อยู่โฟลเดอร์ไหน** — อ่านจาก `<meta name="data-dir">` · ไม่ใส่ = `data`
+ *
+ * เจ้าของสั่ง 16 ก.ย. 2026: "ทำแยกหน้า เป็นอีก tab นึงชื่อ ปลาหมอคางดำ และ lock ไว้ด้วย"
+ * แล้วสั่งต่อว่า **"ใช้ database เป็นอันนี้แทน"** พร้อมลิงก์ชีตใหม่
+ * → `blackchin.html` จึงเป็น **คลังคนละก้อน** ไม่ใช่การกรองหมวดจากคลังเดิม
+ *   ใช้ `app.js` / `styles.css` ตัวเดียวกันทั้งหมด ต่างกันแค่ meta บรรทัดเดียว
+ *
+ * ✅ **ข้อดีของการแยกไฟล์ คือทำให้ "ล็อก" เป็นของจริง** — ถ้าเอาแต่ซ่อนในหน้าเว็บ
+ *    ไฟล์ `data/<ปี>.json` เปิดสาธารณะอยู่ ใครเดาที่อยู่ถูกก็โหลดไปทั้งก้อน
+ *    พอเป็นคนละโฟลเดอร์ เจ้าของเอา `archives/data-blackchin/*` เข้า Access ได้ด้วย
+ *    (คนละเรื่องกับ `/api/*` ที่ห้ามเอาเข้า Access เด็ดขาด — อันนี้เป็นไฟล์นิ่งของหน้านี้หน้าเดียว)
+ *
+ * ⚠️ **ห้าม commit sheet id ลง repo** (repo เป็น public) — ตัวสร้างไฟล์รับ id ทาง argument
+ *    และไฟล์ผลลัพธ์ที่ commit ไม่มี id อยู่ในนั้น
+ */
+const DATA_DIR = (document.querySelector('meta[name="data-dir"]')?.content || "data").trim().replace(/\/+$/, "");
+
 const state = {
   q: "", from: "", to: "",
   cats: new Set(), srcs: new Set(),
@@ -199,7 +216,7 @@ function expand(pack) {
 async function loadYear(y) {
   if (loaded.has(y)) return;
   loaded.add(y);
-  const res = await fetch(`data/${y}.json`);
+  const res = await fetch(`${DATA_DIR}/${y}.json`);
   if (!res.ok) throw new Error(`โหลดข้อมูลปี ${y} ไม่สำเร็จ`);
   const pack = await res.json();
   rows = rows.concat(expand(pack));
@@ -930,7 +947,7 @@ function fillInputs() {
   try { localStorage.removeItem(FOPEN_KEY); } catch {}   // ล้างค่าเก่าที่ค้างอยู่ในเครื่อง
   $("#list").innerHTML = `<div class="loading"><span class="spin"></span>กำลังโหลดคลังข่าว…</div>`;
   try {
-    INDEX = await fetch("data/index.json").then((r) => {
+    INDEX = await fetch(`${DATA_DIR}/index.json`).then((r) => {
       if (!r.ok) throw new Error("ยังไม่มีไฟล์คลังข่าว");
       return r.json();
     });
@@ -939,7 +956,9 @@ function fillInputs() {
     const need = yearsNeededByDate();                  // ถ้า URL มีช่วงวันที่ย้อนไปถึงปีเก่า โหลดตาม
     if (need.length) await Promise.all(need.map(loadYear));
   } catch (e) {
-    $("#list").innerHTML = `<div class="empty"><b>ยังไม่มีข้อมูลคลังข่าว</b>${esc(e.message)} — รัน <code>node tools/build-archives.mjs --mock</code> เพื่อสร้างข้อมูลจำลอง</div>`;
+    // ⚠️ บอกโฟลเดอร์ของหน้านี้ด้วย — หน้า blackchin อ่านคนละโฟลเดอร์กับหน้าหลัก
+    //    ถ้าบอกคำสั่งกลางๆ คนอ่านจะไปสร้างผิดที่แล้วงงว่าทำไมยังไม่ขึ้น
+    $("#list").innerHTML = `<div class="empty"><b>ยังไม่มีข้อมูลคลังข่าว</b>${esc(e.message)} — ยังไม่มีไฟล์ใน <code>archives/${esc(DATA_DIR)}/</code><br />สร้างด้วย <code>node tools/build-archives.mjs --csv &lt;ไฟล์.csv&gt; --out ${esc(DATA_DIR)}</code></div>`;
     $("#count").textContent = "";
     return;
   }

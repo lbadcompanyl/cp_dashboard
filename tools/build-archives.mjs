@@ -9,6 +9,11 @@
 //   node tools/build-archives.mjs --csv <ไฟล์>       # แปลงจากไฟล์ CSV ที่โหลดมาเองแล้ว
 //   node tools/build-archives.mjs --mock            # สร้างข้อมูลจำลองโครงเดียวกัน (ไว้ลองของ)
 //
+// เติม `--out <โฟลเดอร์>` ท้ายคำสั่งไหนก็ได้ = เขียนลง `archives/<โฟลเดอร์>/` แทน `archives/data/`
+//   node tools/build-archives.mjs --csv blackchin.csv --out data-blackchin
+// ⚠️ **หน้าเว็บที่จะอ่านโฟลเดอร์นั้นต้องมี `<meta name="data-dir">` ชี้มาให้ตรงกัน**
+//    (blackchin.html ชี้ไว้ที่ data-blackchin แล้ว) — ตั้งชื่อไม่ตรง = หน้าว่างเปล่าเงียบๆ
+//
 // ⚠️ **โหมด `--csv` มีไว้เพราะเครื่องที่รัน session ยิงเข้า Google ไม่ได้** (โดนบล็อก 403)
 //    ดาวน์โหลดชีตเป็น CSV มาก่อน แล้วชี้ไฟล์ให้ · ผลลัพธ์เหมือนกับดึงเองทุกอย่าง
 //    เจ้าของรันบนเครื่องตัวเองใช้ `<SHEET_ID>` ได้ตามปกติ
@@ -24,7 +29,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const OUT = path.join(ROOT, "archives", "data");
+
+/* --out <โฟลเดอร์> — เลือกได้ว่าจะเขียนคลังก้อนไหน (ดูหัวไฟล์)
+ * 🚫 รับเฉพาะชื่อโฟลเดอร์ชั้นเดียว a-z 0-9 - _ เท่านั้น — write() ลบไฟล์ .json ในโฟลเดอร์ปลายทางทิ้ง
+ *    ปล่อยให้ใส่ `..` หรือ path เต็มได้เมื่อไหร่ พิมพ์พลาดทีเดียวลบไฟล์ผิดที่ */
+function outDirFromArgv(argv) {
+  const i = argv.indexOf("--out");
+  if (i === -1) return "data";
+  const v = argv[i + 1];
+  if (!v || !/^[a-z0-9][a-z0-9_-]*$/i.test(v)) {
+    console.error(`--out รับชื่อโฟลเดอร์ชั้นเดียว (a-z 0-9 - _) เท่านั้น — ได้มา: ${JSON.stringify(v)}`);
+    process.exit(1);
+  }
+  return v;
+}
+const OUT_DIR = outDirFromArgv(process.argv);
+const OUT = path.join(ROOT, "archives", OUT_DIR);
 
 // ---------- อ่าน CSV (ชีตส่งมาเป็น CSV ผ่าน /export) ----------
 // เขียนเองเพราะต้องรองรับเครื่องหมายคำพูดครอบ + จุลภาคในเซลล์ ซึ่ง split(",") ทำไม่ได้
@@ -237,7 +257,7 @@ function write(rows) {
   };
   fs.writeFileSync(path.join(OUT, "index.json"), JSON.stringify(index, null, 1));
 
-  console.log(`เขียนแล้ว ${years.length} ปี · รวม ${index.total} แถว` + (noDate ? ` · ไม่มีวันที่ ${noDate} แถว (ข้าม)` : ""));
+  console.log(`เขียนลง archives/${OUT_DIR}/ แล้ว ${years.length} ปี · รวม ${index.total} แถว` + (noDate ? ` · ไม่มีวันที่ ${noDate} แถว (ข้าม)` : ""));
   for (const y of years) {
     const kb = (fs.statSync(path.join(OUT, y + ".json")).size / 1024).toFixed(0);
     console.log(`  ${y}: ${byYear.get(y).length} แถว · ${kb} KB`);
@@ -246,9 +266,14 @@ function write(rows) {
 
 // ---------- main ----------
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const arg = process.argv[2];
+  // ตัด --out <โฟลเดอร์> ออกก่อน ไม่งั้นมันจะถูกอ่านเป็น SHEET_ID หรือ gid
+  const argv = process.argv.slice(2);
+  const oi = argv.indexOf("--out");
+  if (oi !== -1) argv.splice(oi, 2);
+
+  const arg = argv[0];
   if (!arg) {
-    console.error("ใช้: node tools/build-archives.mjs <SHEET_ID> [gid]   หรือ   --csv <ไฟล์>   หรือ   --mock");
+    console.error("ใช้: node tools/build-archives.mjs <SHEET_ID> [gid]   หรือ   --csv <ไฟล์>   หรือ   --mock   [--out <โฟลเดอร์>]");
     process.exit(1);
   }
   let table;
@@ -256,12 +281,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log("สร้างข้อมูลจำลอง (ไม่ใช่ข่าวจริง)…");
     table = mockTable();
   } else if (arg === "--csv") {
-    const file = process.argv[3];
+    const file = argv[1];
     if (!file) { console.error("ใช้: node tools/build-archives.mjs --csv <ไฟล์.csv>"); process.exit(1); }
     console.log("อ่านจากไฟล์ CSV…");
     table = parseCSV(fs.readFileSync(file, "utf8"));
   } else {
-    const gid = process.argv[3] || "0";
+    const gid = argv[1] || "0";
     const url = `https://docs.google.com/spreadsheets/d/${arg}/export?format=csv&gid=${gid}`;
     console.log("ดึงจากชีต…");
     const res = await fetch(url);

@@ -54,6 +54,22 @@ body {
 .btn.sm { padding:5px 11px; font-size:.75rem; }
 #vtag { color:var(--muted); font-size:.72rem; }
 
+/* ── แถบแท็บ (ทั้งหมด / ปลาหมอคางดำ) ──────────────────────────────
+   📌 หน้าตาเดียวกับ .pgtab ของ /issue/ โดยตั้งใจ — สลับหน้าไปมาแล้วต้องรู้สึกเป็นเว็บเดียวกัน
+      (ที่นั่นใช้ --alert / --text · ที่นี่ชื่อตัวแปรเป็น --accent / --ink ค่าสีเดียวกัน) */
+.pgtabs { display:flex; gap:8px; flex-wrap:wrap; padding:0 0 10px; }
+.pgtab {
+  border:1px solid var(--border); background:var(--surface); color:var(--ink);
+  padding:8px 16px; border-radius:999px; font-size:.82rem; text-decoration:none;
+  display:inline-flex; align-items:center; gap:6px;
+}
+.pgtab:hover { border-color:var(--accent); }
+.pgtab.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600; }
+/* 🔒 ป้ายบอกว่า "กดแล้วจะเจอหน้าล็อกอิน" — ไม่ได้ล็อกอะไรเอง ตัวล็อกจริงคือ Cloudflare Access
+   ⚠️ เป็นไอคอนล้วน ต้องมี title + aria-label ที่ HTML เสมอ (กฎเดียวกับการ์ด Issue บนหน้ารวม) */
+.pgtab .lock, .logo .lock { font-size:.85em; line-height:1; opacity:.75; }
+.pgtab.on .lock { opacity:1; }
+
 /* ── ช่องค้นหา ───────────────────────────────────────────────────
    ⚠️ ติดบนสุดตลอด — เลื่อนดูผลลัพธ์ยาวๆ แล้วยังพิมพ์แก้คำค้นได้ทันที */
 /* ⭐ ช่องค้นหา = ฟีเจอร์หลัก ต้องเด่นกว่าทุกอย่างบนหน้า
