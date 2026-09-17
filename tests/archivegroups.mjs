@@ -5,8 +5,9 @@
  *
  * สิ่งที่เทสต์นี้คุม
  *   [1] จัดหมวดถูกตามคำในพาดหัว · **1 ข่าว = 1 หมวด** (ผลรวมของทุกหมวด = จำนวนข่าวทั้งหมด)
- *   [2] กล่องพับได้จริง · กางหมวดแรกให้ตอนเปิดหน้า · กด/พับ/ดูเพิ่ม ทำงาน
- *   [3] ค้นแล้วต้องกางหมวดที่มีผลให้เอง ไม่งั้นเจอหัวข้อพับหมด นึกว่าไม่เจออะไร
+ *   [2] **เปิดหน้ามาพับทุกหมวด** (เจ้าของสั่ง "defualt คือ ปิดทุกอัน") · ปุ่ม 2 ช่อง
+ *       เปิดทั้งหมด/ปิดทั้งหมด ทำงาน · กด/พับ/ดูเพิ่ม ทำงาน
+ *   [3] 🚫 **ค้นแล้วต้องไม่กางเอง** — เลขบนหัวข้อเป็นตัวบอกว่าหมวดไหนมีผล
  *   [4] มีรูปเล็กทุกใบ และ **ยึดเว็บที่ข่าวอยู่ ไม่ใช่คอลัมน์สำนักข่าวในชีต**
  *       (ในคลังจริง 266/365 แถวเป็นชื่อ Google Alert ก้อนเดียวกัน — ยึดคอลัมน์นั้นจะเหมือนกันทั้งหน้า)
  *   [5] 🚫 **หน้าคลังหลักต้องไม่เปลี่ยน** — ไม่มีหมวด ไม่มีรูปเล็ก (เจ้าของสั่งมาสำหรับหน้าปลาหมอคางดำ)
@@ -74,6 +75,19 @@ const groupsOf = (p) => p.evaluate(() => [...document.querySelectorAll(".grp")].
   items: [...s.querySelectorAll(".item a.t")].map((a) => a.textContent.replace(/\s+/g, " ").trim()),
 })));
 
+/** ปุ่ม 2 ช่อง — คืนคำบนปุ่ม + ช่องที่กำลังถูกเลือก */
+const segOf = (p) => p.$$eval(".gseg .gsegb", (bs) => bs.map((b) => ({
+  text: b.textContent.replace(/\s+/g, " ").trim(),
+  on: b.classList.contains("on"),
+  pressed: b.getAttribute("aria-pressed"),
+})));
+
+/** กางทุกหมวดด้วยปุ่ม "เปิดทั้งหมด" (ไล่กดทีละหัวข้อก็ได้ แต่ท่านี้เป็นท่าที่ผู้ใช้ใช้จริง) */
+async function openAll(p) {
+  await p.click('.gseg [data-gall="open"]');
+  await p.waitForTimeout(250);
+}
+
 const browser = await launch();
 
 // ── [1] จัดหมวดถูก และ 1 ข่าว = 1 หมวด ────────────────────────────
@@ -96,12 +110,7 @@ console.log("\n[1] จัดหมวดตามคำในพาดหัว"
   ok("ผลรวมทุกหมวด = จำนวนข่าวทั้งหมด (1 ข่าว = 1 หมวด)", sum === total, `${sum} ≠ ${total}`);
 
   // กางทุกหมวดแล้วไล่ดูว่าแต่ละพาดหัวไปอยู่หมวดที่ควรอยู่ไหม
-  for (let i = 0; i < 9; i++) {
-    const h = await p.$(`.grp:nth-child(${i + 1}) .ghead:not([disabled])`);
-    const exp = await h?.getAttribute("aria-expanded");
-    if (h && exp !== "true") await h.click();
-  }
-  await p.waitForTimeout(300);
+  await openAll(p);
   const full = await groupsOf(p);
   const where = new Map();
   for (const g of full) for (const t of g.items) where.set(t, g.name);
@@ -112,8 +121,8 @@ console.log("\n[1] จัดหมวดตามคำในพาดหัว"
   await ctx.close();
 }
 
-// ── [2] กล่องพับได้จริง ───────────────────────────────────────────
-console.log("\n[2] กาง / พับ / ดูเพิ่ม");
+// ── [2] เปิดหน้ามาพับทุกหมวด + ปุ่ม 2 ช่อง ────────────────────────
+console.log("\n[2] ค่าตั้งต้นพับทุกหมวด · ปุ่ม 2 ช่อง · กาง/พับ/ดูเพิ่ม");
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
   const p = await ctx.newPage();
@@ -122,36 +131,62 @@ console.log("\n[2] กาง / พับ / ดูเพิ่ม");
   await p.waitForTimeout(400);
 
   let gs = await groupsOf(p);
-  ok("เปิดหน้ามากางให้ 1 หมวด (ไม่ใช่หัวข้อเปล่าทั้งหน้า)", gs.filter((g) => g.open).length === 1,
-     JSON.stringify(gs.map((g) => g.open)));
-  ok("หมวดที่กางอยู่วาดข่าวจริง", gs.find((g) => g.open)?.items.length > 0);
-  ok("หมวดที่ยังพับ ไม่วาดข่าว", gs.filter((g) => !g.open).every((g) => g.items.length === 0));
+  // 🚫 เจ้าของสั่ง "defualt คือ ปิดทุกอัน" — กางเองแม้แต่หมวดเดียวก็ถือว่าตก
+  ok("เปิดหน้ามาพับทุกหมวด", gs.every((g) => !g.open), JSON.stringify(gs.map((g) => g.open)));
+  ok("พับอยู่ = ไม่วาดข่าวสักใบ", (await p.$$eval(".item", (n) => n.length)) === 0);
+  ok("เลขบนหัวข้อยังบอกว่าหมวดไหนมีกี่ใบ", gs.filter((g) => g.n > 0).length > 1,
+     JSON.stringify(gs.map((g) => g.n)));
+
+  // 🔘 ปุ่ม 2 ช่อง — ต้องเห็นทั้ง 2 ตัวเลือกพร้อมกัน ไม่ใช่ป้ายใบเดียวที่กดแล้วสลับ
+  let seg = await segOf(p);
+  ok("มีปุ่ม 2 ช่อง โชว์ทั้ง 2 ตัวเลือก", seg.length === 2, JSON.stringify(seg));
+  ok("ช่องซ้ายคือ 'เปิดทั้งหมด' ช่องขวาคือ 'ปิดทั้งหมด'",
+     /เปิดทั้งหมด/.test(seg[0]?.text || "") && /ปิดทั้งหมด/.test(seg[1]?.text || ""), JSON.stringify(seg));
+  ok("ค่าตั้งต้นเลือกอยู่ที่ 'ปิดทั้งหมด'", !seg[0].on && seg[1].on && seg[1].pressed === "true",
+     JSON.stringify(seg));
+
+  await openAll(p);
+  gs = await groupsOf(p);
+  seg = await segOf(p);
+  ok("กดเปิดทั้งหมด → กางทุกหมวดที่มีข่าว", gs.filter((g) => g.n).every((g) => g.open),
+     JSON.stringify(gs.map((g) => [g.n, g.open])));
+  ok("กดแล้วช่องที่เลือกย้ายมาที่ 'เปิดทั้งหมด'", seg[0].on && !seg[1].on, JSON.stringify(seg));
+
+  await p.click('.gseg [data-gall="close"]');
+  await p.waitForTimeout(250);
+  gs = await groupsOf(p);
+  ok("กดปิดทั้งหมด → พับหมดทุกหมวด", gs.every((g) => !g.open), JSON.stringify(gs.map((g) => g.open)));
+  ok("ปิดแล้วไม่เหลือข่าวที่วาดไว้", (await p.$$eval(".item", (n) => n.length)) === 0);
+
   // หมวดที่ไม่มีข่าวต้องกดไม่ได้ ไม่ใช่กดแล้วกางออกมาว่างเปล่า
   const dis = await p.$$eval(".ghead[disabled]", (b) => b.length);
-  ok("หมวดที่ไม่มีข่าวกดไม่ได้", dis === (await groupsOf(p)).filter((g) => !g.n).length, String(dis));
+  ok("หมวดที่ไม่มีข่าวกดไม่ได้", dis === gs.filter((g) => !g.n).length, String(dis));
 
-  // หมวดแรกมี 31 ใบ → วาด 25 แล้วมีปุ่ม "ดูอีก 6 ใบ"
+  // ── กางทีละหมวด + ดูเพิ่ม ── (หมวดแรกมี 31 ใบ → วาด 25 แล้วมีปุ่ม "ดูอีก 6 ใบ")
+  const heads = await p.$$(".ghead");
+  await heads[0].click();
+  await p.waitForTimeout(250);
+  gs = await groupsOf(p);
+  ok("กดหัวข้อเดียวกางเฉพาะหมวดนั้น", gs[0].open && gs.slice(1).every((g) => !g.open),
+     JSON.stringify(gs.map((g) => g.open)));
   ok("หมวดใหญ่วาดทีละ 25 ใบ ไม่เทหมดทีเดียว", gs[0].items.length === 25, String(gs[0].items.length));
-  ok("มีปุ่มดูอีกของหมวดนั้น", !!(await p.$(".grp:nth-child(1) [data-gmore]")));
-  await p.click(".grp:nth-child(1) [data-gmore]");
+
+  ok("มีปุ่มดูอีกของหมวดนั้น", !!(await p.$("[data-gmore]")));
+  await p.click("[data-gmore]");
   await p.waitForTimeout(250);
   gs = await groupsOf(p);
   ok("กดดูอีกแล้วได้ครบทั้งหมวด", gs[0].items.length === gs[0].n, `${gs[0].items.length} / ${gs[0].n}`);
-  ok("ครบแล้วปุ่มดูอีกหายไป", !(await p.$(".grp:nth-child(1) [data-gmore]")));
+  ok("ครบแล้วปุ่มดูอีกหายไป", !(await p.$("[data-gmore]")));
 
-  await p.click(".grp:nth-child(1) .ghead");
+  (await p.$$(".ghead"))[0].click();
   await p.waitForTimeout(250);
   gs = await groupsOf(p);
   ok("กดหัวข้อแล้วพับลงได้", !gs[0].open && gs[0].items.length === 0);
-  await p.click(".grp:nth-child(1) .ghead");
-  await p.waitForTimeout(250);
-  gs = await groupsOf(p);
-  ok("กดอีกทีกางกลับมา", gs[0].open && gs[0].items.length > 0);
   await ctx.close();
 }
 
-// ── [3] ค้นแล้วต้องกางหมวดที่มีผลให้เอง ───────────────────────────
-console.log("\n[3] ค้นแล้วกางหมวดที่มีผลให้เอง");
+// ── [3] ค้นแล้วต้องไม่กางเอง ──────────────────────────────────────
+console.log("\n[3] 🚫 ค้นแล้วต้องไม่กางหมวดให้เอง");
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
   const p = await ctx.newPage();
@@ -161,10 +196,19 @@ console.log("\n[3] ค้นแล้วกางหมวดที่มีผ�
   await p.fill("#q", "ศาลอุทธรณ์");
   await p.press("#q", "Enter");
   await p.waitForTimeout(400);
-  const gs = await groupsOf(p);
-  const hit = gs.filter((g) => g.n > 0);
-  ok("หมวดที่มีผลถูกกางให้หมด", hit.length > 0 && hit.every((g) => g.open), JSON.stringify(hit.map((g) => [g.name, g.open])));
-  ok("หมวดที่ไม่มีผลยังพับ", gs.filter((g) => !g.n).every((g) => !g.open));
+
+  let gs = await groupsOf(p);
+  // 🚫 "ปิดทุกอัน" ครอบทุกกรณี รวมถึงหลังค้น — ไม่มีข้อยกเว้น
+  ok("ค้นแล้วยังพับทุกหมวด", gs.every((g) => !g.open), JSON.stringify(gs.map((g) => g.open)));
+  // ที่ไม่หลงทางเพราะเลขบนหัวข้อบอกอยู่แล้วว่าผลอยู่หมวดไหน
+  ok("เลขบนหัวข้อเปลี่ยนตามผลค้น", gs.reduce((a, g) => a + g.n, 0) < CASES.length + FILLER,
+     JSON.stringify(gs.map((g) => g.n)));
+  ok("หมวดที่ไม่มีผลเหลือ 0 และกดไม่ได้",
+     (await p.$$eval(".ghead[disabled]", (b) => b.length)) === gs.filter((g) => !g.n).length);
+
+  await openAll(p);
+  gs = await groupsOf(p);
+  ok("กดเปิดทั้งหมดแล้วเห็นผลค้น", gs.filter((g) => g.n).every((g) => g.items.length > 0));
   ok("ไฮไลต์คำค้นในหมวดด้วย", (await p.$$eval(".grp .item mark", (m) => m.length)) > 0);
   await ctx.close();
 }
@@ -177,12 +221,8 @@ console.log("\n[4] รูปเล็กหน้าข่าว");
   await fakeArchive(p, "data-blackchin");
   await p.goto(`${BASE}/archives/blackchin.html?mode=kw`, { waitUntil: "networkidle" });
   await p.waitForTimeout(400);
-  // กางทุกหมวดก่อน — ไม่งั้นเห็นแค่หมวดเดียว แล้ววัด "หลายเว็บ" ไม่ได้
-  for (let i = 0; i < 9; i++) {
-    const h = await p.$(`.grp:nth-child(${i + 1}) .ghead:not([disabled])`);
-    if (h && (await h.getAttribute("aria-expanded")) !== "true") await h.click();
-  }
-  await p.waitForTimeout(300);
+  // กางทุกหมวดก่อน — ค่าตั้งต้นพับหมด ถ้าไม่กางจะไม่มีการ์ดให้วัดเลย
+  await openAll(p);
   const th = await p.evaluate(() => {
     const items = [...document.querySelectorAll(".item")];
     return {
@@ -237,6 +277,17 @@ console.log("\n[6] ด่านระดับโค้ด");
   ok("คิดหมวดตอนคลี่ข้อมูล ไม่ใช่ตอนวาด", /g: TOPICS \? topicOf\(/.test(APP));
   // 🚫 สถานะกาง/พับต้องอยู่นอก DOM — render() สร้าง innerHTML ใหม่ทั้งก้อนทุกครั้งที่ค้น
   ok("จำสถานะกาง/พับไว้นอก DOM", /const openG = new Set\(\)/.test(APP));
+
+  // 🚫 ห้ามเอาการกางอัตโนมัติกลับมา (เจ้าของสั่ง "defualt คือ ปิดทุกอัน")
+  //    ของเดิมมี `let gInit` กางหมวดแรก และ `searching` กางทุกหมวดที่มีผล — ถอดออกทั้งคู่แล้ว
+  ok("🚫 ไม่มีตัวกางหมวดแรกให้เองตอนเปิดหน้า", !/\bgInit\b/.test(APP));
+  ok("🚫 ตัวตัดสินว่ากางไหม ดูจากที่ผู้ใช้กดอย่างเดียว",
+     /const open = list\.length && openG\.has\(i\);/.test(APP), "เจอเงื่อนไขอื่นปนใน `open`");
+  // 🔘 ปุ่มต้องเป็น 2 ช่อง ไม่ใช่ปุ่มใบเดียวที่กดแล้วสลับ — เจ้าของบอกเองว่า "คนจะไม่รู้ซิว่ากดได้"
+  ok("ปุ่มเปิด/ปิดทั้งหมดเป็น 2 ช่องแยกกัน",
+     /data-gall="open"/.test(APP) && /data-gall="close"/.test(APP));
+  // เปิด/ปิดทั้งหมดต้องล้างตัวนับ "แสดงไปแล้วกี่ใบ" ด้วย ไม่งั้นกางใหม่แล้วเจอรายการยาวค้างจากรอบก่อน
+  ok("เปิด/ปิดทั้งหมดล้างตัวนับของทุกหมวด", /openG\.clear\(\);[\s\S]{0,200}shownG\.clear\(\)/.test(APP));
 }
 
 await browser.close();

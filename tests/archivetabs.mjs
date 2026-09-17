@@ -62,6 +62,11 @@ console.log("\n[1] แต่ละหน้าอ่านคลังของ�
     await p.goto(BASE + url, { waitUntil: "networkidle" });
     await p.waitForTimeout(400);
 
+    // 📭 หน้าที่แยกหมวด (blackchin) เปิดมาพับทุกหมวด — ต้องกด "เปิดทั้งหมด" ก่อนถึงเห็นพาดหัว
+    //    (ดูหัวข้อ 🗂 ใน CLAUDE.md · เทสต์ที่วัดเนื้อรายการของหน้านั้นต้องกางก่อนเสมอ)
+    const all = await p.$('.gseg [data-gall="open"]');
+    if (all) { await all.click(); await p.waitForTimeout(250); }
+
     const txt = await p.$eval("#list", (el) => el.textContent);
     ok(`${label}: ขอไฟล์จาก ${wantDir}/`, asked.length > 0 && asked.every((d) => d === wantDir), JSON.stringify(asked));
     ok(`${label}: 🚫 ไม่แตะ ${banDir}/ เลย`, !asked.includes(banDir), JSON.stringify(asked));
@@ -210,6 +215,9 @@ console.log("\n[6] ค้นไม่เจอ — ต้องแยก \"ค�
     // ② กดปุ่มแล้วต้องได้ข่าวกลับมา
     await p.click("#list .empty .btn");
     await p.waitForTimeout(400);
+    // หน้าที่แยกหมวดต้องกางก่อนถึงนับการ์ดได้ (ค่าตั้งต้นพับทุกหมวด)
+    const all2 = await p.$('.gseg [data-gall="open"]');
+    if (all2) { await all2.click(); await p.waitForTimeout(250); }
     const back = await p.evaluate(() => ({
       q: document.querySelector("#q").value,
       rows: document.querySelectorAll("#list .item").length,

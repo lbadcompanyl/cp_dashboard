@@ -832,24 +832,35 @@ function itemHTML(r, terms) {
 const openG = new Set();       // หมวดที่ผู้ใช้กางไว้เอง
 const shownG = new Map();      // หมวด → แสดงไปแล้วกี่ใบ
 const GPAGE = 25;              // หมวดหนึ่งวาดทีละ 25 ใบ กันหน้าอืดตอนกางหมวดใหญ่
-let gInit = false;             // กางหมวดแรกให้ครั้งเดียวตอนเปิดหน้า
 
+/* 📭 **ค่าตั้งต้น = พับทุกหมวด** (เจ้าของสั่ง 17 ก.ย. 2026: "defualt คือ ปิดทุกอัน")
+ *   · ของเดิมกางหมวดแรกให้เอง และ **กางทุกหมวดที่มีผลตอนค้น** — ถอดออกทั้งคู่
+ *   🚫 **ห้ามเอาการกางอัตโนมัติกลับมา** ไม่ว่ากรณีไหน (เปิดหน้า · ค้น · กรอง)
+ *      ผู้ใช้สั่งเองล้วนๆ · ที่ไม่หลงทางเพราะ **เลขบนหัวข้อบอกอยู่แล้วว่าหมวดไหนมีกี่ใบ**
+ *      และมีปุ่ม 2 ช่อง "เปิดทั้งหมด / ปิดทั้งหมด" อยู่เหนือรายการ กดทีเดียวเห็นหมด
+ *   · เทสต์ `archivegroups.mjs` [2] มีด่านจับ (กางเองเมื่อไหร่ = ตก)
+ */
 function renderGroups(box, terms) {
   const buckets = TOPICS.map(() => []);
   for (const r of filtered) buckets[r.g].push(r);
 
-  // เปิดหน้ามาครั้งแรก: กางหมวดบนสุดที่มีข่าวให้ 1 หมวด — ไม่งั้นเจอแต่หัวข้อเปล่าๆ อ่านไม่ออกว่ามีอะไร
-  if (!gInit) {
-    gInit = true;
-    const first = buckets.findIndex((b) => b.length);
-    if (first >= 0) openG.add(first);
-  }
-  // 🔎 กำลังค้นอยู่ = กางทุกหมวดที่มีผล ไม่งั้นค้นแล้วเจอหัวข้อพับหมด นึกว่าไม่เจออะไร
-  const searching = !!(state.q || state.judge);
+  // 🔘 ปุ่มสลับ 2 ช่อง — โชว์ทั้ง 2 ตัวเลือกพร้อมกัน (ท่าเดียวกับปุ่มสลับโหมดค้นหาของหน้านี้)
+  //    🚫 ห้ามทำเป็นปุ่มใบเดียวที่กดแล้วสลับ — เจ้าของเคยบอกตรงๆ ว่า "คนจะไม่รู้ซิว่ากดได้"
+  const withNews = buckets.filter((b) => b.length).length;
+  const openCount = [...openG].filter((i) => buckets[i]?.length).length;
+  const allOpen = withNews > 0 && openCount === withNews;
+  const seg = `<div class="gseg" role="group" aria-label="กาง/พับทุกหมวด">
+      <button type="button" class="gsegb${allOpen ? " on" : ""}" data-gall="open" aria-pressed="${allOpen}">
+        <span aria-hidden="true">▾</span> เปิดทั้งหมด
+      </button>
+      <button type="button" class="gsegb${allOpen ? "" : " on"}" data-gall="close" aria-pressed="${!allOpen}">
+        <span aria-hidden="true">▸</span> ปิดทั้งหมด
+      </button>
+    </div>`;
 
-  box.innerHTML = TOPICS.map((t, i) => {
+  box.innerHTML = seg + TOPICS.map((t, i) => {
     const list = buckets[i];
-    const open = list.length && (searching || openG.has(i));
+    const open = list.length && openG.has(i);
     const cap = Math.min(shownG.get(i) || GPAGE, list.length);
     const left = list.length - cap;
     return `<section class="grp${list.length ? "" : " off"}">
@@ -1094,6 +1105,15 @@ function bind() {
     if (y) { await withBusy(() => loadYear(+y.dataset.year)); render(); }
   });
   $("#list").addEventListener("click", (e) => {
+    // 🔘 ปุ่ม 2 ช่อง — เปิด/ปิดทุกหมวดรวดเดียว
+    const ga = e.target.closest("[data-gall]");
+    if (ga) {
+      openG.clear();
+      shownG.clear();          // เปิดใหม่ = เริ่มนับ 25 ใบใหม่ทุกหมวด ไม่ค้างของยาวไว้
+      if (ga.dataset.gall === "open") TOPICS.forEach((_, i) => openG.add(i));
+      renderList();
+      return;
+    }
     // 🗂 กาง/พับหมวด · และ "ดูอีก N ใบ" ของหมวดนั้น
     const gh = e.target.closest("[data-g]");
     if (gh) {

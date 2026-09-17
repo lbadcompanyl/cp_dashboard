@@ -368,6 +368,24 @@ body {
 }
 
 /* ── 🗂 หมวดข่าวแบบพับได้ ─────────────────────────────────────────── */
+/* 🔘 ปุ่มสลับ 2 ช่อง "เปิดทั้งหมด / ปิดทั้งหมด" — หน้าตาเดียวกับปุ่มสลับโหมดค้นหา (.modeseg)
+   🚫 ห้ามทำเป็นปุ่มใบเดียวที่กดแล้วสลับ — ช่องที่ยังไม่ได้เลือกคือสิ่งเดียวที่บอกว่ากดตรงนี้ได้ */
+.gseg {
+  align-self:flex-start; display:inline-flex; align-items:center; gap:2px;
+  padding:3px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border);
+}
+.gsegb {
+  display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  border:0; background:transparent; color:var(--muted);
+  font-family:inherit; font-size:.78rem; font-weight:650; line-height:1;
+  padding:7px 13px; border-radius:999px; white-space:nowrap;
+  transition:background .12s, color .12s;
+}
+.gsegb:hover { color:var(--ink); background:rgba(37,99,235,.09); }
+.gsegb:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.gsegb.on { background:var(--accent); color:var(--on-accent); box-shadow:0 1px 4px rgba(37,99,235,.35); }
+.gsegb.on:hover { background:var(--accent); color:var(--on-accent); }
+
 .grp { border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden; }
 .grp.off { opacity:.55; }
 .ghead {
