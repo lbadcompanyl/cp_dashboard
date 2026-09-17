@@ -207,9 +207,80 @@ function expand(pack) {
       o,
       os: slug(rawOutlet),           // ไว้เทียบว่าหางพาดหัวเป็นชื่อเว็บของตัวเองไหม
       c: (r[4] || []).map((i) => pack.c[i]).filter(Boolean),
+      // 🗂 หมวดคิดครั้งเดียวตอนโหลด ไม่ใช่ทุกครั้งที่วาด (365 ใบ × 9 หมวด ทุก render = เปลือง)
+      // ⚠️ ส่งตัวพิมพ์เล็กเข้าไป — คำละตินในกฎเขียนเป็นตัวเล็ก (`dna` · `cites` · `invasive`)
+      g: TOPICS ? topicOf(title.toLowerCase()) : 0,
     });
   }
   return out;
+}
+
+/* 🗂 ---------- จัดหมวดข่าว (เฉพาะหน้าที่โหลด topics config มา) ----------
+ *
+ * เจ้าของสั่ง 17 ก.ย. 2026: **"ข่าวต้องแยกเป็นหมวด … เป็นลักษณะ accordance
+ * แยกหมวดคร่าวๆเองไปก่อน อยากดู interface"**
+ *
+ * 📌 **เปิดใช้เมื่อหน้านั้นโหลด `topics-*.config.js` มาเท่านั้น** — หน้าคลังหลักไม่ได้โหลด
+ *    จึงยังเป็นรายการเรียงวันที่เหมือนเดิมทุกอย่าง (กฎ "แก้ที่เดียวได้ทั้ง 2 หน้า" ยังอยู่ครบ)
+ * 🚫 **ยังไม่ใช้ AI** — นับคำในพาดหัวล้วนๆ ตามที่เจ้าของสั่งว่าเอาคร่าวๆ ก่อน
+ * ⚠️ **1 ข่าว = 1 หมวด** ไม่งั้นตัวเลขบนหัวข้อรวมกันเกินจำนวนข่าวจริง
+ */
+const TOPICS = Array.isArray(window.ARCHIVE_TOPICS) ? window.ARCHIVE_TOPICS : null;
+const grouping = () => !!TOPICS;
+const ETC = TOPICS ? TOPICS.length - 1 : 0;   // ถังรับของที่ไม่เข้าหมวดไหน = ตัวสุดท้ายเสมอ
+
+/** คืน index ของหมวดที่ได้แต้มสูงสุด · เท่ากัน = หมวดที่อยู่บนกว่าชนะ */
+function topicOf(hay) {
+  if (!TOPICS) return 0;
+  let best = ETC, bestScore = 0;
+  for (let i = 0; i < TOPICS.length; i++) {
+    const t = TOPICS[i];
+    let hits = 0;
+    for (const w of t.any || []) if (hay.includes(w)) hits++;
+    for (const [left, right] of t.pair || []) {
+      if (left.some((w) => hay.includes(w)) && right.some((w) => hay.includes(w))) hits++;
+    }
+    const score = hits * (t.w == null ? 1 : t.w);
+    if (score > bestScore) { bestScore = score; best = i; }
+  }
+  return best;
+}
+
+/* 🖼 รูปเล็กหน้าข่าว — **เป็นป้ายที่วาดเอง ไม่ใช่รูปจากข่าวจริง**
+ *
+ * ⚠️ **ในชีตไม่มีคอลัมน์รูปเลย** และคลังเป็นไฟล์นิ่ง จะได้รูปจริงต้องไปอ่าน `og:image`
+ *    จากหน้าข่าวทีละใบตอนสร้างไฟล์ — **ยังไม่ได้ทำ** (เครื่องที่รัน session ยิงเข้าเว็บข่าวไม่ได้
+ *    ลองแล้วทุกเว็บตอบ 000 = ต่อไม่ติด) · ถ้าเจ้าของอยากได้รูปจริง ต้องสั่งแล้วรันบนเครื่องตัวเอง
+ * ✅ ที่ทำได้ตอนนี้: ป้ายสีที่ **อ่านออกว่าใครเป็นคนเขียน** (ตัวย่อสำนักข่าว) + ไอคอนหมวดมุมขวาล่าง
+ *    · ไม่ยิงเน็ตเลยสักครั้ง = เปิดไวเสมอ และไม่รั่วว่าใครอ่านข่าวใบไหนไปให้เว็บนอก
+ *      (สำคัญ เพราะหน้านี้จะอยู่หลัง Cloudflare Access)
+ */
+const hueOf = (s) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+};
+/* 🏷 ป้ายรูปเล็กยึด **เว็บที่ข่าวอยู่** ไม่ใช่คอลัมน์สำนักข่าวในชีต
+ * ⚠️ เพราะในคลังนี้ 266 จาก 365 แถว คอลัมน์สำนักข่าวเป็นชื่อ Google Alert ก้อนเดียวกันหมด
+ *    ("หัวข้อที่จับตามอง") ถ้ายึดคอลัมน์นั้น ป้ายจะหน้าตาเหมือนกันเกือบทั้งหน้า = ไม่บอกอะไรเลย
+ *    ส่วนที่อยู่ของข่าวบอกได้เสมอว่าใครเป็นคนลง · คนละเรื่องกับชื่อที่โชว์ในบรรทัดล่าง */
+function siteOf(u) {
+  try {
+    const h = new URL(u, location.href).hostname.replace(/^www\./, "");
+    // ตัดโดเมนระดับบนออกให้เหลือชื่อเว็บ: thairath.co.th → thairath
+    return h.split(".")[0] || h;
+  } catch { return ""; }
+}
+
+/** ตัวย่อบนป้าย — ไทยเอา 2 ตัว · ละตินเอาอักษรแรกของ 2 คำแรก */
+function initials(name) {
+  const s = String(name || "").trim();
+  if (!s) return "?";
+  if (/^[\x20-\x7e]+$/.test(s)) {
+    const parts = s.split(/\s+/).filter(Boolean);
+    return (parts.length > 1 ? parts[0][0] + parts[1][0] : s.slice(0, 2)).toUpperCase();
+  }
+  return s.replace(/^[^฀-๿a-z0-9]+/i, "").slice(0, 2) || s.slice(0, 2);
 }
 
 /* 📥 **อ่านไฟล์คลัง — ต้องเช็คชนิดของคำตอบก่อนแกะเสมอ**
@@ -723,6 +794,86 @@ const fmtDate = (ts) => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+/** การ์ดข่าว 1 ใบ — ใช้ร่วมทั้งรายการเรียงวันที่ และรายการในหมวด */
+function itemHTML(r, terms) {
+  const display = stripTail(r.t, OUTLET_NAMES, r.os);
+  // 🖼 ป้ายรูปเล็ก — วาดเอง ไม่ยิงเน็ต (ดูเหตุผลที่ initials/hueOf)
+  // 🖼 รูปเล็กขึ้นเฉพาะหน้าที่จัดหมวด (ตอนนี้คือหน้าปลาหมอคางดำ) — เจ้าของสั่งมาสำหรับหน้านั้น
+  //    **หน้าคลังหลักจึงหน้าตาเหมือนเดิมเป๊ะ** ไม่ได้ถูกเปลี่ยนไปด้วยโดยไม่ได้สั่ง
+  //    อยากให้หน้าหลักมีด้วยเมื่อไหร่ = ถอดเงื่อนไขบรรทัดล่างนี้ทิ้งบรรทัดเดียว
+  //    🚫 ไม่ติดไอคอนหมวดบนการ์ด — หัวข้อของกล่องบอกหมวดอยู่แล้ว ติดซ้ำทุกใบคือของรก
+  const site = siteOf(r.u) || r.o;
+  const thumb = !TOPICS ? "" : `<span class="thumb" style="--h:${hueOf(site)}" title="${esc(site)}" aria-hidden="true"
+      >${esc(initials(site))}</span>`;
+  return `<article class="item">
+      ${thumb}
+      <div class="body">
+        <div class="top">
+          <a class="t" href="${esc(r.u)}" target="_blank" rel="noopener">${highlight(display, terms)}</a>
+          <button class="copy" type="button" data-u="${esc(r.u)}" title="คัดลอกลิงก์">คัดลอก</button>
+        </div>
+        <div class="meta">
+          <span class="o">${esc(r.o)}</span>
+          <span class="sep">·</span>
+          <span class="dt">${fmtDate(r.ts)}</span>
+          ${r.c.map((c) => `<span class="tag">${esc(c)}</span>`).join("")}
+        </div>
+      </div>
+    </article>`;
+}
+
+/* 🗂 ---------- รายการแบบแยกหมวด (accordion) ----------
+ *
+ * ⚠️ **สถานะกาง/พับเก็บไว้ในตัวแปร ไม่ใช่ใน DOM อย่างเดียว** — `render()` สร้าง innerHTML
+ *    ใหม่ทั้งก้อนทุกครั้งที่ค้น/กรอง ถ้าเก็บไว้แต่ใน DOM จะพับหมดทุกครั้งที่พิมพ์
+ *    (กฎเดียวกับ `state.trendOpen` ของแดชบอร์ด)
+ * 🚫 **ไม่จำข้ามการเปิดหน้า** — กฎเดียวกับกล่องตัวกรองของหน้านี้ ("เปิดใหม่ต้องพับเสมอ")
+ */
+const openG = new Set();       // หมวดที่ผู้ใช้กางไว้เอง
+const shownG = new Map();      // หมวด → แสดงไปแล้วกี่ใบ
+const GPAGE = 25;              // หมวดหนึ่งวาดทีละ 25 ใบ กันหน้าอืดตอนกางหมวดใหญ่
+let gInit = false;             // กางหมวดแรกให้ครั้งเดียวตอนเปิดหน้า
+
+function renderGroups(box, terms) {
+  const buckets = TOPICS.map(() => []);
+  for (const r of filtered) buckets[r.g].push(r);
+
+  // เปิดหน้ามาครั้งแรก: กางหมวดบนสุดที่มีข่าวให้ 1 หมวด — ไม่งั้นเจอแต่หัวข้อเปล่าๆ อ่านไม่ออกว่ามีอะไร
+  if (!gInit) {
+    gInit = true;
+    const first = buckets.findIndex((b) => b.length);
+    if (first >= 0) openG.add(first);
+  }
+  // 🔎 กำลังค้นอยู่ = กางทุกหมวดที่มีผล ไม่งั้นค้นแล้วเจอหัวข้อพับหมด นึกว่าไม่เจออะไร
+  const searching = !!(state.q || state.judge);
+
+  box.innerHTML = TOPICS.map((t, i) => {
+    const list = buckets[i];
+    const open = list.length && (searching || openG.has(i));
+    const cap = Math.min(shownG.get(i) || GPAGE, list.length);
+    const left = list.length - cap;
+    return `<section class="grp${list.length ? "" : " off"}">
+      <button class="ghead" type="button" data-g="${i}" aria-expanded="${open ? "true" : "false"}"
+              ${list.length ? "" : "disabled"}>
+        <span class="gcaret" aria-hidden="true">${open ? "▾" : "▸"}</span>
+        <span class="gico" aria-hidden="true">${t.icon}</span>
+        <span class="gname">${esc(t.name)}</span>
+        <span class="gcount">${list.length.toLocaleString("th-TH")}</span>
+      </button>
+      ${open ? `<div class="gbody">
+        ${list.slice(0, cap).map((r) => itemHTML(r, terms)).join("")}
+        ${left > 0 ? `<button class="btn sm gmore" type="button" data-gmore="${i}">ดูอีก ${left.toLocaleString("th-TH")} ใบ</button>` : ""}
+      </div>` : ""}
+    </section>`;
+  }).join("");
+
+  // ปุ่ม "ค้นในปีเก่า" ยังต้องอยู่ — ส่วนปุ่มโหลดเพิ่มรวมไม่ใช้แล้ว (แต่ละหมวดมีปุ่มของตัวเอง)
+  const older = pendingYears();
+  $("#more").innerHTML = older.length
+    ? `<button class="btn" type="button" data-year="${older[0]}">ค้นในปี ${older[0]} ด้วย</button>`
+    : "";
+}
+
 function renderList() {
   const box = $("#list");
 
@@ -754,22 +905,11 @@ function renderList() {
     return;
   }
 
+  // 🗂 หน้าที่จัดหมวดไว้ → วาดเป็นกล่องพับได้ทีละหมวด (ดู renderGroups)
+  if (grouping()) { renderGroups(box, terms); return; }
+
   const slice = filtered.slice(0, state.shown);
-  box.innerHTML = slice.map((r) => {
-    const display = stripTail(r.t, OUTLET_NAMES, r.os);
-    return `<article class="item">
-      <div class="top">
-        <a class="t" href="${esc(r.u)}" target="_blank" rel="noopener">${highlight(display, terms)}</a>
-        <button class="copy" type="button" data-u="${esc(r.u)}" title="คัดลอกลิงก์">คัดลอก</button>
-      </div>
-      <div class="meta">
-        <span class="o">${esc(r.o)}</span>
-        <span class="sep">·</span>
-        <span class="dt">${fmtDate(r.ts)}</span>
-        ${r.c.map((c) => `<span class="tag">${esc(c)}</span>`).join("")}
-      </div>
-    </article>`;
-  }).join("");
+  box.innerHTML = slice.map((r) => itemHTML(r, terms)).join("");
 
   const left = filtered.length - slice.length;
   const older = pendingYears();
@@ -954,6 +1094,22 @@ function bind() {
     if (y) { await withBusy(() => loadYear(+y.dataset.year)); render(); }
   });
   $("#list").addEventListener("click", (e) => {
+    // 🗂 กาง/พับหมวด · และ "ดูอีก N ใบ" ของหมวดนั้น
+    const gh = e.target.closest("[data-g]");
+    if (gh) {
+      const i = +gh.dataset.g;
+      openG.has(i) ? openG.delete(i) : openG.add(i);
+      shownG.delete(i);           // พับแล้วกางใหม่ = เริ่มนับใหม่ ไม่ค้างของยาวไว้
+      renderList();
+      return;
+    }
+    const gm = e.target.closest("[data-gmore]");
+    if (gm) {
+      const i = +gm.dataset.gmore;
+      shownG.set(i, (shownG.get(i) || GPAGE) + GPAGE);
+      renderList();
+      return;
+    }
     if (e.target.closest("[data-clear]")) { clearAll(); return; }
     // ล้างเฉพาะคำค้น — ตัวกรองในกล่องไม่ได้ตั้งไว้อยู่แล้วตอนที่ปุ่มนี้โผล่
     if (e.target.closest("[data-clearq]")) {

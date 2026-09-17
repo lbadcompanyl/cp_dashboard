@@ -347,7 +347,45 @@ body {
   background:var(--surface); border:1px solid var(--border); border-radius:12px;
   padding:11px 13px;
 }
+.item { display:flex; gap:11px; align-items:flex-start; }
+.item .body { flex:1; min-width:0; }
 .item .top { display:flex; gap:8px; align-items:flex-start; }
+
+/* 🖼 รูปเล็กหน้าข่าว — **วาดเอง ไม่ได้โหลดรูปจากที่ไหนเลย**
+   ในชีตไม่มีคอลัมน์รูป และหน้านี้จะอยู่หลัง Cloudflare Access
+   การไปดึงรูป/ไอคอนจากเว็บนอกทุกใบ = บอกเว็บนั้นว่ามีคนอ่านข่าวใบไหนอยู่ — ไม่เอา
+   · สีมาจากชื่อสำนักข่าว (สำนักเดิมได้สีเดิมเสมอ) · ตัวย่อบอกว่าใครเขียน · ไอคอนมุมบอกหมวด */
+.thumb {
+  flex:none; width:46px; height:46px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  background:hsl(var(--h) 62% 93%); border:1px solid hsl(var(--h) 45% 84%);
+  color:hsl(var(--h) 55% 30%); font-weight:700; font-size:.8rem; letter-spacing:-.01em;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .thumb {
+    background:hsl(var(--h) 34% 22%); border-color:hsl(var(--h) 30% 32%); color:hsl(var(--h) 60% 78%);
+  }
+}
+
+/* ── 🗂 หมวดข่าวแบบพับได้ ─────────────────────────────────────────── */
+.grp { border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden; }
+.grp.off { opacity:.55; }
+.ghead {
+  width:100%; display:flex; align-items:center; gap:9px; padding:12px 13px;
+  background:none; border:0; font:inherit; color:var(--ink); text-align:left; cursor:pointer;
+}
+.ghead:disabled { cursor:default; }
+.ghead:hover:not(:disabled) { background:var(--surface-2); }
+.gcaret { width:12px; color:var(--muted); font-size:.8rem; }
+.gico { font-size:1.05rem; line-height:1; }
+.gname { flex:1; min-width:0; font-weight:650; font-size:.92rem; }
+.gcount {
+  flex:none; background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:999px; padding:2px 9px; font-size:.74rem; font-weight:650;
+}
+.gbody { display:flex; flex-direction:column; gap:8px; padding:0 11px 12px; }
+.gbody .item { border-radius:10px; background:var(--plane); }
+.gbody .gmore { align-self:center; margin-top:2px; }
 .item a.t {
   flex:1; min-width:0; color:var(--ink); text-decoration:none; font-size:.92rem;
   font-weight:600; line-height:1.45;
