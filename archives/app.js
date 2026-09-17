@@ -212,13 +212,57 @@ function expand(pack) {
   return out;
 }
 
+/* 📥 **อ่านไฟล์คลัง — ต้องเช็คชนิดของคำตอบก่อนแกะเสมอ**
+ *
+ * 🐞 เจ้าของส่งภาพมา 16 ก.ย. 2026: หน้า blackchin ขึ้น
+ *    «Unexpected token '<', "<!DOCTYPE "... is not valid JSON»
+ *    = **Cloudflare ตอบหน้า HTML กลับมาพร้อมสถานะ 200** (หน้า 404 ของมันเอง)
+ *    → `r.ok` เป็น true → `r.json()` พัง → ศัพท์ในโค้ดหลุดไปโผล่หน้าเจ้าของ
+ *
+ * 📏 **เป็นกับดักเดียวกับที่ `apiGet()` ของ `/social/` จดไว้แล้ว** (เซสชัน Access หมดอายุ
+ *    ตอบหน้าล็อกอินเป็น HTML แทน JSON) — ที่นี่ไม่ได้ทำตาม จึงเจอซ้ำ
+ *    ⚠️ **สำคัญขึ้นอีกเมื่อเจ้าของเอา `archives/data-blackchin` เข้า Access แล้ว**
+ *       เพราะตอนเซสชันหมดอายุจะหน้าตาเหมือน "ไฟล์ไม่มี" เป๊ะ ถ้าไม่แยกให้ออก
+ *       เจ้าของจะไปนั่งสร้างไฟล์ใหม่ทั้งที่แค่ต้องล็อกอิน
+ *
+ * แยก 3 อย่างออกจากกัน แล้วคืนเป็น `code` ให้ผู้เรียกเลือกข้อความเอง:
+ *   `signed-out` ถูกพาออกไปโดเมนอื่น (Access) หรือโดน 401/403 → ต้องล็อกอินใหม่
+ *   `missing`    404 · หรือ 200 แต่เป็น HTML ของโดเมนเดิม (Pages เสิร์ฟหน้า 404 ของมัน) → ยังไม่ได้สร้างไฟล์
+ *   `offline`    ยิงไม่ออกเลย → เน็ตมีปัญหา
+ * 🚫 **ห้ามเอา `e.message` ดิบไปโชว์** — เป็นภาษาของโค้ด ไม่ใช่ภาษาที่ใช้คุย
+ */
+class ArchiveError extends Error {
+  constructor(code) { super(code); this.code = code; }
+}
+
+async function fetchArchiveJSON(path) {
+  let r;
+  try {
+    r = await fetch(path, { headers: { accept: "application/json" } });
+  } catch {
+    throw new ArchiveError("offline");
+  }
+  // Access เด้งไปหน้าล็อกอินด้วย redirect ข้ามโดเมน — fetch ตามไปแล้ว r.url จะเปลี่ยนโฮสต์
+  let sameHost = true;
+  try { sameHost = new URL(r.url, location.href).host === location.host; } catch {}
+  if (r.redirected || !sameHost || r.status === 401 || r.status === 403)
+    throw new ArchiveError("signed-out");
+
+  if (r.status === 404) throw new ArchiveError("missing");
+  if (!r.ok) throw new ArchiveError("missing");
+
+  // ⭐ ด่านที่ขาดไปรอบที่แล้ว — 200 ไม่ได้แปลว่าได้ JSON
+  if (!(r.headers.get("content-type") || "").includes("json"))
+    throw new ArchiveError("missing");
+
+  try { return await r.json(); } catch { throw new ArchiveError("missing"); }
+}
+
 // ---------- โหลดปี ----------
 async function loadYear(y) {
   if (loaded.has(y)) return;
   loaded.add(y);
-  const res = await fetch(`${DATA_DIR}/${y}.json`);
-  if (!res.ok) throw new Error(`โหลดข้อมูลปี ${y} ไม่สำเร็จ`);
-  const pack = await res.json();
+  const pack = await fetchArchiveJSON(`${DATA_DIR}/${y}.json`);
   rows = rows.concat(expand(pack));
   rows.sort((a, b) => b.ts - a.ts);
 }
@@ -947,18 +991,29 @@ function fillInputs() {
   try { localStorage.removeItem(FOPEN_KEY); } catch {}   // ล้างค่าเก่าที่ค้างอยู่ในเครื่อง
   $("#list").innerHTML = `<div class="loading"><span class="spin"></span>กำลังโหลดคลังข่าว…</div>`;
   try {
-    INDEX = await fetch(`${DATA_DIR}/index.json`).then((r) => {
-      if (!r.ok) throw new Error("ยังไม่มีไฟล์คลังข่าว");
-      return r.json();
-    });
+    INDEX = await fetchArchiveJSON(`${DATA_DIR}/index.json`);
     const years = (INDEX.years || []).map((x) => x.y).sort((a, b) => b - a);
     if (years.length) await loadYear(years[0]);        // ปีล่าสุดก่อน
     const need = yearsNeededByDate();                  // ถ้า URL มีช่วงวันที่ย้อนไปถึงปีเก่า โหลดตาม
     if (need.length) await Promise.all(need.map(loadYear));
   } catch (e) {
-    // ⚠️ บอกโฟลเดอร์ของหน้านี้ด้วย — หน้า blackchin อ่านคนละโฟลเดอร์กับหน้าหลัก
-    //    ถ้าบอกคำสั่งกลางๆ คนอ่านจะไปสร้างผิดที่แล้วงงว่าทำไมยังไม่ขึ้น
-    $("#list").innerHTML = `<div class="empty"><b>ยังไม่มีข้อมูลคลังข่าว</b>${esc(e.message)} — ยังไม่มีไฟล์ใน <code>archives/${esc(DATA_DIR)}/</code><br />สร้างด้วย <code>node tools/build-archives.mjs --csv &lt;ไฟล์.csv&gt; --out ${esc(DATA_DIR)}</code></div>`;
+    /* ⚠️ 3 เรื่องนี้ต้องพูดคนละแบบ — บอกผิดเรื่องคือพาไปแก้ผิดที่
+       🚫 ห้ามเอาข้อความ error ดิบมาโชว์ (ศัพท์ในโค้ด ไม่ใช่ภาษาที่ใช้คุย) */
+    const code = e instanceof ArchiveError ? e.code : "missing";
+    const box =
+      code === "signed-out"
+        ? `<b>ต้องเข้าสู่ระบบก่อนถึงจะดูหน้านี้ได้</b>เซสชันหมดอายุแล้ว กดปุ่มข้างล่างเพื่อเข้าสู่ระบบใหม่
+             <div><button class="btn" type="button" data-relogin>เข้าสู่ระบบใหม่</button></div>`
+        : code === "offline"
+          ? `<b>โหลดข้อมูลไม่ได้</b>ต่อกับเซิร์ฟเวอร์ไม่ได้ — ลองเช็คอินเทอร์เน็ตแล้วโหลดหน้าใหม่
+               <div><button class="btn" type="button" data-relogin>โหลดหน้าใหม่</button></div>`
+          // ⚠️ บอกโฟลเดอร์ของหน้านี้ด้วย — blackchin อ่านคนละโฟลเดอร์กับหน้าหลัก
+          //    ถ้าบอกคำสั่งกลางๆ คนอ่านจะไปสร้างผิดที่แล้วงงว่าทำไมยังไม่ขึ้น
+          : `<b>ยังไม่มีข้อมูลในคลังนี้</b>ยังไม่ได้สร้างไฟล์ใน <code>archives/${esc(DATA_DIR)}/</code>
+               <br />สร้างด้วย <code>node tools/build-archives.mjs --csv &lt;ไฟล์.csv&gt; --out ${esc(DATA_DIR)}</code>`;
+    $("#list").innerHTML = `<div class="empty">${box}</div>`;
+    // Access พาไปหน้าล็อกอินด้วย redirect ของทั้งหน้าเท่านั้น — ต้อง reload ห้ามยิง fetch ซ้ำ
+    $("#list").querySelector("[data-relogin]")?.addEventListener("click", () => location.reload());
     $("#count").textContent = "";
     return;
   }

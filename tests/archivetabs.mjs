@@ -125,6 +125,50 @@ console.log("\n[4] ด่านระดับโค้ด");
   ok("--out กันชื่อโฟลเดอร์แผลงๆ (ลบไฟล์ผิดที่ได้)", /\^\[a-z0-9\]\[a-z0-9_-\]\*\$/i.test(TOOL));
 }
 
+// ── [5] คลังยังไม่มีไฟล์ / เซสชันหมดอายุ — ต้องพูดคนละเรื่อง และห้ามโชว์ศัพท์ในโค้ด ──
+console.log("\n[5] โหลดคลังไม่ได้ — ต้องบอกให้ถูกเรื่อง");
+{
+  /* 🐞 เคสจากภาพที่เจ้าของส่งมา 16 ก.ย. 2026:
+     Cloudflare ตอบ **หน้า HTML พร้อมสถานะ 200** (หน้า 404 ของมันเอง) ไม่ใช่ 404 เปล่าๆ
+     ของเดิม r.ok ผ่าน → r.json() พัง → «Unexpected token '<', "<!DOCTYPE "…» หลุดไปหน้าเจ้าของ */
+  const CASES = [
+    ["Cloudflare ตอบ HTML พร้อม 200 (เคสจากภาพ)",
+     (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<!DOCTYPE html><title>404</title>" }),
+     { want: "ยังไม่มีข้อมูลในคลังนี้", btn: false }],
+    ["ไฟล์ไม่มีจริงๆ (404)",
+     (route) => route.fulfill({ status: 404, contentType: "text/plain", body: "not found" }),
+     { want: "ยังไม่มีข้อมูลในคลังนี้", btn: false }],
+    ["เซสชัน Access หมดอายุ (เด้งไปหน้าล็อกอิน)",
+     (route) => route.fulfill({ status: 403, contentType: "text/html", body: "<!DOCTYPE html>login" }),
+     { want: "ต้องเข้าสู่ระบบก่อน", btn: true }],
+  ];
+
+  for (const [label, handler, exp] of CASES) {
+    const ctx = await browser.newContext();
+    const p = await ctx.newPage();
+    await p.route("**/archives/data-blackchin/*.json", handler);
+    await p.goto(BASE + "/archives/blackchin.html", { waitUntil: "networkidle" });
+    await p.waitForTimeout(300);
+    const o = await p.evaluate(() => ({
+      txt: document.querySelector("#list")?.textContent || "",
+      btn: !!document.querySelector("#list [data-relogin]"),
+    }));
+    ok(`${label}: บอกถูกเรื่อง`, o.txt.includes(exp.want), JSON.stringify(o.txt.trim().slice(0, 80)));
+    ok(`${label}: ${exp.btn ? "มี" : "ไม่มี"}ปุ่มให้กดต่อ`, o.btn === exp.btn);
+    // 🚫 ศัพท์ในโค้ดห้ามหลุดไปหน้าเจ้าของ (กฎข้อ 2 ของ "วิธีคุยกับเจ้าของ")
+    ok(`${label}: 🚫 ไม่มีศัพท์ในโค้ดหลุดออกมา`,
+       !/Unexpected token|DOCTYPE|is not valid JSON|SyntaxError|undefined/i.test(o.txt),
+       JSON.stringify(o.txt.trim().slice(0, 80)));
+    await ctx.close();
+  }
+
+  const APPJS = fs.readFileSync(new URL("../archives/app.js", import.meta.url), "utf8");
+  ok("app.js เช็ค content-type ก่อนแกะ JSON เสมอ", /content-type[\s\S]{0,80}includes\("json"\)/.test(APPJS));
+  ok("🚫 ไม่มี fetch ที่ .json() ตรงๆ โดยไม่ผ่านด่าน",
+     !/fetch\([^)]*\)[\s\S]{0,40}\.json\(\)/.test(APPJS.replace(/async function fetchArchiveJSON[\s\S]*?\n}/, "")),
+     "ยังมี fetch(...).json() ที่ข้ามด่าน");
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌ ตก" : "✅ ผ่านหมด"} — ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);
