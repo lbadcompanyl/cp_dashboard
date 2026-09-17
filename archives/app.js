@@ -631,6 +631,10 @@ function renderAskBar(judging) {
 }
 
 const hasFilter = () => !!(state.q || state.from || state.to || state.cats.size || state.srcs.size || state.judge);
+// 🚫 **"ตัวกรอง" กับ "คำค้น" คนละเรื่องกัน ห้ามเหมารวม** — คนที่พิมพ์คำแล้วไม่เจอ
+//    ยังไม่ได้ตั้งตัวกรองอะไรไว้เลย บอกให้ "ลองลดตัวกรองลง" จึงไม่มีอะไรให้ลด
+//    (กฎเดิมของหน้านี้ที่เคยเขียนไว้แต่ยังไม่ได้ทำ — เจอจริงตอนลองกับข้อมูลจริง 17 ก.ย. 2026)
+const hasBoxFilter = () => !!(state.from || state.to || state.cats.size || state.srcs.size);
 
 // ---------- URL ----------
 // เก็บสถานะทั้งหมดไว้ใน query string — ก๊อป URL ส่งต่อแล้วเปิดได้ผลเดิม
@@ -736,11 +740,16 @@ function renderList() {
   const terms = looseMode ? [] : parseTerms(state.q);
 
   if (!filtered.length) {
-    // ⚠️ 2 กรณีนี้ต้องพูดคนละแบบ — "ยังไม่ได้กรอง" กับ "กรองแล้วไม่พบ"
-    box.innerHTML = hasFilter()
+    // ⚠️ 3 กรณีนี้ต้องพูดคนละแบบ — บอกผิดกรณี = ผู้ใช้ไปนั่งแก้ของที่ไม่ได้ตั้งไว้
+    //    🚫 ห้ามบอกให้ "ลดตัวกรอง" ตอนที่ยังไม่ได้ตั้งตัวกรองอะไรเลย (ข้อห้ามของหน้านี้)
+    box.innerHTML = hasBoxFilter()
       ? `<div class="empty"><b>ไม่พบข่าวที่ตรงกับที่กรองไว้</b>ลองลดตัวกรองลง หรือขยายช่วงวันที่
            <div><button class="btn" type="button" data-clear>ล้างตัวกรองทั้งหมด</button></div></div>`
-      : `<div class="empty"><b>ยังไม่มีข้อมูล</b>ยังไม่ได้สร้างไฟล์คลังข่าว — รัน <code>node tools/build-archives.mjs</code> ก่อน</div>`;
+      : state.q || state.judge
+        ? `<div class="empty"><b>ไม่มีข่าวที่ตรงกับที่ค้นในคลังนี้</b>${
+             state.q ? `ไม่เจอคำว่า “${esc(state.q)}” ในพาดหัวข่าวใบไหนเลย` : "เงื่อนไขที่ใช้คัดไม่เหลือข่าวเลยสักใบ"
+           }<div><button class="btn" type="button" data-clearq>ล้างคำค้น</button></div></div>`
+        : `<div class="empty"><b>ยังไม่มีข้อมูล</b>ยังไม่ได้สร้างไฟล์คลังข่าว — รัน <code>node tools/build-archives.mjs</code> ก่อน</div>`;
     $("#more").innerHTML = "";
     return;
   }
@@ -946,6 +955,12 @@ function bind() {
   });
   $("#list").addEventListener("click", (e) => {
     if (e.target.closest("[data-clear]")) { clearAll(); return; }
+    // ล้างเฉพาะคำค้น — ตัวกรองในกล่องไม่ได้ตั้งไว้อยู่แล้วตอนที่ปุ่มนี้โผล่
+    if (e.target.closest("[data-clearq]")) {
+      state.q = ""; clearAsk(); $("#q").value = "";
+      state.shown = PAGE; syncURL(true); render();
+      return;
+    }
     const b = e.target.closest("[data-u]");
     if (!b) return;
     navigator.clipboard?.writeText(b.dataset.u).then(() => {

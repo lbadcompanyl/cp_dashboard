@@ -179,6 +179,66 @@ console.log("\n[5] โหลดคลังไม่ได้ — ต้อง�
      "ยังมี fetch(...).json() ที่ข้ามด่าน");
 }
 
+// ── [6] ค้นไม่เจอ ต้องบอกให้ถูกเรื่อง — "คำค้น" ไม่ใช่ "ตัวกรอง" ────
+//   🚫 ข้อห้ามของหน้านี้: ห้ามบอกให้ "ลองลดตัวกรองลง" ตอนที่ยังไม่ได้ตั้งตัวกรองอะไรเลย
+//   เจอจริง 17 ก.ย. 2026 ตอนลองกับข้อมูลจริง — `hasFilter()` นับคำค้นเป็นตัวกรองด้วย
+//   จึงขึ้นกล่อง "ไม่พบข่าวที่ตรงกับที่กรองไว้ · ล้างตัวกรองทั้งหมด" ทั้งที่ไม่มีอะไรให้ลด
+console.log("\n[6] ค้นไม่เจอ — ต้องแยก \"คำค้น\" ออกจาก \"ตัวกรอง\"");
+{
+  for (const [label, url, dir] of [
+    ["หน้าหลัก", "/archives/", "data"],
+    ["ปลาหมอคางดำ", "/archives/blackchin.html", "data-blackchin"],
+  ]) {
+    const ctx = await browser.newContext();
+    const p = await ctx.newPage();
+    await fakeArchive(p, dir, "ข่าวทดสอบเรื่องปลาหมอคางดำ");
+    await p.goto(`${BASE}${url}?mode=kw`, { waitUntil: "networkidle" });
+    await p.waitForTimeout(400);
+
+    // ① พิมพ์คำที่ไม่มีในคลัง โดยไม่ได้ตั้งตัวกรองอะไรเลย
+    await p.fill("#q", "zzzไม่มีคำนี้");
+    await p.press("#q", "Enter");
+    await p.waitForTimeout(400);
+    const a = await p.evaluate(() => ({
+      txt: (document.querySelector("#list .empty")?.textContent || "").replace(/\s+/g, " ").trim(),
+      btn: (document.querySelector("#list .empty .btn")?.textContent || "").trim(),
+    }));
+    ok(`${label}: 🚫 ไม่บอกให้ลดตัวกรองทั้งที่ไม่ได้กรองอะไร`, !/ลดตัวกรอง|กรองไว้/.test(a.txt), JSON.stringify(a.txt));
+    ok(`${label}: บอกว่าไม่เจอคำที่ค้น พร้อมคำนั้น`, a.txt.includes("zzzไม่มีคำนี้"), JSON.stringify(a.txt));
+    ok(`${label}: ปุ่มเป็น "ล้างคำค้น" ไม่ใช่ล้างตัวกรอง`, a.btn === "ล้างคำค้น", JSON.stringify(a.btn));
+
+    // ② กดปุ่มแล้วต้องได้ข่าวกลับมา
+    await p.click("#list .empty .btn");
+    await p.waitForTimeout(400);
+    const back = await p.evaluate(() => ({
+      q: document.querySelector("#q").value,
+      rows: document.querySelectorAll("#list .item").length,
+    }));
+    ok(`${label}: กดล้างคำค้นแล้วช่องว่าง + ข่าวกลับมา`, back.q === "" && back.rows > 0, JSON.stringify(back));
+
+    // ③ ตั้งตัวกรองจริงแล้วไม่เจอ → ต้องได้ข้อความของตัวกรองเหมือนเดิม
+    await p.evaluate(() => {
+      for (const [id, v] of [["#from", "1999-01-01"], ["#to", "1999-01-02"]]) {
+        const el = document.querySelector(id);
+        el.value = v; el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await p.waitForTimeout(400);
+    const c = await p.evaluate(() => ({
+      txt: (document.querySelector("#list .empty")?.textContent || "").replace(/\s+/g, " ").trim(),
+      btn: (document.querySelector("#list .empty .btn")?.textContent || "").trim(),
+    }));
+    ok(`${label}: กรองจริงแล้วไม่เจอ ยังบอกเรื่องตัวกรองเหมือนเดิม`,
+       /กรองไว้/.test(c.txt) && c.btn === "ล้างตัวกรองทั้งหมด", JSON.stringify(c));
+    await ctx.close();
+  }
+
+  // ด่านระดับโค้ด — กันไม่ให้ใครเอา hasFilter() (ที่นับคำค้นด้วย) กลับมาใช้ตัดสินกล่องนี้
+  ok("กล่องว่างตัดสินด้วย hasBoxFilter (ไม่นับคำค้น)", /hasBoxFilter\(\)\s*\n?\s*\?/.test(APP) || /box\.innerHTML = hasBoxFilter\(\)/.test(APP));
+  ok("hasBoxFilter ไม่มี state.q / state.judge อยู่ข้างใน",
+     /const hasBoxFilter = \(\) => !!\(([^)]*)\)/.test(APP) && !/const hasBoxFilter = \(\) => !!\([^)]*state\.(q|judge)/.test(APP));
+}
+
 await browser.close();
 console.log(`\n${fail ? "❌ ตก" : "✅ ผ่านหมด"} — ผ่าน ${pass} · ตก ${fail}\n`);
 process.exit(fail ? 1 : 0);
