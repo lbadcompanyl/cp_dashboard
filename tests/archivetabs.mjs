@@ -7,7 +7,8 @@
  * 3 เรื่องที่เทสต์นี้คุม
  *   [1] แต่ละหน้าอ่าน "โฟลเดอร์ของตัวเอง" — สลับกันเมื่อไหร่ = ข่าวของหน้าที่ล็อกไว้ไปโผล่หน้าสาธารณะ
  *   [2] แถบแท็บเขียนซ้ำ 2 ไฟล์ ต้องตรงกัน (กับดักเดิมของ /issue/ ที่แถบแท็บอยู่ 3 ไฟล์แล้วตกหล่น)
- *   [3] 🔒 เป็นไอคอนล้วน → ต้องมี title + aria-label ไม่งั้นคนใช้ screen reader ไม่รู้ว่าต่างยังไง
+ *   [3] ป้าย 🔒 อยู่ที่ **การ์ดคลังข่าวบนหน้าแรก** ที่เดียว (ล็อกทั้ง /archives/ ด้วย Access ตัวเดียว)
+ *       และเป็นไอคอนล้วน → ต้องมี title + aria-label ไม่งั้นคนใช้ screen reader ไม่รู้ว่าต่างยังไง
  *
  * ⚠️ **ปลอมไฟล์คลังด้วย page.route ทั้งหมด** — ตั้งใจให้เทสต์ผ่านได้โดยที่ `data-blackchin/`
  *    ยังไม่มีอยู่จริงใน repo (ยังรอ CSV จากเจ้าของ) · ที่วัดคือ "หน้าเว็บไปขอไฟล์ถูกที่ไหม"
@@ -91,15 +92,24 @@ console.log("\n[2] แถบแท็บเขียนซ้ำ 2 ไฟล์ 
      /pgtab on[^>]*aria-current="page"/.test(IDX) && /pgtab on[^>]*aria-current="page"/.test(BC));
 }
 
-// ── [3] 🔒 ไอคอนล้วน ต้องมีคำอธิบายเสมอ ───────────────────────────
-console.log("\n[3] ป้าย 🔒 ต้องอ่านออกด้วยเสียง");
+// ── [3] ป้าย 🔒 อยู่ที่การ์ดหน้าแรกที่เดียว ────────────────────────
+//   เจ้าของสั่ง 17 ก.ย. 2026: "access จริงๆ lock ทั้งคลังข่าวเลยง่ายกว่า"
+//   → ล็อกทั้ง /archives/ ด้วยนโยบายเดียว **ทั้ง 2 แท็บอยู่หลังล็อกอินเท่ากัน**
+//   ติดป้ายที่แท็บใดแท็บหนึ่ง = อ่านเป็น "อีกแท็บเปิดสาธารณะ" ซึ่งไม่จริง
+console.log("\n[3] ป้าย 🔒 อยู่ที่การ์ดหน้าแรกที่เดียว");
 {
+  const LANDING = fs.readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  // การ์ดคลังข่าว = ก้อน <a …href="archives/"> ถึง </a>
+  const card = (LANDING.match(/<a class="[^"]*card[^"]*"[^>]*href="archives\/"[\s\S]*?<\/a>/) || [])[0] || "";
+  ok("หน้าแรกมีการ์ดคลังข่าว", !!card);
+  ok("การ์ดคลังข่าวติดป้าย 🔒", /class="lock-badge"/.test(card), card.slice(0, 120));
+  const badge = (card.match(/<span class="lock-badge"[^>]*>/) || [])[0] || "";
+  ok("ป้าย 🔒 มี title + aria-label (ไอคอนล้วน ต้องอ่านออกด้วยเสียง)",
+     badge.includes("title=") && badge.includes("aria-label="), JSON.stringify(badge));
+
   for (const [label, s] of [["index.html", IDX], ["blackchin.html", BC]]) {
-    const locks = [...s.matchAll(/<span class="lock"[^>]*>/g)].map((m) => m[0]);
-    ok(`${label}: มีป้าย 🔒`, locks.length > 0);
-    ok(`${label}: ทุกป้ายมี title + aria-label`,
-       locks.length > 0 && locks.every((t) => t.includes("title=") && t.includes("aria-label=")),
-       JSON.stringify(locks));
+    ok(`${label}: แถบแท็บไม่มีป้าย 🔒 ติดที่แท็บใดแท็บหนึ่ง`,
+       !/<span class="lock"/.test(s) && !/pgtab[^>]*>[^<]*🔒/.test(s));
   }
 }
 

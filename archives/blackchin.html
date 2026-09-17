@@ -20,15 +20,15 @@
      ⚠️ ชื่อต้องตรงกับ --out เป๊ะ ไม่งั้นหน้านี้ขึ้นว่ายังไม่มีข้อมูล
      🚫 ห้ามใส่ sheet id ไว้ที่นี่หรือที่ไหนใน repo — repo เป็น public -->
 <meta name="data-dir" content="data-blackchin" />
-<meta name="page-ver" content="28" />
+<meta name="page-ver" content="29" />
 <script>(function(){function init(){var el=document.getElementById("vtag");if(!el)return;var m=document.querySelector('meta[name="page-ver"]');var v=m?m.content:"";if(!v){var sc=document.querySelector('script[src*="app.js"]');var mm=sc&&sc.getAttribute("src").match(/v=(\d+)/);v=mm?mm[1]:"?";}function paint(sw){el.textContent="v"+v+(sw?" · sw"+sw:"");}paint(0);try{if(navigator.serviceWorker){navigator.serviceWorker.addEventListener("message",function(e){if(e.data&&e.data.type==="sw-version")paint(e.data.version);});navigator.serviceWorker.ready.then(function(r){var c=navigator.serviceWorker.controller||r.active;if(c)c.postMessage({type:"get-version"});});}}catch(x){}}if(document.readyState!=="loading")init();else document.addEventListener("DOMContentLoaded",init);})();if("serviceWorker" in navigator){/* เช็ค service worker ตัวใหม่ "วันละครั้ง" พอ (เจ้าของสั่ง 11 ส.ค. 2026) — เดิมเช็คทุกครั้งที่สลับกลับเข้าแอป พอ deploy บ่อยๆ ป้าย "มีเวอร์ชันใหม่" เด้งทั้งวัน · ตัวเช็คหน้าเว็บ (page-ver) เป็นวันละครั้งอยู่แล้ว เหลือตัวนี้ที่ยังถี่อยู่ · ทางลัด: แตะที่ป้ายเลขเวอร์ชัน = สั่งเช็คเดี๋ยวนี้ ใช้ตอนเพิ่ง release แล้วอยากรู้ว่าถึงเครื่องหรือยัง */var __verEvery=864e5,__verKey="swChkAt";function __verDue(){try{return Date.now()-(+localStorage.getItem(__verKey)||0)>__verEvery;}catch(x){return true;}}function __verMark(){try{localStorage.setItem(__verKey,String(Date.now()));}catch(x){}}addEventListener("load",function(){navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(function(r){if(!r)return;function chk(force){if(!force&&!__verDue())return;__verMark();r.update();}chk(false);document.addEventListener("visibilitychange",function(){if(!document.hidden)chk(false);});var vt=document.getElementById("vtag");if(vt){vt.style.cursor="pointer";vt.title="แตะเพื่อเช็คเวอร์ชันใหม่เดี๋ยวนี้ (ปกติเช็คให้เองวันละครั้ง)";vt.addEventListener("click",function(){var t=vt.textContent;vt.textContent="กำลังเช็ค…";setTimeout(function(){if(vt.textContent==="กำลังเช็ค…")vt.textContent=t;},1500);chk(true);});}}).catch(function(){});});/* ⚠️ "เพิ่งติดตั้ง sw ครั้งแรก" ไม่ใช่ "มีเวอร์ชันใหม่" — sw ยิง sw-updated ตอน activate เสมอ รวมถึงครั้งแรกสุด ทำให้คนเปิดเว็บครั้งแรก (หรือ iOS ล้าง sw ทิ้งตอนไม่ได้เปิดเกิน 7 วัน) เจอแถบ "มีเวอร์ชันใหม่" ทั้งที่เพิ่งโหลดของล่าสุดมาหมาดๆ ดูจาก controller ตอนหน้าเริ่มทำงาน: ไม่มี = ติดตั้งครั้งแรก ไม่ต้องบอกอะไร */var __hadCtrl=!!navigator.serviceWorker.controller;navigator.serviceWorker.addEventListener("message",function(e){if(!e.data||e.data.type!=="sw-updated")return;if(!__hadCtrl)return;try{if(sessionStorage.getItem("swReloaded"))return;sessionStorage.setItem("swReloaded","1");}catch(x){}if(document.hidden){location.reload();return;}if(document.getElementById("updbar"))return;var b=document.createElement("button");b.id="updbar";b.textContent="\ud83d\udd04 มีเวอร์ชันใหม่ — แตะเพื่ออัปเดต";b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;border:0;border-radius:999px;padding:11px 20px;background:#2563eb;color:#fff;font:600 14px/1 system-ui,-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";b.onclick=function(){location.reload();};document.body.appendChild(b);addEventListener("visibilitychange",function(){if(document.hidden)location.reload();},{once:true});});}</script>
-<link rel="stylesheet" href="styles.css?v=21" />
+<link rel="stylesheet" href="styles.css?v=22" />
 </head>
 <body>
 <div class="wrap">
 
   <div class="appbar">
-    <div class="logo">🐟 ปลาหมอคางดำ <span class="lock" role="img" title="หน้านี้ต้องเข้าสู่ระบบก่อน" aria-label="หน้านี้ต้องเข้าสู่ระบบก่อน">🔒</span></div>
+    <div class="logo">🐟 ปลาหมอคางดำ</div>
     <div class="bar-right">
       <span id="vtag"></span>
       <a class="btn" href="/">🏠 หน้าหลัก</a>
@@ -37,13 +37,13 @@
 
   <!-- 🔖 แถบแท็บ — **เขียนซ้ำอยู่ใน index.html กับ blackchin.html แก้ต้องแก้ทั้ง 2 ไฟล์**
        (กับดักเดิมของ /issue/ ที่แถบแท็บอยู่ 3 ไฟล์แล้วตกหล่น — เทสต์ archivetabs.mjs ไล่เทียบให้แล้ว)
-       ⚠️ 🔒 เป็นไอคอนล้วน จึงต้องมี title + aria-label เสมอ ไม่งั้นคนใช้ screen reader ไม่รู้ว่าต่างยังไง
-       ⚠️ ป้าย 🔒 **ไม่ได้ล็อกอะไรเอง** — บอกล่วงหน้าว่ากดแล้วจะเจอหน้าล็อกอิน
-          ตัวล็อกจริงคือ Cloudflare Access ที่เจ้าของตั้งเอง · ถอด Access เมื่อไหร่ต้องมาถอดป้ายนี้ด้วย -->
+       🔒 เจ้าของสั่ง 17 ก.ย. 2026: "access จริงๆ lock ทั้งคลังข่าวเลยง่ายกว่า"
+          → ล็อกทั้ง /archives/ ด้วยนโยบายเดียว **ทั้ง 2 แท็บจึงอยู่หลังล็อกอินเท่ากัน**
+          จึง **ห้ามติดป้าย 🔒 ที่แท็บใดแท็บหนึ่ง** — ติดแล้วจะอ่านเป็น "อีกแท็บเปิดสาธารณะ" ซึ่งไม่จริง
+          ป้ายบอกล่วงหน้าอยู่ที่ **การ์ดคลังข่าวบนหน้าแรก** ที่เดียว (index.html ที่ root) -->
   <nav class="pgtabs" aria-label="หน้าในคลังข่าว">
     <a class="pgtab" href="./">🗃️ ทั้งหมด</a>
-    <a class="pgtab on" href="blackchin.html" aria-current="page">🐟 ปลาหมอคางดำ<span class="lock" role="img"
-       title="ต้องเข้าสู่ระบบก่อนถึงเปิดได้" aria-label="ต้องเข้าสู่ระบบก่อนถึงเปิดได้">🔒</span></a>
+    <a class="pgtab on" href="blackchin.html" aria-current="page">🐟 ปลาหมอคางดำ</a>
   </nav>
 
   <!-- ⭐ ช่องค้นหาคือฟีเจอร์หลักของหน้านี้ — ให้เด่นที่สุด ที่เหลือเป็นของเสริม
@@ -134,6 +134,6 @@
 
 </div>
 <script src="outlets.config.js?v=5"></script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

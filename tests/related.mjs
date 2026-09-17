@@ -197,11 +197,25 @@ console.log("\n[10] 🔒 การ์ด Issue บนหน้ารวม ต�
     const m = html.match(/\.lock-corner \{[^}]*font-size:(\d+)px/);
     return m && Number(m[1]) > 18;
   })(), (html.match(/\.lock-corner \{[^}]*font-size:(\d+)px/) || [])[1]);
-  // 🚫 การ์ดอื่นยังไม่ได้ล็อก ห้ามติดป้ายมั่ว
-  ok("🚫 มีป้ายล็อกใบเดียว (การ์ดอื่นยังเปิดอยู่)", (html.match(/class="lock-badge"/g) || []).length === 1,
-    String((html.match(/class="lock-badge"/g) || []).length));
+  // 🚫 ป้ายล็อกติดได้เฉพาะการ์ดที่อยู่หลัง Access จริงเท่านั้น ห้ามติดมั่ว
+  //    ตอนนี้มี 2 ใบ: Issue (29 ส.ค. 2026) · คลังข่าว (17 ก.ย. 2026 — ล็อกทั้ง /archives/)
+  //    ⚠️ เพิ่ม/ถอด Access ที่ไหน ต้องมาแก้ลิสต์นี้ด้วย ไม่งั้นป้ายกับของจริงไม่ตรงกัน
+  {
+    const LOCKED = ["issue/", "archives/"];
+    const cards = [...html.matchAll(/<a class="[^"]*card[^"]*"[^>]*href="([^"]+)"[\s\S]*?<\/a>/g)];
+    const withBadge = cards.filter(([body]) => /class="lock-badge"/.test(body)).map((m) => m[1]);
+    ok("🚫 ป้ายล็อกอยู่เฉพาะการ์ดที่ล็อกจริง (การ์ดอื่นยังเปิดอยู่)",
+      JSON.stringify([...withBadge].sort()) === JSON.stringify([...LOCKED].sort()),
+      JSON.stringify(withBadge));
+    // ทุกใบต้องอ่านออกด้วยเสียง ไม่ใช่เฉพาะใบแรก
+    const badges = [...html.matchAll(/<span class="lock-badge"[^>]*>/g)].map((m) => m[0]);
+    ok("ป้ายล็อกทุกใบมี title + aria-label",
+      badges.length === LOCKED.length &&
+      badges.every((t) => t.includes("title=") && t.includes("aria-label=")),
+      JSON.stringify(badges));
+  }
   const v = html.match(/name="page-ver" content="(\d+)"/);
-  ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 25, v ? v[1] : "-");
+  ok("bump page-ver ของหน้ารวมแล้ว", v && Number(v[1]) >= 26, v ? v[1] : "-");
 }
 
 console.log("\n[12] 🔁 สรุปที่เอาข้อความก้อนเดิมมาซ้ำในตัวเอง = ลิสต์ข่าว ไม่ใช่สรุป");
