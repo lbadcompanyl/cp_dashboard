@@ -74,7 +74,9 @@ function fakeArchive(page, dir) {
 }
 
 /** แท็บทุกอันบนหน้า — ชื่อ · เลข · เลือกอยู่ไหม */
-const tabsOf = (p) => p.$$eval(".gtab", (bs) => bs.map((b) => ({
+/* ⚠️ `:not(.ch)` กันชิพ "ข่าว/Social" ที่อยู่ในแถบเดียวกัน (เจ้าของสั่ง 18 ก.ย. 2026)
+   ชิพพวกนั้นเป็น **คนละมิติกับหมวด** ไม่ใช่หมวดที่ 11-12 — เทสต์ของมันอยู่ที่ `archivechannel.mjs` */
+const tabsOf = (p) => p.$$eval(".gtab:not(.ch)", (bs) => bs.map((b) => ({
   name: b.querySelector(".gtname")?.textContent.trim(),
   n: +(b.querySelector(".gtn")?.textContent.replace(/\D/g, "") || 0),
   on: b.classList.contains("on"),
@@ -101,10 +103,11 @@ console.log("\n[1] จัดหมวดตามคำในพาดหัว"
   ok("แท็บแรกคือ 'ทั้งหมด' และเลือกอยู่ตอนเปิดหน้า", ts[0].name === "ทั้งหมด" && ts[0].on,
      JSON.stringify(ts[0]));
   // 👁 เจ้าของสั่ง 18 ก.ย. 2026: "อื่นๆ ไว้ล่างสุดเหมือนเดิม"
-  //    ⚠️ ในไฟล์ config "อื่น ๆ" **ไม่ได้อยู่บรรทัดสุดท้าย** (เป็นหมวด 9 · หมวด 10 ต่อท้าย)
-  //       ที่มันมาอยู่ท้ายแถบได้เพราะ `tabOrder()` ดันตัวที่มี `etc: true` ไปท้ายให้ — ดู [7]
+  //    ⚠️ ที่มันมาอยู่ท้ายแถบ **ไม่ใช่เพราะมันอยู่บรรทัดสุดท้ายของ config** แต่เพราะ
+  //       `tabOrder()` ดันตัวที่มี `etc: true` ไปท้ายให้ — ดู [7] (ถอด tabOrder ออกแล้วยังผ่าน
+  //       ข้อนี้ได้โดยบังเอิญ เพราะตอนนี้ชีตเรียง "อื่น ๆ" เป็นหมวด 10 พอดี จึงมีด่านโค้ดคุมซ้ำ)
   ok("แท็บสุดท้ายคือถังรับของที่ไม่เข้าหมวดไหน", ts.at(-1)?.name === "อื่น ๆ", String(ts.at(-1)?.name));
-  ok("หมวดที่ 10 อยู่ก่อนถังรับบนแถบแท็บ", ts.at(-2)?.id === "rebut", String(ts.at(-2)?.id));
+  ok("หมวดข้อหักล้าง (เลข 9 ในชีต) อยู่ก่อนถังรับบนแถบแท็บ", ts.at(-2)?.id === "rebut", String(ts.at(-2)?.id));
 
   const total = CASES.length + FILLER;
   ok("เลขบนแท็บ 'ทั้งหมด' = จำนวนข่าวทั้งคลัง", ts[0].n === total, `${ts[0].n} ≠ ${total}`);
@@ -117,7 +120,7 @@ console.log("\n[1] จัดหมวดตามคำในพาดหัว"
   const where = new Map();
   for (const t of ts.slice(1)) {
     if (!t.n) continue;
-    await p.click(`.gtab[data-gt="${t.id}"]`);
+    await p.click(`#gtabs .gtab[data-gt="${t.id}"]`);
     await p.waitForTimeout(150);
     for (const title of await titlesOf(p)) where.set(title, t.name);
   }
@@ -139,7 +142,7 @@ console.log("\n[2] กดแท็บ · ลิงก์ส่งต่อ · �
 
   ok("เปิดหน้ามาเห็นข่าวทันที ไม่ต้องกดอะไรก่อน", (await p.$$eval(".item", (n) => n.length)) > 0);
 
-  await p.click('.gtab[data-gt="dna"]');
+  await p.click('#gtabs .gtab[data-gt="dna"]');
   await p.waitForTimeout(250);
   let ts = await tabsOf(p);
   const dna = ts.find((t) => t.id === "dna");
@@ -255,7 +258,7 @@ console.log("\n[5] 🚫 หน้าคลังหลักต้องไม�
   await p.goto(`${BASE}/archives/?mode=kw`, { waitUntil: "networkidle" });
   await p.waitForTimeout(400);
   const o = await p.evaluate(() => ({
-    tabs: document.querySelectorAll(".gtab").length,
+    tabs: document.querySelectorAll(".gtab:not(.ch)").length,
     bar: document.querySelectorAll("#gtabs").length,
     thumbs: document.querySelectorAll(".thumb").length,
     items: document.querySelectorAll(".item").length,
@@ -277,7 +280,7 @@ console.log("\n[6] 📱 จอแคบ");
   const m = await p.evaluate(() => {
     const bar = document.querySelector("#gtabs").getBoundingClientRect();
     const sticky = document.querySelector(".sticky").getBoundingClientRect();
-    const one = document.querySelector(".gtab").getBoundingClientRect();
+    const one = document.querySelector(".gtab:not(.ch)").getBoundingClientRect();
     return {
       barH: Math.round(bar.height), tabH: Math.round(one.height),
       read: Math.round(innerHeight - sticky.bottom), vh: innerHeight,
@@ -326,7 +329,8 @@ console.log("\n[7] ด่านระดับโค้ด");
   // 🚫 เลขบนแท็บต้องมาจาก `scoped` (ผ่านทุกเงื่อนไขยกเว้นหมวด) ไม่ใช่ `filtered`
   //    เอามาจาก filtered เมื่อไหร่ แท็บอื่นจะเป็น 0 หมดทันทีที่เปิดหมวดใดหมวดหนึ่ง
   ok("เลขบนแท็บนับจาก scoped", /for \(const r of scoped\) for \(const i of r\.g\) gCounts\[i\]\+\+/.test(APP));
-  ok("หมวดถูกกรองทีหลัง แยกจาก scoped", /filtered = scoped\.filter\(\(r\) => r\.g\.includes\(gi\)\)/.test(APP));
+  ok("หมวดถูกกรองทีหลัง แยกจาก scoped",
+     /filtered = gi >= 0 \? scoped\.filter\(\(r\) => r\.g\.includes\(gi\)\) : scoped;/.test(APP));
 
   // 🚫 ตัวผ่อนเงื่อนไขต้องวัดกับทั้งคลัง ไม่ใช่หมวดที่เปิดอยู่
   //    ไม่งั้นเปิดหมวดเล็กไว้แล้วค้นอะไรก็ "ไม่เจอ" → ไล่ตัดวันที่/ตัดคำทิ้งทั้งที่คลังมีของอยู่
@@ -378,6 +382,8 @@ console.log("\n[8] ชีตติ๊กหมวดมาแล้ว — ต�
   const SHEET = [
     { t: "ศาลอุทธรณ์นัดไต่สวนคดีปลาหมอคางดำ ฝ่ายโจทก์ยื่นพยานเพิ่ม", cats: ["3", "5"] },
     { t: "ศาลอุทธรณ์สั่งรับฟ้อง ชาวประมงระยองเรียกค่าเสียหาย",       cats: ["7"] },
+    // 🔢 เลข 9 = "ข้อหักล้างความเสียหาย" · เลข 10 = "อื่น ๆ" — **ตามหัวคอลัมน์ในชีตจริง**
+    //    (แก้ 18 ก.ย. 2026 หลังเปิดชีตดู ของเดิมจดสลับกันไว้)
     { t: "ศาลอุทธรณ์เลื่อนนัดพิจารณา ทนายแถลงเตรียมสู้ต่อชั้นฎีกา",   cats: ["2", "4", "9"] },
     { t: "ชาวบ้านแปรรูปปลาหมอคางดำเป็นลูกชิ้น สร้างรายได้เสริม",      cats: [] },   // ยังไม่ติ๊ก → เดาเอา
     { t: "ศาลอุทธรณ์ยกคำร้องผู้คัดค้าน คดีเดินหน้าตามกำหนดเดิม",     cats: ["99"] }, // เลขไม่มีจริง → เดาเอา
@@ -406,27 +412,27 @@ console.log("\n[8] ชีตติ๊กหมวดมาแล้ว — ต�
   ok("ติ๊ก 3,5 → เข้าทั้ง 2 หมวด", num("มาตรการรัฐ+CPF") === 1 && num("ใช้ประโยชน์") === 2,
      `3=${num("มาตรการรัฐ+CPF")} · 5=${num("ใช้ประโยชน์")}`);
   ok("ติ๊ก 7 → เข้าหมวดการระบาดของสัตว์ต่างถิ่น", num("การระบาดของสัตว์ต่างถิ่น") === 1, String(num("การระบาดของสัตว์ต่างถิ่น")));
-  ok("ติ๊ก 2,4,9 → เข้าครบ 3 หมวด",
-     num("ท่าทีภาครัฐ") === 1 && num("งานวิจัย DNA") === 1 && num("อื่น ๆ") === 1,
-     `2=${num("ท่าทีภาครัฐ")} · 4=${num("งานวิจัย DNA")} · 9=${num("อื่น ๆ")}`);
+  ok("ติ๊ก 2,4,9 → เข้าครบ 3 หมวด (9 = ข้อหักล้างความเสียหาย)",
+     num("ท่าทีภาครัฐ") === 1 && num("งานวิจัย DNA") === 1 && num("ข้อหักล้างความเสียหาย") === 1,
+     `2=${num("ท่าทีภาครัฐ")} · 4=${num("งานวิจัย DNA")} · 9=${num("ข้อหักล้างความเสียหาย")}`);
   ok("🚫 ไม่เอาคำในพาดหัวมาเดาทับของที่ติ๊กไว้ (หมวดศาลต้องมีแค่ใบที่เดาเอง)",
      num("ศาล/คดีความ") === 1, String(num("ศาล/คดีความ")));
   const sum = ts.slice(1).reduce((a, t) => a + t.n, 0);
   ok("ผลรวมทุกหมวดเกินจำนวนข่าวได้ เมื่อใบเดียวเข้าหลายหมวด", sum > SHEET.length, `${sum} ≤ ${SHEET.length}`);
 
   // ค. — แถวที่ยังไม่ติ๊ก ต้องยังเดาให้
-  await p.click('.gtab[data-gt="use"]');
+  await p.click('#gtabs .gtab[data-gt="use"]');
   await p.waitForTimeout(150);
   const useTitles = await titlesOf(p);
   ok("แถวที่ยังไม่ติ๊ก ยังเดาจากพาดหัวให้เหมือนเดิม",
      useTitles.some((t) => t.includes("ลูกชิ้น")), JSON.stringify(useTitles));
-  await p.click('.gtab[data-gt="court"]');
+  await p.click('#gtabs .gtab[data-gt="court"]');
   await p.waitForTimeout(150);
   ok("เลขหมวดที่ไม่มีอยู่จริง (99) ไม่ทำให้ข่าวหาย — ตกไปใช้ตัวเดา",
      (await titlesOf(p)).some((t) => t.includes("ยกคำร้องผู้คัดค้าน")), JSON.stringify(await titlesOf(p)));
 
   // ง. — ป้ายบนการ์ดต้องอ่านออก ไม่ใช่เลขดิบ
-  await p.click('.gtab[data-gt=""]');
+  await p.click('#gtabs .gtab[data-gt=""]');
   await p.waitForTimeout(150);
   const tags = await p.$$eval(".item .tag", (e) => e.map((x) => x.textContent.trim()));
   ok("ป้ายหมวดบนการ์ดเป็นชื่อหมวด ไม่ใช่เลขดิบจากชีต",

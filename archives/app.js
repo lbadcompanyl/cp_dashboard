@@ -52,6 +52,9 @@ const state = {
   //    เก็บเป็น **id ของหมวด** ไม่ใช่ลำดับ — เจ้าของสลับลำดับใน config เมื่อไหร่
   //    ลิงก์เก่าที่ส่งต่อกันไว้จะได้ไม่ชี้ผิดหมวด
   g: "",
+  // 💬 ช่องทางที่กำลังเปิดอยู่ (ข่าว / social) — `""` = ทุกช่องทาง
+  //    **คนละมิติกับหมวด** เปิดพร้อมกันได้ ตัดกันเป็นตาราง
+  ch: "",
   // ↕ เรียงลำดับ — "new" ล่าสุดก่อน (ตั้งต้น) · "old" เก่าสุดก่อน · เข้า URL ด้วย (?sort=old)
   sort: "new",
 };
@@ -198,7 +201,8 @@ for (const v of Object.values(OUTLET_MAP)) OUTLET_NAMES.add(norm(v));
 
 // ---------- คลี่ข้อมูลที่เก็บแบบตาราง ----------
 // โครงจาก tools/build-archives.mjs — **แก้ที่นั่นต้องแก้ที่นี่ด้วย**
-//   { o:[สำนัก], c:[หมวด], r:[[พาดหัว, ลิงก์, วินาที, ลำดับสำนัก, [ลำดับหมวด]], …] }
+//   { o:[สำนัก], c:[หมวด], ch:[ช่องทาง], r:[[พาดหัว, ลิงก์, วินาที, ลำดับสำนัก, [ลำดับหมวด], ลำดับช่องทาง], …] }
+// ⚠️ ช่องที่ 6 (ช่องทาง) **ต่อท้าย ไม่ใช่แทรกกลาง** — ไฟล์รุ่นเก่าไม่มีช่องนี้และต้องอ่านได้เหมือนเดิม
 function expand(pack) {
   const out = [];
   for (const r of pack.r) {
@@ -227,6 +231,9 @@ function expand(pack) {
       //    หน้าคลังหลัก → ค่าดิบจากชีตเหมือนเดิมทุกอย่าง
       c: TOPICS ? g.map((i) => TOPICS[i].name) : rawCats,
       g,
+      // 💬 ช่องทาง — คิดครั้งเดียวตอนโหลด เหมือนหมวด · `chRaw` เก็บค่าดิบไว้ไล่ปัญหา
+      chRaw: (pack.ch || [])[r[5]] || "",
+      ch: channelOf((pack.ch || [])[r[5]] || "", r[1]),
     });
   }
   return out;
@@ -266,6 +273,38 @@ function tabOrder() {
   if (!TOPICS) return [];
   const idx = TOPICS.map((_, i) => i);
   return idx.filter((i) => !TOPICS[i].etc).concat(idx.filter((i) => TOPICS[i].etc));
+}
+
+/* 💬 ---------- ช่องทาง: ข่าว / Social (เจ้าของสั่ง 18 ก.ย. 2026) ----------
+ * ตารางคำกับรายชื่อโดเมนอยู่ที่ `channels.config.js` **แก้ที่นั่น ไม่ต้องแตะไฟล์นี้**
+ * เปิดใช้เฉพาะหน้าที่โหลด config มา — หน้าคลังหลักไม่ได้โหลด จึงไม่มีชิพให้เห็นเลย
+ */
+const CHAN = window.ARCHIVE_CHANNELS && Array.isArray(window.ARCHIVE_CHANNELS.buckets)
+  ? window.ARCHIVE_CHANNELS : null;
+const CH_BUCKETS = CHAN ? CHAN.buckets : [];
+const CH_MAP = CHAN ? CHAN.map || {} : {};
+const CH_HOSTS = CHAN ? CHAN.socialHosts || [] : [];
+const chKey = (s) => String(s || "").toLowerCase().replace(/\s|[-_.]/g, "");
+
+/** ช่องทางของข่าว 1 ใบ → id ของถัง
+ *  🥇 **คอลัมน์ `Channel` ของชีตมาก่อนเสมอ** แล้วค่อยเดาจากโดเมน — ห้ามสลับ
+ *     (ชีตจริงมีแถว `TikTok` ที่ลิงก์เป็น thairath.co.th/video/shorts/… เดาโดเมนก่อนจะได้ "ข่าว")
+ *  🔙 ไม่เข้าทั้งสองทาง = ถังแรก ("ข่าว") ตามที่เจ้าของเลือก — ไม่มีถัง "ไม่ระบุ"
+ */
+function channelOf(raw, url) {
+  if (!CHAN) return "";
+  const hit = CH_MAP[chKey(raw)];
+  if (hit) return hit;
+  let host = "";
+  try { host = new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { host = ""; }
+  if (host && CH_HOSTS.some((h) => host === h || host.endsWith("." + h))) return "social";
+  return CH_BUCKETS[0]?.id || "news";
+}
+
+/** ถังที่เปิดอยู่ (null = ยังไม่ได้เลือก) */
+function curChannel() {
+  if (!CHAN || !state.ch) return null;
+  return CH_BUCKETS.find((b) => b.id === state.ch) || null;
 }
 
 /** หมวดของข่าว 1 ใบ → array ของ index (เรียงจากน้อยไปมาก · ไม่ซ้ำ · อย่างน้อย 1 ตัวเสมอ)
@@ -419,6 +458,10 @@ function yearsNeededByDate() {
  */
 let scoped = [];                 // ผ่านทุกเงื่อนไข ยกเว้นหมวด
 let gCounts = [];                // จำนวนข่าวต่อหมวด (นับจาก scoped)
+/* 💬 จำนวนข่าวต่อช่องทาง — **นับจาก base ที่กรองหมวดแล้วแต่ยังไม่กรองช่องทาง**
+ * ⚠️ กับดักการนับ: ถ้านับจากกองเดียวกับที่กรองช่องทางไปแล้ว ชิพอีกฝั่งจะขึ้น 0 ทันที
+ *    ที่เลือกฝั่งหนึ่ง แล้วผู้ใช้จะไม่มีทางรู้ว่าอีกฝั่งมีของอยู่ (กับดักเดียวกับเลขบนแท็บ) */
+let chCounts = {};
 // 🔗 ข่าวที่รวมเป็นเรื่องเดียวกันแล้ว — [{ main, others }] · null = หน้านี้ไม่ได้รวม (หน้าคลังหลัก)
 let groups = null;
 
@@ -447,12 +490,25 @@ function applyFilters() {
     return true;
   });
 
+  /* 💬 2 มิติที่ตัดกัน (หมวด × ช่องทาง) — **เลขของแต่ละฝั่งต้องนับจากกองที่ยังไม่ได้กรองฝั่งตัวเอง**
+   *    เลขบนชิพช่องทาง ← กรองหมวดแล้ว ยังไม่กรองช่องทาง
+   *    เลขบนแท็บหมวด   ← กรองช่องทางแล้ว ยังไม่กรองหมวด (= `scoped` ตามเดิม) */
+  const base = filtered;
+  const gi = TOPICS ? TOPICS.findIndex((t) => t.id === state.g) : -1;
+  const chOn = CHAN && state.ch ? state.ch : "";
+
+  chCounts = {};
+  if (CHAN) {
+    for (const b of CH_BUCKETS) chCounts[b.id] = 0;
+    for (const r of base) if (gi < 0 || r.g.includes(gi)) if (r.ch in chCounts) chCounts[r.ch]++;
+  }
+
   if (!TOPICS) { scoped = filtered; gCounts = []; finishV2(); return; }
-  scoped = filtered;
+
+  scoped = chOn ? base.filter((r) => r.ch === chOn) : base;
   gCounts = TOPICS.map(() => 0);
   for (const r of scoped) for (const i of r.g) gCounts[i]++;
-  const gi = TOPICS.findIndex((t) => t.id === state.g);
-  if (gi >= 0) filtered = scoped.filter((r) => r.g.includes(gi));
+  filtered = gi >= 0 ? scoped.filter((r) => r.g.includes(gi)) : scoped;
   finishV2();
 }
 
@@ -897,6 +953,7 @@ function toQuery() {
   // โหมดเข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้หน้าตาเดียวกัน (ค่าตั้งต้นคือ ai จึงไม่ต้องใส่)
   if (state.mode === "kw") p.set("mode", "kw");
   if (state.g) p.set("g", state.g);   // หมวดที่เปิดอยู่ — ส่งลิงก์ตรงหมวดให้กันได้
+  if (state.ch) p.set("ch", state.ch); // ช่องทางที่เปิดอยู่ (ข่าว/social)
   if (state.sort === "old") p.set("sort", "old");   // ค่าตั้งต้นคือล่าสุดก่อน จึงไม่ต้องใส่
   const s = p.toString();
   return s ? "?" + s : location.pathname;
@@ -918,6 +975,9 @@ function readQuery() {
   // 🚫 ห้ามปล่อยให้ค้างเป็นหมวดที่ไม่มี — จะได้หน้าว่างโดยไม่มีอะไรบอกว่าทำไม
   const g = p.get("g") || "";
   state.g = TOPICS && TOPICS.some((t) => t.id === g) ? g : "";
+  // ช่องทางที่ไม่มีอยู่จริง = ตกกลับไปที่ "ทุกช่องทาง" ด้วยเหตุผลเดียวกับหมวด
+  const ch = p.get("ch") || "";
+  state.ch = CHAN && CH_BUCKETS.some((b) => b.id === ch) ? ch : "";
   state.sort = p.get("sort") === "old" ? "old" : "new";
   judgeKeep = null;   // เปิดจากลิงก์ = ยังไม่ได้คัด ต้องไปคัดใหม่
   state.shown = PAGE;
@@ -1074,12 +1134,28 @@ function renderTabs() {
              aria-selected="${on ? "true" : "false"}" data-gt="${esc(id)}">
        <span class="gtico" aria-hidden="true">${icon}</span><span class="gtname">${esc(name)}</span><span class="gtn">${n.toLocaleString("th-TH")}</span>
      </button>`;
+  /* 💬 ชิพ "ข่าว / Social" อยู่ในแถบเดียวกับหมวด (เจ้าของเลือกเอง 18 ก.ย. 2026)
+   * 🚫 **เป็นคนละมิติกับหมวด ห้ามล้าง `state.g` ตอนกด** — 2 อย่างนี้ตัดกัน ไม่ได้แทนกัน
+   * 🚫 **ห้ามซ่อนชิพที่เหลือ 0** ด้วยเหตุผลเดียวกับแท็บหมวด
+   * 🧱 มีเส้นคั่น (`.gsep`) กั้นไว้ ไม่งั้นอ่านเป็นหมวดที่ 12 */
+  const chTabs = !CHAN ? "" :
+    `<span class="gsep" aria-hidden="true"></span>` +
+    CH_BUCKETS.map((b) => {
+      const n = chCounts[b.id] || 0;
+      const on = state.ch === b.id;
+      return `<button class="gtab ch${on ? " on" : ""}${n ? "" : " zero"}" type="button"
+               aria-pressed="${on ? "true" : "false"}" data-ch="${esc(b.id)}"
+               title="${on ? "กดอีกครั้งเพื่อดูทุกช่องทาง" : "ดูเฉพาะ" + b.name}">
+         <span class="gtico" aria-hidden="true">${b.icon}</span><span class="gtname">${esc(b.name)}</span><span class="gtn">${n.toLocaleString("th-TH")}</span>
+       </button>`;
+    }).join("");
+
   box.innerHTML =
     tab("", "🗂", "ทั้งหมด", total, !state.g) +
     tabOrder().map((i) => {
       const t = TOPICS[i];
       return tab(t.id, t.icon, t.name, gCounts[i] || 0, state.g === t.id);
-    }).join("");
+    }).join("") + chTabs;
 
   // 📱 จอแคบแท็บเลื่อนซ้ายขวา — แท็บที่เลือกอยู่อาจอยู่นอกจอหลังกดจากลิงก์/กด back
   //    ต้องเลื่อนมาให้เห็นเอง ไม่งั้นผู้ใช้ไม่รู้ว่าตัวเองอยู่หมวดไหน
@@ -1230,13 +1306,16 @@ function renderCount() {
   // 🗂 เปิดหมวดไหนอยู่ต้องเขียนไว้ในบรรทัดนับด้วย — แท็บที่ระบายสีอยู่บอกได้ก็จริง
   //    แต่พอเลื่อนลงไปอ่านข่าว แถบแท็บเลื่อนตามไปแต่บรรทัดนี้อยู่ใกล้รายการกว่า
   const topic = currentTopic();
+  const chan = curChannel();
   // 🔗 รวมข่าวซ้ำแล้วต้องบอกด้วยว่ารวมไปเท่าไร — ไม่งั้นเลข "พบ N ข่าว"
   //    กับจำนวนการ์ดที่นับได้บนจอจะไม่ตรงกัน แล้วผู้ใช้จะนึกว่าข่าวหาย
   const merged = V2 && groups && groups.length < n
     ? `<span class="dim"> · รวมข่าวเนื้อหาซ้ำแล้วเหลือ ${groups.length.toLocaleString("th-TH")} เรื่อง</span>` : "";
   $("#count").innerHTML =
     `พบ <b>${n.toLocaleString("th-TH")}</b> ข่าว` +
-    (topic ? `<span class="dim"> ใน ${topic.icon} ${esc(topic.name)}</span>` : "") + merged +
+    (topic ? `<span class="dim"> ใน ${topic.icon} ${esc(topic.name)}</span>` : "") +
+    // 💬 กรองช่องทางอยู่ต้องเขียนด้วย ด้วยเหตุผลเดียวกับหมวด
+    (chan ? `<span class="dim"> · เฉพาะ ${chan.icon} ${esc(chan.name)}</span>` : "") + merged +
     `<span class="dim"> · ค้นในปี ${loadedYears.join(", ")}${older.length ? ` (ยังไม่รวม ${older.join(", ")})` : ""}</span>`;
   $("#clearall").hidden = !hasFilter();
   $("#qclear").hidden = !state.q;
@@ -1390,7 +1469,16 @@ function bind() {
   };
   $("#gtabs")?.addEventListener("click", (e) => {
     const t = e.target.closest("[data-gt]");
-    if (t) gotoTopic(t.dataset.gt);
+    if (t) { gotoTopic(t.dataset.gt); return; }
+    /* 💬 ชิพช่องทาง — กดซ้ำที่ตัวเดิม = ปิดตัวกรอง (ดูทุกช่องทาง)
+     * 🚫 **ห้ามแตะ `state.g`** หมวดที่เปิดอยู่ต้องค้างไว้ ผู้ใช้กำลังดูหมวดนั้นอยู่ */
+    const c = e.target.closest("[data-ch]");
+    if (!c) return;
+    const id = c.dataset.ch;
+    state.ch = state.ch === id ? "" : id;
+    state.shown = PAGE;
+    syncURL(true);
+    render();
   });
 
   $("#list").addEventListener("click", (e) => {

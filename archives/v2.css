@@ -103,6 +103,15 @@ body.v2 .gtab.on .gtn { color:var(--on-accent); opacity:.82; }
 /* 🚫 แท็บที่เหลือ 0 จางลงได้ แต่ห้ามซ่อน — ไม่งั้นแท็บกระโดดสลับที่ทุกครั้งที่พิมพ์ */
 body.v2 .gtab.zero:not(.on) { opacity:.48; }
 
+/* 💬 ชิพ "ข่าว / Social" อยู่ในแถบเดียวกับหมวด (เจ้าของเลือกเอง 18 ก.ย. 2026)
+   🧱 เส้นคั่นกั้นไว้ ไม่งั้นอ่านเป็นหมวดที่ 12
+   🎨 **ระบายคนละแบบกับหมวดโดยตั้งใจ** — หมวดเลือกได้ทีละอัน (พื้นทึบ)
+      ส่วนชิพนี้เป็นอีกมิติที่ซ้อนทับ (ขอบสีเน้น) · กฎเดียวกับปุ่มตัวกรองที่หน้าคลังหลัก */
+body.v2 .gsep { flex:none; width:1px; align-self:stretch; margin:6px 2px; background:var(--border); }
+body.v2 .gtab.ch .gtico { display:inline; }
+body.v2 .gtab.ch.on { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+body.v2 .gtab.ch.on .gtn { color:var(--accent); opacity:.75; }
+
 /* ───────── ตัวกรอง — จอแคบเป็นแผ่นเลื่อนขึ้นจากล่าง ───────── */
 body.v2 .filters { display:block; }
 body.v2 .filters[hidden] { display:none !important; }
@@ -165,6 +174,9 @@ body.v2 .filters[hidden] { display:none !important; }
   body.v2 .gtab:hover { background:var(--surface-2); }
   body.v2 .gtab .gtname { white-space:normal; }
   body.v2 .gtab.on { background:var(--accent); color:var(--on-accent); }
+  /* 💬 จอกว้างแถบเป็นรายการแนวตั้ง เส้นคั่นจึงต้องเป็นเส้นนอน ไม่ใช่เส้นตั้ง */
+  body.v2 .gsep { display:block; width:auto; height:1px; margin:12px 12px 10px; }
+  body.v2 .gtab.ch.on { background:var(--accent-soft); color:var(--accent); }
 
   /* ✅ จอกว้างตัวกรองกางอยู่ตลอด — อยู่คอลัมน์ซ้าย ไม่ได้ดันรายการข่าวตกจอเหมือนของเดิม
      จึงไม่ต้องพับ (เหตุผลที่เจ้าของสั่งให้พับเมื่อ 20 ส.ค. 2026 หมดไปแล้วบนหน้านี้)

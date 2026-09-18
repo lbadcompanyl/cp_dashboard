@@ -108,6 +108,53 @@ export function splitCats(raw) {
     .filter(Boolean);
 }
 
+/* ☑️ ---------- ช่องติ๊กหมวด = ความจริง ไม่ใช่คอลัมน์ `หมวด` ----------
+ *
+ * ชีตมีหัวคอลัมน์รูปแบบ `<เลข> <ชื่อหมวด>` (เช่น `1 ศาล/คดีความ` … `10 อื่น ๆ`)
+ * ช่องข้างใต้เป็น `TRUE`/`FALSE` — **นั่นคือสิ่งที่เจ้าของกดเอง**
+ * ส่วนคอลัมน์ `หมวด` เป็นสูตรที่ประกอบเลขจากช่องติ๊กอีกที **ซึ่งพังอยู่จริง**
+ * (วัดกับชีตจริง 18 ก.ย. 2026: 339 แถว มี **141 แถว** ที่ 2 ฝั่งไม่ตรงกัน)
+ *
+ * 🚫 **ห้ามกลับไปยึดคอลัมน์ `หมวด` เป็นหลัก** — สูตรพังเงียบๆ ได้ตลอดเวลา
+ *    และพังแล้วข่าวย้ายหมวดทั้งคลังโดยไม่มีอะไรบอก
+ * 🔙 ชีตที่ **ไม่มีช่องติ๊กเลย** ยังอ่านคอลัมน์ `หมวด` เหมือนเดิมทุกอย่าง (ชีตรุ่นเก่ายังสร้างไฟล์ได้)
+ */
+export function tickCols(head) {
+  const out = [];
+  head.forEach((h, i) => {
+    const m = /^(\d{1,2})\s+\S/.exec(String(h).trim());
+    if (m) out.push({ i, n: m[1] });
+  });
+  return out;
+}
+const isTicked = (v) => /^(true|x|✓|yes|1)$/i.test(String(v || "").trim());
+
+/* 🔑 ---------- กุญแจกันข่าวซ้ำ ----------
+ *
+ * 🐞 **ของเดิมตัด query ทิ้งทั้งก้อน** (`link.replace(/[?#].*$/, "")`) ซึ่งพังกับ YouTube
+ *    `youtube.com/watch?v=<รหัสคลิป>` — **รหัสคลิปอยู่ใน query** ตัดทิ้งแล้วคลิปทุกใบ
+ *    กลายเป็นกุญแจเดียวกันหมด (`youtube.com/watch`) แล้วถูกมองว่าซ้ำ
+ *    · วัดกับชีตจริง 18 ก.ย. 2026: คลิป YouTube **10 ใบ เหลือ 1 ใบ** หายไป 9 ใบเงียบๆ
+ *    · เจอเพราะเพิ่งเพิ่มคอลัมน์ `Channel` แล้วนับยอดแต่ละช่องทางเทียบกับชีต
+ *
+ * ✅ ตอนนี้ตัดเฉพาะ **พารามิเตอร์ติดตาม** ที่ไม่ได้บอกว่าเป็นคนละหน้า
+ *    🚫 ห้ามกลับไปตัดทั้ง query — เว็บที่ใส่ id ไว้ใน query มีอีกเยอะ (`?p=`, `?id=`, `?news_id=`)
+ */
+const TRACK_PARAM = /^(utm_|fbclid$|gclid$|igshid$|mc_cid$|mc_eid$|ref$|ref_src$|spm$|_ga$|si$)/i;
+export function dedupKey(link) {
+  try {
+    const x = new URL(link);
+    x.hash = "";
+    for (const k of [...x.searchParams.keys()]) if (TRACK_PARAM.test(k)) x.searchParams.delete(k);
+    x.searchParams.sort();                       // ลำดับพารามิเตอร์ต่างกันไม่ใช่คนละหน้า
+    let out = x.toString();
+    if (!x.search) out = out.replace(/\/+$/, "");  // ตัด / ท้ายเฉพาะตอนไม่มี query
+    return out.toLowerCase();
+  } catch {
+    return String(link || "").trim().replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
+  }
+}
+
 const normLink = (u) => {
   try { const x = new URL(u); x.hash = ""; return x.toString(); } catch { return String(u || "").trim(); }
 };
@@ -120,6 +167,9 @@ export function buildRows(table) {
   const iLink = col("link", "ลิงก์", "url");
   const iDate = col("วันที่", "date");
   const iCat = col("หมวด", "category", "หมวดหมู่");
+  const ticks = tickCols(head);          // ☑️ ช่องติ๊กหมวด — ชนะคอลัมน์ `หมวด` เสมอ (ดูหมายเหตุข้างบน)
+  // 💬 ช่องทาง (ข่าว/social) — **ไม่บังคับ** ชีตที่ยังไม่มีคอลัมน์นี้ยังสร้างไฟล์ได้เหมือนเดิม
+  const iChan = col("Channel", "channel", "ช่องทาง");
   if (iTitle < 0 || iLink < 0) throw new Error("ชีตต้องมีคอลัมน์ 'พาดหัว' และ 'link' — เจอ: " + head.join(" | "));
 
   const seen = new Set();
@@ -128,7 +178,7 @@ export function buildRows(table) {
     const link = normLink(r[iLink]);
     const title = String(r[iTitle] || "").trim();
     if (!link || !title) continue;
-    const key = link.replace(/[?#].*$/, "").replace(/\/+$/, "");
+    const key = dedupKey(link);   // 🔑 ดูหมายเหตุที่ dedupKey — ห้ามกลับไปตัด query ทั้งก้อน
     if (seen.has(key)) continue; // ข่าวซ้ำในชีต — เอาแถวแรกที่เจอ
     seen.add(key);
     out.push({
@@ -136,7 +186,8 @@ export function buildRows(table) {
       u: link,
       o: String(r[iOutlet] || "").trim(),         // สำนักข่าว (ค่าดิบ ยังไม่ยุบชื่อ)
       d: toISO(r[iDate]),
-      c: splitCats(r[iCat]),
+      c: ticks.length ? ticks.filter((t) => isTicked(r[t.i])).map((t) => t.n) : splitCats(r[iCat]),
+      ch: iChan >= 0 ? String(r[iChan] || "").trim() : "",   // ค่าดิบ — แปลเป็นถังที่หน้าเว็บ
     });
   }
   out.sort((a, b) => String(b.d).localeCompare(String(a.d)));
@@ -215,22 +266,29 @@ export function mockTable(n = 18000) {
 // ⚠️ เก็บแบบ "ตารางย่อ" ไม่ใช่ object ต่อแถว — ที่ 20,000 แถวต่างกันหลายเท่า
 // ชื่อสำนักข่าวกับหมวดซ้ำกันมาก จึงเก็บเป็นรายการเดียวแล้วอ้างด้วยเลขลำดับ
 // วันที่เก็บเป็นวินาที (ตัวเลข) ไม่ใช่สตริง ISO — สั้นกว่าและเรียงเร็วกว่า
-//   { o:[สำนัก], c:[หมวด], r:[[พาดหัว, ลิงก์, วินาที, ลำดับสำนัก, [ลำดับหมวด]], …] }
+//   { o:[สำนัก], c:[หมวด], ch:[ช่องทาง], r:[[พาดหัว, ลิงก์, วินาที, ลำดับสำนัก, [ลำดับหมวด], ลำดับช่องทาง], …] }
+// 🚫 **ช่องใหม่ต้องต่อท้ายเท่านั้น ห้ามแทรกกลาง** — ตำแหน่งในแถวคือความหมาย
+//    แทรกกลางเมื่อไหร่ ไฟล์เก่าทุกไฟล์จะอ่านผิดทั้งก้อนโดยไม่มี error อะไรบอก
+//    · ชีตที่ไม่มีคอลัมน์ `Channel` เลย → ไม่มีคีย์ `ch` และแถวยาว 5 ช่องเท่าเดิม
 // ฝั่งหน้าเว็บคลี่กลับใน expand() ของ app.js — **แก้โครงตรงนี้ต้องแก้ที่นั่นด้วย**
 export function packYear(rows) {
-  const oList = [], oIx = new Map(), cList = [], cIx = new Map();
+  const oList = [], oIx = new Map(), cList = [], cIx = new Map(), chList = [], chIx = new Map();
   const idx = (v, list, map) => {
     if (!map.has(v)) { map.set(v, list.length); list.push(v); }
     return map.get(v);
   };
-  const r = rows.map((x) => [
-    x.t,
-    x.u,
-    Math.floor(new Date(x.d).getTime() / 1000),
-    idx(x.o, oList, oIx),
-    x.c.map((c) => idx(c, cList, cIx)),
-  ]);
-  return { o: oList, c: cList, r };
+  const r = rows.map((x) => {
+    const row = [
+      x.t,
+      x.u,
+      Math.floor(new Date(x.d).getTime() / 1000),
+      idx(x.o, oList, oIx),
+      x.c.map((c) => idx(c, cList, cIx)),
+    ];
+    if (x.ch) row.push(idx(x.ch, chList, chIx));   // ← ต่อท้าย · แถวที่ไม่ได้กรอกจะสั้นกว่า
+    return row;
+  });
+  return chList.length ? { o: oList, c: cList, ch: chList, r } : { o: oList, c: cList, r };
 }
 
 function write(rows) {
