@@ -32,6 +32,7 @@ const BC = fs.readFileSync(new URL("../archives/blackchin.html", import.meta.url
 const IDX = fs.readFileSync(new URL("../archives/index.html", import.meta.url), "utf8");
 const BUILD = fs.readFileSync(new URL("../tools/build-archives.mjs", import.meta.url), "utf8");
 const OUT = fs.readFileSync(new URL("../archives/outlets.config.js", import.meta.url), "utf8");
+const BUILDMOD = await import("../tools/build-archives.mjs");
 
 /* คลังปลอม — [ค่าในคอลัมน์ Channel, ลิงก์, ฝั่งที่ควรได้, เลขหมวดที่ติ๊ก, พาดหัว]
  *
@@ -359,6 +360,28 @@ console.log("\n[7] ด่านระดับโค้ด");
   ok("ชีตที่ไม่มีคอลัมน์ Channel ยังสร้างไฟล์ได้ (ไม่มีคีย์ ch)",
      /chList\.length \? \{ o: oList, c: cList, ch: chList, r \} : \{ o: oList, c: cList, r \}/.test(BUILD));
   ok("app.js อ่านไฟล์รุ่นเก่าที่ไม่มี ch ได้ (ไม่พัง)", /\(pack\.ch \|\| \[\]\)\[r\[5\]\]/.test(APP));
+
+  /* 🔴 หัวตารางกับช่องติ๊กไม่ได้ตรงกันเสมอ — เจอจริง 18 ก.ย. 2026 รอบสอง
+     เจ้าของเพิ่มคอลัมน์ยอดวิว 2 ช่อง → ช่องติ๊กเลื่อนขวา 2 ช่อง แต่หัวตารางอยู่ที่เดิม
+     อ่านตามตำแหน่งหัวตาราง = ข่าวศาลกลายเป็นหมวดอื่นทั้งคลัง โดยไม่มี error อะไรบอก */
+  {
+    const HEAD = ["สำนักข่าว", "พาดหัว", "link", "วันที่", "หมวด", "Channel", "1 ศาล", "2 รัฐ", "3 CPF"];
+    const SHIFT = [
+      ["ก", "ข่าวศาล", "https://a.com/1", "2026-01-01", "1", "Website", "1.4M", "31K", "TRUE", "FALSE", "FALSE"],
+      ["ก", "ข่าว CPF", "https://a.com/2", "2026-01-02", "3", "Website", "", "", "FALSE", "FALSE", "TRUE"],
+    ];
+    const got = BUILDMOD.tickCols(HEAD, SHIFT).map((t) => `${t.n}@${t.i}`).join(" ");
+    ok("🔴 ช่องติ๊กเลื่อนไป 2 ช่อง ยังจับคู่กับหัวหมวดถูก", got === "1@8 2@9 3@10", got);
+
+    const NORMAL = [["ก", "ข", "https://a.com/3", "2026-01-01", "1", "Website", "TRUE", "FALSE", "FALSE"]];
+    ok("ชีตที่ไม่เลื่อน ได้ผลเหมือนเดิมทุกอย่าง",
+       BUILDMOD.tickCols(HEAD, NORMAL).map((t) => `${t.n}@${t.i}`).join(" ") === "1@6 2@7 3@8");
+
+    // 🚫 จำนวนไม่เท่ากัน = เดาไม่ได้ ต้องหยุด ไม่ใช่สร้างไฟล์ที่ข่าวเข้าหมวดผิด
+    let threw = false;
+    try { BUILDMOD.tickCols(HEAD, [["ก", "ข", "c", "d", "1", "W", "TRUE", "FALSE"]]); } catch { threw = true; }
+    ok("🚫 หัวหมวดกับช่องติ๊กจำนวนไม่เท่ากัน → โยน error ไม่เดา", threw);
+  }
 
   // ☑️ ช่องติ๊กหมวดเป็นความจริง ไม่ใช่คอลัมน์ `หมวด` ที่เป็นสูตร
   ok("☑️ ตัวสร้างไฟล์ยึดช่องติ๊กหมวดก่อนคอลัมน์ `หมวด`",
