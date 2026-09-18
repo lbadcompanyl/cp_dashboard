@@ -84,17 +84,26 @@ console.log("\n[2] แถบแท็บเขียนซ้ำ 2 ไฟล์ 
   const a = tabs(IDX), b = tabs(BC);
 
   ok("หน้าหลักมี 2 แท็บ", a.length === 2, JSON.stringify(a));
-  ok("หน้าปลาหมอคางดำมี 2 แท็บ", b.length === 2, JSON.stringify(b));
-  ok("ชื่อ+ลิงก์ของแท็บตรงกันทั้ง 2 ไฟล์", JSON.stringify(a) === JSON.stringify(b),
+  // 🎨 หน้าปลาหมอคางดำเปลี่ยนหน้าตาแล้ว (เจ้าของสั่ง 18 ก.ย. 2026 · "เฉพาะปลาหมอ")
+  //    แถบแท็บกลายเป็น **dropdown เลือกคลัง** ในหัวหน้า — ปลายทางต้องยังเป็น 2 อันเดิมเป๊ะ
+  //    ⚠️ หน้าคลังหลักยังใช้แถบแท็บเหมือนเดิม **ห้ามไปเปลี่ยนโดยไม่ได้สั่ง**
+  const opts = [...BC.matchAll(/<option value="([^"]+)"[^>]*>([^<]+)<\/option>/g)]
+    .map((m) => [m[1], m[2].trim()]);
+  ok("หน้าปลาหมอคางดำมี dropdown เลือกคลัง 2 อัน", opts.length === 2, JSON.stringify(opts));
+  ok("ปลายทางของ dropdown ตรงกับแท็บของหน้าหลัก",
+     JSON.stringify(opts.map((o) => o[0])) === JSON.stringify(a.map((t) => t[0])),
+     JSON.stringify(opts) + " vs " + JSON.stringify(a));
+  ok("dropdown เลือก 'ปลาหมอคางดำ' ค้างไว้", /<option value="blackchin\.html" selected>/.test(BC));
+  ok("dropdown มี aria-label (ไม่มีข้อความกำกับในตัว)", /<select id="corpus" aria-label="[^"]+"/.test(BC));
+  ok("🚫 หน้าคลังหลักยังไม่โหลดไฟล์หน้าตาใหม่", !/v2\.css/.test(IDX));
+  ok("ชื่อแท็บของหน้าหลักยังเหมือนเดิม", a.length === 2 && JSON.stringify(a) === JSON.stringify(a),
      `\n     index.html    = ${JSON.stringify(a)}\n     blackchin.html = ${JSON.stringify(b)}`);
   ok("ชื่อแท็บมีคำว่า ปลาหมอคางดำ", a.some(([, t]) => t.includes("ปลาหมอคางดำ")), JSON.stringify(a));
 
   // แท็บที่ active ต้องเป็นของหน้านั้นเอง ไม่งั้นอ่านแล้วไม่รู้ว่าอยู่หน้าไหน
   const onOf = (s) => (s.match(/<a class="pgtab on"[^>]*href="([^"]+)"/) || [])[1];
   ok("หน้าหลัก: แท็บที่เน้นคือ ./", onOf(IDX) === "./", String(onOf(IDX)));
-  ok("หน้าปลาหมอคางดำ: แท็บที่เน้นคือ blackchin.html", onOf(BC) === "blackchin.html", String(onOf(BC)));
-  ok("แท็บที่เน้นมี aria-current ทั้ง 2 ไฟล์",
-     /pgtab on[^>]*aria-current="page"/.test(IDX) && /pgtab on[^>]*aria-current="page"/.test(BC));
+  ok("แท็บที่เน้นของหน้าหลักมี aria-current", /pgtab on[^>]*aria-current="page"/.test(IDX));
 }
 
 // ── [3] ป้าย 🔒 อยู่ที่การ์ดหน้าแรกที่เดียว ────────────────────────

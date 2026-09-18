@@ -1,0 +1,361 @@
+/* 🎨 หน้าตาใหม่ของ "คลังข่าวปลาหมอคางดำ" — โหลดทับ styles.css
+   เจ้าของสั่ง 18 ก.ย. 2026 พร้อม mockup · **"เฉพาะปลาหมอ"** หน้าคลังหลักไม่ได้โหลดไฟล์นี้
+
+   🚫 ห้ามใส่ไฟล์นี้ที่ index.html โดยไม่ได้สั่ง — เทสต์ archivetabs.mjs มีด่านจับ
+   📌 เขียนทับเฉพาะส่วนที่ต่างจริง ไม่ได้ก๊อป styles.css มาทั้งไฟล์
+      (กฎของโปรเจกต์: กฎเดียวกันอยู่ 2 ที่ = แก้ที่หนึ่งลืมอีกที่)
+
+   ── โครง (grid) ──────────────────────────────────────────────
+   จอกว้าง        จอแคบ
+   ┌─────┬──────┐  ┌────────────┐
+   │หมวด │ main │  │ หมวด (ชิป) │   ← **element เดียวกัน ย้ายที่ด้วย grid-area เท่านั้น**
+   ├─────┤      │  ├────────────┤      ห้ามเขียนแยก 2 ชุด เลขบนหมวดจะเพี้ยนคนละที่
+   │กรอง │      │  │ main       │
+   └─────┴──────┘  └────────────┘   ตัวกรองกลายเป็นแผ่นเลื่อนขึ้นจากล่าง
+*/
+
+/* 🔒 **ตรึงโหมดสว่างอย่างเดียว** (เจ้าของเลือกเอง 18 ก.ย. 2026)
+   ชุดสีที่ให้มาใน mockup มีแต่ชุดสว่าง — ปล่อยให้สลับมืดตามเครื่องจะได้สีที่ไม่มีใครเลือก
+   ⚠️ ต้องประกาศซ้ำในบล็อก dark ด้วย ไม่งั้น styles.css ชนะแล้วหน้ากลายเป็นมืดครึ่งๆ */
+:root, :root.v2 { color-scheme: light; }
+:root {
+  --plane:#F4F5F7; --surface:#FFFFFF; --border:#E3E6EB;
+  --ink:#111827; --muted:#4B5563;
+  --surface-2:#EFF1F4; --ink-2:#4B5563;
+  --accent:#1D4ED8; --accent-soft:#E8EEFD; --on-accent:#fff;
+  --mark:#FDE68A; --mark-ink:#111827;
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --plane:#F4F5F7; --surface:#FFFFFF; --border:#E3E6EB;
+    --ink:#111827; --muted:#4B5563;
+    --surface-2:#EFF1F4; --ink-2:#4B5563;
+    --accent:#1D4ED8; --accent-soft:#E8EEFD; --on-accent:#fff;
+    --mark:#FDE68A; --mark-ink:#111827;
+  }
+}
+
+body.v2 { background:var(--plane); color:var(--ink); }
+body.v2 .wrap { max-width:1360px; padding:0 16px 64px; }
+
+/* ───────── หัวหน้า ───────── */
+.vhead {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:14px 0 12px;
+}
+.vbrand { font-size:1.15rem; font-weight:800; letter-spacing:-.01em; }
+.vsel { display:inline-flex; align-items:center; gap:7px; font-size:.85rem; color:var(--muted); }
+.vsel select {
+  font:inherit; font-weight:700; color:var(--ink);
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  padding:9px 10px; min-height:44px; cursor:pointer;
+}
+.vnote {
+  font-size:.78rem; color:#166534; background:#dcfce7;
+  border:1px solid #bbf7d0; border-radius:999px; padding:5px 11px;
+}
+/* 📱 จอแคบ: ตัวคั่นนี้ทำให้ "หน้าหลัก" ถูกดันไปอยู่บรรทัดของตัวเอง — ปิดไว้
+   (วัดจริง: หัวหน้าสูงขึ้นอีก 1 แถวโดยไม่ได้อะไรเลย) */
+.vgrow { flex:1 1 auto; }
+@media (max-width:767.98px) { .vgrow { display:none; } }
+.vhome { font-size:.85rem; font-weight:700; color:var(--accent); text-decoration:none; padding:10px 4px; }
+.vhome:hover { text-decoration:underline; }
+body.v2 #vtag { font-size:.72rem; color:var(--muted); }
+
+/* ───────── โครงหลัก ───────── */
+.vbody {
+  display:grid;
+  grid-template-columns:1fr;
+  grid-template-areas:"cats" "main";
+  gap:0;
+}
+.sh-cats, body.v2 .filters .fsheet-head { display:none; }   /* จอแคบไม่ต้องมีหัวข้อ "หมวดข่าว" */
+#gtabs { grid-area:cats; }
+.vmain { grid-area:main; min-width:0; }
+
+/* 📱 จอแคบ: หมวดเป็นชิปเลื่อนแนวนอน **แถวเดียว ห้ามตกบรรทัด**
+   9 หมวดตกบรรทัดบนมือถือ = กินจอ 3-4 แถว เหลือที่อ่านข่าวไม่ถึงครึ่ง */
+body.v2 #gtabs {
+  /* 🧭 **ต้องเป็น relative** — `renderTabs()` เลื่อนแท็บที่เลือกให้มาอยู่ในจอด้วย
+     `offsetLeft` ซึ่งวัดเทียบกับ "กล่องแม่ที่มี position" ถ้าแถบนี้เป็น static
+     ค่าที่ได้จะเป็นระยะจากขอบหน้า ไม่ใช่จากขอบแถบ → เลื่อนผิดตำแหน่งเสมอ */
+  position:relative;
+  display:flex; gap:8px; align-items:center;
+  overflow-x:auto; overflow-y:hidden; scrollbar-width:none;
+  padding:2px 0 10px; margin:0 -2px;
+  scroll-snap-type:x proximity; overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
+}
+body.v2 #gtabs::-webkit-scrollbar { display:none; }
+body.v2 .gtab {
+  flex:none; scroll-snap-align:start;
+  display:inline-flex; align-items:center; gap:7px;
+  min-height:44px; padding:9px 14px;
+  border:1px solid var(--border); border-radius:999px;
+  background:var(--surface); color:var(--ink);
+  font:inherit; font-size:.85rem; font-weight:600; white-space:nowrap; cursor:pointer;
+}
+body.v2 .gtab .gtico { display:none; }
+body.v2 .gtab .gtn { font-size:.78rem; font-weight:700; color:var(--muted); }
+body.v2 .gtab.on { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+body.v2 .gtab.on .gtn { color:var(--on-accent); opacity:.82; }
+/* 🚫 แท็บที่เหลือ 0 จางลงได้ แต่ห้ามซ่อน — ไม่งั้นแท็บกระโดดสลับที่ทุกครั้งที่พิมพ์ */
+body.v2 .gtab.zero:not(.on) { opacity:.48; }
+
+/* ───────── ตัวกรอง — จอแคบเป็นแผ่นเลื่อนขึ้นจากล่าง ───────── */
+body.v2 .filters { display:block; }
+body.v2 .filters[hidden] { display:none !important; }
+@media (max-width:767.98px) {
+  body.v2 .filters {
+    position:fixed; inset:auto 0 0 0; z-index:60;
+    background:var(--surface);
+    border-top:1px solid var(--border);
+    border-radius:16px 16px 0 0;
+    box-shadow:0 -10px 34px rgba(17,24,39,.18);
+    max-height:76vh; overflow:auto; margin:0;
+    padding:6px 16px calc(16px + env(safe-area-inset-bottom));
+  }
+  body.v2 .filters .fsheet-head {
+    display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; background:var(--surface);
+    padding:10px 0 8px; margin-bottom:2px;
+  }
+  .fclose {
+    min-width:44px; min-height:44px; border:0; background:transparent;
+    font:inherit; font-size:1.1rem; color:var(--muted); cursor:pointer; border-radius:10px;
+  }
+  /* ฉากหลังมัวๆ ให้รู้ว่าแผ่นนี้เปิดอยู่ */
+  body.v2 .filters::before {
+    content:""; position:fixed; inset:0 0 100% 0; box-shadow:0 0 0 100vh rgba(17,24,39,.34);
+    pointer-events:none;
+  }
+}
+
+/* ───────── จอกว้าง: คอลัมน์ซ้าย ───────── */
+@media (min-width:768px) {
+  .vbody {
+    grid-template-columns:236px minmax(0,1fr);
+    grid-template-rows:auto auto 1fr;
+    grid-template-areas:
+      "shcats main"
+      "cats   main"
+      "filt   main";
+    column-gap:28px;
+  }
+  .sh-cats { display:block; grid-area:shcats; }
+  #gtabs { grid-area:cats; }
+  body.v2 .filters { grid-area:filt; align-self:start; }
+  .vmain { grid-area:main; }
+
+  .sh {
+    margin:6px 0 8px; font-size:.74rem; font-weight:700;
+    letter-spacing:.04em; text-transform:uppercase; color:var(--muted);
+  }
+  /* 🗂 จอกว้างหมวดเป็นรายการแนวตั้ง — เห็นครบทุกหมวดพร้อมเลข ไม่ต้องเลื่อน
+     (เดสก์ท็อปปัดนิ้วไม่ได้ ต้อง shift+ลูกกลิ้ง ซึ่งไม่มีใครเดาถูก) */
+  body.v2 #gtabs {
+    display:block; overflow:visible; padding:0; margin:0 0 20px;
+  }
+  body.v2 .gtab {
+    display:flex; width:100%; justify-content:space-between; gap:10px;
+    border:0; border-radius:10px; background:transparent;
+    padding:10px 12px; margin-bottom:2px; text-align:left;
+  }
+  body.v2 .gtab:hover { background:var(--surface-2); }
+  body.v2 .gtab .gtname { white-space:normal; }
+  body.v2 .gtab.on { background:var(--accent); color:var(--on-accent); }
+
+  /* ✅ จอกว้างตัวกรองกางอยู่ตลอด — อยู่คอลัมน์ซ้าย ไม่ได้ดันรายการข่าวตกจอเหมือนของเดิม
+     จึงไม่ต้องพับ (เหตุผลที่เจ้าของสั่งให้พับเมื่อ 20 ส.ค. 2026 หมดไปแล้วบนหน้านี้)
+     ⚠️ จอแคบยังพับไว้เสมอเหมือนเดิม */
+  body.v2 .filters[hidden] { display:block !important; }
+  body.v2 .filters { position:static; max-height:none; box-shadow:none; padding:0; background:transparent; border:0; }
+  body.v2 #ftoggle { display:none; }
+  body.v2 .fbox { background:transparent; border:0; padding:0; margin:0 0 18px; }
+  body.v2 .fh { font-size:.74rem; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+}
+
+body.v2 .fbox + .fbox { margin-top:14px; }
+body.v2 .srclist { max-height:240px; overflow:auto; }
+
+/* ───────── แถบค้นหา ───────── */
+/* ⚠️ ของเดิมเว้นบน 60px ไว้สำหรับแถบแท็บที่เคยอยู่เหนือมัน — หน้าตาใหม่ไม่มีแล้ว
+   ไม่ล้างทิ้งจะเหลือช่องว่างเปล่าคาอยู่กลางหน้า (เห็นชัดมากบนมือถือ) */
+body.v2 .sticky {
+  position:sticky; top:0; z-index:30; background:var(--plane);
+  margin-top:0; padding:6px 0 4px;
+}
+/* 🔴 **ต้องล้าง position:absolute ของ styles.css ให้หมดก่อน**
+   ของเดิมวางปุ่มโหมด/ล้างคำ/ถาม/ตัวกรอง เป็น absolute ลอยอยู่ในช่องค้นหา
+   แล้วเผื่อที่ด้วย `padding-right` ของ #q · หน้าตาใหม่วางเป็นแถว flex ธรรมดา
+   ถ้าไม่ล้าง ปุ่มจะไปกองทับข้อความที่พิมพ์บนจอแคบ (เจอจริงตอนถ่ายภาพหน้าจอ) */
+body.v2 .searchrow {
+  position:relative; display:flex; align-items:center; gap:8px;
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:6px 8px;
+}
+body.v2 .searchrow > * { position:static; }
+body.v2 #q {
+  flex:1 1 auto; min-width:0; min-height:44px;
+  padding:0 4px;
+  border:0; background:transparent; font:inherit; color:var(--ink); outline:none;
+}
+body.v2 #q:focus { box-shadow:none; }
+body.v2 .modeseg {
+  display:inline-flex; flex:none; background:var(--surface-2);
+  border-radius:9px; padding:3px; gap:2px;
+}
+body.v2 .mseg {
+  min-height:38px; padding:6px 10px; border:0; border-radius:7px;
+  background:transparent; font:inherit; font-size:.82rem; font-weight:600;
+  color:var(--muted); cursor:pointer; white-space:nowrap;
+}
+body.v2 .mseg.on { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(17,24,39,.12); }
+body.v2 .askbtn, body.v2 #ftoggle {
+  flex:none; display:inline-flex; align-items:center; gap:6px;
+  min-height:44px; padding:10px 14px; border-radius:9px;
+  border:1px solid var(--border); background:var(--surface);
+  font:inherit; font-size:.86rem; font-weight:700; color:var(--ink); cursor:pointer;
+}
+body.v2 .askbtn { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+/* 🎨 "ตอนกรองอยู่" ใช้ขอบสีเน้น ไม่ใช่พื้นทึบ — ไม่งั้น 2 ปุ่มติดกันกลายเป็นก้อนเดียว */
+body.v2 #ftoggle.on { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+body.v2 .fbadge {
+  min-width:20px; height:20px; padding:0 5px; border-radius:999px;
+  background:var(--accent); color:var(--on-accent); font-size:.7rem; font-weight:800;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+body.v2 .qclear {
+  flex:none; min-width:36px; min-height:36px; border:0; border-radius:8px;
+  background:transparent; color:var(--muted); font:inherit; cursor:pointer;
+}
+body.v2 .qhint { margin:8px 2px 0; font-size:.78rem; color:var(--muted); }
+
+@media (max-width:560px) {
+  /* 📱 ยัด 4 ปุ่มในช่องเดียวไม่พอ — ปุ่มโหมดกับปุ่มตัวกรองลงมาแถวล่าง
+     🚫 ห้ามแก้ด้วย flex-wrap เฉยๆ ปุ่มที่เป็น absolute จะหลุดกรอบ (กับดักเดิมของหน้านี้) */
+  body.v2 .searchrow { flex-wrap:wrap; }
+  body.v2 #q { order:1; flex:1 1 100%; padding:0 4px; }
+  body.v2 .qclear { order:2; }
+  body.v2 .modeseg { order:3; }
+  body.v2 .askbtn { order:4; margin-left:auto; }
+  body.v2 #ftoggle { order:5; }
+  body.v2 .mseg .mlong { display:none; }
+}
+
+/* ───────── แถวสถานะ ───────── */
+body.v2 .statusrow { display:flex; align-items:center; gap:10px; margin:16px 2px 6px; }
+body.v2 .count { font-size:.92rem; }
+body.v2 .count b { font-weight:800; }
+body.v2 .count .dim { color:var(--muted); font-weight:400; }
+body.v2 .btn.sm, body.v2 #sortbtn {
+  min-height:44px; padding:9px 14px; border-radius:9px;
+  border:1px solid var(--border); background:var(--surface);
+  font:inherit; font-size:.84rem; font-weight:600; color:var(--ink); cursor:pointer;
+}
+body.v2 .fsum { margin:2px 2px 0; font-size:.8rem; color:var(--muted); }
+.vtip {
+  margin:12px 0 14px; padding:11px 14px;
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  font-size:.8rem; color:var(--muted);
+}
+
+/* ───────── การ์ดข่าว ───────── */
+body.v2 .daygroup { margin:22px 0 10px; font-size:.82rem; font-weight:700; color:var(--muted); }
+body.v2 .daygroup:first-child { margin-top:4px; }
+body.v2 .list { display:block; }
+body.v2 .item {
+  display:flex; gap:12px; align-items:flex-start;
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:14px 16px; margin-bottom:10px;
+}
+body.v2 .item .body { flex:1; min-width:0; }
+body.v2 .item .top { display:block; }
+body.v2 .item a.t {
+  display:block; font-size:1rem; font-weight:700; line-height:1.45;
+  color:var(--ink); text-decoration:none;
+}
+body.v2 .item a.t:hover { color:var(--accent); text-decoration:underline; }
+body.v2 .item .meta {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin-top:7px; font-size:.8rem; color:var(--muted);
+}
+body.v2 .item .o { font-weight:600; color:var(--ink-2); }
+body.v2 .item .tag {
+  background:var(--surface-2); border-radius:999px; padding:2px 9px; font-size:.74rem;
+}
+
+/* 🔗 "ข่าวเดียวกับ: …" — ข่าวเรื่องเดียวกันที่สื่ออื่นลง
+   ⚠️ **ต้องโชว์ชื่อสื่อครบทุกเจ้าและกดได้ทุกอัน** — ถ้าจับคู่ผิด ผู้ใช้ยังเข้าถึงข่าวนั้นได้อยู่
+      (นี่คือเหตุผลเดียวที่ยอมให้จับคู่หัวข่าวอัตโนมัติได้ ทั้งที่ชีตยังไม่มีคอลัมน์ "ประเด็น") */
+body.v2 .same { margin-top:8px; font-size:.8rem; color:var(--muted); }
+body.v2 .same a { color:var(--accent); font-weight:600; text-decoration:none; }
+body.v2 .same a:hover { text-decoration:underline; }
+
+/* ปุ่มบนการ์ด */
+body.v2 .acts { display:flex; align-items:center; gap:8px; flex:none; }
+body.v2 .acts .ico, body.v2 .acts .go {
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  min-width:44px; min-height:44px; padding:10px 12px;
+  border:1px solid var(--border); border-radius:9px;
+  background:var(--surface); color:var(--ink);
+  font:inherit; font-size:.84rem; font-weight:600; cursor:pointer; text-decoration:none;
+}
+body.v2 .acts .ico:hover, body.v2 .acts .go:hover { border-color:var(--accent); }
+body.v2 .acts .go { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:700; }
+body.v2 .acts .go:hover { background:#1a44be; }
+@media (max-width:767.98px) {
+  /* 📱 จอแคบ คัดลอก/พิมพ์ เหลือไอคอน — **ต้องมี aria-label เสมอ** (ใส่ไว้ใน app.js) */
+  body.v2 .acts .ico .lbl { display:none; }
+  /* 📏 ของบนหัวต้องเหลือที่อ่านข่าวอย่างน้อย ⅓ จอ — วัดแล้วเกิน จึงตัด 3 อย่างนี้ทิ้งบนจอแคบ
+     (ป้ายบอกที่มาข้อมูล · บรรทัดแนะนำวิธีใช้ · ตัวอย่างคำถาม) ทั้งหมดยังอยู่ครบบนจอกว้าง
+     🚫 ห้ามตัด #fsum กับ #fbadge — 2 ตัวนั้นคือสิ่งเดียวที่บอกว่ากรองอะไรไว้ตอนแผ่นพับ */
+  /* "หัวข้อ:" ซ่อนบนจอแคบ — dropdown บอกตัวเองอยู่แล้ว และมี aria-label กำกับ
+     ถ้าไม่ซ่อน "หน้าหลัก" จะถูกดันไปอยู่บรรทัดที่ 2 ของหัวหน้า (วัดแล้ว หัวสูงขึ้น 44px) */
+  body.v2 .vnote, body.v2 .vtip, body.v2 .qex, body.v2 .vsel-l { display:none; }
+  body.v2 .qhint { margin-top:6px; font-size:.75rem; }
+  .vhead { padding:10px 0 8px; gap:9px; }
+  body.v2 .statusrow { margin-top:10px; }
+  body.v2 .item { flex-wrap:wrap; }
+  body.v2 .acts { width:100%; justify-content:flex-end; }
+}
+
+body.v2 .thumb {
+  flex:none; width:46px; height:46px; border-radius:10px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:.78rem; font-weight:800; letter-spacing:.02em;
+  background:hsl(var(--h) 62% 93%); color:hsl(var(--h) 58% 30%);
+}
+
+/* ───────── กล่องว่าง / ปุ่มโหลดเพิ่ม ───────── */
+body.v2 .empty {
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:26px 18px; text-align:center; color:var(--muted); font-size:.88rem;
+}
+body.v2 .empty b { display:block; margin-bottom:6px; color:var(--ink); font-size:1rem; }
+body.v2 .empty .btn, body.v2 .morewrap .btn {
+  margin-top:12px; min-height:44px; padding:11px 18px; border-radius:9px;
+  border:1px solid var(--border); background:var(--surface);
+  font:inherit; font-weight:700; color:var(--ink); cursor:pointer;
+}
+
+/* ───────── แถบแจ้ง "คัดลอกแล้ว" ───────── */
+.toast {
+  position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
+  z-index:9500;                 /* ต่ำกว่าแถบ "มีเวอร์ชันใหม่" (#updbar 9999) โดยตั้งใจ */
+  background:#111827; color:#fff; border-radius:999px;
+  padding:11px 20px; font-size:.86rem; font-weight:600;
+  box-shadow:0 8px 24px rgba(17,24,39,.3);
+}
+.toast[hidden] { display:none; }
+
+/* ───────── ทับท้ายไฟล์: กฎเฉพาะจอกว้าง ─────────
+   ⚠️ **ต้องอยู่ล่างสุด** — กฎของแถบค้นหา/การ์ดข้างบนเขียนทีหลัง @media ก้อนแรก
+      ถ้าวางไว้ข้างบน กฎข้างล่างจะชนะแล้วปุ่มตัวกรองยังโผล่บนเดสก์ท็อป (เจอจริงตอนวัด) */
+@media (min-width:768px) {
+  /* ⚙ จอกว้างไม่ต้องมีปุ่มตัวกรอง — ตัวกรองกางอยู่ในคอลัมน์ซ้ายแล้ว */
+  body.v2 #ftoggle { display:none; }
+  body.v2 .filters[hidden] { display:block !important; }
+  body.v2 .vtip { margin-top:4px; }
+}

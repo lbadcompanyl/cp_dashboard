@@ -52,7 +52,15 @@ const state = {
   //    เก็บเป็น **id ของหมวด** ไม่ใช่ลำดับ — เจ้าของสลับลำดับใน config เมื่อไหร่
   //    ลิงก์เก่าที่ส่งต่อกันไว้จะได้ไม่ชี้ผิดหมวด
   g: "",
+  // ↕ เรียงลำดับ — "new" ล่าสุดก่อน (ตั้งต้น) · "old" เก่าสุดก่อน · เข้า URL ด้วย (?sort=old)
+  sort: "new",
 };
+
+/* 🎨 **หน้าตาใหม่เปิดเฉพาะหน้าที่ติดคลาส `v2`** (ตอนนี้คือหน้าปลาหมอคางดำหน้าเดียว)
+ *    เจ้าของสั่ง 18 ก.ย. 2026: "เฉพาะปลาหมอ" — หน้าคลังหลักจึงเดินโค้ดเส้นเดิมทุกบรรทัด
+ *    🚫 **ห้ามก๊อป app.js ไปเป็นไฟล์ที่สอง** (กฎเดิมของหน้านี้) — ใช้ธงนี้แตกทางแทน
+ */
+const V2 = document.body.classList.contains("v2");
 
 const MODE_KEY = "archivesMode";
 const MODES = {
@@ -396,6 +404,8 @@ function yearsNeededByDate() {
  */
 let scoped = [];                 // ผ่านทุกเงื่อนไข ยกเว้นหมวด
 let gCounts = [];                // จำนวนข่าวต่อหมวด (นับจาก scoped)
+// 🔗 ข่าวที่รวมเป็นเรื่องเดียวกันแล้ว — [{ main, others }] · null = หน้านี้ไม่ได้รวม (หน้าคลังหลัก)
+let groups = null;
 
 function applyFilters() {
   // โหมดผ่อนการสะกด: เทียบกับพาดหัวที่ตัดวรรณยุกต์แล้วทั้งสองฝั่ง
@@ -422,12 +432,99 @@ function applyFilters() {
     return true;
   });
 
-  if (!TOPICS) { scoped = filtered; gCounts = []; return; }
+  if (!TOPICS) { scoped = filtered; gCounts = []; finishV2(); return; }
   scoped = filtered;
   gCounts = TOPICS.map(() => 0);
   for (const r of scoped) for (const i of r.g) gCounts[i]++;
   const gi = TOPICS.findIndex((t) => t.id === state.g);
   if (gi >= 0) filtered = scoped.filter((r) => r.g.includes(gi));
+  finishV2();
+}
+
+/* ↕ เรียงลำดับ + 🔗 รวมข่าวซ้ำ — ทำเฉพาะหน้าที่ใช้หน้าตาใหม่
+   🚫 หน้าคลังหลักต้องไม่โดนด้วย (เจ้าของสั่งให้แก้เฉพาะหน้าปลาหมอคางดำ) */
+function finishV2() {
+  if (!V2) { groups = null; return; }
+  const dir = state.sort === "old" ? 1 : -1;
+  const byTime = (a, b) => (a.ts - b.ts) * dir;
+  // ⚠️ ตอนไม่ได้เปิดหมวดไหน `filtered` กับ `scoped` เป็น array ก้อนเดียวกัน
+  //    ต้องจำไว้ก่อนเรียง ไม่งั้นเรียงแล้วจะกลายเป็นคนละก้อนโดยไม่ตั้งใจ
+  const same = filtered === scoped;
+  scoped = scoped.slice().sort(byTime);
+  filtered = same ? scoped : filtered.slice().sort(byTime);
+  groups = groupStories(filtered);
+}
+
+/* 🔗 ---------- รวมข่าวเรื่องเดียวกันที่หลายสำนักลง ----------
+ *
+ * เจ้าของสั่ง 18 ก.ย. 2026: **"ถ้าเป็นข่าวเดียวกันหลายสำนัก ให้ทำเป็นรวมกันแบบในรูป"**
+ * → การ์ดใบเดียว + บรรทัด "ข่าวเดียวกับ: ข่าวสด · เดลินิวส์" ที่กดไปอ่านของแต่ละเจ้าได้
+ *
+ * ⚠️ **ชีตยังไม่มีคอลัมน์ `ประเด็น`** จึงต้องเดาเอาจากพาดหัว — เจ้าของอนุมัติแล้ว
+ *    ถ้าวันหนึ่งชีตมีคอลัมน์นั้น **ให้เลิกเดาแล้วยึดคอลัมน์ทันที** (แม่นกว่ามาก)
+ *
+ * 🚫 **ห้ามซ่อนข่าวที่ถูกรวมแบบไม่มีร่องรอย** — บรรทัด "ข่าวเดียวกับ" ต้องขึ้นชื่อสำนัก
+ *    **ครบทุกเจ้าและกดได้ทุกอัน** นี่คือเหตุผลเดียวที่ยอมให้เดาจากพาดหัว:
+ *    จับคู่ผิดก็ยังไม่มีข่าวใบไหนหายไปจากหน้าจอ แค่ไปอยู่ใต้การ์ดอื่น
+ *
+ * วิธีจับ — ตั้งใจให้ "แคบไว้ก่อน" (จับไม่ครบดีกว่าจับมั่ว):
+ *   1. เทียบกันเฉพาะข่าวที่ห่างกันไม่เกิน `SAME_DAYS` วัน (ข่าวที่สื่อลงตามกันลงวันเดียวกัน)
+ *   2. เทียบด้วย **ชิ้นตัวอักษร 4 ตัว** ของพาดหัว (ภาษาไทยไม่มีช่องว่างคั่นคำ จะตัดคำไม่ได้)
+ *   3. เหมือนกันเกิน `SAME_MIN` ของฝั่งที่สั้นกว่า = เรื่องเดียวกัน
+ *
+ * 🚫 **ห้ามเทียบด้วย "ขึ้นต้นเหมือนกัน"** — พาดหัวข่าวไทยขึ้นต้นด้วยชื่อคน/หน่วยงานเดียวกันบ่อยมาก
+ *    ("กรมประมงเผย…" คนละเรื่องกันได้ทั้งวัน)
+ */
+const SAME_DAYS = 2;      // ห่างกันเกินนี้ = คนละเรื่อง แม้พาดหัวจะคล้าย
+const SAME_MIN = 0.62;    // สัดส่วนชิ้นที่ต้องเหมือนกัน (เทียบกับพาดหัวที่สั้นกว่า)
+const GRAM = 4;
+
+/** ชิ้นตัวอักษร 4 ตัวของพาดหัว — ตัดหางสำนักข่าว เครื่องหมาย และช่องว่างออกก่อน */
+function grams(title) {
+  const s = norm(stripTail(title, OUTLET_NAMES, "")).replace(/[^0-9a-z฀-๿]+/g, "");
+  const out = new Set();
+  for (let i = 0; i + GRAM <= s.length; i++) out.add(s.slice(i, i + GRAM));
+  return out;
+}
+/* 🐞 **พาดหัวสั้นจะกลืนพาดหัวยาวถ้าไม่กัน** — เจอจริงตอนวัดกับข่าว 365 ใบ
+ *    "ศูนย์แก้ไขปัญหาปลาหมอคางดำ" (26 ตัวอักษร) ไปรวมข่าวคนละเรื่อง 7 ใบเข้ามา
+ *    เพราะทุกชิ้นของมันไปโผล่อยู่ในพาดหัวยาวๆ ได้หมด = เหมือนกัน 100% ทั้งที่คนละข่าว
+ * ✅ กัน 2 ชั้น: พาดหัวต้องยาวพอ (`SAME_MIN_GRAMS`) และ **ยาวไม่ต่างกันเกินไป** (`SAME_RATIO`)
+ */
+const SAME_MIN_GRAMS = 14;   // ~17 ตัวอักษร — สั้นกว่านี้เทียบแล้วเชื่อไม่ได้
+const SAME_RATIO = 0.45;     // ฝั่งสั้นต้องยาวอย่างน้อย 45% ของฝั่งยาว
+function gramSim(a, b) {
+  const small = a.size <= b.size ? a : b, big = a.size <= b.size ? b : a;
+  if (small.size < SAME_MIN_GRAMS) return 0;
+  if (small.size / big.size < SAME_RATIO) return 0;
+  let hit = 0;
+  for (const g of small) if (big.has(g)) hit++;
+  return hit / small.size;
+}
+
+/** รวม `list` เป็นกลุ่มเรื่อง — คืน [{ main, others: [] }] เรียงตามลำดับเดิมของ `list` */
+function groupStories(list) {
+  const out = [];
+  const gcache = new Map();
+  const gof = (r) => { let g = gcache.get(r); if (!g) { g = grams(r.t); gcache.set(r, g); } return g; };
+  const taken = new Set();
+  for (let i = 0; i < list.length; i++) {
+    if (taken.has(i)) continue;
+    const main = list[i];
+    const others = [];
+    for (let j = i + 1; j < list.length; j++) {
+      if (taken.has(j)) continue;
+      const cand = list[j];
+      // `list` เรียงตามเวลาอยู่แล้ว พ้นช่วงเมื่อไหร่ที่เหลือก็พ้นหมด — หยุดได้เลย
+      // (ถ้าไล่ให้ครบทุกคู่ คลัง 20,000 แถวจะกลายเป็น 200 ล้านรอบ)
+      if (Math.abs(cand.ts - main.ts) > SAME_DAYS * 864e5) break;
+      if (gramSim(gof(main), gof(cand)) < SAME_MIN) continue;
+      taken.add(j);
+      others.push(cand);
+    }
+    out.push({ main, others });
+  }
+  return out;
 }
 
 /* ─────────── 🤖 ถามเป็นประโยค ───────────
@@ -785,6 +882,7 @@ function toQuery() {
   // โหมดเข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้หน้าตาเดียวกัน (ค่าตั้งต้นคือ ai จึงไม่ต้องใส่)
   if (state.mode === "kw") p.set("mode", "kw");
   if (state.g) p.set("g", state.g);   // หมวดที่เปิดอยู่ — ส่งลิงก์ตรงหมวดให้กันได้
+  if (state.sort === "old") p.set("sort", "old");   // ค่าตั้งต้นคือล่าสุดก่อน จึงไม่ต้องใส่
   const s = p.toString();
   return s ? "?" + s : location.pathname;
 }
@@ -805,6 +903,7 @@ function readQuery() {
   // 🚫 ห้ามปล่อยให้ค้างเป็นหมวดที่ไม่มี — จะได้หน้าว่างโดยไม่มีอะไรบอกว่าทำไม
   const g = p.get("g") || "";
   state.g = TOPICS && TOPICS.some((t) => t.id === g) ? g : "";
+  state.sort = p.get("sort") === "old" ? "old" : "new";
   judgeKeep = null;   // เปิดจากลิงก์ = ยังไม่ได้คัด ต้องไปคัดใหม่
   state.shown = PAGE;
 }
@@ -862,8 +961,16 @@ const fmtDate = (ts) => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+/* 🗓 หัวข้อวันที่แบบอ่านง่าย ("17 ก.ย. 2026") — ใช้คั่นกลุ่มในรายการของหน้าตาใหม่
+   ⚠️ ปีเป็น ค.ศ. เหมือนทั้งหน้า ไม่ใช่ พ.ศ. (วันที่ในชีตเป็น ค.ศ. อยู่แล้ว) */
+const TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+function thaiDay(ts) {
+  const d = new Date(ts);
+  return `${d.getDate()} ${TH_MON[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 /** การ์ดข่าว 1 ใบ — ใช้ร่วมทั้งรายการเรียงวันที่ และรายการในหมวด */
-function itemHTML(r, terms) {
+function itemHTML(r, terms, others) {
   const display = stripTail(r.t, OUTLET_NAMES, r.os);
   // 🖼 ป้ายรูปเล็ก — วาดเอง ไม่ยิงเน็ต (ดูเหตุผลที่ initials/hueOf)
   // 🖼 รูปเล็กขึ้นเฉพาะหน้าที่จัดหมวด (ตอนนี้คือหน้าปลาหมอคางดำ) — เจ้าของสั่งมาสำหรับหน้านั้น
@@ -873,6 +980,7 @@ function itemHTML(r, terms) {
   const site = siteOf(r.u) || r.o;
   const thumb = !TOPICS ? "" : `<span class="thumb" style="--h:${hueOf(site)}" title="${esc(site)}" aria-hidden="true"
       >${esc(initials(site))}</span>`;
+  if (V2) return itemHTML2(r, terms, display, thumb, others);
   return `<article class="item">
       ${thumb}
       <div class="body">
@@ -886,6 +994,44 @@ function itemHTML(r, terms) {
           <span class="dt">${fmtDate(r.ts)}</span>
           ${r.c.map((c) => `<span class="tag">${esc(c)}</span>`).join("")}
         </div>
+      </div>
+    </article>`;
+}
+
+/* 🎨 การ์ดของหน้าตาใหม่ — หัวข่าว + ชื่อสื่อ + 3 ปุ่ม (คัดลอกลิงก์ / พิมพ์ / อ่านข่าว)
+ *
+ * ⚠️ **วันที่แสดงเฉพาะวัน ไม่เอาเวลา** (เจ้าของสั่ง) — เวลาที่ติดมากับชีตไม่ได้แม่นพอจะโชว์
+ * 🖨 **ปุ่มพิมพ์เปิดแท็บใหม่เท่านั้น** — สั่ง print หน้าเว็บของสื่ออื่นไม่ได้
+ *    เบราว์เซอร์บล็อกการเข้าถึงข้ามโดเมน (เขียนบอกวิธีไว้ในบรรทัด .vtip แล้ว)
+ * 📱 จอแคบปุ่มคัดลอก/พิมพ์เหลือแต่ไอคอน จึง **ต้องมี aria-label เสมอ**
+ */
+function itemHTML2(r, terms, display, thumb, others) {
+  const day = fmtDate(r.ts).slice(0, 10);
+  const same = others && others.length
+    ? `<div class="same">ข่าวเดียวกับ: ${others.map((o) =>
+        `<a href="${esc(o.u)}" target="_blank" rel="noopener" title="${esc(stripTail(o.t, OUTLET_NAMES, o.os))}">${esc(o.o)}</a>`
+      ).join(" · ")}</div>`
+    : "";
+  return `<article class="item">
+      ${thumb}
+      <div class="body">
+        <div class="top">
+          <a class="t" href="${esc(r.u)}" target="_blank" rel="noopener">${highlight(display, terms)}</a>
+        </div>
+        <div class="meta">
+          <span class="o">${esc(r.o)}</span>
+          <span class="sep">·</span>
+          <span class="dt">${esc(day)}</span>
+          ${r.c.map((c) => `<span class="tag">${esc(c)}</span>`).join("")}
+        </div>
+        ${same}
+      </div>
+      <div class="acts">
+        <button class="ico copy" type="button" data-u="${esc(r.u)}"
+                title="คัดลอกลิงก์" aria-label="คัดลอกลิงก์"><span aria-hidden="true">🔗</span><span class="lbl">คัดลอกลิงก์</span></button>
+        <a class="ico" href="${esc(r.u)}" target="_blank" rel="noopener"
+           title="เปิดข่าวในแท็บใหม่แล้วกดสั่งพิมพ์ของเบราว์เซอร์" aria-label="พิมพ์"><span aria-hidden="true">🖨</span><span class="lbl">พิมพ์</span></a>
+        <a class="go" href="${esc(r.u)}" target="_blank" rel="noopener">อ่านข่าว</a>
       </div>
     </article>`;
 }
@@ -982,6 +1128,27 @@ function renderList() {
     return;
   }
 
+  /* 🗓 หน้าตาใหม่ = จัดกลุ่มตามวันที่ + รวมข่าวเรื่องเดียวกันเป็นการ์ดเดียว
+     ⚠️ นับเป็น "เรื่อง" ไม่ใช่ "ใบ" ตอนแบ่งหน้า ไม่งั้นกดโหลดเพิ่มแล้วได้การ์ดไม่ครบ 50 */
+  if (V2 && groups) {
+    const gslice = groups.slice(0, state.shown);
+    let html = "", lastDay = "";
+    for (const it of gslice) {
+      const day = thaiDay(it.main.ts);
+      if (day !== lastDay) { html += `<h2 class="daygroup">${esc(day)}</h2>`; lastDay = day; }
+      html += itemHTML(it.main, terms, it.others);
+    }
+    box.innerHTML = html;
+    const leftG = groups.length - gslice.length;
+    const olderG = pendingYears();
+    $("#more").innerHTML = leftG > 0
+      ? `<button class="btn" type="button" data-more>โหลดเพิ่ม (เหลืออีก ${leftG.toLocaleString("th-TH")})</button>`
+      : olderG.length
+        ? `<button class="btn" type="button" data-year="${olderG[0]}">ค้นในปี ${olderG[0]} ด้วย</button>`
+        : "";
+    return;
+  }
+
   const slice = filtered.slice(0, state.shown);
   box.innerHTML = slice.map((r) => itemHTML(r, terms)).join("");
 
@@ -995,6 +1162,18 @@ function renderList() {
     more = `<button class="btn" type="button" data-year="${older[0]}">ค้นในปี ${older[0]} ด้วย</button>`;
   }
   $("#more").innerHTML = more;
+}
+
+/* 🔔 แถบแจ้งสั้นๆ — ใช้ตอนกด "คัดลอกลิงก์" ซึ่งเป็นปุ่มไอคอน เขียนผลลงในปุ่มไม่ได้
+   `role="status"` + `aria-live` อยู่ใน HTML แล้ว คนใช้ screen reader จึงได้ยินด้วย */
+let toastT = 0;
+function toast(msg) {
+  const el = $("#toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastT);
+  toastT = setTimeout(() => { el.hidden = true; }, 1800);
 }
 
 // ---------- กล่องตัวกรอง (พับได้) ----------
@@ -1033,12 +1212,18 @@ function renderCount() {
   // 🗂 เปิดหมวดไหนอยู่ต้องเขียนไว้ในบรรทัดนับด้วย — แท็บที่ระบายสีอยู่บอกได้ก็จริง
   //    แต่พอเลื่อนลงไปอ่านข่าว แถบแท็บเลื่อนตามไปแต่บรรทัดนี้อยู่ใกล้รายการกว่า
   const topic = currentTopic();
+  // 🔗 รวมข่าวซ้ำแล้วต้องบอกด้วยว่ารวมไปเท่าไร — ไม่งั้นเลข "พบ N ข่าว"
+  //    กับจำนวนการ์ดที่นับได้บนจอจะไม่ตรงกัน แล้วผู้ใช้จะนึกว่าข่าวหาย
+  const merged = V2 && groups && groups.length < n
+    ? `<span class="dim"> · รวมข่าวเนื้อหาซ้ำแล้วเหลือ ${groups.length.toLocaleString("th-TH")} เรื่อง</span>` : "";
   $("#count").innerHTML =
-    `พบ ${n.toLocaleString("th-TH")} ข่าว` +
-    (topic ? `<span class="dim"> ใน ${topic.icon} ${esc(topic.name)}</span>` : "") +
+    `พบ <b>${n.toLocaleString("th-TH")}</b> ข่าว` +
+    (topic ? `<span class="dim"> ใน ${topic.icon} ${esc(topic.name)}</span>` : "") + merged +
     `<span class="dim"> · ค้นในปี ${loadedYears.join(", ")}${older.length ? ` (ยังไม่รวม ${older.join(", ")})` : ""}</span>`;
   $("#clearall").hidden = !hasFilter();
   $("#qclear").hidden = !state.q;
+  const sb = $("#sortbtn");
+  if (sb) sb.textContent = state.sort === "old" ? "เรียง: เก่าสุด" : "เรียง: ล่าสุด";
 
   // ⚠️ ตัวกรองพับอยู่เป็นปกติ ถ้าไม่บอกว่ากรองอะไรไว้ จะเห็นเลขน้อยลงแล้วไม่รู้ว่าเพราะอะไร
   const [nFilters, sum] = filterSummary();
@@ -1058,7 +1243,9 @@ function renderFacets() {
   const catCount = new Map();
   for (const r of rows) for (const c of r.c) catCount.set(c, (catCount.get(c) || 0) + 1);
   const cats = [...catCount.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "th"));
-  $("#cats").innerHTML = cats.map(([c, n]) =>
+  // 🗂 หน้าตาใหม่เอาหมวดไปไว้แถบซ้ายแล้ว (เลือกทีละหมวด) จึงไม่มีกล่องชิพนี้
+  //    `state.cats` ยังทำงานจาก URL ได้เหมือนเดิม ลิงก์เก่าที่มี ?cat= จึงไม่พัง
+  if ($("#cats")) $("#cats").innerHTML = cats.map(([c, n]) =>
     `<button class="ch${state.cats.has(c) ? " on" : ""}" type="button" data-cat="${esc(c)}">${esc(c)}<span class="n">${n.toLocaleString("th-TH")}</span></button>`
   ).join("") || `<span class="srcempty">ยังไม่มีหมวด</span>`;
 
@@ -1128,7 +1315,7 @@ function bind() {
   $("#to").addEventListener("change", onDateChange);
   $("#srcq").addEventListener("input", (e) => { state.srcq = e.target.value; renderFacets(); });
 
-  $("#cats").addEventListener("click", (e) => {
+  $("#cats")?.addEventListener("click", (e) => {
     const b = e.target.closest("[data-cat]");
     if (!b) return;
     const c = b.dataset.cat;
@@ -1200,15 +1387,37 @@ function bind() {
     }
     const b = e.target.closest("[data-u]");
     if (!b) return;
+    // 🎨 หน้าตาใหม่: ปุ่มเป็นไอคอน เขียนทับข้อความในปุ่มไม่ได้ → บอกด้วยแถบแจ้งแทน
+    if (V2) {
+      navigator.clipboard?.writeText(b.dataset.u)
+        .then(() => toast("คัดลอกแล้ว"))
+        .catch(() => toast("คัดลอกไม่ได้"));
+      return;
+    }
     navigator.clipboard?.writeText(b.dataset.u).then(() => {
       b.textContent = "คัดลอกแล้ว ✓"; b.classList.add("done");
       setTimeout(() => { b.textContent = "คัดลอก"; b.classList.remove("done"); }, 1400);
     }).catch(() => { b.textContent = "คัดลอกไม่ได้"; setTimeout(() => (b.textContent = "คัดลอก"), 1400); });
   });
 
+  /* 🔀 เลือกคลัง (ทั้งหมด / ปลาหมอคางดำ) — ของหน้าตาใหม่
+     หน้าคลังหลักยังใช้แถบแท็บเหมือนเดิม จึงไม่มี element นี้ */
+  $("#corpus")?.addEventListener("change", (e) => { location.href = e.target.value; });
+
+  /* ↕ สลับการเรียงลำดับ — เข้า URL ด้วย ส่งลิงก์ต่อแล้วได้ลำดับเดิม */
+  $("#sortbtn")?.addEventListener("click", () => {
+    state.sort = state.sort === "old" ? "new" : "old";
+    state.shown = PAGE;
+    syncURL(true);
+    render();
+  });
+
+  // 📱 ปุ่มปิดแผ่นตัวกรองบนจอแคบ
+  $("#fclose")?.addEventListener("click", () => setFiltersOpen(false));
+
   // เลื่อนถึงท้ายรายการ = โหลดเพิ่มเอง (ปุ่มยังอยู่สำหรับคนที่ไม่ได้เลื่อน)
   addEventListener("scroll", () => {
-    if (state.shown >= filtered.length) return;
+    if (state.shown >= (V2 && groups ? groups.length : filtered.length)) return;
     if (scrollY + innerHeight > document.body.scrollHeight - 400) { state.shown += PAGE; renderList(); }
   }, { passive: true });
 
