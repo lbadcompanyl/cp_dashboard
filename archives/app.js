@@ -48,6 +48,10 @@ const state = {
   //    ทั้งคู่ต้องกด Enter/ปุ่มเหมือนกัน — **ห้ามให้โหมดคำค้นสดระหว่างพิมพ์**
   //    ไม่งั้นจะกลับไปเป็นปัญหาเดิมที่เจ้าของสั่งให้เลิก (แยกไม่ออกว่าตอนไหนได้อะไร)
   mode: "ai",
+  // 🗂 หมวดที่กำลังเปิดอยู่ (เฉพาะหน้าที่โหลดไฟล์หมวดมา) — `""` = ทุกหมวด
+  //    เก็บเป็น **id ของหมวด** ไม่ใช่ลำดับ — เจ้าของสลับลำดับใน config เมื่อไหร่
+  //    ลิงก์เก่าที่ส่งต่อกันไว้จะได้ไม่ชี้ผิดหมวด
+  g: "",
 };
 
 const MODE_KEY = "archivesMode";
@@ -350,6 +354,19 @@ function yearsNeededByDate() {
 }
 
 // ---------- กรอง ----------
+/* 🗂 **ค้นแยกรายหมวด** (เจ้าของสั่ง 18 ก.ย. 2026: "การค้นให้ค้นแยกแต่ละหมวด")
+ *
+ * มี 2 กอง อย่าสลับกัน:
+ *   `scoped`   = ผ่านทุกเงื่อนไขแล้ว **ยกเว้นหมวด** → ใช้ทำเลขบนแท็บ
+ *   `filtered` = `scoped` ที่เหลือเฉพาะหมวดที่เปิดอยู่ → ใช้วาดรายการ · ใช้ให้ AI อ่าน
+ *
+ * ⚠️ **เลขบนแท็บต้องมาจาก `scoped` เท่านั้น** — ถ้าเอามาจาก `filtered` แท็บอื่นจะเป็น 0 หมด
+ *    ทันทีที่เปิดหมวดใดหมวดหนึ่ง แล้วผู้ใช้จะไม่มีทางรู้ว่าคำที่ค้นไปโผล่ที่หมวดไหนอีก
+ *    ซึ่งเป็น**ทางออกเดียว**ของกับดัก "ค้นในหมวดเดียวแล้วเจอ 0 นึกว่าคลังไม่มี"
+ */
+let scoped = [];                 // ผ่านทุกเงื่อนไข ยกเว้นหมวด
+let gCounts = [];                // จำนวนข่าวต่อหมวด (นับจาก scoped)
+
 function applyFilters() {
   // โหมดผ่อนการสะกด: เทียบกับพาดหัวที่ตัดวรรณยุกต์แล้วทั้งสองฝั่ง
   const terms = looseMode ? parseTerms(state.q).map(looseNorm) : parseTerms(state.q);
@@ -374,6 +391,13 @@ function applyFilters() {
     if (state.judge && judgeKeep && !judgeKeep.has(r.u)) return false;
     return true;
   });
+
+  if (!TOPICS) { scoped = filtered; gCounts = []; return; }
+  scoped = filtered;
+  gCounts = TOPICS.map(() => 0);
+  for (const r of scoped) gCounts[r.g]++;
+  const gi = TOPICS.findIndex((t) => t.id === state.g);
+  if (gi >= 0) filtered = scoped.filter((r) => r.g === gi);
 }
 
 /* ─────────── 🤖 ถามเป็นประโยค ───────────
@@ -435,7 +459,8 @@ async function runAsk() {
     state.shown = PAGE;
     applyFilters();
     relaxNote = relaxIfEmpty();
-    if (!filtered.length && !relaxNote) relaxNote = `ไม่มีข่าวที่มีคำว่า “${question}” อยู่ในคลังเลย`;
+    // วัดกับทั้งคลัง (`scoped`) ไม่ใช่หมวดที่เปิดอยู่ — ดูเหตุผลที่ relaxIfEmpty
+    if (!scoped.length && !relaxNote) relaxNote = `ไม่มีข่าวที่มีคำว่า “${question}” อยู่ในคลังเลย`;
     syncURL(true);
     render();
     return;
@@ -490,20 +515,20 @@ async function runAsk() {
   // ⚠️ ภาษาไทยไม่มีช่องว่างคั่นคำ ฝั่งหน้าเว็บจึงแยก "เผาข้าวโพด" เป็น "เผา"+"ข้าวโพด" เองไม่ได้
   //    ต้องให้ AI แยกให้ (เจอจริง 26 ส.ค. 2026: ได้คำประสมคำเดียวแล้วเหลือ 0 ข่าว)
   //    ยิงเพิ่มแค่ตอนไม่เจอเท่านั้น และ cache แยก จึงไม่เปลืองในการใช้งานปกติ
-  if (!filtered.length && plan.ai && state.q) {
+  if (!scoped.length && plan.ai && state.q) {
     const wide = await fetchPlan(question, true);
     const wideTerms = wide && Array.isArray(wide.terms) ? wide.terms.filter(Boolean) : [];
     if (wideTerms.length) {
       const before = state.q;
       state.q = wideTerms.map(quoteTerm).join(" ");
       applyFilters();
-      if (filtered.length) relaxNote = `ไม่เจอด้วยคำว่า “${before.replace(/"/g, "")}” — ลองคำที่กว้างขึ้นให้แล้ว`;
+      if (scoped.length) relaxNote = `ไม่เจอด้วยคำว่า “${before.replace(/"/g, "")}” — ลองคำที่กว้างขึ้นให้แล้ว`;
       else { state.q = before; applyFilters(); }
     }
   }
   // ⚠️ ยังไม่เจอจริงๆ = **บอกตรงๆ ว่าไม่มีในคลัง** ไม่ใช่ปล่อยให้เจอข้อความ "ลองลดตัวกรองลง"
   //    ซึ่งผู้ใช้ไม่ได้ตั้งตัวกรองอะไรไว้เลย อ่านแล้วงงว่าจะให้ลดอะไร
-  if (!filtered.length && !relaxNote) {
+  if (!scoped.length && !relaxNote) {
     // ⚠️ คำถามเรื่องช่วงเวลาล้วนๆ ไม่มีคำค้นเลย — ห้ามขึ้นว่า 'ไม่มีข่าวที่มีคำว่า ""'
     const cov = coverage();
     const span = cov ? ` (คลังมีข่าวตั้งแต่ ${dayOf(cov.lo)} ถึง ${dayOf(cov.hi)})` : "";
@@ -573,8 +598,16 @@ function coverage() {
   return hi > 0 ? { lo, hi } : null;
 }
 
+/* ⚠️ **ทั้งฟังก์ชันนี้วัดกับ `scoped` (ทั้งคลัง) ห้ามใช้ `filtered`**
+ *    ตัวผ่อนเงื่อนไขมีไว้กู้เคส "AI แต่งคำเกิน / เดาเดือนพลาด" — ส่วนหมวดเป็นสิ่งที่
+ *    ผู้ใช้เลือกเอง ไม่ใช่การเดา · ถ้าวัดกับหมวดที่เปิดอยู่ จะกลายเป็นว่าเปิดหมวดเล็กไว้
+ *    แล้วค้นอะไรก็ "ไม่เจอ" → ระบบไล่ตัดช่วงวันที่และตัดคำทิ้งทั้งที่คลังมีของอยู่เต็ม
+ *    แล้วขึ้นว่า "ไม่มีคำนี้ในคลังเลย" ซึ่งโกหก (เจอจริงตอนวัด 18 ก.ย. 2026: อยู่หมวด
+ *    🧬 งานวิจัย DNA แล้วค้น "ศาลปกครอง" → ขึ้นว่าไม่มีในคลัง ทั้งที่มี 35 ใบ)
+ *    · เคสนั้นตกไปเข้ากล่อง "ไม่เจอในหมวดนี้ · หมวดอื่นมี N ใบ" ของ renderList แทน
+ */
 function relaxIfEmpty() {
-  if (filtered.length) return "";
+  if (scoped.length) return "";
 
   // 🐞 **ถามถึงช่วงที่คลังยังไม่มีข่าว — ห้ามตัดวันที่ทิ้งแล้วโยนข่าวทั้งคลังมาให้**
   //    (เจ้าของเจอจริง 28 ส.ค. 2026: ถาม "ข่าวเมื่อวาน" แล้วได้ข่าวของ 13-14 ส.ค. เป็นพรืด)
@@ -597,14 +630,14 @@ function relaxIfEmpty() {
     const f = state.from, t = state.to;
     state.from = ""; state.to = "";
     applyFilters();
-    if (filtered.length) return `ไม่เจอข่าวในช่วง ${f || "…"} ถึง ${t || "…"} เลย — ตัดช่วงวันที่ออกให้แล้ว`;
+    if (scoped.length) return `ไม่เจอข่าวในช่วง ${f || "…"} ถึง ${t || "…"} เลย — ตัดช่วงวันที่ออกให้แล้ว`;
     state.from = f; state.to = t;   // ไม่ช่วย → คืนค่าเดิม
   }
 
   // 2) ผ่อนการสะกด — ทำก่อนตัดคำ เพราะยังได้คำที่ผู้ใช้ถามครบทุกคำ (เสียน้อยกว่า)
   looseMode = true;
   applyFilters();
-  if (filtered.length) return "สะกดไม่ตรงกับในข่าวเป๊ะ — จับคำที่ใกล้เคียงให้แล้ว (ไม่ได้ไฮไลต์คำในโหมดนี้)";
+  if (scoped.length) return "สะกดไม่ตรงกับในข่าวเป๊ะ — จับคำที่ใกล้เคียงให้แล้ว (ไม่ได้ไฮไลต์คำในโหมดนี้)";
   looseMode = false;
   applyFilters();
 
@@ -622,7 +655,7 @@ function relaxIfEmpty() {
       const trial = keep.filter((_, k) => k !== i);
       state.q = trial.map(quoteTerm).join(" ");
       applyFilters();
-      if (filtered.length && (!best || filtered.length > best.n)) best = { i, n: filtered.length, trial };
+      if (scoped.length && (!best || scoped.length > best.n)) best = { i, n: scoped.length, trial };
     }
     if (best) {
       dropped.push(keep[best.i]);
@@ -721,6 +754,7 @@ function toQuery() {
   if (state.ask) p.set("ask", state.ask);
   // โหมดเข้า URL ด้วย — ก๊อปลิงก์ส่งต่อแล้วต้องได้หน้าตาเดียวกัน (ค่าตั้งต้นคือ ai จึงไม่ต้องใส่)
   if (state.mode === "kw") p.set("mode", "kw");
+  if (state.g) p.set("g", state.g);   // หมวดที่เปิดอยู่ — ส่งลิงก์ตรงหมวดให้กันได้
   const s = p.toString();
   return s ? "?" + s : location.pathname;
 }
@@ -737,6 +771,10 @@ function readQuery() {
   let saved = "";
   try { saved = localStorage.getItem(MODE_KEY) || ""; } catch {}
   state.mode = p.get("mode") === "kw" ? "kw" : p.has("mode") ? "ai" : saved === "kw" ? "kw" : "ai";
+  // หมวดที่ไม่มีอยู่จริง (config เปลี่ยนไปแล้ว / พิมพ์มั่ว) = ตกกลับไปที่ "ทุกหมวด"
+  // 🚫 ห้ามปล่อยให้ค้างเป็นหมวดที่ไม่มี — จะได้หน้าว่างโดยไม่มีอะไรบอกว่าทำไม
+  const g = p.get("g") || "";
+  state.g = TOPICS && TOPICS.some((t) => t.id === g) ? g : "";
   judgeKeep = null;   // เปิดจากลิงก์ = ยังไม่ได้คัด ต้องไปคัดใหม่
   state.shown = PAGE;
 }
@@ -822,67 +860,48 @@ function itemHTML(r, terms) {
     </article>`;
 }
 
-/* 🗂 ---------- รายการแบบแยกหมวด (accordion) ----------
+/* 🗂 ---------- แท็บหมวด ----------
  *
- * ⚠️ **สถานะกาง/พับเก็บไว้ในตัวแปร ไม่ใช่ใน DOM อย่างเดียว** — `render()` สร้าง innerHTML
- *    ใหม่ทั้งก้อนทุกครั้งที่ค้น/กรอง ถ้าเก็บไว้แต่ใน DOM จะพับหมดทุกครั้งที่พิมพ์
- *    (กฎเดียวกับ `state.trendOpen` ของแดชบอร์ด)
- * 🚫 **ไม่จำข้ามการเปิดหน้า** — กฎเดียวกับกล่องตัวกรองของหน้านี้ ("เปิดใหม่ต้องพับเสมอ")
+ * เจ้าของสั่ง 18 ก.ย. 2026: **"การค้นให้ค้นแยกแต่ละหมวด … เอาเป็น tab แยกในหน้าเดียว"**
+ * (ชั่งกับ "แยกเป็นหน้าจริง" แล้ว — แยกหน้าต้องโหลดใหม่ทุกครั้งที่กด เพราะหน้า HTML
+ *  ตั้ง `no-cache` ไว้ · และการเพิ่มหมวดจะกลายเป็นงานสร้างไฟล์ใหม่ + แถบแท็บ + เลขเวอร์ชัน
+ *  แทนที่จะแก้ `topics-blackchin.config.js` ไฟล์เดียวเหมือนตอนนี้)
+ *
+ * ของเดิมเป็น accordion กางทีละหมวดในหน้าเดียว — ถอดออกแล้วทั้งชุด
+ * (`openG` / `shownG` / ปุ่ม 2 ช่อง เปิด-ปิดทั้งหมด) เพราะแท็บทำหน้าที่เดียวกันแต่ชัดกว่า
+ *
+ * ⚠️ **เลขบนแท็บต้องมาจาก `gCounts` (= `scoped`) เสมอ** ดูเหตุผลที่ applyFilters
+ * 🚫 **ห้ามซ่อนแท็บที่เหลือ 0** — แท็บที่เป็น 0 คือสิ่งเดียวที่บอกว่า "ค้นแล้วหมวดนี้ไม่มี"
+ *    ซ่อนเมื่อไหร่ แท็บจะกระโดดสลับตำแหน่งทุกครั้งที่พิมพ์ กดผิดหมวดแน่นอน
  */
-const openG = new Set();       // หมวดที่ผู้ใช้กางไว้เอง
-const shownG = new Map();      // หมวด → แสดงไปแล้วกี่ใบ
-const GPAGE = 25;              // หมวดหนึ่งวาดทีละ 25 ใบ กันหน้าอืดตอนกางหมวดใหญ่
+function renderTabs() {
+  const box = $("#gtabs");
+  if (!box) return;
+  const total = scoped.length;
+  const tab = (id, icon, name, n, on) =>
+    `<button class="gtab${on ? " on" : ""}${n ? "" : " zero"}" type="button" role="tab"
+             aria-selected="${on ? "true" : "false"}" data-gt="${esc(id)}">
+       <span class="gtico" aria-hidden="true">${icon}</span><span class="gtname">${esc(name)}</span><span class="gtn">${n.toLocaleString("th-TH")}</span>
+     </button>`;
+  box.innerHTML =
+    tab("", "🗂", "ทั้งหมด", total, !state.g) +
+    TOPICS.map((t, i) => tab(t.id, t.icon, t.name, gCounts[i] || 0, state.g === t.id)).join("");
 
-/* 📭 **ค่าตั้งต้น = พับทุกหมวด** (เจ้าของสั่ง 17 ก.ย. 2026: "defualt คือ ปิดทุกอัน")
- *   · ของเดิมกางหมวดแรกให้เอง และ **กางทุกหมวดที่มีผลตอนค้น** — ถอดออกทั้งคู่
- *   🚫 **ห้ามเอาการกางอัตโนมัติกลับมา** ไม่ว่ากรณีไหน (เปิดหน้า · ค้น · กรอง)
- *      ผู้ใช้สั่งเองล้วนๆ · ที่ไม่หลงทางเพราะ **เลขบนหัวข้อบอกอยู่แล้วว่าหมวดไหนมีกี่ใบ**
- *      และมีปุ่ม 2 ช่อง "เปิดทั้งหมด / ปิดทั้งหมด" อยู่เหนือรายการ กดทีเดียวเห็นหมด
- *   · เทสต์ `archivegroups.mjs` [2] มีด่านจับ (กางเองเมื่อไหร่ = ตก)
- */
-function renderGroups(box, terms) {
-  const buckets = TOPICS.map(() => []);
-  for (const r of filtered) buckets[r.g].push(r);
+  // 📱 จอแคบแท็บเลื่อนซ้ายขวา — แท็บที่เลือกอยู่อาจอยู่นอกจอหลังกดจากลิงก์/กด back
+  //    ต้องเลื่อนมาให้เห็นเอง ไม่งั้นผู้ใช้ไม่รู้ว่าตัวเองอยู่หมวดไหน
+  const on = box.querySelector(".gtab.on");
+  if (on) {
+    const l = on.offsetLeft, r = l + on.offsetWidth;
+    if (l < box.scrollLeft || r > box.scrollLeft + box.clientWidth) {
+      box.scrollTo({ left: Math.max(0, l - 16), behavior: "instant" in window ? "instant" : "auto" });
+    }
+  }
+}
 
-  // 🔘 ปุ่มสลับ 2 ช่อง — โชว์ทั้ง 2 ตัวเลือกพร้อมกัน (ท่าเดียวกับปุ่มสลับโหมดค้นหาของหน้านี้)
-  //    🚫 ห้ามทำเป็นปุ่มใบเดียวที่กดแล้วสลับ — เจ้าของเคยบอกตรงๆ ว่า "คนจะไม่รู้ซิว่ากดได้"
-  const withNews = buckets.filter((b) => b.length).length;
-  const openCount = [...openG].filter((i) => buckets[i]?.length).length;
-  const allOpen = withNews > 0 && openCount === withNews;
-  const seg = `<div class="gseg" role="group" aria-label="กาง/พับทุกหมวด">
-      <button type="button" class="gsegb${allOpen ? " on" : ""}" data-gall="open" aria-pressed="${allOpen}">
-        <span aria-hidden="true">▾</span> เปิดทั้งหมด
-      </button>
-      <button type="button" class="gsegb${allOpen ? "" : " on"}" data-gall="close" aria-pressed="${!allOpen}">
-        <span aria-hidden="true">▸</span> ปิดทั้งหมด
-      </button>
-    </div>`;
-
-  box.innerHTML = seg + TOPICS.map((t, i) => {
-    const list = buckets[i];
-    const open = list.length && openG.has(i);
-    const cap = Math.min(shownG.get(i) || GPAGE, list.length);
-    const left = list.length - cap;
-    return `<section class="grp${list.length ? "" : " off"}">
-      <button class="ghead" type="button" data-g="${i}" aria-expanded="${open ? "true" : "false"}"
-              ${list.length ? "" : "disabled"}>
-        <span class="gcaret" aria-hidden="true">${open ? "▾" : "▸"}</span>
-        <span class="gico" aria-hidden="true">${t.icon}</span>
-        <span class="gname">${esc(t.name)}</span>
-        <span class="gcount">${list.length.toLocaleString("th-TH")}</span>
-      </button>
-      ${open ? `<div class="gbody">
-        ${list.slice(0, cap).map((r) => itemHTML(r, terms)).join("")}
-        ${left > 0 ? `<button class="btn sm gmore" type="button" data-gmore="${i}">ดูอีก ${left.toLocaleString("th-TH")} ใบ</button>` : ""}
-      </div>` : ""}
-    </section>`;
-  }).join("");
-
-  // ปุ่ม "ค้นในปีเก่า" ยังต้องอยู่ — ส่วนปุ่มโหลดเพิ่มรวมไม่ใช้แล้ว (แต่ละหมวดมีปุ่มของตัวเอง)
-  const older = pendingYears();
-  $("#more").innerHTML = older.length
-    ? `<button class="btn" type="button" data-year="${older[0]}">ค้นในปี ${older[0]} ด้วย</button>`
-    : "";
+/** ชื่อหมวดที่เปิดอยู่ (เอาไว้พูดกับผู้ใช้) — ไม่ได้เปิดหมวดไหน = คืน null */
+function currentTopic() {
+  if (!TOPICS || !state.g) return null;
+  return TOPICS.find((t) => t.id === state.g) || null;
 }
 
 function renderList() {
@@ -902,6 +921,23 @@ function renderList() {
   const terms = looseMode ? [] : parseTerms(state.q);
 
   if (!filtered.length) {
+    /* 🔎 **ค้นแล้วไม่เจอ "ในหมวดที่เปิดอยู่" ต้องบอกด้วยว่าหมวดอื่นมีไหม**
+     *
+     * เป็นกับดักที่มากับการค้นแยกรายหมวดโดยตรง: ยืนอยู่หมวด 🐠 ปลาสวยงาม (17 ใบ)
+     * พิมพ์ "ศาล" แล้วได้ 0 — ถ้าบอกแค่ "ไม่เจอ" ผู้ใช้จะสรุปว่า **ทั้งคลังไม่มี**
+     * ทั้งที่จริงมีอยู่ 57 ใบในอีกหมวด
+     * 🚫 **ห้ามถอดปุ่ม "ค้นทุกหมวด" ออก** — เป็นทางเดียวที่พาผู้ใช้ไปเจอของที่มีอยู่จริง
+     */
+    const topic = currentTopic();
+    if (topic && (state.q || state.judge) && scoped.length) {
+      box.innerHTML = `<div class="empty">
+          <b>${topic.icon} ไม่เจอ${state.q ? `คำว่า “${esc(state.q)}” ` : "ข่าวที่ตรงกับที่ค้น "}ใน ${esc(topic.name)}</b>
+          หมวดอื่นรวมกันมี <b>${scoped.length.toLocaleString("th-TH")}</b> ใบที่ตรงกับที่ค้น
+          <div><button class="btn" type="button" data-gt="">🗂 ค้นทุกหมวด</button></div>
+        </div>`;
+      $("#more").innerHTML = "";
+      return;
+    }
     // ⚠️ 3 กรณีนี้ต้องพูดคนละแบบ — บอกผิดกรณี = ผู้ใช้ไปนั่งแก้ของที่ไม่ได้ตั้งไว้
     //    🚫 ห้ามบอกให้ "ลดตัวกรอง" ตอนที่ยังไม่ได้ตั้งตัวกรองอะไรเลย (ข้อห้ามของหน้านี้)
     box.innerHTML = hasBoxFilter()
@@ -915,9 +951,6 @@ function renderList() {
     $("#more").innerHTML = "";
     return;
   }
-
-  // 🗂 หน้าที่จัดหมวดไว้ → วาดเป็นกล่องพับได้ทีละหมวด (ดู renderGroups)
-  if (grouping()) { renderGroups(box, terms); return; }
 
   const slice = filtered.slice(0, state.shown);
   box.innerHTML = slice.map((r) => itemHTML(r, terms)).join("");
@@ -967,8 +1000,12 @@ function renderCount() {
   const n = filtered.length;
   const loadedYears = [...loaded].sort((a, b) => b - a);
   const older = pendingYears();
+  // 🗂 เปิดหมวดไหนอยู่ต้องเขียนไว้ในบรรทัดนับด้วย — แท็บที่ระบายสีอยู่บอกได้ก็จริง
+  //    แต่พอเลื่อนลงไปอ่านข่าว แถบแท็บเลื่อนตามไปแต่บรรทัดนี้อยู่ใกล้รายการกว่า
+  const topic = currentTopic();
   $("#count").innerHTML =
     `พบ ${n.toLocaleString("th-TH")} ข่าว` +
+    (topic ? `<span class="dim"> ใน ${topic.icon} ${esc(topic.name)}</span>` : "") +
     `<span class="dim"> · ค้นในปี ${loadedYears.join(", ")}${older.length ? ` (ยังไม่รวม ${older.join(", ")})` : ""}</span>`;
   $("#clearall").hidden = !hasFilter();
   $("#qclear").hidden = !state.q;
@@ -1015,6 +1052,7 @@ function render() {
   applyFilters();
   renderFacets();
   renderCount();
+  renderTabs();
   renderList();
   renderAskBar();
 }
@@ -1104,32 +1142,25 @@ function bind() {
     const y = e.target.closest("[data-year]");
     if (y) { await withBusy(() => loadYear(+y.dataset.year)); render(); }
   });
+  /* 🗂 เปลี่ยนหมวด — ใช้ร่วมทั้งแท็บด้านบน และปุ่ม "ค้นทุกหมวด" ในกล่องที่ไม่เจอผล
+   *    ⚠️ `push` เพราะเป็นการกดของผู้ใช้ กด back แล้วต้องกลับหมวดเดิมได้ (กฎเดียวกับชิพตัวกรอง)
+   *    ⚠️ ต้องรีเซ็ต `state.shown` ด้วย ไม่งั้นสลับไปหมวดเล็กแล้วยังค้างที่ "โหลดมาแล้ว N ใบ" ของหมวดก่อน
+   */
+  const gotoTopic = (id) => {
+    if (state.g === id) return;
+    state.g = id;
+    state.shown = PAGE;
+    syncURL(true);
+    render();
+  };
+  $("#gtabs")?.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-gt]");
+    if (t) gotoTopic(t.dataset.gt);
+  });
+
   $("#list").addEventListener("click", (e) => {
-    // 🔘 ปุ่ม 2 ช่อง — เปิด/ปิดทุกหมวดรวดเดียว
-    const ga = e.target.closest("[data-gall]");
-    if (ga) {
-      openG.clear();
-      shownG.clear();          // เปิดใหม่ = เริ่มนับ 25 ใบใหม่ทุกหมวด ไม่ค้างของยาวไว้
-      if (ga.dataset.gall === "open") TOPICS.forEach((_, i) => openG.add(i));
-      renderList();
-      return;
-    }
-    // 🗂 กาง/พับหมวด · และ "ดูอีก N ใบ" ของหมวดนั้น
-    const gh = e.target.closest("[data-g]");
-    if (gh) {
-      const i = +gh.dataset.g;
-      openG.has(i) ? openG.delete(i) : openG.add(i);
-      shownG.delete(i);           // พับแล้วกางใหม่ = เริ่มนับใหม่ ไม่ค้างของยาวไว้
-      renderList();
-      return;
-    }
-    const gm = e.target.closest("[data-gmore]");
-    if (gm) {
-      const i = +gm.dataset.gmore;
-      shownG.set(i, (shownG.get(i) || GPAGE) + GPAGE);
-      renderList();
-      return;
-    }
+    const gt = e.target.closest("[data-gt]");
+    if (gt) { gotoTopic(gt.dataset.gt); return; }
     if (e.target.closest("[data-clear]")) { clearAll(); return; }
     // ล้างเฉพาะคำค้น — ตัวกรองในกล่องไม่ได้ตั้งไว้อยู่แล้วตอนที่ปุ่มนี้โผล่
     if (e.target.closest("[data-clearq]")) {
@@ -1170,8 +1201,30 @@ function fillInputs() {
   $("#to").value = state.to;
 }
 
+/* 🗂 สร้างแถบแท็บหมวดด้วย JS ไม่ได้เขียนไว้ใน HTML
+ *
+ * 🚫 **จงใจไม่เขียนลง `blackchin.html`** — แถบแท็บ "ทั้งหมด / ปลาหมอคางดำ" เขียนซ้ำอยู่
+ *    2 ไฟล์แล้ว และเป็นกับดักที่โปรเจกต์นี้เจอซ้ำที่สุด (แก้ที่หนึ่งลืมอีกที่)
+ *    แถบนี้เนื้อในมาจาก `topics-blackchin.config.js` ล้วนๆ จึงไม่มีเหตุผลให้ไปเขียนใน HTML อีก
+ *    · ผลพลอยได้: **หน้าคลังหลักไม่ต้องแก้อะไรเลย** (ไม่มี TOPICS = ไม่มีแถบ)
+ *
+ * 🧲 วางไว้ **ใน `.sticky`** ท้ายสุด (ใต้กล่องตัวกรอง ติดกับรายการ) — หมวดกลายเป็นตัวนำทางหลัก
+ *    ของหน้านี้แล้ว ถ้าปล่อยให้เลื่อนหายไปกับรายการ จะสลับหมวดทีต้องเลื่อนขึ้นบนสุดก่อนทุกครั้ง
+ *    (เหตุผลเดียวกับที่เจ้าของสั่งย้ายกล่องตัวกรองเข้ามาใน `.sticky` เมื่อ 28 ส.ค. 2026)
+ */
+function mountTabs() {
+  if (!TOPICS || $("#gtabs")) return;
+  const el = document.createElement("div");
+  el.id = "gtabs";
+  el.className = "gtabs";
+  el.setAttribute("role", "tablist");
+  el.setAttribute("aria-label", "หมวดข่าว");
+  (document.querySelector(".sticky") || document.body).append(el);
+}
+
 // ---------- เริ่มทำงาน ----------
 (async function init() {
+  mountTabs();
   bind();
   readQuery();
   applyMode();

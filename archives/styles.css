@@ -367,43 +367,62 @@ body {
   }
 }
 
-/* ── 🗂 หมวดข่าวแบบพับได้ ─────────────────────────────────────────── */
-/* 🔘 ปุ่มสลับ 2 ช่อง "เปิดทั้งหมด / ปิดทั้งหมด" — หน้าตาเดียวกับปุ่มสลับโหมดค้นหา (.modeseg)
-   🚫 ห้ามทำเป็นปุ่มใบเดียวที่กดแล้วสลับ — ช่องที่ยังไม่ได้เลือกคือสิ่งเดียวที่บอกว่ากดตรงนี้ได้ */
-.gseg {
-  align-self:flex-start; display:inline-flex; align-items:center; gap:2px;
-  padding:3px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border);
+/* ── 🗂 แท็บหมวดข่าว ──────────────────────────────────────────────── */
+/* เจ้าของสั่ง 18 ก.ย. 2026: "เอาเป็น tab แยกในหน้าเดียว" + "ค้นแยกแต่ละหมวด"
+   🧲 อยู่ใน .sticky ท้ายสุด — เลื่อนอ่านข่าวอยู่ก็ยังสลับหมวดได้ทันที
+   📱 จอแคบ: เลื่อนซ้ายขวาได้ **ห้ามให้ตกบรรทัด** (9 หมวดตกบรรทัดแล้วกินจอ 3-4 แถว
+      เหลือที่อ่านข่าวไม่ถึงครึ่ง) — ดูตัวเลขที่วัดไว้ใน CLAUDE.md */
+.gtabs {
+  display:flex; gap:6px; align-items:center;
+  overflow-x:auto; overflow-y:hidden; scrollbar-width:none;
+  padding:2px 0 8px; margin:0 -2px;
+  scroll-snap-type:x proximity; overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
 }
-.gsegb {
-  display:inline-flex; align-items:center; gap:5px; cursor:pointer;
-  border:0; background:transparent; color:var(--muted);
-  font-family:inherit; font-size:.78rem; font-weight:650; line-height:1;
-  padding:7px 13px; border-radius:999px; white-space:nowrap;
-  transition:background .12s, color .12s;
+.gtabs::-webkit-scrollbar { display:none; }
+.gtab {
+  flex:none; scroll-snap-align:start;
+  display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  border:1px solid var(--border); background:var(--surface); color:var(--ink-2);
+  font-family:inherit; font-size:.82rem; font-weight:650; line-height:1;
+  padding:8px 12px; border-radius:999px; white-space:nowrap;
+  transition:background .12s, color .12s, border-color .12s;
 }
-.gsegb:hover { color:var(--ink); background:rgba(37,99,235,.09); }
-.gsegb:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-.gsegb.on { background:var(--accent); color:var(--on-accent); box-shadow:0 1px 4px rgba(37,99,235,.35); }
-.gsegb.on:hover { background:var(--accent); color:var(--on-accent); }
+.gtab:hover { color:var(--ink); border-color:var(--accent); }
+.gtab:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.gtab.on {
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent);
+  box-shadow:0 1px 5px rgba(37,99,235,.32);
+}
+.gtab.on:hover { color:var(--on-accent); }
+.gtico { font-size:1rem; line-height:1; }
+/* เลขจำนวนข่าวของหมวดนั้น — 🚫 ห้ามถอดออก มันคือสิ่งเดียวที่บอกว่า
+   "คำที่เพิ่งค้นไปโผล่อยู่หมวดไหน" ตอนที่กำลังยืนอยู่หมวดที่ไม่มีผล */
+.gtn {
+  flex:none; border-radius:999px; padding:2px 7px;
+  background:var(--surface-2); color:var(--muted);
+  font-size:.72rem; font-weight:700;
+}
+.gtab.on .gtn { background:rgba(255,255,255,.22); color:var(--on-accent); }
+/* หมวดที่ค้นแล้วเหลือ 0 — จางลงแต่ยังกดได้และยังอยู่ที่เดิม
+   🚫 ห้ามซ่อน ไม่งั้นแท็บกระโดดสลับตำแหน่งทุกครั้งที่พิมพ์ แล้วกดผิดหมวด */
+.gtab.zero:not(.on) { opacity:.5; }
 
-.grp { border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden; }
-.grp.off { opacity:.55; }
-.ghead {
-  width:100%; display:flex; align-items:center; gap:9px; padding:12px 13px;
-  background:none; border:0; font:inherit; color:var(--ink); text-align:left; cursor:pointer;
+@media (max-width: 560px) {
+  .gtab { font-size:.78rem; padding:7px 10px; gap:5px; }
+  .gtn { font-size:.68rem; padding:1px 6px; }
 }
-.ghead:disabled { cursor:default; }
-.ghead:hover:not(:disabled) { background:var(--surface-2); }
-.gcaret { width:12px; color:var(--muted); font-size:.8rem; }
-.gico { font-size:1.05rem; line-height:1; }
-.gname { flex:1; min-width:0; font-weight:650; font-size:.92rem; }
-.gcount {
-  flex:none; background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
-  border-radius:999px; padding:2px 9px; font-size:.74rem; font-weight:650;
+/* 🖥 จอกว้าง = ตกบรรทัดให้เห็นครบทุกหมวดเลย
+   เพราะเดสก์ท็อป **ปัดนิ้วไม่ได้** แท็บที่ถูกตัดขอบจึงไม่ค่อยบอกว่า "เลื่อนได้"
+   (เลื่อนต้องกด shift+ลูกกลิ้ง ซึ่งไม่มีใครเดาถูก) · ที่ตรงนี้มีเหลือเฟืออยู่แล้ว
+   🚫 **ห้ามเอามาใส่จอแคบ** — 9 หมวดตกบรรทัดบนมือถือ = กินจอ 3-4 แถว เหลือที่อ่านข่าวไม่ถึงครึ่ง */
+@media (min-width: 900px) {
+  .gtabs { flex-wrap:wrap; overflow:visible; row-gap:6px; }
 }
-.gbody { display:flex; flex-direction:column; gap:8px; padding:0 11px 12px; }
-.gbody .item { border-radius:10px; background:var(--plane); }
-.gbody .gmore { align-self:center; margin-top:2px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .gtab.on .gtn { background:rgba(0,0,0,.25); }
+}
+
 .item a.t {
   flex:1; min-width:0; color:var(--ink); text-decoration:none; font-size:.92rem;
   font-weight:600; line-height:1.45;
