@@ -31,6 +31,7 @@ const CH = fs.readFileSync(new URL("../archives/channels.config.js", import.meta
 const BC = fs.readFileSync(new URL("../archives/blackchin.html", import.meta.url), "utf8");
 const IDX = fs.readFileSync(new URL("../archives/index.html", import.meta.url), "utf8");
 const BUILD = fs.readFileSync(new URL("../tools/build-archives.mjs", import.meta.url), "utf8");
+const OUT = fs.readFileSync(new URL("../archives/outlets.config.js", import.meta.url), "utf8");
 
 /* คลังปลอม — [ค่าในคอลัมน์ Channel, ลิงก์, ฝั่งที่ควรได้, เลขหมวดที่ติ๊ก, พาดหัว]
  *
@@ -125,6 +126,61 @@ console.log("\n[1] แยก ข่าว / Social");
   await ctx.close();
 }
 
+// ── [2] ยุบชื่อช่อง social เหลือชื่อแพลตฟอร์ม ──────────────────────
+/* เจ้าของสั่ง 18 ก.ย. 2026: "social แยกเป็น channel พอ ไม่ต้องแยกเป็นชื่อช่อง"
+   ในชีตเขียนเป็นชื่อบัญชี (`TikTok (sgethai)`) ซึ่งแตกเป็นตัวเลือกละบรรทัดในตัวกรอง */
+console.log("\n[2] ยุบชื่อช่อง social ในตัวกรองสำนักข่าว");
+{
+  const NAMES = [
+    ["TikTok (sgethai)", "TikTok"],
+    ["TikTok (katecalissa)", "TikTok"],
+    ["YouTube (beartai)", "YouTube"],
+    ["Facebook Reel", "Facebook"],
+    ["Instagram Reels", "Instagram"],
+    // 🚫 ชื่อที่มีสำนักข่าวติดอยู่ ห้ามยุบ — ยุบแล้วสำนักข่าวนั้นหายจากตัวกรองทั้งเจ้า
+    ["TNN ผ่าน LINE TODAY", "TNN ผ่าน LINE TODAY"],
+    ["INN News Facebook", "INN News Facebook"],
+    // 🚫 มีวงเล็บแต่ไม่มีชื่อแพลตฟอร์ม = ไม่ใช่ social ห้ามแตะ
+    ["สยามรัฐ (archive)", "สยามรัฐ (archive)"],
+    ["ไทยรัฐ", "ไทยรัฐ"],
+  ];
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
+  const p = await ctx.newPage();
+  await p.route("**/archives/data-blackchin/*.json", (route) => {
+    const u = route.request().url();
+    const body = u.endsWith("index.json")
+      ? { generatedAt: "2026-09-18T00:00:00.000Z", total: NAMES.length, noDate: 0, years: [{ y: 2026, n: NAMES.length }] }
+      : {
+          o: NAMES.map(([raw]) => raw),
+          c: ["1"],
+          r: NAMES.map(([, , ], i) => [
+            `ข่าวทดสอบชื่อสำนักข่าวลำดับที่ ${i + 1} เรื่องปลาหมอคางดำในพื้นที่ต่างจังหวัด`,
+            `https://example.com/n/${i}`, 1789600000 - i * 3600, i, [0]]),
+        };
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await p.goto(`${BASE}/archives/blackchin.html?mode=kw`, { waitUntil: "networkidle" });
+  await p.waitForTimeout(500);
+
+  const shown = await p.$$eval("#srcs .src", (bs) => bs.map((x) => x.querySelector(".nm").textContent.trim()));
+  for (const [raw, want] of NAMES) {
+    ok(`"${raw}" → ${want}`, shown.includes(want), JSON.stringify(shown));
+  }
+  ok("🚫 ไม่มีชื่อบัญชีในวงเล็บหลงเหลือในตัวกรอง",
+     !shown.some((s) => /^(TikTok|YouTube|Facebook|Instagram)\s*\(/i.test(s)), JSON.stringify(shown));
+  ok("TikTok 2 บัญชียุบเหลือบรรทัดเดียว",
+     shown.filter((s) => /^TikTok/i.test(s)).length === 1, JSON.stringify(shown));
+
+  // รายชื่อแพลตฟอร์มอยู่ใน config ไม่ได้ฝังในโค้ด
+  ok("รายชื่อแพลตฟอร์มอยู่ใน outlets.config.js",
+     /ARCHIVE_SOCIAL_OUTLETS\s*=/.test(OUT) && /window\.ARCHIVE_SOCIAL_OUTLETS/.test(APP));
+  // 🐞 ด่านนี้เกิดจากบั๊กจริง: เขียนเช็คด้วย \p{L} แล้วคำไทยที่มีวรรณยุกต์ตกด่านทุกคำ
+  ok("🚫 foldSocial ไม่ได้เช็คตัวอักษรด้วย \\p{L} (วรรณยุกต์ไทยเป็น \\p{M} จะตกด่าน)",
+     !/function foldSocial[\s\S]*?\n\}/.exec(APP)?.[0].includes("\\p{L}"),
+     "เจอ \\p{L} ใน foldSocial");
+  await ctx.close();
+}
+
 // ── [3] หมวด × ช่องทาง ตัดกัน ────────────────────────────────────
 console.log("\n[3] เปิดหมวดกับช่องทางพร้อมกัน");
 {
@@ -165,6 +221,47 @@ console.log("\n[3] เปิดหมวดกับช่องทางพร�
      ts.find((t) => t.g === "court")?.n === 2, String(ts.find((t) => t.g === "court")?.n));
   ok("บรรทัดนับบอกว่ากรองช่องทางอะไรอยู่",
      (await p.textContent("#count")).includes("Social"), await p.textContent("#count"));
+  await ctx.close();
+}
+
+// ── [4] คลังเล็กโหลดทุกปีตั้งแต่เปิดหน้า ────────────────────────
+/* เจ้าของถาม 18 ก.ย. 2026: "อันนี้คืออะไร ? ทำไมไม่โหลด ทุกปีไปเลย ???"
+   (บรรทัด "ยังไม่โหลด: 2025, 2024, …") · คลังจริง 338 แถว = 93 KB ทุกปีรวมกัน */
+console.log("\n[4] คลังเล็กโหลดทุกปีเลย");
+{
+  const YEARS = [2026, 2025, 2024, 2023];
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 950 } });
+  const p = await ctx.newPage();
+  const got = [];
+  await p.route("**/archives/data-blackchin/*.json", (route) => {
+    const u = route.request().url();
+    if (u.endsWith("index.json")) {
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        generatedAt: "2026-09-18T00:00:00.000Z", total: YEARS.length, noDate: 0,
+        years: YEARS.map((y) => ({ y, n: 1 })) }) });
+      return;
+    }
+    const y = +(u.match(/(\d{4})\.json/) || [0, 0])[1];
+    got.push(y);
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      o: ["ไทยรัฐ"], c: ["1"],
+      r: [[`ข่าวปลาหมอคางดำประจำปี ${y} รายงานสถานการณ์ในพื้นที่ภาคกลางและภาคตะวันออก`,
+           `https://example.com/y/${y}`, Math.floor(Date.UTC(y, 5, 1) / 1000), 0, [0]]] }) });
+  });
+  await p.goto(`${BASE}/archives/blackchin.html?mode=kw`, { waitUntil: "networkidle" });
+  await p.waitForTimeout(900);
+
+  ok("โหลดครบทุกปีตั้งแต่เปิดหน้า", YEARS.every((y) => got.includes(y)), JSON.stringify(got));
+  ok("🥇 ปีล่าสุดยังถูกขอเป็นอันดับแรกเสมอ", got[0] === 2026, JSON.stringify(got));
+  const count = (await p.textContent("#count")).replace(/\s+/g, " ");
+  ok("🚫 ไม่มีข้อความ 'ยังไม่รวม <ปี>' อีกแล้ว", !/ยังไม่รวม/.test(count), count);
+  ok("นับข่าวครบทุกปี", /พบ\s*4\s*ข่าว/.test(count.replace(/<[^>]*>/g, "")), count);
+  const note = await p.textContent("#loadednote");
+  ok("🚫 ไม่มีข้อความ 'ยังไม่โหลด' ใต้ช่องวันที่", !/ยังไม่โหลด/.test(note), note);
+
+  // 🚫 เพดานต้องยังอยู่ — คลังหลักออกแบบเผื่อ 20,000 แถว โหลดทีเดียวไม่ไหว
+  ok("ยังมีเพดานกันคลังใหญ่ (ALL_YEARS_MAX)",
+     /const ALL_YEARS_MAX = \d+;/.test(APP) && /INDEX\.total \|\| 0\) <= ALL_YEARS_MAX/.test(APP));
   await ctx.close();
 }
 

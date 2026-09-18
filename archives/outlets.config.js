@@ -99,3 +99,30 @@ window.ARCHIVE_TAILS = [
   "ThaiHealth Resource Center",
   "นิตยสารสาระวิทย์ โดย สวทช.",
 ];
+
+/* 💬 ---------- ยุบชื่อช่อง social ให้เหลือแค่ชื่อแพลตฟอร์ม ----------
+ *
+ * เจ้าของสั่ง 18 ก.ย. 2026: **"filter อันนี้ social แยกเป็น channel พอ ไม่ต้องแยกเป็นชื่อช่อง"**
+ *
+ * ในชีตคอลัมน์ `สำนักข่าว` ของแถว social เขียนเป็น **ชื่อบัญชี** ซึ่งแตกเป็นตัวเลือกละ 1 รายการ
+ * (วัดจากคลังจริง 338 แถว: TikTok โผล่ 4 บรรทัด · YouTube 2 บรรทัด · Facebook 3 บรรทัด)
+ *
+ * | ในชีต | ตัวกรองจะแสดง |
+ * |---|---|
+ * | `TikTok (sgethai)` · `TikTok (katecalissa)` · `TikTok (springonline)` · `TikTok` | **TikTok** (4) |
+ * | `YouTube (beartai)` · `YouTube` | **YouTube** (5) |
+ * | `Facebook Reel` · `Facebook` · `INN News Facebook` | **Facebook** (8) |
+ *
+ * ✅ ยุบเมื่อชื่อนั้น **มีชื่อแพลตฟอร์มอยู่ และส่วนที่เหลือเป็นแค่ชื่อบัญชี/คำต่อท้ายทั่วไป**
+ *    (วงเล็บ · Reel/Reels/Shorts/Live/Page/Post · ชื่อเจ้าของบัญชีที่นำหน้า)
+ *
+ * 🚫 **ห้ามใส่ชื่อเว็บข่าวลงตารางนี้** — จะยุบสำนักข่าวจริงหายไปทั้งเจ้า
+ * 🚫 **ยุบชื่อ ไม่ได้ยุบช่องทาง** — ชิพ "ข่าว / Social" เป็นคนละเรื่อง อ่านจากคอลัมน์ `Channel`
+ *    (`channels.config.js`) ไม่ได้อ่านจากชื่อสำนักข่าว
+ * ⚠️ ชื่อที่ **ไม่มีคำแพลตฟอร์มเลย ไม่ถูกแตะ** — `สยามรัฐ (archive)` มีวงเล็บแต่ไม่ใช่ social
+ *    จึงยังแสดงตามเดิม (เทสต์ `archivechannel.mjs` [2] คุมไว้)
+ */
+window.ARCHIVE_SOCIAL_OUTLETS = [
+  "TikTok", "Facebook", "YouTube", "Instagram", "X", "Twitter",
+  "Threads", "Pantip", "LINE", "Line TODAY",
+];

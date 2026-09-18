@@ -76,9 +76,10 @@ console.log("\n[1] โครงหน้าใหม่");
   const { ctx, p, errs } = await open(browser, PLAIN);
   ok("มี dropdown เลือกคลังในหัวหน้า", await p.$("#corpus") !== null);
   ok("มีป้ายบอกที่มาข้อมูล", /เฉพาะข่าวเชิงบวก/.test(await p.$eval(".vnote", (e) => e.textContent)));
-  ok("มีบรรทัดแนะนำวิธีใช้ (คลิกหัวข่าว / ปุ่มพิมพ์)",
-     /อ่านข่าว/.test(await p.$eval(".vtip", (e) => e.textContent)) &&
-     /Ctrl\+P/.test(await p.$eval(".vtip", (e) => e.textContent)));
+  // 🚫 เจ้าของสั่งเอาบรรทัดแนะนำวิธีใช้ออก 18 ก.ย. 2026 — **ห้ามใส่กลับโดยไม่ได้สั่ง**
+  //    (ของเดิมเป็นกล่องเทาเหนือรายการข่าว เขียนว่า "คลิกหัวข่าว… (Ctrl+P)")
+  ok("🚫 ไม่มีบรรทัดแนะนำวิธีใช้เหนือรายการข่าวแล้ว",
+     await p.$(".vtip") === null && !/Ctrl\+P/.test(await p.content()));
   ok("มีปุ่มเรียงลำดับ และตั้งต้นเป็น 'ล่าสุด'",
      /ล่าสุด/.test(await p.$eval("#sortbtn", (e) => e.textContent)), await p.$eval("#sortbtn", (e) => e.textContent));
   // 🖥 จอกว้าง: หมวดกับตัวกรองอยู่คอลัมน์ซ้าย · ปุ่มตัวกรองไม่ต้องมี

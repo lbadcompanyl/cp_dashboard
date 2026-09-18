@@ -267,12 +267,6 @@ body.v2 .btn.sm, body.v2 #sortbtn {
   font:inherit; font-size:.84rem; font-weight:600; color:var(--ink); cursor:pointer;
 }
 body.v2 .fsum { margin:2px 2px 0; font-size:.8rem; color:var(--muted); }
-.vtip {
-  margin:12px 0 14px; padding:11px 14px;
-  background:var(--surface); border:1px solid var(--border); border-radius:10px;
-  font-size:.8rem; color:var(--muted);
-}
-
 /* ───────── การ์ดข่าว ───────── */
 body.v2 .daygroup { margin:22px 0 10px; font-size:.82rem; font-weight:700; color:var(--muted); }
 body.v2 .daygroup:first-child { margin-top:4px; }
@@ -325,7 +319,7 @@ body.v2 .acts .go:hover { background:#1a44be; }
      🚫 ห้ามตัด #fsum กับ #fbadge — 2 ตัวนั้นคือสิ่งเดียวที่บอกว่ากรองอะไรไว้ตอนแผ่นพับ */
   /* "หัวข้อ:" ซ่อนบนจอแคบ — dropdown บอกตัวเองอยู่แล้ว และมี aria-label กำกับ
      ถ้าไม่ซ่อน "หน้าหลัก" จะถูกดันไปอยู่บรรทัดที่ 2 ของหัวหน้า (วัดแล้ว หัวสูงขึ้น 44px) */
-  body.v2 .vnote, body.v2 .vtip, body.v2 .qex, body.v2 .vsel-l { display:none; }
+  body.v2 .vnote, body.v2 .qex, body.v2 .vsel-l { display:none; }
   body.v2 .qhint { margin-top:6px; font-size:.75rem; }
   .vhead { padding:10px 0 8px; gap:9px; }
   body.v2 .statusrow { margin-top:10px; }
@@ -369,5 +363,4 @@ body.v2 .empty .btn, body.v2 .morewrap .btn {
   /* ⚙ จอกว้างไม่ต้องมีปุ่มตัวกรอง — ตัวกรองกางอยู่ในคอลัมน์ซ้ายแล้ว */
   body.v2 #ftoggle { display:none; }
   body.v2 .filters[hidden] { display:block !important; }
-  body.v2 .vtip { margin-top:4px; }
 }
