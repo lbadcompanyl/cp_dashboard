@@ -251,7 +251,22 @@ function expand(pack) {
  */
 const TOPICS = Array.isArray(window.ARCHIVE_TOPICS) ? window.ARCHIVE_TOPICS : null;
 const grouping = () => !!TOPICS;
-const ETC = TOPICS ? TOPICS.length - 1 : 0;   // ถังรับของที่ไม่เข้าหมวดไหน = ตัวสุดท้ายเสมอ
+/* 🎯 ถังรับของที่ไม่เข้าหมวดไหนเลย — ดูจากธง `etc: true` **ไม่ใช่ "ตัวสุดท้ายของลิสต์"**
+ *    เจ้าของเรียงหมวดเอง 18 ก.ย. 2026 ("อื่น ๆ" = 9 · "ข้อหักล้างความเสียหาย" = 10)
+ *    ถังรับจึงไม่ได้อยู่ท้ายไฟล์อีกแล้ว · ทางถอย: ตัวสุดท้ายที่ไม่มีคำของตัวเอง */
+const ETC = !TOPICS ? 0 : (() => {
+  const i = TOPICS.findIndex((t) => t.etc);
+  return i >= 0 ? i : TOPICS.length - 1;
+})();
+
+/* 👁 ลำดับที่ "เห็นบนแท็บ" ≠ ลำดับในไฟล์ config (ซึ่งคือเลขในชีต ห้ามสลับ)
+ *    เจ้าของสั่ง 18 ก.ย. 2026: **"อื่นๆ ไว้ล่างสุดเหมือนเดิม"** → ดันถังรับไปท้ายแถบ
+ *    คืน index ของ TOPICS (ไม่ใช่ตัว object) เพื่อให้ `gCounts[i]` ยังตรงกับหมวดเดิมเสมอ */
+function tabOrder() {
+  if (!TOPICS) return [];
+  const idx = TOPICS.map((_, i) => i);
+  return idx.filter((i) => !TOPICS[i].etc).concat(idx.filter((i) => TOPICS[i].etc));
+}
 
 /** หมวดของข่าว 1 ใบ → array ของ index (เรียงจากน้อยไปมาก · ไม่ซ้ำ · อย่างน้อย 1 ตัวเสมอ)
  *  @param cats ค่าดิบจากคอลัมน์ `หมวด` ของชีต (เช่น ["3","5"])
@@ -1061,7 +1076,10 @@ function renderTabs() {
      </button>`;
   box.innerHTML =
     tab("", "🗂", "ทั้งหมด", total, !state.g) +
-    TOPICS.map((t, i) => tab(t.id, t.icon, t.name, gCounts[i] || 0, state.g === t.id)).join("");
+    tabOrder().map((i) => {
+      const t = TOPICS[i];
+      return tab(t.id, t.icon, t.name, gCounts[i] || 0, state.g === t.id);
+    }).join("");
 
   // 📱 จอแคบแท็บเลื่อนซ้ายขวา — แท็บที่เลือกอยู่อาจอยู่นอกจอหลังกดจากลิงก์/กด back
   //    ต้องเลื่อนมาให้เห็นเอง ไม่งั้นผู้ใช้ไม่รู้ว่าตัวเองอยู่หมวดไหน
