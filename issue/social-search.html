@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Issue Dashboard — หาโพสในโซเชียล</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔎</text></svg>" />
+<meta name="page-ver" content="1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" />
+<style>
+  :root {
+    --plane:#f6f7f9; --surface:#fff; --surface2:#eef1f5; --ink:#141619; --ink2:#4a4e57;
+    --muted:#878b95; --border:#e4e8f0; --accent:#2563eb; --accent-soft:#eaf0fd;
+    --warn:#b45309; --warn-soft:#fef3c7; --neg:#d94b4b; --neg-soft:#fbeaea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:var(--plane); color:var(--ink);
+    font-family:"IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  }
+  .wrap { max-width:1000px; margin:0 auto; padding:0 16px 44px; }
+  .bar { background:var(--surface); border-bottom:1px solid var(--border); margin-bottom:18px; }
+  .bar .wrap { display:flex; align-items:center; gap:12px; padding-block:12px; }
+  .bar h1 { font-size:17px; margin:0; flex:1; }
+  .bar a { color:var(--ink2); text-decoration:none; font-size:13px; }
+  .ver { font-size:11px; color:var(--muted); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; }
+  h2 { font-size:14px; margin:0 0 4px; }
+  .sub { font-size:12px; color:var(--muted); margin:0 0 12px; }
+  label { font-size:12px; color:var(--ink2); display:block; margin-bottom:4px; }
+  input, select, button { font-family:inherit; font-size:13px; }
+  input, select {
+    width:100%; padding:9px 11px; border:1px solid var(--border);
+    border-radius:9px; background:var(--surface); color:var(--ink);
+  }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:12px; }
+  button {
+    padding:9px 16px; border-radius:9px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); cursor:pointer;
+  }
+  button.go { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button:disabled { opacity:.55; cursor:default; }
+  .msg { font-size:12.5px; margin-top:10px; }
+  .msg.warn { color:var(--warn); background:var(--warn-soft); padding:9px 11px; border-radius:9px; }
+  .msg.err  { color:var(--neg);  background:var(--neg-soft);  padding:9px 11px; border-radius:9px; }
+  .bill { display:inline-block; background:var(--accent-soft); color:var(--accent);
+          padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; white-space:nowrap; }
+  td.n { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .big { font-weight:700; }
+  .pf { font-size:11px; padding:2px 7px; border-radius:999px; background:var(--surface2); color:var(--ink2); }
+  .txt { color:var(--ink2); max-width:420px; }
+  a.post { color:var(--accent); text-decoration:none; }
+  .scroll { overflow-x:auto; }
+  .spin { display:inline-block; width:12px; height:12px; border:2px solid var(--border);
+          border-top-color:var(--accent); border-radius:50%; animation:sp .7s linear infinite; vertical-align:-2px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="bar"><div class="wrap">
+  <h1>🔎 หาโพสในโซเชียล</h1>
+  <span class="ver" id="vtag">น?</span>
+  <a href="./sentiment.html">🧭 เครื่องตรวจ sentiment</a>
+  <a href="/">🏠 หน้าหลัก</a>
+</div></div>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>ค้นด้วยคำ</h2>
+    <p class="sub">ได้ <b>ลิงก์โพส + ยอดมีส่วนร่วม</b> · ไม่ดึงคอมเมนต์ จึงไม่แตะโควตา Claude เลย</p>
+
+    <div class="row">
+      <div style="grid-column:1/-1">
+        <label for="q">คำค้น</label>
+        <input id="q" placeholder="เช่น ปลาหมอคางดำ" value="ปลาหมอคางดำ" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="platform">แพลตฟอร์ม</label>
+        <select id="platform">
+          <option value="both">ทั้งคู่</option>
+          <option value="tiktok">TikTok</option>
+          <option value="facebook">Facebook</option>
+        </select>
+      </div>
+      <div>
+        <label for="days">ย้อนหลัง (วัน)</label>
+        <input id="days" type="number" value="365" min="1" />
+      </div>
+      <div>
+        <label for="min_eng">ยอดขั้นต่ำ</label>
+        <input id="min_eng" type="number" value="1000" min="0" />
+      </div>
+      <div>
+        <label for="pages">หน้าที่ไล่ดู</label>
+        <input id="pages" type="number" value="2" min="1" max="5" />
+      </div>
+      <div>
+        <label for="enrich">ขอยอด FB กี่ใบ</label>
+        <input id="enrich" type="number" value="15" min="1" max="30" />
+      </div>
+    </div>
+
+    <button class="go" id="go">ค้นหา</button>
+    <button id="csv" hidden>📥 บันทึกเป็น CSV</button>
+
+    <!-- 💰 ต้องเตือนเรื่องเงินตรงนี้ ไม่ใช่ให้ไปรู้ตอนเครดิตหมด
+         ⚠️ ห้ามถอดออก — ปุ่มนี้กดแล้วเสียเงินจริง ต่างจากปุ่มอื่นในโปรเจกต์ -->
+    <div class="msg warn" style="margin-top:12px">
+      💰 <b>ปุ่มนี้ใช้เครดิต ScrapeCreators จริง</b> — หน้าที่ไล่ดู 1 หน้า = 1 เครดิต ·
+      ฝั่ง Facebook ต้องจ่าย <b>เพิ่มอีก 1 เครดิตต่อโพส</b> เพื่อขอยอด (ยิงลิงก์เดิมซ้ำใน 7 วันไม่เสียเพิ่ม)
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card" id="resCard" hidden>
+    <h2>ผลค้น <span class="bill" id="bill"></span></h2>
+    <p class="sub" id="resSub"></p>
+    <div class="msg warn" id="note" hidden></div>
+    <div class="msg err" id="errs" hidden></div>
+    <div class="scroll"><table id="tbl"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>อ่านผลยังไง</h2>
+    <p class="sub" style="margin:0">
+      <b>ยอดมีส่วนร่วม = ไลก์ + คอมเมนต์ + แชร์</b> · <b>ไม่รวมยอดวิว</b> (วิวมาจากการเลื่อนผ่าน
+      ไม่ใช่การมีส่วนร่วม — รวมเข้าไปคลิปวิวล้านที่ไม่มีใครสนใจจะขึ้นบนสุด) ยอดวิวแยกไว้อีกช่อง<br />
+      🔴 ช่องที่ขึ้น <b>—</b> คือ <b>ยังไม่รู้</b> ไม่ใช่ศูนย์ · ใบพวกนี้ไม่ถูกตัดทิ้งและไม่ถูกเอาไปเรียงลำดับ<br />
+      ⚠️ <b>Facebook ค้นด้วยคำตรงๆ ไม่ได้</b> ต้องอ้อมผ่าน Google จึงเห็นเฉพาะโพสสาธารณะที่ถูกเก็บเข้าระบบค้นหา
+      — <b>ไม่ครบทุกโพสแน่นอน</b> ส่วน TikTok ค้นตรงจึงครบกว่า
+    </p>
+  </div>
+
+</div>
+
+<script>
+const WORKER = "/issue/api/sentiment";
+const el = (id) => document.getElementById(id);
+const PAGE_VER = document.querySelector('meta[name="page-ver"]')?.content || "?";
+el("vtag").textContent = "น" + PAGE_VER;
+
+let rows = [];
+const nf = (n) => n == null ? "—" : Number(n).toLocaleString();
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+function thDate(ms) {
+  if (ms == null) return "—";
+  const d = new Date(ms);
+  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear() + 543}`;
+}
+
+function render() {
+  const head = `<tr><th>ยอดรวม</th><th>แพลตฟอร์ม</th><th>วันที่</th>
+    <th class="n">ไลก์</th><th class="n">คอมเมนต์</th><th class="n">แชร์</th><th class="n">วิว</th>
+    <th>ข้อความ</th><th>ลิงก์</th></tr>`;
+  el("tbl").innerHTML = head + rows.map(p => `<tr>
+    <td class="n big">${nf(p.engagement)}</td>
+    <td><span class="pf">${p.platform === "tiktok" ? "TikTok" : "Facebook"}</span></td>
+    <td>${thDate(p.at)}</td>
+    <td class="n">${nf(p.likes)}</td><td class="n">${nf(p.comments)}</td>
+    <td class="n">${nf(p.shares)}</td><td class="n">${nf(p.views)}</td>
+    <td class="txt">${esc(String(p.text || "").slice(0, 140))}${(p.text || "").length > 140 ? "…" : ""}
+      ${p.error ? `<br /><span style="color:var(--neg)">⚠️ ขอยอดไม่สำเร็จ: ${esc(p.error)}</span>` : ""}</td>
+    <td><a class="post" href="${esc(p.url)}" target="_blank" rel="noopener">เปิด ↗</a></td>
+  </tr>`).join("");
+}
+
+el("go").onclick = async () => {
+  const q = el("q").value.trim();
+  if (!q) { el("msg").textContent = "ใส่คำค้นก่อนครับ"; return; }
+  el("go").disabled = true;
+  el("msg").innerHTML = '<span class="spin"></span> กำลังค้น — ฝั่ง Facebook ต้องขอยอดทีละใบ อาจใช้เวลาสักครู่';
+  el("csv").hidden = true;
+  try {
+    const p = new URLSearchParams({
+      q, platform: el("platform").value, days: el("days").value,
+      min_eng: el("min_eng").value, pages: el("pages").value, enrich: el("enrich").value,
+    });
+    const r = await fetch(`${WORKER}/search?${p}`);
+    /* ⚠️ Access หมดอายุจะตอบหน้าเข้าสู่ระบบเป็น HTML ไม่ใช่ JSON
+       เอาไป .json() ตรงๆ จะพังแล้วรายงานผิดเรื่อง (บทเรียนเดิมจากหน้า /social/) */
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("json")) throw new Error("เซสชันหมดอายุ — รีเฟรชหน้าเพื่อเข้าสู่ระบบใหม่");
+    const d = await r.json();
+    if (d.error) throw new Error(d.detail || d.error);
+
+    rows = d.posts || [];
+    el("resCard").hidden = false;
+    el("bill").textContent = `ใช้ไป ${d.credits_used} เครดิต`;
+    el("resSub").textContent = `เจอ ${d.found} ใบ · เหลือหลังกรอง ${d.returned} ใบ · คำค้น "${d.q}" · ย้อนหลัง ${d.days} วัน · ยอดขั้นต่ำ ${d.min_eng.toLocaleString()}`;
+    el("note").hidden = !(d.note || []).length;
+    el("note").innerHTML = (d.note || []).map(esc).join("<br />");
+    el("errs").hidden = !(d.errors || []).length;
+    el("errs").innerHTML = (d.errors || []).map(e => "⚠️ " + esc(e)).join("<br />");
+    render();
+    el("csv").hidden = !rows.length;
+    el("msg").textContent = rows.length ? "" : "ไม่เจอโพสที่เข้าเกณฑ์ — ลองลดยอดขั้นต่ำ หรือเพิ่มหน้าที่ไล่ดู";
+  } catch (e) {
+    el("msg").innerHTML = `<span class="msg err">❌ ${esc(e.message || e)}</span>`;
+  } finally {
+    el("go").disabled = false;
+  }
+};
+
+el("csv").onclick = () => {
+  const head = ["ยอดรวม", "แพลตฟอร์ม", "วันที่", "ไลก์", "คอมเมนต์", "แชร์", "วิว", "ผู้โพส", "ข้อความ", "ลิงก์"];
+  const cell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [head.join(",")].concat(rows.map(p => [
+    p.engagement ?? "", p.platform, thDate(p.at), p.likes ?? "", p.comments ?? "",
+    p.shares ?? "", p.views ?? "", p.author, p.text, p.url,
+  ].map(cell).join(",")));
+  /* ﻿ นำหน้า = BOM ไม่งั้น Excel เปิดภาษาไทยเป็นตัวต่างดาว */
+  const url = URL.createObjectURL(new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  const d = new Date(), p2 = (n) => String(n).padStart(2, "0");
+  a.href = url; a.download = `social-search-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+</script>
+</body>
+</html>

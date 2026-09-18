@@ -607,7 +607,7 @@ export default {
        ⚠️ `env.INTERNAL` ถูกตั้งในโค้ดฝั่งเซิร์ฟเวอร์ที่เดียว (`[[route]].js`)
           **ผู้เรียกยัดเข้ามาเองไม่ได้** เพราะ env ไม่ได้มาจาก header/query
        ⚠️ เอาไว้หลัง OPTIONS เสมอ ไม่งั้น preflight ของเบราว์เซอร์ตาย แล้วหน้าเว็บพังทั้งที่กุญแจถูก */
-    const COSTS_MONEY = ["/analyze", "/comments", "/classify", "/resynth", "/paraphrase", "/credits", "/sentiment"];
+    const COSTS_MONEY = ["/analyze", "/comments", "/classify", "/resynth", "/paraphrase", "/credits", "/sentiment", "/search"];
     if (COSTS_MONEY.includes(url.pathname)) {
       if (!env.INTERNAL) {
         if (!env.WORKER_KEY) {
@@ -627,6 +627,16 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/credits") {
       return cors(json(await creditBalance(env)), origin);
+    }
+
+    /* 🔎 หาโพสด้วยคำ — ได้แค่ลิงก์กับยอด ไม่ดึงคอมเมนต์ ไม่แตะ Claude
+       💰 กินเครดิต ScrapeCreators จริง จึงอยู่ใน COSTS_MONEY (ต้องผ่าน Access หรือมีกุญแจ) */
+    if (request.method === "GET" && url.pathname === "/search") {
+      try {
+        return cors(await searchRoute(url, env), origin);
+      } catch (e) {
+        return cors(json({ error: "search_failed", detail: String(e && e.message || e) }, 500), origin);
+      }
     }
 
     /* ชั้น ② ของระบบเรียนรู้ — เก็บที่คนแก้ป้ายไว้ ยังไม่มีผลกับการตัดสินของ AI
@@ -1072,6 +1082,196 @@ async function analyze(opts, env) {
 }
 
 /** ดึงเครดิตคงเหลือของ ScrapeCreators */
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 🔎 หาโพสด้วยคำ — คนละเรื่องกับการดึงคอมเมนต์
+ *
+ * เจ้าของสั่ง 18 ก.ย. 2026: "หา content ที่มี engagement ดี และเป็นข่าวด้านดี
+ * เกี่ยวกับปลาหมอคางดำ" แล้วจำกัดขอบเขตต่อว่า **"ไม่เอาคอมเมน เอาแค่โพส กับ link"**
+ *
+ * 💰 ที่ไม่ดึงคอมเมนต์ทำให้ถูกลงมาก — โพสเดียวที่ดึงคอมเมนต์มาตี sentiment
+ *    กิน Claude ~37,000 โทเคน ส่วนตรงนี้ไม่แตะ Claude เลยสักโทเคน
+ *
+ * ━━ ทำไม 2 แพลตฟอร์มใช้คนละทาง ━━
+ *   TikTok   : มีเส้นทางค้นด้วยคำตรงๆ **และคืนยอด engagement มาพร้อมผลค้นเลย**
+ *   Facebook : 🔴 **ไม่มีเส้นทางค้นโพสด้วยคำ** (มีแต่ค้นในเพจ/กลุ่มที่ระบุ · Marketplace · โฆษณา)
+ *              → ต้องอ้อมผ่าน Google (`site:facebook.com`) ได้แค่ลิงก์
+ *              → แล้วยิง /v1/facebook/post ทีละใบเพื่อขอยอด = **1 เครดิตต่อโพส**
+ *
+ * 🚫 เครดิตหมดง่ายมากถ้าไม่คุม — ด่านกันไว้ 3 ชั้น
+ *    1. จำนวนหน้าที่ไล่ดู (SEARCH_MAX_PAGES)
+ *    2. จำนวนโพส FB ที่ยอมจ่ายไปขอยอด (SEARCH_MAX_ENRICH) ← ตัวที่แพงที่สุด
+ *    3. คืน credits_used กลับไปทุกครั้ง ให้คนกดเห็นบิลทันที ไม่ใช่มารู้ตอนเครดิตหมด
+ * ══════════════════════════════════════════════════════════════════════ */
+const SEARCH_MAX_PAGES = 5;      // ต่อ 1 แพลตฟอร์ม · 1 หน้า = 1 เครดิต
+const SEARCH_MAX_ENRICH = 30;    // เพดานโพส FB ที่ยอมจ่ายขอยอด
+const SEARCH_DEF_PAGES = 2;
+const SEARCH_DEF_ENRICH = 15;
+
+/** ยอดมีส่วนร่วม = ไลก์ + คอมเมนต์ + แชร์
+ *  🚫 **ไม่นับยอดวิว** — วิวมาจากการเลื่อนผ่าน ไม่ใช่การมีส่วนร่วม
+ *     เอามารวมเมื่อไหร่คลิปวิวล้านที่ไม่มีใครสนใจจะขึ้นบนสุดทันที (คืนยอดวิวแยกไว้ให้ดูต่างหาก) */
+function engOf(p) { return (p.likes || 0) + (p.comments || 0) + (p.shares || 0); }
+
+/** วินาที/มิลลิวินาที/ISO → มิลลิวินาที · อ่านไม่ออกคืน null (🚫 ห้ามเดาเป็นวันนี้) */
+function toMs(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return v > 1e11 ? v : v * 1000;
+  const n = Number(v);
+  if (Number.isFinite(n) && String(v).trim() !== "") return n > 1e11 ? n : n * 1000;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : null;
+}
+
+async function scGet(env, path, params, acc) {
+  const api = new URL("https://api.scrapecreators.com" + path);
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== "") api.searchParams.set(k, String(v));
+  const r = await fetch(api.toString(), { headers: { "x-api-key": env.SCRAPECREATORS_API_KEY } });
+  const data = await r.json().catch(() => ({}));
+  /* นับบิลจากที่ต้นทางบอกมาเอง ไม่ใช่เดาว่า "1 ครั้ง = 1 เครดิต"
+     (บางเส้นทางคิดหลายเครดิตต่อคำขอ — เคยเห็น credits_charged: 26 ในสเปค) */
+  if (acc) acc.credits += Number(data?.credits_charged || 0);
+  if (!r.ok) throw new Error("ScrapeCreators " + path + ": " + (data?.error || data?.message || ("HTTP " + r.status)));
+  return data;
+}
+
+/** TikTok — ค้นตรง ได้ยอดมาพร้อมเลย ไม่ต้องยิงเพิ่ม */
+async function searchTikTok(env, q, pages, acc, note) {
+  const out = [];
+  let cursor = "";
+  for (let i = 0; i < pages; i++) {
+    /* ⚠️ date_posted ของ TikTok มีถึงแค่ last-6-months — ช่วง 1 ปีจึงขอ all-time
+       แล้วมากรองวันที่เองจาก create_time (ไม่งั้นได้ครึ่งเดียวของที่ขอ) */
+    const d = await scGet(env, "/v1/tiktok/search/keyword",
+      { query: q, sort_by: "most-liked", date_posted: "all-time", region: "TH", cursor }, acc);
+    const list = d.search_item_list || d.items || [];
+    if (!list.length) break;
+    for (const it of list) {
+      const a = it.aweme_info || it;
+      const s = a.statistics || {};
+      const id = a.aweme_id || a.id;
+      if (!id) continue;
+      out.push({
+        platform: "tiktok",
+        url: a.share_url || `https://www.tiktok.com/@${a.author?.unique_id || "x"}/video/${id}`,
+        text: a.desc || "",
+        author: a.author?.nickname || a.author?.unique_id || "",
+        at: toMs(a.create_time_utc || a.create_time),
+        likes: s.digg_count ?? null, comments: s.comment_count ?? null,
+        shares: s.share_count ?? null, views: s.play_count ?? null,
+      });
+    }
+    cursor = d.cursor;
+    if (!d.has_more && !cursor) break;
+  }
+  /* 📌 ต้นทางเตือนเองในเอกสารว่า "อาจส่งผลซ้ำกลับมา" — ตัดที่ลิงก์ */
+  const seen = new Set();
+  const uniq = out.filter(p => !seen.has(p.url) && seen.add(p.url));
+  if (uniq.length < out.length) note.push(`TikTok: ตัดโพสซ้ำออก ${out.length - uniq.length} ใบ`);
+  return uniq;
+}
+
+/** Facebook — ค้นตรงไม่ได้ ต้องอ้อมผ่าน Google แล้วค่อยจ่ายขอยอดทีละใบ */
+async function searchFacebook(env, q, pages, enrich, acc, note) {
+  const links = [];
+  for (let page = 1; page <= pages; page++) {
+    const d = await scGet(env, "/v1/google/search",
+      /* last-year ตรงกับที่เจ้าของถามพอดี — ไม่ต้องกรองเองเหมือนฝั่ง TikTok */
+      { query: `site:facebook.com ${q}`, region: "TH", date_posted: "last-year", page }, acc);
+    const rs = d.results || [];
+    if (!rs.length) break;
+    for (const r of rs) {
+      const u = String(r.url || "");
+      /* เอาเฉพาะลิงก์ที่เป็น "โพส/รีล" จริงๆ — ผลค้นมีหน้าเพจ/หน้าโปรไฟล์ปนมาเยอะ
+         🚫 จ่ายเครดิตไปขอยอดของหน้าเพจ = ทิ้งเงินเปล่า */
+      if (!/facebook\.com\/.+\/(posts|videos|reel)\/|facebook\.com\/(reel|watch|share)\//.test(u)) continue;
+      if (!links.some(l => l.url === u)) links.push({ url: u, title: r.title || "", desc: r.description || "" });
+    }
+  }
+  if (links.length > enrich) {
+    note.push(`Facebook: เจอ ${links.length} ลิงก์ แต่ขอยอดแค่ ${enrich} ใบแรก (คุมเครดิต) — เพิ่มได้ด้วย enrich=`);
+  }
+  const out = [];
+  for (const l of links.slice(0, enrich)) {
+    try {
+      /* 💡 cache_max_age=7d → ยิงลิงก์เดิมซ้ำภายใน 7 วัน **ไม่เสียเครดิต** (ต้นทางคืนของที่เก็บไว้) */
+      const d = await scGet(env, "/v1/facebook/post", { url: l.url, cache_max_age: "7d" }, acc);
+      const p = d.post || d;
+      out.push({
+        platform: "facebook",
+        url: l.url,
+        text: p.description || l.title || l.desc || "",
+        author: p.author?.name || p.author?.handle || "",
+        at: toMs(p.creation_time),
+        likes: p.like_count ?? null, comments: p.comment_count ?? null,
+        shares: p.share_count ?? null, views: p.view_count ?? null,
+      });
+    } catch (e) {
+      /* 🔴 ใบไหนขอยอดไม่ได้ **ห้ามทิ้งเงียบ** — เก็บไว้พร้อมบอกว่ายอดยังไม่รู้
+         (ยอดเป็น null ไม่ใช่ 0 — กฎ "ไม่รู้ ≠ ค่าใดค่าหนึ่ง") */
+      out.push({ platform: "facebook", url: l.url, text: l.title || l.desc || "", author: "",
+                 at: null, likes: null, comments: null, shares: null, views: null,
+                 error: String(e && e.message || e).slice(0, 120) });
+    }
+  }
+  return out;
+}
+
+async function searchRoute(url, env) {
+  if (!env.SCRAPECREATORS_API_KEY) return json({ error: "ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY ที่ Cloudflare" }, 400);
+  const q = (url.searchParams.get("q") || "").trim();
+  if (!q) return json({ error: "ต้องใส่คำค้น (q)" }, 400);
+
+  const platform = (url.searchParams.get("platform") || "both").toLowerCase();
+  const clamp = (v, def, max) => Math.max(1, Math.min(max, Number(v) || def));
+  const pages = clamp(url.searchParams.get("pages"), SEARCH_DEF_PAGES, SEARCH_MAX_PAGES);
+  const enrich = clamp(url.searchParams.get("enrich"), SEARCH_DEF_ENRICH, SEARCH_MAX_ENRICH);
+  const days = Math.max(1, Math.min(3650, Number(url.searchParams.get("days")) || 365));
+  const minEng = Math.max(0, Number(url.searchParams.get("min_eng")) || 0);
+
+  const acc = { credits: 0 };
+  const note = [];
+  let posts = [];
+  const errors = [];
+  const wantTT = platform === "both" || platform === "tiktok";
+  const wantFB = platform === "both" || platform === "facebook";
+
+  /* ⚠️ แพลตฟอร์มหนึ่งล่ม ต้องไม่ลากอีกแพลตฟอร์มตายไปด้วย — เก็บ error แยกแล้วไปต่อ */
+  if (wantTT) {
+    try { posts = posts.concat(await searchTikTok(env, q, pages, acc, note)); }
+    catch (e) { errors.push("tiktok: " + String(e && e.message || e)); }
+  }
+  if (wantFB) {
+    try { posts = posts.concat(await searchFacebook(env, q, pages, enrich, acc, note)); }
+    catch (e) { errors.push("facebook: " + String(e && e.message || e)); }
+  }
+
+  const cutoff = Date.now() - days * 86400000;
+  const before = posts.length;
+  /* 🔴 ใบที่ "ไม่รู้วันที่" ให้เก็บไว้ ไม่ใช่ตัดทิ้ง — ตัดของที่ตัดสินไม่ได้ = หายเงียบ
+     (กฎเดียวกับรายการข่าวที่ถูกตัดในหน้า /admin/) */
+  const dropOld = posts.filter(p => p.at != null && p.at < cutoff).length;
+  posts = posts.filter(p => p.at == null || p.at >= cutoff);
+
+  /* ยอดที่ยังไม่รู้ก็เก็บไว้เหมือนกัน — ห้ามนับ null เป็น 0 แล้วตัดทิ้ง */
+  const dropLow = posts.filter(p => engOf(p) < minEng && p.likes != null).length;
+  posts = posts.filter(p => p.likes == null || engOf(p) >= minEng);
+
+  posts.forEach(p => { p.engagement = p.likes == null ? null : engOf(p); });
+  posts.sort((a, b) => (b.engagement ?? -1) - (a.engagement ?? -1));
+
+  if (dropOld) note.push(`ตัดโพสเก่ากว่า ${days} วันออก ${dropOld} ใบ`);
+  if (dropLow) note.push(`ตัดโพสที่ยอดต่ำกว่า ${minEng} ออก ${dropLow} ใบ`);
+
+  return json({
+    ok: true, ver: WORKER_VER, q, platform, days, min_eng: minEng,
+    found: before, returned: posts.length,
+    /* 💰 บอกบิลทุกครั้ง ไม่ใช่ให้ไปรู้ตอนเครดิตหมด */
+    credits_used: acc.credits,
+    note, errors, posts,
+  });
+}
+
 async function creditBalance(env) {
   if (!env.SCRAPECREATORS_API_KEY) return { error: "ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY" };
   const r = await fetch("https://api.scrapecreators.com/v1/account/credit-balance", {

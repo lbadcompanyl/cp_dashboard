@@ -47,6 +47,7 @@ export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonAr
          nestedReplies, scComment, fetchYouTube, INCLUDE_REPLIES,
          feedbackRoute, fbClean, FB_MAX, FB_MAX_PER_REQ, FB_MAX_TEXT,
          EFFORT_CHOICES, EFFORT_MODELS, analyze,
+         searchRoute, engOf, SEARCH_MAX_PAGES, SEARCH_MAX_ENRICH,
          PROFILES, getProfile, DEFAULT_PROFILE,
          sampleQuota, SAMPLE_MIN, SAMPLE_MAX, dupKey, systemBlackchin, BLACKCHIN_SHOTS };
 EOF
