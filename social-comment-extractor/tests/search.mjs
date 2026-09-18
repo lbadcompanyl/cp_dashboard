@@ -57,6 +57,20 @@ globalThis.fetch = async (u) => {
       { url: "https://www.facebook.com/page3/posts/333", title: "โพสที่ขอยอดไม่ได้", description: "ง" },
     ].concat(page === 1 ? many : []) });
   }
+  if (url.pathname === "/v1/youtube/search") {
+    /* ไม่มีวันหมด เพื่อให้เทสต์เพดานวัดของจริง (เหตุผลเดียวกับ TikTok ข้างบน) */
+    const t = url.searchParams.get("continuationToken") || "0";
+    const n = Number(t) + 1;
+    return send({ continuationToken: String(n), videos: [
+      { type: "video", url: `https://www.youtube.com/watch?v=v${n}`, title: "ปลาหมอคางดำกินได้จริง",
+        channel: { title: "ช่องทดสอบ" }, publishedTime: new Date(Date.now() - 30 * DAY).toISOString(),
+        likeCountInt: 4000, commentCountInt: 500, viewCountText: "1.2M views" },
+      /* ⚠️ ใบนี้ต้นทางส่งยอดมาเป็นข้อความล้วน — ต้องแปลงเป็นตัวเลขให้ถูก */
+      { type: "short", url: `https://www.youtube.com/watch?v=s${n}`, title: "คลิปสั้นยอดน้อย",
+        channel: { title: "ช่องเล็ก" }, publishedTime: new Date(Date.now() - 30 * DAY).toISOString(),
+        likeCountText: "12", commentCountText: "3", viewCountText: "4,000 views" },
+    ], channels: [{ type: "channel", url: "https://www.youtube.com/@somechannel", title: "ช่อง" }] });
+  }
   if (url.pathname === "/v1/facebook/post") {
     const link = url.searchParams.get("url");
     if (link.includes("333")) return { ok: false, json: async () => ({ error: "not found" }) };
@@ -120,8 +134,23 @@ d = await run("q=ก&platform=both&min_eng=0&days=99999");
 ok("[6] ทุกใบมีลิงก์ที่เปิดได้", d.posts.every(p => /^https:\/\//.test(p.url)));
 ok("[6b] ไม่มีลิงก์ซ้ำ (ต้นทางเตือนเองว่าอาจส่งซ้ำมา)",
    new Set(d.posts.map(p => p.url)).size === d.posts.length);
-ok("[6c] ได้ทั้ง 2 แพลตฟอร์มเมื่อขอ both",
-   d.posts.some(p => p.platform === "tiktok") && d.posts.some(p => p.platform === "facebook"));
+ok("[6c] ได้ครบทั้ง 3 แพลตฟอร์มเมื่อขอทั้งหมด",
+   ["tiktok", "youtube", "facebook"].every(k => d.posts.some(p => p.platform === k)),
+   [...new Set(d.posts.map(p => p.platform))].join(","));
+
+/* ── [8] ▶️ YouTube — ค้นตรงได้ยอดมาเลย ไม่ต้องจ่ายรายใบเหมือน FB ────── */
+d = await run("q=ก&platform=youtube&pages=999&min_eng=0&days=365");
+const ytCalls = calls.filter(c => c === "/v1/youtube/search").length;
+ok("[8] 💰 เพดานหน้าใช้กับ YouTube ด้วย", ytCalls === SEARCH_MAX_PAGES, `ยิงจริง ${ytCalls} ครั้ง`);
+ok("[8b] 🚫 ไม่ยิงขอยอดรายใบ (ต่างจาก Facebook)", !calls.some(c => c === "/v1/youtube/video"));
+const yv = d.posts.find(p => p.url.includes("v1"));
+ok("[8c] แปลงยอดที่มาเป็นตัวเลขได้", yv && yv.likes === 4000 && yv.comments === 500, JSON.stringify(yv && [yv.likes, yv.comments]));
+ok("[8d] แปลงยอดที่มาเป็นข้อความย่อได้ (1.2M → 1,200,000)", yv && yv.views === 1200000, String(yv?.views));
+ok("[8e] 🔴 YouTube ไม่มียอดแชร์ → ต้องเป็น \"ไม่รู้\" ไม่ใช่ 0", yv && yv.shares === null, String(yv?.shares));
+ok("[8f] และยอดรวมยังคิดจากไลก์+คอมเมนต์ได้ ไม่พังเพราะแชร์เป็น null", yv && yv.engagement === 4500, String(yv?.engagement));
+const ySmall = d.posts.find(p => p.url.includes("s1"));
+ok("[8g] ยอดที่มาเป็นข้อความล้วนก็อ่านได้", ySmall && ySmall.likes === 12 && ySmall.views === 4000);
+ok("[8h] 🚫 ช่อง (ไม่ใช่คลิป) ต้องไม่ปนเข้ามาในผล", !d.posts.some(p => p.url.includes("@somechannel")));
 
 /* ── [7] แพลตฟอร์มหนึ่งล่ม ต้องไม่ลากอีกอันตายไปด้วย ─────────────── */
 const realFetch = globalThis.fetch;

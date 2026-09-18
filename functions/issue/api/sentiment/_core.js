@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 45;
+const WORKER_VER = 46;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -1217,6 +1217,59 @@ async function searchFacebook(env, q, pages, enrich, acc, note) {
   return out;
 }
 
+
+/** "14,860,541 views" · "1.8M views" → ตัวเลข · อ่านไม่ออกคืน null (🚫 ห้ามเดาเป็น 0) */
+function numText(v) {
+  if (typeof v === "number") return v;
+  if (v == null) return null;
+  const s = String(v).replace(/,/g, "").trim();
+  const m = s.match(/([\d.]+)\s*([KMB])?/i);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  if (!Number.isFinite(n)) return null;
+  const mul = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || "").toLowerCase()] || 1;
+  return Math.round(n * mul);
+}
+
+/** YouTube — ค้นตรงได้ และขอยอดไลก์/คอมเมนต์มาในคำขอเดียวด้วย includeExtras
+ *  💰 จึงถูกพอๆ กับ TikTok ไม่ต้องจ่ายรายใบเหมือน Facebook
+ *  ⚠️ **ไม่มียอดแชร์** — YouTube ไม่เปิดเผย ยอดรวมจึงเป็น ไลก์+คอมเมนต์ เท่านั้น */
+async function searchYouTube(env, q, pages, days, acc, note) {
+  const out = [];
+  let token = "";
+  /* ⚠️ ตัวกรองของ YouTube มีแค่ today/this_week/this_month/this_year
+     "this_year" = **ปีปฏิทินนี้** ไม่ใช่ 365 วันย้อนหลังเป๊ะ — เดือนท้ายๆ ของปีก่อนจะหลุด
+     จึงส่งไปช่วยกรองหยาบๆ แล้วมากรองวันที่จริงเองอีกชั้น */
+  const upload = days <= 366 ? "this_year" : "";
+  if (upload) note.push("YouTube: ตัวกรองของต้นทางเป็น \"ปีปฏิทินนี้\" ไม่ใช่ 365 วันย้อนหลังเป๊ะ — คลิปช่วงปลายปีก่อนอาจไม่ขึ้น");
+  for (let i = 0; i < pages; i++) {
+    const d = await scGet(env, "/v1/youtube/search",
+      { query: q, sortBy: "popular", type: "videos", region: "TH",
+        includeExtras: "true", uploadDate: upload, continuationToken: token }, acc);
+    /* ต้นทางแยกเป็นหลายกอง (videos · shorts · channels) — เอาเฉพาะที่เป็นคลิป */
+    const list = [].concat(d.videos || [], d.shorts || []);
+    if (!list.length) break;
+    for (const v of list) {
+      if (!v.url) continue;
+      out.push({
+        platform: "youtube",
+        url: v.url,
+        text: v.title || v.description || "",
+        author: v.channel?.title || "",
+        at: toMs(v.publishedTime),
+        likes: numText(v.likeCountInt ?? v.likeCount ?? v.likeCountText),
+        comments: numText(v.commentCountInt ?? v.commentCount ?? v.commentCountText),
+        shares: null,                       // 🔴 YouTube ไม่เปิดเผยยอดแชร์ — null ไม่ใช่ 0
+        views: numText(v.viewCountInt ?? v.viewCountText),
+      });
+    }
+    token = d.continuationToken || "";
+    if (!token) break;
+  }
+  const seen = new Set();
+  return out.filter(p => !seen.has(p.url) && seen.add(p.url));
+}
+
 async function searchRoute(url, env) {
   if (!env.SCRAPECREATORS_API_KEY) return json({ error: "ยังไม่ได้ตั้งค่า SCRAPECREATORS_API_KEY ที่ Cloudflare" }, 400);
   const q = (url.searchParams.get("q") || "").trim();
@@ -1235,11 +1288,16 @@ async function searchRoute(url, env) {
   const errors = [];
   const wantTT = platform === "both" || platform === "tiktok";
   const wantFB = platform === "both" || platform === "facebook";
+  const wantYT = platform === "both" || platform === "youtube";
 
   /* ⚠️ แพลตฟอร์มหนึ่งล่ม ต้องไม่ลากอีกแพลตฟอร์มตายไปด้วย — เก็บ error แยกแล้วไปต่อ */
   if (wantTT) {
     try { posts = posts.concat(await searchTikTok(env, q, pages, acc, note)); }
     catch (e) { errors.push("tiktok: " + String(e && e.message || e)); }
+  }
+  if (wantYT) {
+    try { posts = posts.concat(await searchYouTube(env, q, pages, days, acc, note)); }
+    catch (e) { errors.push("youtube: " + String(e && e.message || e)); }
   }
   if (wantFB) {
     try { posts = posts.concat(await searchFacebook(env, q, pages, enrich, acc, note)); }

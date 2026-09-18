@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — หาโพสในโซเชียล</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔎</text></svg>" />
-<meta name="page-ver" content="1" />
+<meta name="page-ver" content="2" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" />
@@ -86,8 +86,9 @@
       <div>
         <label for="platform">แพลตฟอร์ม</label>
         <select id="platform">
-          <option value="both">ทั้งคู่</option>
+          <option value="both">ทั้งหมด</option>
           <option value="tiktok">TikTok</option>
+          <option value="youtube">YouTube</option>
           <option value="facebook">Facebook</option>
         </select>
       </div>
@@ -116,7 +117,8 @@
          ⚠️ ห้ามถอดออก — ปุ่มนี้กดแล้วเสียเงินจริง ต่างจากปุ่มอื่นในโปรเจกต์ -->
     <div class="msg warn" style="margin-top:12px">
       💰 <b>ปุ่มนี้ใช้เครดิต ScrapeCreators จริง</b> — หน้าที่ไล่ดู 1 หน้า = 1 เครดิต ·
-      ฝั่ง Facebook ต้องจ่าย <b>เพิ่มอีก 1 เครดิตต่อโพส</b> เพื่อขอยอด (ยิงลิงก์เดิมซ้ำใน 7 วันไม่เสียเพิ่ม)
+      <b>TikTok กับ YouTube</b> ได้ยอดมาพร้อมผลค้นเลย ไม่ต้องจ่ายเพิ่ม ·
+      <b>Facebook</b> ต้องจ่าย <b>เพิ่มอีก 1 เครดิตต่อโพส</b> เพื่อขอยอด (ยิงลิงก์เดิมซ้ำใน 7 วันไม่เสียเพิ่ม)
     </div>
     <div class="msg" id="msg"></div>
   </div>
@@ -135,8 +137,11 @@
       <b>ยอดมีส่วนร่วม = ไลก์ + คอมเมนต์ + แชร์</b> · <b>ไม่รวมยอดวิว</b> (วิวมาจากการเลื่อนผ่าน
       ไม่ใช่การมีส่วนร่วม — รวมเข้าไปคลิปวิวล้านที่ไม่มีใครสนใจจะขึ้นบนสุด) ยอดวิวแยกไว้อีกช่อง<br />
       🔴 ช่องที่ขึ้น <b>—</b> คือ <b>ยังไม่รู้</b> ไม่ใช่ศูนย์ · ใบพวกนี้ไม่ถูกตัดทิ้งและไม่ถูกเอาไปเรียงลำดับ<br />
+      🔴 <b>เทียบยอดข้ามแพลตฟอร์มตรงๆ ไม่ได้</b> — <b>YouTube ไม่เปิดเผยยอดแชร์</b> ยอดรวมจึงเป็นไลก์+คอมเมนต์เท่านั้น
+      ส่วน TikTok/Facebook มีแชร์ด้วย · คลิป YouTube จึงดู "ยอดน้อยกว่า" ทั้งที่อาจดังกว่า
+      <b>ให้เทียบภายในแพลตฟอร์มเดียวกัน</b><br />
       ⚠️ <b>Facebook ค้นด้วยคำตรงๆ ไม่ได้</b> ต้องอ้อมผ่าน Google จึงเห็นเฉพาะโพสสาธารณะที่ถูกเก็บเข้าระบบค้นหา
-      — <b>ไม่ครบทุกโพสแน่นอน</b> ส่วน TikTok ค้นตรงจึงครบกว่า
+      — <b>ไม่ครบทุกโพสแน่นอน</b> ส่วน TikTok กับ YouTube ค้นตรงจึงครบกว่า
     </p>
   </div>
 
@@ -165,7 +170,7 @@ function render() {
     <th>ข้อความ</th><th>ลิงก์</th></tr>`;
   el("tbl").innerHTML = head + rows.map(p => `<tr>
     <td class="n big">${nf(p.engagement)}</td>
-    <td><span class="pf">${p.platform === "tiktok" ? "TikTok" : "Facebook"}</span></td>
+    <td><span class="pf">${({tiktok:"TikTok", youtube:"YouTube", facebook:"Facebook"})[p.platform] || p.platform}</span></td>
     <td>${thDate(p.at)}</td>
     <td class="n">${nf(p.likes)}</td><td class="n">${nf(p.comments)}</td>
     <td class="n">${nf(p.shares)}</td><td class="n">${nf(p.views)}</td>
