@@ -19,7 +19,7 @@
 /* เลขเวอร์ชันของ Worker — ไว้ตรวจว่า "โค้ดที่ deploy ไปแล้วเป็นตัวไหน"
    เปิด GET / แล้วดูค่า ver · แก้โค้ดในไฟล์นี้ทีไร **บวกเลขนี้ด้วยทุกครั้ง**
    (เหตุผลเดียวกับป้ายเลขเวอร์ชันของหน้าเว็บใน CLAUDE.md — เลิกเดาว่า deploy ถึงหรือยัง) */
-const WORKER_VER = 43;
+const WORKER_VER = 44;
 
 /* โมเดลที่ใช้จริงตอนวิเคราะห์โพส
    เลือก opus เพราะเป็นตัวเดียวที่ผ่านเกณฑ์ Negative recall 85%
@@ -741,7 +741,6 @@ export default {
           ok: true, ver: WORKER_VER, rubric: RUBRIC_VER,
           target,
           summary: synth.summary || "",
-          keywords: synth.keywords || [],
           samples: synth.samples || [],
           summary_from: Math.min(synthPool.length, SYNTH_SAMPLE),
           summary_of: texts.length,
@@ -1007,7 +1006,7 @@ async function analyze(opts, env) {
   const { synth, synthPool, synthError } = await buildSynth(
     { texts, labels, likes: comments.map(c => c.likes || 0), target, wantSamples, sentiment },
     env, tokens, logLine);
-  logLine(`สรุป+keyword: ${(synth.keywords || []).length} คำ · ตัวอย่าง ${(synth.samples || []).length} รายการ`);
+  logLine(`สรุป: ตัวอย่าง ${(synth.samples || []).length} รายการ`);
   logLine(`Claude tokens: input ${tokens.input.toLocaleString()} + output ${tokens.output.toLocaleString()} = ${(tokens.input + tokens.output).toLocaleString()}`);
 
   // 4) รวมเป็น aggregate (ไม่คืน raw รายบุคคล / ชื่อถูกตัดออก)
@@ -1058,7 +1057,6 @@ async function analyze(opts, env) {
     measured: PROFILES[profileId].measured !== false,
     engagement: anonymize ? { ...engagement } : engagement,
     time_range,
-    keywords: synth.keywords || [],
     summary: synth.summary || "",
     samples: wantSamples ? (synth.samples || []) : [],
     /* ⚠️ สรุปพังแต่ตัวเลข/audit ยังใช้ได้ → ส่งผลกลับไปตามปกติ **แต่ต้องบอกว่าสรุปพัง**
@@ -1598,32 +1596,6 @@ function extractJsonArray(text) {
 }
 
 /** สรุปภาพรวม + keyword + ตัวอย่างคอมเมนต์ (ถอดความ) */
-/**
- * นับว่าแต่ละคำโผล่ในคอมเมนต์กี่ใบจริงๆ — **ไม่เอาเลขที่ AI เดามา**
- * 🐞 เจ้าของเจอ 31 ส.ค. 2026: แถบ "คำที่พูดถึงบ่อย" มีเลข 24/20/12 ซึ่ง AI แต่งขึ้นทั้งหมด
- *    (prompt เดิมสั่งว่า "count: จำนวนโดยประมาณ") ดูเหมือนตัวเลขที่นับมา แต่ไม่ใช่
- *    และคำที่ได้เป็นประโยคยาวๆ ไม่ใช่คำ
- *
- * ⚠️ ใช้ includes() ตรงๆ ห้ามตัดคำด้วยช่องว่าง — ภาษาไทยไม่มีช่องว่างคั่นคำ
- *    (กฎเดียวกับหน้า /archives/ ใน CLAUDE.md)
- * ⚠️ คำที่นับได้ 0 = AI แต่งขึ้นเอง **ต้องตัดทิ้ง** ไม่ใช่โชว์เลข 0 ให้ดูเหมือนมีข้อมูล
- */
-function countTerms(terms, texts) {
-  if (!Array.isArray(terms) || !texts || !texts.length) return [];
-  const low = texts.map(t => String(t).toLowerCase());
-  const seen = new Set();
-  const out = [];
-  for (const raw of terms.slice(0, 20)) {
-    const term = String(typeof raw === "string" ? raw : (raw && raw.term) || "").trim().slice(0, 40);
-    const q = term.toLowerCase();
-    if (q.length < 2 || seen.has(q)) continue;
-    seen.add(q);
-    let n = 0;
-    for (const t of low) if (t.includes(q)) n++;
-    if (n > 0) out.push({ term, count: n });
-  }
-  return out.sort((a, b) => b.count - a.count || a.term.localeCompare(b.term)).slice(0, 12);
-}
 
 /**
  * เลือกกองที่จะสรุป + เลือกใบตัวอย่าง แล้วยิงขอสรุปจาก Claude 1 ครั้ง
@@ -1728,25 +1700,23 @@ async function buildSynth(inp, env, acc, logLine = () => {}) {
      · `/resynth` ตอบ error กลับไปเลย เพราะสรุปคือของชิ้นเดียวที่ผู้ใช้กดขอ */
   let synth, synthError = null;
   if (!synthPool.length) {
-    synth = { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", keywords: [], samples: [] };
+    synth = { summary: "ไม่มีคอมเมนต์ที่พูดถึงเครือ CP ในโพสนี้", samples: [] };
   } else {
     try {
       synth = await synthesize(synthPool.slice(0, SYNTH_SAMPLE), wantSamples, env, acc, target,
                        pickIdx, pickIdx.map(i => texts[i]), pickIdx.map(i => labels[i]),
                        /* สัดส่วนจริงทั้งโพส — ให้สรุปสะท้อนของจริง ไม่ใช่สะท้อนแค่กองที่ส่งไปอ่าน */
-                       { ...sentiment, total: texts.length },
-                       /* นับ keyword จาก **คอมเมนต์ทุกใบ** ไม่ใช่แค่กองที่ส่งให้ AI อ่าน */
-                       texts.filter(Boolean));
+                       { ...sentiment, total: texts.length });
     } catch (e) {
       synthError = String(e && e.message || e);
       logLine("⚠️ สรุปไม่สำเร็จ: " + synthError);
-      synth = { summary: "", keywords: [], samples: [] };
+      synth = { summary: "", samples: [] };
     }
   }
   return { synth, synthPool, synthError };
 }
 
-async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels, dist, allTexts) {
+async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, pickTexts, pickLabels, dist) {
   const joined = sampleTexts.map((t, i) => `${i + 1}. ${String(t).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const focus = target === "cp"
     ? "คอมเมนต์เหล่านี้คัดมาเฉพาะที่พูดถึงเครือเจริญโภคภัณฑ์ (CP) — ให้สรุปและหา keyword โดยโฟกัสที่ **ท่าทีและประเด็นที่คนพูดถึง CP** เท่านั้น "
@@ -1768,12 +1738,10 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
     focus +
     "โครงสร้าง: {" +
     '"summary": "สรุปภาพรวมกระแส 2-3 ประโยค ภาษาไทย", ' +
-    /* 🚫 ไม่ขอให้ AI นับให้ — เลขที่มันเดาดูเหมือนของจริงแต่ไม่ใช่ (เจ้าของเจอ 31 ส.ค. 2026)
-       เราไปนับเองจากข้อความจริงทีหลัง · ที่นี่ขอแค่ "คำ" ที่โผล่จริงในคอมเมนต์ */
-    '"keywords": ["คำสั้นๆ", ...] (10-14 คำ) ' +
-    '⚠️ keywords เป็น array ของ **สตริงสั้นๆ** เท่านั้น (1-3 คำ ไม่เกิน 20 ตัวอักษร) ' +
-    'ต้องเป็นคำที่ **ปรากฏอยู่จริงในคอมเมนต์แบบตรงตัวอักษร** ห้ามแต่งวลีขึ้นมาเอง ' +
-    'ห้ามเป็นประโยคหรือหัวข้อยาวๆ ห้ามใส่ตัวเลข ' +
+    /* 🗑 เคยขอ "keywords" ตรงนี้ — ถอดออก 18 ก.ย. 2026 (เจ้าของสั่งเอาการ์ดออกทั้งระบบ)
+       💰 ทุกคำในคำสั่งนี้ถูกส่งไป **ทุกครั้งที่วิเคราะห์** และคำตอบก็กินโทเคนขากลับด้วย
+          เก็บไว้ทั้งที่ไม่มีใครเห็นผล = จ่ายฟรีตลอดไป
+       🚫 จะเอากลับต้องใส่คืนให้ครบทั้ง 4 ที่ (การ์ด · PDF/JPEG · CSV · ตรงนี้) */
     (wantSamples
       ? '"samples": ["ถอดความข้อที่ 1", "ถอดความข้อที่ 2", ...] ' +
         '⚠️ samples เป็น array ของ **สตริง** เท่านั้น · ' +
@@ -1811,7 +1779,6 @@ async function synthesize(sampleTexts, wantSamples, env, acc, target, pickIdx, p
     const obj = extractJson(out);
     return {
       summary: obj.summary || "",
-      keywords: countTerms(obj.keywords, allTexts || sampleTexts),
       /* 🔗 src = ตำแหน่งคอมเมนต์ต้นทางในรายการเต็ม — ผูกไว้เพื่อให้หน้าเว็บย้ายตัวอย่าง
             ตามป้ายที่ผู้ใช้แก้เองได้ (เจ้าของแจ้ง 31 ส.ค. 2026: "ตัวอย่างไม่ปรับตามที่กดเปลี่ยน")
          ⚠️ ตัวอย่างยังเป็นข้อความ **ถอดความ** เหมือนเดิม ไม่ได้เอาต้นฉบับมาแสดง

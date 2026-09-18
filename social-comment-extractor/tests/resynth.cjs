@@ -101,8 +101,8 @@ const BASE = {
   /* ── [4] ผลลัพธ์ใหม่ถูกเอามาแสดงจริง ──────────────────────── */
   const sum = await page.locator("#summaryBox").textContent();
   ok("[4] สรุปบนจอเปลี่ยนเป็นของรอบใหม่", /สรุปรอบใหม่หลังแก้ป้าย/.test(sum), sum.trim().slice(0, 40));
-  const kw = await page.locator("#kwList").textContent();
-  ok("[4b] คำที่พูดถึงบ่อยอัปเดตตาม", /แพง/.test(kw));
+  /* 🗑 [4b] เคยวัดว่าการ์ด "คำที่พูดถึงบ่อย" อัปเดตตาม — ถอดออก 18 ก.ย. 2026
+     พร้อมกับการ์ดที่เจ้าของสั่งเอาออกทั้งระบบ (ไม่มี #kwList ให้วัดแล้ว) */
   const smp = await page.locator("#sampleList").textContent();
   ok("[4c] ตัวอย่างเป็นชุดใหม่", /ถอดความใบที่ย้ายมา/.test(smp));
   /* 🔴 สรุปใหม่ไปแล้ว คำเตือน "ยังเป็นของรอบที่แล้ว" ต้องหายไป ไม่งั้นคำเตือนโกหก */
@@ -117,12 +117,11 @@ const BASE = {
   await page.waitForFunction(() => /ไม่สำเร็จ/.test(document.querySelector("#resynthMsg")?.textContent || ""), null, { timeout: 8000 });
   const sum2 = await page.locator("#summaryBox").textContent();
   ok("[5] ⚠️ ยิงไม่สำเร็จ → สรุปเดิมยังอยู่ ไม่หายไปเฉยๆ", /สรุปรอบใหม่หลังแก้ป้าย/.test(sum2), sum2.trim().slice(0, 40));
-  /* ⚠️ ต้องเช็ค **ตัวอย่างกับคำ** ด้วย ไม่ใช่แค่สรุป
+  /* ⚠️ ต้องเช็ค **ตัวอย่าง** ด้วย ไม่ใช่แค่สรุป
      ตอนเขียนเทสต์ครั้งแรกเช็คแต่สรุป → ลองถอดตัวดัก error ออกแล้ว **เทสต์ยังผ่าน**
      ทั้งที่ตัวอย่างหายเกลี้ยง (samples = [] เพราะคำตอบที่ล้มเหลวไม่มีฟิลด์นั้น) */
   const smp2 = await page.locator("#sampleList").textContent();
   ok("[5a] ⚠️ ตัวอย่างเดิมก็ต้องยังอยู่", /ถอดความใบที่ย้ายมา/.test(smp2), smp2.replace(/\s+/g, " ").slice(0, 60));
-  ok("[5a2] คำที่พูดถึงบ่อยก็ยังอยู่", /แพง/.test(await page.locator("#kwList").textContent()));
   ok("[5b] และบอกเหตุผลให้อ่านได้", /ต้นทางล่ม|502/.test(await page.locator("#resynthMsg").textContent()));
   ok("[5c] ปุ่มกลับมากดได้อีก ไม่ค้างเป็นไอคอนหมุน",
      await page.evaluate(() => !document.querySelector("#resynthBtn").disabled));
@@ -162,13 +161,13 @@ const BASE = {
   const guard = /resynthBtn"\)\.onclick\s*=\s*\(e\)\s*=>\s*\{[^}]*preventDefault[^}]*stopPropagation/.test(src);
   ok("[5h] 🔒 โค้ดมี preventDefault + stopPropagation กันไว้ (เผื่อ Safari)", guard);
 
-  /* ── [6] 🚫 ห้ามมีปุ่มแบบนี้ที่การ์ด "คำที่พูดถึงบ่อย" ──────
-     ตัวเลขตรงนั้นนับจากข้อความคอมเมนต์ ไม่ได้ขึ้นกับป้าย กดไปก็ได้เลขเดิมเป๊ะ */
-  ok("[6] 🚫 การ์ด 'คำที่พูดถึงบ่อย' ไม่มีปุ่มสรุปใหม่ของตัวเอง",
-     await page.evaluate(() => {
-       const card = [...document.querySelectorAll(".sc-card")].find(c => /คำที่พูดถึงบ่อย/.test(c.querySelector("h2")?.textContent || ""));
-       return !!card && !card.querySelector("button");
-     }));
+  /* ── [6] 🗑 การ์ด "คำที่พูดถึงบ่อย" ต้องไม่มีอยู่แล้ว ──────
+     เจ้าของสั่งเอาออกทั้งระบบ 18 ก.ย. 2026 ("เอาตรงนี้ออกไปเลย")
+     ของเดิมข้อนี้วัดว่า "การ์ดนั้นต้องไม่มีปุ่มสรุปใหม่" — พอไม่มีการ์ดแล้วก็ไม่มีอะไรให้วัด
+     เปลี่ยนเป็นวัดว่ามันหายไปจริง เผื่อมีคนใส่กลับมาโดยไม่ตั้งใจ */
+  ok("[6] 🗑 ไม่มีการ์ด 'คำที่พูดถึงบ่อย' บนหน้าแล้ว",
+     await page.evaluate(() => !document.querySelector("#kwList")
+       && ![...document.querySelectorAll(".sc-card h2")].some(h => /คำที่พูดถึงบ่อย/.test(h.textContent || ""))));
 
   console.log(errs.length ? "❌ JS error: " + errs.join(";") : "✅ ไม่มี JS error");
   await b.close();

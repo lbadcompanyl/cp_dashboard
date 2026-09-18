@@ -46,7 +46,7 @@ cat >> "$WORK/w.mjs" <<'EOF'
 export { classifyTwoLens, normLens, systemTwoLens, TWO_LENS_SHOTS, extractJsonArray,
          nestedReplies, scComment, fetchYouTube, INCLUDE_REPLIES,
          feedbackRoute, fbClean, FB_MAX, FB_MAX_PER_REQ, FB_MAX_TEXT,
-         EFFORT_CHOICES, EFFORT_MODELS, analyze, countTerms,
+         EFFORT_CHOICES, EFFORT_MODELS, analyze,
          PROFILES, getProfile, DEFAULT_PROFILE,
          sampleQuota, SAMPLE_MIN, SAMPLE_MAX, dupKey, systemBlackchin, BLACKCHIN_SHOTS };
 EOF

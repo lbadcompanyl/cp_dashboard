@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Issue Dashboard — กระแสความเห็น</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>" />
-<meta name="page-ver" content="25" />
+<meta name="page-ver" content="26" />
 <link rel="stylesheet" href="./styles.css?v=11" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -100,12 +100,6 @@
   .sc-btn2:disabled { opacity: .55; cursor: default; }
 
 
-  .sc-kwlist { display: flex; flex-direction: column; gap: 8px; }
-  .sc-kwrow { display: grid; grid-template-columns: 128px 1fr 40px; gap: 10px; align-items: center; font-size: 12.5px; }
-  .sc-kwrow .sc-term { color: var(--sc-ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sc-kwrow .sc-track { height: 10px; background: var(--sc-surface2); border-radius: 999px; overflow: hidden; }
-  .sc-kwrow .sc-track span { display: block; height: 100%; background: var(--sc-accent); border-radius: 999px; }
-  .sc-kwrow .sc-num { text-align: right; color: var(--sc-muted); }
 
   .sc-samples { display: flex; flex-direction: column; gap: 15px; }
   .sc-sgroup { display: flex; flex-direction: column; gap: 7px; }
@@ -248,8 +242,8 @@
              ⚠️ ขึ้นเฉพาะตอนมีการแก้จริง (edited_count > 0) — ไม่งั้นกดไปก็ได้ของเดิม
              🚫 ห้ามยิงเองอัตโนมัติทุกครั้งที่แก้ป้าย: แก้ทีละใบ 10 ใบ = ยิง 10 ครั้ง
                 เจ้าของเลือกให้เป็นปุ่มกดเอง จะได้คุมได้ว่าจ่ายเมื่อไหร่ (2 ก.ย. 2026)
-             🚫 ไม่มีปุ่มแบบนี้ที่การ์ด "คำที่พูดถึงบ่อย" โดยตั้งใจ — ตัวเลขตรงนั้น
-                นับจากข้อความคอมเมนต์ ไม่ได้ขึ้นกับป้าย กดไปก็ได้เลขเดิมเป๊ะ -->
+             (เคยมีหมายเหตุตรงนี้ว่าการ์ด "คำที่พูดถึงบ่อย" ไม่มีปุ่มนี้ — การ์ดนั้นถูกถอดออก
+              ทั้งระบบแล้ว 18 ก.ย. 2026 หมายเหตุจึงไม่มีความหมายอีกต่อไป) -->
         <!-- 📍 ปุ่มย้ายไปอยู่หัวกล่อง audit แล้ว (เจ้าของสั่ง 4 ก.ย. 2026) — ที่นี่เหลือแต่ "คำเตือนว่าสรุปเก่า"
              ⚠️ **ห้ามย้ายคำเตือนตามปุ่มไป** คำเตือนต้องอยู่ติดของที่เก่า ไม่งั้นคนอ่านสรุปที่ตกยุค
                 โดยไม่รู้ตัว (กล่อง audit พับอยู่เป็นค่าตั้งต้น มองไม่เห็นอะไรข้างในเลย) -->
@@ -258,11 +252,10 @@
         </div>
       </div>
 
-      <div class="sc-card">
-        <h2>คำที่พูดถึงบ่อย</h2>
-        <p class="sc-sub" id="kwSub">คำที่ AI เสนอ · <b>ตัวเลขนับจากคอมเมนต์จริง</b></p>
-        <div class="sc-kwlist" id="kwList"></div>
-      </div>
+      <!-- 🗑 การ์ด "คำที่พูดถึงบ่อย" ถูกถอดออกทั้งระบบ 18 ก.ย. 2026 (เจ้าของสั่ง: "เอาตรงนี้ออกไปเลย")
+           ถอดครบ 4 ที่: การ์ดนี้ · ไฟล์ PDF/JPEG · ชีต Keywords ใน CSV · **คำสั่งที่ส่งให้ AI**
+           💰 ที่ต้องถอดจากคำสั่ง AI ด้วย เพราะไม่งั้นยังจ่ายเงินให้มันคิดคำพวกนี้ทุกครั้งที่วิเคราะห์
+              ทั้งที่ไม่มีใครเห็นแล้ว · 🚫 จะเอากลับต้องใส่คืนให้ครบทั้ง 4 ที่ ไม่งั้นการ์ดว่างเปล่า -->
 
       <div class="sc-card" id="sampleCard">
         <h2>ตัวอย่างคอมเมนต์ (ถอดความ · ไม่ระบุตัวตน)</h2>
@@ -492,7 +485,6 @@ async function demoResult(opts){
     sentiment: { positive: pos, neutral: neu, negative: neg },
     engagement: { total_likes: 4820, total_replies: 356, unique_commenters: Math.round(total*0.82) },
     time_range: { earliest: "2026-08-10", latest: "2026-08-19" },
-    keywords: [{term:"อร่อย",count:41},{term:"ราคา",count:33},{term:"บริการ",count:27},{term:"ส่งช้า",count:19},{term:"คุ้ม",count:17},{term:"แพ็คเกจ",count:14},{term:"รอนาน",count:12},{term:"ประทับใจ",count:11}],
     summary: "คอมเมนต์ส่วนใหญ่เป็นเชิงบวก ชื่นชมรสชาติและความคุ้มค่า มีบางส่วนบ่นเรื่องการจัดส่งช้าและการรอคิว โดยรวมกระแสตอบรับดี",
     claude_usage: { input: total*12, output: 240, total: total*12+240 }, claude_rate_remaining: 380000,
     audit: [
@@ -703,15 +695,6 @@ function renderResult(d, keepAudit){
         (isCP ? ' <span class="sc-skip">(เฉพาะใบที่แสดงท่าทีต่อ CP — ใบที่เป็นกลางไม่ได้เอามาสรุป)</span>' : "")
       : "สรุปโดย Claude" + (so ? escapeHtml(` จากคอมเมนต์ ${so} ใบ`) : "");
   }
-
-  const kws = d.keywords || [];
-  const maxN = kws.reduce((m,k)=>Math.max(m,k.count||0),0) || 1;
-  el("kwList").innerHTML = kws.length ? kws.map(k => `
-    <div class="sc-kwrow">
-      <span class="sc-term">${escapeHtml(k.term)}</span>
-      <span class="sc-track"><span style="width:${Math.round((k.count||0)/maxN*100)}%"></span></span>
-      <span class="sc-num">${k.count||0}</span>
-    </div>`).join("") : `<div style="color:var(--sc-muted);font-size:12.5px">— ไม่มีข้อมูลคำ —</div>`;
 
   const samples = d.samples || [];
   el("sampleCard").style.display = total ? "" : "none";
@@ -943,7 +926,6 @@ async function runResynth(){
        ไม่งั้นสรุปจะหายไปเฉยๆ แล้วผู้ใช้ไม่รู้ว่าเกิดอะไรขึ้น */
     if (!r.ok || !d || d.error) throw new Error(d?.detail || d?.error || ("HTTP " + r.status));
     lastResult.summary = d.summary || lastResult.summary;
-    lastResult.keywords = d.keywords || lastResult.keywords;
     lastResult.samples = d.samples || [];
     lastResult.summary_from = d.summary_from;
     lastResult.summary_of = d.summary_of;
@@ -1062,8 +1044,7 @@ function buildSheets(d){
     ["สรุปภาพรวม", d.summary||""],
   ];
   const senti = [["Sentiment","จำนวน","เปอร์เซ็นต์"],["เชิงบวก", s.positive||0, pct(s.positive,total)+"%"],["กลาง", s.neutral||0, pct(s.neutral,total)+"%"],["เชิงลบ", s.negative||0, pct(s.negative,total)+"%"],["รวม", total, "100%"]];
-  const kw = [["คำ/หัวข้อ","จำนวนครั้ง"], ...(d.keywords||[]).map(k=>[k.term, k.count||0])];
-  const sheets = { "Summary":summary, "Sentiment":senti, "Keywords":kw };
+  const sheets = { "Summary":summary, "Sentiment":senti };
   const sentTh = { positive:"บวก", neutral:"กลาง", negative:"ลบ", not_related:"ไม่เกี่ยวกับ CP" };
   /* ⚠️ ต้องเป็นป้าย **ปัจจุบัน** (ตามที่ผู้ใช้แก้เอง) ไม่ใช่ป้ายที่ AI ให้มาตอนแรก
      ของเดิมใช้ `x.sentiment` ตรงๆ → แก้ป้ายแล้วเปิดไฟล์ดู ตัวอย่างยังติดป้ายเก่าอยู่
@@ -1127,15 +1108,8 @@ function reportPass(ctx, d, draw, thumb){
   const gap=12, bw=(cw-3*gap)/4, bh=60;
   if (draw){ boxes.forEach((b,i)=>{ const bx=pad+i*(bw+gap); ctx.strokeStyle=RC.border; ctx.lineWidth=1; roundRect(ctx,bx,y,bw,bh,10); ctx.stroke(); ctx.fillStyle=RC.muted; setFont(ctx,400,11); ctx.fillText(b[0], bx+12, y+21, bw-20); ctx.fillStyle=RC.ink; setFont(ctx,600,19); ctx.fillText(b[1], bx+12, y+46); }); }
   y+=bh+28;
-  const kws=(d.keywords||[]).slice(0,8);
-  if (kws.length){
-    if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("คำที่พูดถึงบ่อย", pad, y); }
-    y+=22;
-    const maxN=kws.reduce((m,k)=>Math.max(m,k.count||0),0)||1;
-    const termW=150, barX=pad+termW+10, barW=cw-termW-10-46;
-    for (const k of kws){ if (draw){ ctx.fillStyle=RC.ink2; setFont(ctx,400,13); ctx.fillText(String(k.term).slice(0,22), pad, y+11, termW); ctx.fillStyle=RC.track; roundRect(ctx,barX,y+2,barW,10,5); ctx.fill(); ctx.fillStyle=RC.accent; roundRect(ctx,barX,y+2,Math.max(3,barW*(k.count||0)/maxN),10,5); ctx.fill(); ctx.fillStyle=RC.muted; setFont(ctx,400,12); ctx.textAlign="right"; ctx.fillText(String(k.count||0), W-pad, y+11); ctx.textAlign="left"; } y+=22; }
-    y+=16;
-  }
+  /* 🗑 บล็อก "คำที่พูดถึงบ่อย" ถูกถอดออกพร้อมการ์ดบนหน้าเว็บ (18 ก.ย. 2026)
+     🚫 ห้ามใส่กลับที่นี่ที่เดียว — ไฟล์จะมีของที่หน้าจอไม่มี = บั๊กเดิมที่เพิ่งแก้ไป 11 ก.ย. */
   if (d.summary){ if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("สรุปภาพรวม", pad, y); } y+=22; setFont(ctx,400,14); for (const ln of wrapLines(ctx,d.summary,cw)){ if (draw){ ctx.fillStyle=RC.ink2; ctx.fillText(ln, pad, y+12); } y+=21; } y+=16; }
   if (total){
     if (draw){ ctx.fillStyle=RC.ink; setFont(ctx,600,15); ctx.fillText("ตัวอย่างคอมเมนต์ (ถอดความ)", pad, y); }

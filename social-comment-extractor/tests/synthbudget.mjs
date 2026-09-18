@@ -10,7 +10,7 @@
  *      คำตอบถูกตัดกลางคัน → JSON พัง
  *      ⚠️ เผื่อน้อยไม่ได้เพราะ **opus เขียนความคิดก่อนตอบ** กินโทเคนก่อนถึง JSON
  *         (BASELINE.md: ก้อน 6 ข้อ ต้องการ JSON จริง ~150 แต่เพดาน 1,140 ยังไม่พอ)
- *   2. `catch` คืน { summary:"", keywords:[], samples:[] } **เงียบๆ**
+ *   2. `catch` คืน { summary:"", samples:[] } **เงียบๆ**
  *      หน้าเว็บเอา [] ไปทับของเดิม → คำกับตัวอย่างหายเกลี้ยง
  *      ส่วนสรุปคงของเก่าไว้เพราะ "" ถูกมองว่า "ไม่มีค่า"
  *
@@ -59,7 +59,7 @@ globalThis.fetch = async (u, o) => {
       return res({ content: [{ text: "ขอโทษครับ ผมไม่สามารถตอบเป็น JSON ได้" }],
                    usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: "end_turn" });
     }
-    return res({ content: [{ text: JSON.stringify({ summary: "สรุปจริง", keywords: ["ซีพี"],
+    return res({ content: [{ text: JSON.stringify({ summary: "สรุปจริง",
                    samples: ["a", "b", "c", "d", "e", "f"] }) }],
                  usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: "end_turn" });
   }
@@ -75,7 +75,7 @@ const synthBudget = budgets[0];
 console.log("   เพดานที่ให้รอบสรุป: " + synthBudget + " (ถอดความ 6 ใบ)");
 ok("[1] ⚠️ เพดานมากกว่า 1,500 ที่เคยตั้งตายตัวไว้", synthBudget > 1500, String(synthBudget));
 ok("[1b] เผื่อพอสำหรับถอดความ 6 ใบ (≥ 4,000)", synthBudget >= 4000, String(synthBudget));
-ok("[1c] สรุปปกติยังทำงาน", r.summary === "สรุปจริง" && r.keywords.length > 0 && r.samples.length > 0);
+ok("[1c] สรุปปกติยังทำงาน", r.summary === "สรุปจริง" && r.samples.length > 0);
 ok("[1d] ไม่ติดธงว่าพัง", !r.synth_failed);
 
 /* ── [2] ⚠️ ถูกตัดกลางคัน → ลองใหม่ด้วยเพดาน 2 เท่า แล้วค่อยยอมแพ้ ── */
